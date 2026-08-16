@@ -2,15 +2,18 @@ name: e2e-android
 
 # Android Detox end-to-end (e2e) on a Linux runner (issue #132). Unlike macOS runners (no Docker /
 # no nested virt — see #110), ubuntu-latest has KVM, so a hardware-accelerated Android emulator runs
-# here. This lane runs the bingle_jsi Detox suites against testnet: the smoke suite always runs; the
-# messaging/failure suites run only when a funded-sender secret is present (else they skip cleanly).
-# A hermetic localnet variant (emulator-mode provisioner) is a follow-up (#37).
+# here. This lane runs the Detox smoke suite, which queries an in-CI algokit localnet reached via
+# adb-reverse.
+#
+# The messaging/failure network suites are NOT run here: the CI emulator has no outbound internet
+# (verified — no route to 8.8.8.8), so the testnet path is impossible in CI. Hermetic network
+# coverage needs the localnet emulator-mode provisioner (10.0.2.2, no internet) — follow-up #37.
+# Until then, run the network suites locally (run_e2e_android.sh, an emulator with internet + #135).
 #
 # Runs on pushes to staging and manual dispatch only. See CI-E2E.md.
 on:
   push:
-    # TEMP (#135 validation): run on the feature branch to verify the TLS fix with secrets.
-    branches: [staging, feat/131-android-network-suites]
+    branches: [staging]
   workflow_dispatch:
 
 # Latest-push-wins ("heap not queue").
@@ -106,12 +109,11 @@ jobs:
       - name: Run Detox e2e on an emulator
         uses: reactivecircus/android-emulator-runner@v2
         env:
-          # testnet backend; the network suites read these. Absent secret => they skip (smoke only).
           BINGLE_E2E_BACKEND: testnet
           BINGLE_E2E_ECHO_TO: echo-testnet-1
-          BINGLE_E2E_PASSPHRASE: ${{ secrets.BINGLE_E2E_PASSPHRASE }}
-          BINGLE_E2E_HANDLE: ${{ secrets.BINGLE_E2E_HANDLE }}
-          BINGLE_E2E_OFFLINE_HANDLE: ${{ secrets.BINGLE_E2E_OFFLINE_HANDLE }}
+          # Intentionally NOT passing the funded-sender secrets: the CI emulator has no internet, so
+          # the testnet network suites can't run here — they skip cleanly (smoke only). Network
+          # coverage arrives with the localnet emulator-mode (#37), which needs no secrets.
           BINGLE_E2E_AVD: detox_avd
         with:
           api-level: 34

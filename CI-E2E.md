@@ -40,19 +40,17 @@ Not on pull requests: emulator runs are heavy, so this is a post-merge check on 
 
 A 60-minute `timeout-minutes` bounds the run.
 
-## Suites and the network secret
+## Suites
 
-- **smoke** always runs (launch, `version()`, keypair round-trip against the in-CI localnet).
-- **messaging** and **failure_causes** run only when a funded, already-registered testnet sender is
-  provided as repository secrets; otherwise they **skip cleanly**:
+- **smoke** runs in CI (launch, `version()`, keypair round-trip against the in-CI localnet reached
+  via adb-reverse).
+- **messaging** and **failure_causes** do **not** run in CI. They need a real network, and the CI
+  Android emulator has **no outbound internet** (verified: no route to `8.8.8.8`), so the testnet
+  path is impossible here. Hermetic network coverage requires the localnet emulator-mode provisioner
+  (host services over `10.0.2.2`, no internet) — follow-up **#37**. Run them **locally** instead
+  (`run_e2e_android.sh` on an emulator with internet; the Android HTTPS fix is #135):
 
-  | Secret | Meaning |
-  | --- | --- |
-  | `BINGLE_E2E_PASSPHRASE` | mnemonic of a funded, registered testnet sender |
-  | `BINGLE_E2E_HANDLE` | that account's registered handle |
-  | `BINGLE_E2E_OFFLINE_HANDLE` | a handle registered but offline (for `RecipientNotAdvertised`) |
-
-  Add these under **Settings → Secrets and variables → Actions** to enable the network suites.
+      BINGLE_E2E_PASSPHRASE="word word … word" BINGLE_E2E_HANDLE=my-handle bash bingle_jsi/example/scripts/run_e2e_android.sh
 
 ## Run it manually
 
