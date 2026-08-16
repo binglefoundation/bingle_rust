@@ -37,6 +37,8 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
                     notifyOnGiveup = config.tryGetBoolean("notify_on_giveup"),
                     notifyEnv = config.tryGetString("notify_env")
                 )
+                // Initialize the platform TLS verifier before any HTTPS to an Algorand node (#135).
+                BingleJsiTls.ensureInitialized(reactApplicationContext)
                 val api = createBingleApi(jsiConfig)
                 apiInstance = api
                 promise.resolve(true)

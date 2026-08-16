@@ -528,6 +528,8 @@ dependencies = [
  "bingle_local",
  "bingle_test",
  "chrono",
+ "jni",
+ "rustls-platform-verifier",
  "serde_json",
  "tempfile",
  "thiserror 1.0.69",

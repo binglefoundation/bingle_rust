@@ -9,7 +9,8 @@ name: e2e-android
 # Runs on pushes to staging and manual dispatch only. See CI-E2E.md.
 on:
   push:
-    branches: [staging]
+    # TEMP (#135 validation): run on the feature branch to verify the TLS fix with secrets.
+    branches: [staging, feat/131-android-network-suites]
   workflow_dispatch:
 
 # Latest-push-wins ("heap not queue").

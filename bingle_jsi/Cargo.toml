@@ -25,6 +25,13 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["registry"] }
 chrono = { version = "0.4", features = ["serde"] }
 
+# Android needs rustls-platform-verifier initialized with the JNI context before any HTTPS to an
+# Algorand node (issue #135). Same versions already resolved transitively via algonaut->reqwest, so
+# these are feature-unified with that instance (the global the reqwest Verifier reads).
+[target.'cfg(target_os = "android")'.dependencies]
+jni = "0.22"
+rustls-platform-verifier = "0.7"
+
 [dev-dependencies]
 uniffi = { version = "0.28", features = ["build"] }
 tempfile = "3"
