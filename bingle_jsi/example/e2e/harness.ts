@@ -1,3 +1,4 @@
+/// <reference types="detox" />
 /**
  * Shared helpers for driving the bingle_jsi command-dispatcher harness from Detox (issue #109).
  *
@@ -11,19 +12,33 @@
  * `waitFor().toHaveText()` (which is unreliable with synchronization disabled).
  */
 
-const fs = require('fs');
-const {execSync} = require('child_process');
+import * as fs from 'fs';
+import {execSync} from 'child_process';
+
+/** A dispatcher command: a method name on the `BingleJsi` proxy (or an `extraDispatch` entry). */
+export interface Command {
+  method: string;
+  args?: unknown[];
+}
+
+/** The subset of Detox element attributes the harness reads (varies by platform/element). */
+interface ReadableAttributes {
+  text?: string;
+  label?: string;
+  value?: string;
+}
 
 const COMMAND_TIMEOUT = 30000;
 const POLL_INTERVAL = 400;
 
-const sleep = ms => new Promise(r => setTimeout(r, ms));
+export const sleep = (ms: number): Promise<void> =>
+  new Promise(r => setTimeout(r, ms));
 
 // Android package id of the example app (see example/android/app/build.gradle).
 const ANDROID_PKG = 'com.binglejsiexample';
 
 /** First running emulator serial, so adb targets the right device. */
-function androidSerial() {
+function androidSerial(): string | null {
   const out = execSync('adb devices').toString();
   const line = out.split('\n').find(l => /^emulator-\d+\s+device\b/.test(l));
   return line ? line.split(/\s+/)[0] : null;
@@ -41,7 +56,10 @@ function androidSerial() {
  *     /sdcard/Android/data (scoped storage) or /data/local/tmp (SELinux) — both give EACCES.
  * Returns `{ node_file, stun_servers }` to spread into the init config (omit stun_servers_file).
  */
-async function resolveNetworkInputs(hostNodeFile, hostStunFile) {
+export async function resolveNetworkInputs(
+  hostNodeFile: string,
+  hostStunFile: string,
+): Promise<{node_file: string; stun_servers: string}> {
   const stun_servers = fs.readFileSync(hostStunFile, 'utf8');
   if (device.getPlatform() !== 'android') {
     return {node_file: hostNodeFile, stun_servers};
@@ -63,7 +81,7 @@ async function resolveNetworkInputs(hostNodeFile, hostStunFile) {
  * The app writes/reads this itself: on iOS the simulator shares the host filesystem so `/tmp` works;
  * Android has no `/tmp`, so use the app's internal files dir (always app-writable).
  */
-function localStatePath(basename) {
+export function localStatePath(basename: string): string {
   if (device.getPlatform() !== 'android') {
     return `/tmp/${basename}`;
   }
@@ -71,13 +89,15 @@ function localStatePath(basename) {
 }
 
 /** Read an element's visible text (iOS exposes it as text/label/value depending on the element). */
-async function textOf(testID) {
-  const attrs = await element(by.id(testID)).getAttributes();
+export async function textOf(testID: string): Promise<string> {
+  const attrs = (await element(
+    by.id(testID),
+  ).getAttributes()) as ReadableAttributes;
   return attrs.text ?? attrs.label ?? attrs.value ?? '';
 }
 
 /** Type a `{ method, args }` command into the box and run it. */
-async function runCommand(command) {
+export async function runCommand(command: Command): Promise<void> {
   await element(by.id('cmd-input')).replaceText(JSON.stringify(command));
   await element(by.id('cmd-run')).tap();
 }
@@ -86,7 +106,9 @@ async function runCommand(command) {
  * Poll the status line until it reaches a terminal state. Returns the terminal status ('ok' or
  * 'error'). Throws on timeout.
  */
-async function waitForTerminalStatus(timeoutMs = COMMAND_TIMEOUT) {
+export async function waitForTerminalStatus(
+  timeoutMs: number = COMMAND_TIMEOUT,
+): Promise<string> {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     const status = await textOf('cmd-status');
@@ -99,7 +121,7 @@ async function waitForTerminalStatus(timeoutMs = COMMAND_TIMEOUT) {
 }
 
 /** Assert the last command reached the given status. */
-async function expectStatus(expected) {
+export async function expectStatus(expected: string): Promise<void> {
   const status = await waitForTerminalStatus();
   if (status !== expected) {
     const output = await textOf('cmd-output');
@@ -108,7 +130,7 @@ async function expectStatus(expected) {
 }
 
 /** Run a command, assert it succeeded, and return its parsed JSON result. */
-async function call(command) {
+export async function call(command: Command): Promise<any> {
   await runCommand(command);
   const status = await waitForTerminalStatus();
   const output = await textOf('cmd-output');
@@ -119,7 +141,7 @@ async function call(command) {
 }
 
 /** Run a command expected to fail, and return the error text shown in the output. */
-async function callExpectingError(command) {
+export async function callExpectingError(command: Command): Promise<string> {
   await runCommand(command);
   const status = await waitForTerminalStatus();
   const output = await textOf('cmd-output');
@@ -128,14 +150,3 @@ async function callExpectingError(command) {
   }
   return output;
 }
-
-module.exports = {
-  runCommand,
-  expectStatus,
-  call,
-  callExpectingError,
-  textOf,
-  sleep,
-  resolveNetworkInputs,
-  localStatePath,
-};

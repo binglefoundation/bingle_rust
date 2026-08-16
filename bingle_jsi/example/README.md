@@ -119,11 +119,11 @@ npx react-native start
 npm run e2e:test:ios
 ```
 
-The smoke test (`e2e/smoke.test.js`) launches the app, calls `version()` before
+The smoke test (`e2e/smoke.test.ts`) launches the app, calls `version()` before
 init, then inits (which enables the bingle_local API via a state-file path) and
 round-trips a generated keypair — proving the full TypeScript → native → Rust
-path. Adding coverage for another method needs only a new `e2e/*.test.js` using
-the `call({ method, args })` helper in `e2e/harness.js`; no UI changes.
+path. Adding coverage for another method needs only a new `e2e/*.test.ts` using
+the `call({ method, args })` helper in `e2e/harness.ts`; no UI changes.
 Messaging (#111), typed failure causes (#112), and account lifecycle (#113)
 build on this.
 
@@ -147,8 +147,8 @@ example/
 ├── .detoxrc.js              # Detox config (iOS sim.debug configuration)
 ├── e2e/
 │   ├── jest.config.js       # Jest runner config for Detox
-│   ├── harness.js           # runCommand / call / expectStatus helpers
-│   └── smoke.test.js        # Smoke e2e (init → generateKeypair → readback)
+│   ├── harness.ts           # runCommand / call / expectStatus helpers
+│   └── *.test.ts            # Detox suites (smoke, messaging, failure_causes, lifecycle)
 ├── metro.config.js          # Metro bundler config (resolves parent module)
 ├── babel.config.js          # Babel config
 ├── tsconfig.json            # TypeScript config

@@ -1,3 +1,4 @@
+/// <reference types="detox" />
 /**
  * Messaging e2e for the bingle_jsi Detox harness (issue #111).
  *
@@ -13,8 +14,9 @@
  *   BINGLE_E2E_HANDLE      that account's registered handle
  *   BINGLE_E2E_ECHO_TO     a live echo peer/relay handle that replies "Echo: <text>"
  */
-const assert = require('assert');
-const {call, textOf, sleep, resolveNetworkInputs, localStatePath} = require('./harness');
+import {describe, it, beforeAll, afterAll} from '@jest/globals';
+import assert from 'assert';
+import {call, textOf, sleep, resolveNetworkInputs, localStatePath} from './harness';
 
 const backend = process.env.BINGLE_E2E_BACKEND || 'testnet';
 const passphrase = process.env.BINGLE_E2E_PASSPHRASE || '';
@@ -31,7 +33,7 @@ const DELIVER_TIMEOUT = 120000;
 const ECHO_TIMEOUT = 120000;
 
 /** Poll the event feed until it contains `substring`. */
-async function waitForFeed(substring, timeoutMs) {
+async function waitForFeed(substring: string, timeoutMs: number): Promise<void> {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     if ((await textOf('event-feed')).includes(substring)) {
@@ -43,11 +45,13 @@ async function waitForFeed(substring, timeoutMs) {
 }
 
 /** Poll getMessages until the outbound message with `text` reaches a terminal delivered state. */
-async function waitForDelivered(text, timeoutMs) {
+async function waitForDelivered(text: string, timeoutMs: number): Promise<any> {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     const messages = await call({method: 'getMessages', args: []});
-    const m = messages.find(x => x.text === text && x.sender_handle === handle);
+    const m = messages.find(
+      (x: any) => x.text === text && x.sender_handle === handle,
+    );
     if (m && (m.progress ?? 0) >= 1.0) {
       return m;
     }
@@ -65,7 +69,7 @@ describeOrSkip(`bingle_jsi messaging (${backend})`, () => {
       .withTimeout(30000);
 
     // Resolve platform-appropriate network inputs: STUN inline, and node_file on-device for Android
-    // (the emulator has its own filesystem, unlike the iOS simulator). See harness.js (#131).
+    // (the emulator has its own filesystem, unlike the iOS simulator). See harness.ts (#131).
     const net = await resolveNetworkInputs(nodeFile, stunFile);
 
     // Init against the selected network with a messaging-specific state file (so a keypair a prior

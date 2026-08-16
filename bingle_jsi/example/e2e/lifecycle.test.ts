@@ -1,3 +1,4 @@
+/// <reference types="detox" />
 /**
  * Account-lifecycle + contacts e2e for the bingle_jsi Detox harness (issue #113).
  *
@@ -17,14 +18,11 @@
  * for the same reason (add_contact rejects a duplicate id).
  *
  * Note: Detox replaces the global `expect` with its element-matcher expect, so value assertions use
- * Node's built-in `assert` (see harness.js / smoke.test.js).
+ * Node's built-in `assert` (see harness.ts / smoke.test.ts).
  */
-const assert = require('assert');
-const {
-  call,
-  resolveNetworkInputs,
-  localStatePath,
-} = require('./harness');
+import {describe, it, beforeAll} from '@jest/globals';
+import assert from 'assert';
+import {call, resolveNetworkInputs, localStatePath} from './harness';
 
 const backend = process.env.BINGLE_E2E_BACKEND || 'testnet';
 const passphrase = process.env.BINGLE_E2E_PASSPHRASE || '';
@@ -35,11 +33,11 @@ const stunFile = process.env.BINGLE_E2E_STUN_FILE || '';
 const haveCreds = passphrase && handle && nodeFile;
 const describeOrSkipNetwork = haveCreds ? describe : describe.skip;
 
-async function launchReady() {
+async function launchReady(): Promise<void> {
   await device.launchApp({newInstance: true});
   // bingle_jsi runs a P2P engine (background threads/timers) and RN dev mode keeps work pending, so
   // the app never reaches the fully-idle state Detox waits for. Disable auto-sync and drive timing
-  // via the harness helpers (see smoke.test.js).
+  // via the harness helpers (see smoke.test.ts).
   await device.disableSynchronization();
   await waitFor(element(by.id('app-ready')))
     .toHaveText('ready')
@@ -102,11 +100,11 @@ describe(`bingle_jsi account lifecycle (${backend})`, () => {
 
       let contacts = await call({method: 'getContacts', args: []});
       assert.ok(
-        contacts.some(c => c.id === idA && c.handle === 'alice'),
+        contacts.some((c: any) => c.id === idA && c.handle === 'alice'),
         'alice should be listed after add',
       );
       assert.ok(
-        contacts.some(c => c.id === idB && c.handle === 'bob'),
+        contacts.some((c: any) => c.id === idB && c.handle === 'bob'),
         'bob should be listed after add',
       );
 
@@ -114,13 +112,13 @@ describe(`bingle_jsi account lifecycle (${backend})`, () => {
       await call({method: 'blockContact', args: [idA]});
       assert.strictEqual(await call({method: 'isBlocked', args: [idA]}), true);
       contacts = await call({method: 'getContacts', args: []});
-      assert.ok(!contacts.some(c => c.id === idA), 'blocked alice should be hidden from getContacts');
-      assert.ok(contacts.some(c => c.id === idB), 'bob should still be listed');
+      assert.ok(!contacts.some((c: any) => c.id === idA), 'blocked alice should be hidden');
+      assert.ok(contacts.some((c: any) => c.id === idB), 'bob should still be listed');
 
       // Remove drops the entry entirely; a removed (never-blocked) id reads back as not blocked.
       await call({method: 'removeContact', args: [idB]});
       contacts = await call({method: 'getContacts', args: []});
-      assert.ok(!contacts.some(c => c.id === idB), 'removed bob should be gone');
+      assert.ok(!contacts.some((c: any) => c.id === idB), 'removed bob should be gone');
 
       await call({method: 'removeContact', args: [idA]});
       assert.strictEqual(
@@ -141,12 +139,12 @@ describe(`bingle_jsi account lifecycle (${backend})`, () => {
       // Mutate away, then load the snapshot back and confirm the contact returns.
       await call({method: 'removeContact', args: [id]});
       let contacts = await call({method: 'getContacts', args: []});
-      assert.ok(!contacts.some(c => c.id === id), 'carol should be gone after remove');
+      assert.ok(!contacts.some((c: any) => c.id === id), 'carol should be gone after remove');
 
       await call({method: 'load', args: [path]});
       contacts = await call({method: 'getContacts', args: []});
       assert.ok(
-        contacts.some(c => c.id === id && c.handle === 'carol'),
+        contacts.some((c: any) => c.id === id && c.handle === 'carol'),
         'carol should be restored after load',
       );
     });

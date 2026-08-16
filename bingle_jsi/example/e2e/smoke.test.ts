@@ -1,3 +1,4 @@
+/// <reference types="detox" />
 /**
  * Smoke e2e for the bingle_jsi Detox harness (issue #109).
  *
@@ -9,8 +10,9 @@
  * Note: Detox replaces the global `expect` with its own element-matcher expect, so value
  * assertions use Node's built-in `assert` rather than Jest's `expect`.
  */
-const assert = require('assert');
-const {call, textOf} = require('./harness');
+import {describe, it, beforeAll} from '@jest/globals';
+import assert from 'assert';
+import {call, textOf} from './harness';
 
 describe('bingle_jsi harness smoke', () => {
   beforeAll(async () => {

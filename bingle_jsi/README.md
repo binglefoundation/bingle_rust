@@ -498,16 +498,16 @@ already built, faster):
 bash bingle_jsi/example/scripts/run_e2e_ios.sh --test-only
 ```
 
-The smoke suite (`bingle_jsi/example/e2e/smoke.test.js`) launches the app, calls
+The smoke suite (`bingle_jsi/example/e2e/smoke.test.ts`) launches the app, calls
 `version()` before init, then inits (enabling the `bingle_local` API via a
 state-file path) and round-trips a generated keypair. Add coverage by dropping a
-new `e2e/*.test.js` that uses the `call({ method, args })` helper in
-`e2e/harness.js` — no per-method UI. Notes and gotchas are documented in
+new `e2e/*.test.ts` that uses the `call({ method, args })` helper in
+`e2e/harness.ts` — no per-method UI. Notes and gotchas are documented in
 `bingle_jsi/example/README.md` and inline in those files.
 
 #### Network e2e — send + echo (issue #111)
 
-`e2e/messaging.test.js` drives the full send/receive path against a real network:
+`e2e/messaging.test.ts` drives the full send/receive path against a real network:
 it sends a message to a live echo peer and asserts both delivery and the echoed
 reply. It **skips cleanly** unless a backend and a funded, already-registered
 sender are provided via the environment (so the default run stays offline):
@@ -531,7 +531,7 @@ BINGLE_E2E_HANDLE=my-testnet-handle \
   bash bingle_jsi/example/scripts/run_e2e_ios.sh --test-only
 ```
 
-`e2e/messaging.test.js` (#111) covers send + echo; `e2e/failure_causes.test.js`
+`e2e/messaging.test.ts` (#111) covers send + echo; `e2e/failure_causes.test.ts`
 (#112, validates #99) covers typed failure causes — an unregistered handle →
 `HandleNotFound` (permanent), and, when `BINGLE_E2E_OFFLINE_HANDLE` is set, a
 registered-but-offline recipient → `RecipientNotAdvertised` (retryable) — read
