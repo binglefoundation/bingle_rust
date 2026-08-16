@@ -118,11 +118,26 @@ fn main() {
     let (app_id, asset_id) = test_util::deploy_bingle_app_and_asset(&creator, "BINGLE$", 1_000_000);
     tracing::info!("[provision] app_id={app_id} asset_id={asset_id}");
 
-    // Two root relays on loopback.
+    // Emulator mode (#137): when BINGLE_E2E_EMULATOR_HOST is set (e.g. "10.0.2.2"), advertise the
+    // relays + STUN at that host address — reachable from an Android emulator via its qemu gateway
+    // (→ host loopback) and from the in-process host echo peer via a matching loopback alias — point
+    // the app's node-file algod/indexer there, and force relay use (the app is behind the emulator
+    // NAT, so it has no directly-reachable endpoint). Unset = loopback mode (iOS sim / host).
+    let emulator_host: Option<IpAddr> = std::env::var("BINGLE_E2E_EMULATOR_HOST")
+        .ok()
+        .and_then(|s| s.trim().parse().ok());
+    let advert_ip = emulator_host.unwrap_or(IpAddr::V4(Ipv4Addr::LOCALHOST));
+    let broken_nat = emulator_host.is_some();
+    if let Some(h) = emulator_host {
+        tracing::info!("[provision] emulator mode: advertise relays/STUN at {h}, broken_nat=true");
+    }
+
+    // Two root relays. The engine always binds UDP to 0.0.0.0:<port> and uses the address here only
+    // as the advertised endpoint, so advert_ip controls what peers dial.
     let r1_port = test_util::find_unused_loopback_port();
     let r2_port = test_util::find_unused_loopback_port();
-    let relay1_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), r1_port);
-    let relay2_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), r2_port);
+    let relay1_addr = SocketAddr::new(advert_ip, r1_port);
+    let relay2_addr = SocketAddr::new(advert_ip, r2_port);
     tracing::info!("[provision] registering relays at {relay1_addr} / {relay2_addr}");
     provision::register_relays(app_id, asset_id, relay1_addr, relay2_addr);
 
@@ -141,9 +156,10 @@ fn main() {
         cfg.clone(),
     );
 
-    // Local STUN servers (working NAT) so the simulator client discovers a direct loopback endpoint
-    // the echo peer can reach — matching the passing CLI localnet e2e.
-    let (s1, s2, stun_list) = provision::setup_stun_servers(false);
+    // STUN servers. Loopback mode uses working NAT so the client discovers a direct loopback
+    // endpoint (matching the CLI localnet e2e); emulator mode uses broken NAT so the app (behind the
+    // emulator NAT) falls back to a relay, and advertises STUN at the emulator-reachable host.
+    let (s1, s2, stun_list) = provision::setup_stun_servers_advertised(broken_nat, advert_ip);
 
     // Pre-register the sender so the app's start() sees it already registered.
     tracing::info!("[provision] registering sender handle '{SENDER_HANDLE}'");
@@ -205,8 +221,18 @@ fn main() {
         std::process::exit(1);
     }
 
-    // Stage the node file + STUN file the app init()s with.
-    provision::write_localnet_node_file(std::path::Path::new(&node_file), app_id, asset_id);
+    // Stage the node file + STUN file the app init()s with. In emulator mode, algod/indexer are
+    // reached at the emulator's host alias (its own localhost is the emulator, not the host).
+    let node_host = match emulator_host {
+        Some(h) => format!("http://{h}"),
+        None => "http://localhost".to_string(),
+    };
+    provision::write_localnet_node_file_host(
+        std::path::Path::new(&node_file),
+        app_id,
+        asset_id,
+        &node_host,
+    );
     let stun_text = format!("{}\n{}\n", stun_list[0], stun_list[1]);
     std::fs::write(&stun_file, stun_text).expect("write stun file");
 

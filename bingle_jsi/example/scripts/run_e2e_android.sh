@@ -16,9 +16,11 @@ set -euo pipefail
 #     already-registered sender, supplied via the environment, e.g.:
 #       BINGLE_E2E_PASSPHRASE="word word … word" BINGLE_E2E_HANDLE=my-handle \
 #         bash bingle_jsi/example/scripts/run_e2e_android.sh
-#   localnet: the smoke suite runs against a locally-running `algokit localnet` (its ports are
-#     adb-reversed to the emulator). The self-provisioned messaging/failure suites on localnet are
-#     wired in issue #131.
+#   localnet (issue #137): fully self-provisioning — starts algokit localnet, runs the provisioner in
+#     emulator mode (relays/STUN advertised at 10.0.2.2, reached by the emulator via its qemu gateway
+#     and by the host echo peer via a loopback alias), and sources the derived creds. No secrets and
+#     no internet/DNS needed (all IP-based). Adds a loopback alias via sudo (prompts once on macOS).
+#     Run: BINGLE_E2E_BACKEND=localnet bash bingle_jsi/example/scripts/run_e2e_android.sh
 #
 # Prerequisites: Android SDK + NDK, a JDK 17, an AVD matching .detoxrc.js (`emulator -list-avds`),
 # Node, Rust with Android targets. Set JAVA_HOME to a JDK 17 (RN 0.84 requires 17) or the script
@@ -45,6 +47,17 @@ if ! command -v adb >/dev/null 2>&1 && [[ -x "$ANDROID_HOME/platform-tools/adb" 
   export PATH="$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator:$PATH"
 fi
 
+# Background processes + the loopback alias we own, all torn down on exit.
+PROVISIONER_PID=""
+METRO_BG_PID=""
+LO0_ALIAS_IP=""
+cleanup() {
+  [[ -n "$PROVISIONER_PID" ]] && kill "$PROVISIONER_PID" 2>/dev/null || true
+  [[ -n "$METRO_BG_PID" ]] && kill "$METRO_BG_PID" 2>/dev/null || true
+  [[ -n "$LO0_ALIAS_IP" ]] && sudo ifconfig lo0 -alias "$LO0_ALIAS_IP" 2>/dev/null || true
+}
+trap cleanup EXIT
+
 # Backend selector: stage the node-file + STUN list the network e2e init()s with, to a path the
 # emulator can read. (The messaging/failure suites skip cleanly when creds are unset; smoke ignores.)
 export BINGLE_E2E_BACKEND="${BINGLE_E2E_BACKEND:-testnet}"
@@ -59,9 +72,42 @@ case "$BINGLE_E2E_BACKEND" in
     echo "==> Backend: testnet (echo -> $BINGLE_E2E_ECHO_TO)"
     ;;
   localnet)
-    echo "Error: BINGLE_E2E_BACKEND=localnet on Android is wired in issue #131 (needs 10.0.2.2" >&2
-    echo "       emulator<->host networking); use testnet for the #130 smoke run." >&2
-    exit 1
+    # Self-provisioned localnet reachable from the emulator (issue #137). The app reaches host
+    # services via the emulator's qemu gateway 10.0.2.2 (algod/indexer, relays, STUN — all IPs, so no
+    # DNS or internet needed). The provisioner advertises relays/STUN at 10.0.2.2; a loopback alias
+    # lets the in-process host echo peer reach that same address.
+    EMULATOR_HOST=10.0.2.2
+    export BINGLE_E2E_ENV_FILE=/tmp/bingle_e2e_localnet.env
+    rm -f "$BINGLE_E2E_ENV_FILE" /tmp/bingle_e2e_messaging_state.json /tmp/bingle_e2e_failure_state.json
+    if ! command -v algokit >/dev/null 2>&1; then
+      echo "Error: BINGLE_E2E_BACKEND=localnet needs the algokit CLI on PATH." >&2
+      exit 1
+    fi
+    if ! ifconfig lo0 2>/dev/null | grep -q "$EMULATOR_HOST"; then
+      echo "==> Adding loopback alias $EMULATOR_HOST (sudo) so the host echo peer can reach the relays"
+      sudo ifconfig lo0 alias "$EMULATOR_HOST" up && LO0_ALIAS_IP="$EMULATOR_HOST"
+    fi
+    echo "==> Ensuring algokit localnet is running"
+    algokit localnet start
+    echo "==> Building the localnet provisioner"
+    cargo build --manifest-path "$ROOT_DIR/Cargo.toml" -p bingle_test --features localnet \
+      --bin localnet_e2e_provisioner
+    echo "==> Starting the localnet provisioner (emulator mode, advertise $EMULATOR_HOST)"
+    BINGLE_E2E_EMULATOR_HOST="$EMULATOR_HOST" \
+      "$ROOT_DIR/target/debug/localnet_e2e_provisioner" >/tmp/bingle_e2e_provisioner.log 2>&1 &
+    PROVISIONER_PID=$!
+    echo "==> Waiting for the provisioner to become ready ($BINGLE_E2E_ENV_FILE)"
+    for _ in $(seq 1 600); do
+      [[ -f "$BINGLE_E2E_ENV_FILE" ]] && break
+      kill -0 "$PROVISIONER_PID" 2>/dev/null || {
+        echo "Error: provisioner exited before readiness:" >&2; tail -n 40 /tmp/bingle_e2e_provisioner.log >&2; exit 1; }
+      sleep 1
+    done
+    [[ -f "$BINGLE_E2E_ENV_FILE" ]] || {
+      echo "Error: provisioner not ready within 600s" >&2; tail -n 40 /tmp/bingle_e2e_provisioner.log >&2; exit 1; }
+    # shellcheck disable=SC1090
+    source "$BINGLE_E2E_ENV_FILE"
+    echo "==> localnet ready: sender='$BINGLE_E2E_HANDLE' echo -> $BINGLE_E2E_ECHO_TO offline='${BINGLE_E2E_OFFLINE_HANDLE:-}'"
     ;;
   *)
     echo "Error: unknown BINGLE_E2E_BACKEND='$BINGLE_E2E_BACKEND' (expected testnet|localnet)" >&2
@@ -111,11 +157,7 @@ adb shell input keyevent 82 || true
 # The Debug app loads JS from Metro; Detox adb-reverses port 8081 (reversePorts in .detoxrc.js) so
 # the emulator reaches it. Match run_e2e_ios.sh: run Metro in its own foreground Terminal window and
 # leave it running (so you can watch bundling/logs). Reuse an instance already on 8081. Under CI (or
-# with no Terminal available) fall back to a headless background process.
-METRO_BG_PID=""
-cleanup() { [[ -n "$METRO_BG_PID" ]] && kill "$METRO_BG_PID" 2>/dev/null || true; }
-trap cleanup EXIT
-
+# with no Terminal available) fall back to a headless background process. (Cleanup trap is global.)
 wait_for_metro() {
   echo "    waiting for Metro on :8081 ..."
   for _ in $(seq 1 90); do
