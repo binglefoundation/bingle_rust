@@ -1,0 +1,75 @@
+# CI: bingle_jsi end-to-end (e2e)
+
+The `bingle_jsi` Detox e2e runs in CI on **Android**, on a Linux runner. It is separate from the
+pull-request checks (`CI-UNIT-TESTS.md`) because it needs an emulator and is heavier.
+
+| Workflow | Job | What it does |
+| --- | --- | --- |
+| `.github/workflows/e2e-android.yml` | `android-e2e` | builds the native lib + app, runs the Detox suites on a KVM Android emulator (issue #132) |
+
+## Why Android on Linux (and not iOS)
+
+The iOS simulator forces a macOS runner, and GitHub-hosted macOS runners have **no nested
+virtualization** — so no Docker/localnet and no accelerated emulator (see #110). iOS e2e is therefore
+run **manually before release** (it is green locally on testnet and localnet).
+
+Linux runners (`ubuntu-latest`) have **KVM** (accelerated Android emulator) and **native Docker**
+(`algokit localnet`), so the Android e2e runs hermetically in CI.
+
+## What runs, and when
+
+| Trigger | Event |
+| --- | --- |
+| Push to `staging` | `push` (post-merge smoke run) |
+| Manual | `workflow_dispatch` |
+
+Not on pull requests: emulator runs are heavy, so this is a post-merge check on `staging`. A
+`concurrency` group with `cancel-in-progress` means a newer push cancels the older in-flight run
+("heap not queue").
+
+## What the job does
+
+1. Installs JDK 17, the Rust toolchain + Android targets, Node, the Android SDK/NDK, and `ktlint`.
+2. Starts `algokit localnet` (native Docker) — the smoke suite's default `init` queries the chain at
+   `localhost:4001`, which Detox adb-reverses to the runner host.
+3. Builds the Android native library (`build_android.sh`) and the Detox app + `androidTest` APKs.
+4. Boots a KVM-accelerated x86_64 emulator (`reactivecircus/android-emulator-runner`) and runs
+   `bingle_jsi/example/scripts/ci_run_android_e2e.sh`: harden the emulator, stage the testnet
+   backend, Metro headless + pre-warm, then `detox test --headless`.
+5. Uploads Detox artifacts on failure.
+
+A 60-minute `timeout-minutes` bounds the run.
+
+## Suites and the network secret
+
+- **smoke** always runs (launch, `version()`, keypair round-trip against the in-CI localnet).
+- **messaging** and **failure_causes** run only when a funded, already-registered testnet sender is
+  provided as repository secrets; otherwise they **skip cleanly**:
+
+  | Secret | Meaning |
+  | --- | --- |
+  | `BINGLE_E2E_PASSPHRASE` | mnemonic of a funded, registered testnet sender |
+  | `BINGLE_E2E_HANDLE` | that account's registered handle |
+  | `BINGLE_E2E_OFFLINE_HANDLE` | a handle registered but offline (for `RecipientNotAdvertised`) |
+
+  Add these under **Settings → Secrets and variables → Actions** to enable the network suites.
+
+## Run it manually
+
+Dispatch on any branch that has the workflow (add the branch to the `push` trigger, or use the
+Actions UI / `gh workflow run e2e-android.yml --ref <branch>` once it is on the default branch).
+
+## Reproduce locally
+
+With an Android emulator + JDK 17:
+
+    BINGLE_E2E_PASSPHRASE="word word … word" BINGLE_E2E_HANDLE=my-handle bash bingle_jsi/example/scripts/run_e2e_android.sh
+
+The smoke suite needs only a running `algokit localnet` (Detox adb-reverses `4001`/`8980`); the
+network suites need the testnet sender above. iOS uses `run_e2e_ios.sh` (see `bingle_jsi/README.md`).
+
+## Follow-ups
+
+- Hermetic **localnet** for the Android network suites (#37): the emulator reaches the host only over
+  `10.0.2.2` and Bingle's transport is UDP (adb-reverse is TCP-only), so it needs an "emulator mode"
+  provisioner that advertises `10.0.2.2` and forces relay use.

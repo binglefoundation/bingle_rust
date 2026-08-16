@@ -9,9 +9,7 @@ name: e2e-android
 # Runs on pushes to staging and manual dispatch only. See CI-E2E.md.
 on:
   push:
-    # TEMP (#132 validation): also run on the feature branch until this lands on staging. Remove
-    # before marking the PR ready.
-    branches: [staging, feat/131-android-network-suites]
+    branches: [staging]
   workflow_dispatch:
 
 # Latest-push-wins ("heap not queue").
