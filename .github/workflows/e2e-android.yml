@@ -9,7 +9,9 @@ name: e2e-android
 # Runs on pushes to staging and manual dispatch only. See CI-E2E.md.
 on:
   push:
-    branches: [staging]
+    # TEMP (#131 secret validation): run on the feature branch to exercise the network suites with
+    # the repo secrets. Revert to [staging] before merge.
+    branches: [staging, feat/131-android-network-suites]
   workflow_dispatch:
 
 # Latest-push-wins ("heap not queue").
