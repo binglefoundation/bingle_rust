@@ -141,7 +141,7 @@ if adb devices | grep -q "emulator-"; then
 else
   echo "==> Booting emulator $AVD"
   "$ANDROID_HOME/emulator/emulator" -avd "$AVD" -no-snapshot -netdelay none -netspeed full \
-    -dns-server 8.8.8.8 >/tmp/bingle_emulator.log 2>&1 &
+    >/tmp/bingle_emulator.log 2>&1 &
   adb wait-for-device
   echo "    waiting for boot to complete ..."
   for _ in $(seq 1 120); do
