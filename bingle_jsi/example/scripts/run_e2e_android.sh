@@ -143,12 +143,20 @@ else
   "$ANDROID_HOME/emulator/emulator" -avd "$AVD" -no-snapshot -netdelay none -netspeed full \
     >/tmp/bingle_emulator.log 2>&1 &
   adb wait-for-device
-  echo "    waiting for boot to complete ..."
-  for _ in $(seq 1 120); do
-    [[ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" == "1" ]] && break
-    sleep 2
-  done
 fi
+# sys.boot_completed is set BEFORE the framework services (package/settings) are ready — using them
+# too early gives "cmd: Can't find service: settings/package" and Detox's install fails. Wait for
+# both boot_completed and those services before hardening or running Detox.
+echo "    waiting for boot + framework services ..."
+for _ in $(seq 1 180); do
+  if [[ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" == "1" ]] \
+     && adb shell service check package 2>/dev/null | grep -q found \
+     && adb shell service check settings 2>/dev/null | grep -q found; then
+    break
+  fi
+  sleep 2
+done
+
 echo "==> Hardening emulator (suppress ANR / lock-screen dialogs that steal window focus)"
 adb shell settings put global hide_error_dialogs 1 || true
 adb shell settings put secure lockscreen.disabled 1 || true
