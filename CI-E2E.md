@@ -40,6 +40,19 @@ Not on pull requests: emulator runs are heavy, so this is a post-merge check on 
 
 A 60-minute `timeout-minutes` bounds the run.
 
+## Caching
+
+To cut wall-clock time the job caches build inputs across runs (issue #146). Because e2e-android
+runs only on `staging` pushes + manual dispatch, and `staging` is the repo's default branch, these
+caches are populated by staging runs and reused by the next one.
+
+- **Gradle** (`gradle/actions/setup-gradle`, step "Cache Gradle") — caches the Gradle User Home
+  (`~/.gradle/caches`, wrapper, configuration cache) so the "Build the app + androidTest APKs"
+  step doesn't redownload dependencies or re-run configuration. `cache-read-only: false` is set so
+  staging runs write the cache. **Busts** automatically on Gradle wrapper / build-file changes
+  (the action keys on those); to force a miss, bump the Gradle wrapper version or clear the repo's
+  Actions caches (Settings → Actions → Caches, or `gh cache delete`).
+
 ## Suites
 
 - **smoke** runs in CI (launch, `version()`, keypair round-trip against the in-CI localnet reached
