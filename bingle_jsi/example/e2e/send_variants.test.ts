@@ -3,22 +3,19 @@
  * Send-variant + transport-introspection e2e for the bingle_jsi Detox harness (issue #139, group B).
  *
  * Drives the transport surface the messaging suite (#111) does not: exact `handleLookup`, the direct
- * (fire-and-forget) `sendMessageToHandle` / `sendMessageToId`, the synchronous
- * `sendMessageToHandleWithResponse` / `sendMessageToIdWithResponse`, plus `getNatType`,
- * `networkAvailable` (true once listening), `queued`, and `isStarted` across start/stop — all against
- * the localnet echo peer.
+ * (fire-and-forget) `sendMessageToHandle` / `sendMessageToId`, plus `getNatType`, `networkAvailable`
+ * (true once listening), `queued`, and `isStarted` across start/stop — all against the localnet echo
+ * peer.
  *
  * Backend + credentials come from the environment (staged by run_e2e_ios.sh / run_e2e_android.sh),
  * same as the messaging suite; skips cleanly when unset.
  *
- * The `…WithResponse` cases need the peer to echo the request's correlation `tag` back as
- * `responseTag`. The localnet echo peer does this (bingle_test provisioner, #139); the testnet
- * `echo-testnet-1` (like `bingle_cli run --echo`) does not — so those two cases run on **localnet
- * only**. See the `canCorrelate` gate below.
- *
- * Not covered here — the network-source-key variants (`sendMessageToNetwork` /
- * `sendMessageToNetworkWithResponse`): they need a concrete `NetworkSourceKey` (relay/advert
- * record), which the harness has no way to obtain today. Deferred (recorded here) rather than faked.
+ * Not covered — three variants exist in the uniffi trait but are **not wired into the native JS
+ * bridge** (Kotlin BingleJsiModule / Swift), so they are not reachable from the harness at all:
+ * `sendMessageToIdWithResponse` / `sendMessageToHandleWithResponse` (synchronous request/response)
+ * and `sendMessageToNetwork` (+ its WithResponse form). The network-source-key path would also need
+ * a concrete `NetworkSourceKey` the harness cannot obtain. Deferred to an API-surface follow-up (the
+ * bridge should expose these) rather than faked here. See the #139 note.
  *
  * Note: Detox replaces the global `expect`, so value assertions use Node's `assert` (see harness.ts).
  */
@@ -35,10 +32,6 @@ const stunFile = process.env.BINGLE_E2E_STUN_FILE || '';
 
 const haveCreds = passphrase && handle && echoTo && nodeFile;
 const describeOrSkip = haveCreds ? describe : describe.skip;
-
-// Only the localnet echo peer reflects responseTag (see the file header), so the synchronous
-// with-response cases are meaningful there; skip them on testnet.
-const canCorrelate = backend === 'localnet';
 
 const LISTEN_TIMEOUT = 90000;
 const ECHO_TIMEOUT = 120000;
@@ -151,31 +144,6 @@ describeOrSkip(`bingle_jsi send variants (${backend})`, () => {
     assert.strictEqual(ok, true, 'sendMessageToId should report success');
     await waitForFeed(`Echo: ${text}`, ECHO_TIMEOUT);
   });
-
-  (canCorrelate ? it : it.skip)(
-    'sendMessageToHandleWithResponse returns the echo synchronously',
-    async () => {
-      const text = `e2e-wr-handle ${Date.now()}`;
-      const resp = await call({
-        method: 'sendMessageToHandleWithResponse',
-        args: [echoTo, textMessage(text)],
-      });
-      assert.strictEqual(resp.text, `Echo: ${text}`, 'response should be the echoed text');
-    },
-  );
-
-  (canCorrelate ? it : it.skip)(
-    'sendMessageToIdWithResponse returns the echo synchronously',
-    async () => {
-      const id = await call({method: 'handleLookup', args: [echoTo]});
-      const text = `e2e-wr-id ${Date.now()}`;
-      const resp = await call({
-        method: 'sendMessageToIdWithResponse',
-        args: [id, textMessage(text)],
-      });
-      assert.strictEqual(resp.text, `Echo: ${text}`, 'response should be the echoed text');
-    },
-  );
 
   // Kept last: stopping the engine is terminal for the other cases above.
   it('reports isStarted true while running and false after stop', async () => {

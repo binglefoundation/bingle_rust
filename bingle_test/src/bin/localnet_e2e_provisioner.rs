@@ -67,13 +67,7 @@ fn install_echo_handler(api: &Arc<BingleApiImpl>) {
             .unwrap_or_default()
             .to_string();
         tracing::info!("[echo peer] from {sender} ({sender_handle}): {text:?}; echoing back");
-        let mut reply = serde_json::json!({ "text": format!("Echo: {}", text) });
-        // Reflect the request's correlation tag as `responseTag` so a `send_*_with_response` waiter
-        // on the sender completes (the engine matches responses by responseTag). Plain sends carry no
-        // tag, so this is a no-op for them — the echo still arrives as an ordinary message (#139).
-        if let Some(tag) = message.get("tag").and_then(|v| v.as_str()) {
-            reply["responseTag"] = serde_json::Value::String(tag.to_string());
-        }
+        let reply = serde_json::json!({ "text": format!("Echo: {}", text) });
         if let Err(e) = echo_api.send_message_to_id(&sender, reply, None) {
             tracing::warn!("[echo peer] echo send back to {sender} failed: {e:?}");
         }

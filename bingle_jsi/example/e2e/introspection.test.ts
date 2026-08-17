@@ -3,8 +3,12 @@
  * Introspection + local-store e2e for the bingle_jsi Detox harness (issue #139, group A).
  *
  * Covers the read-only getters and local-store writes that need no network (only a state-file via
- * `init`): `getVersions`, `isStarted`/`networkAvailable` before the engine is started, and an
- * `addMessage` -> `getMessages` -> `updateMessageStatus` round-trip. Always runs.
+ * `init`): `isStarted`/`networkAvailable` before the engine is started, and an `addMessage` ->
+ * `getMessages` -> `updateMessageStatus` round-trip. Always runs.
+ *
+ * (`getVersions` is intentionally not covered: it exists in the uniffi trait but is not wired into
+ * the native JS bridge — see the #139 note. `version()` — the single-module getter that *is*
+ * bridged — is already covered by smoke.test.ts.)
  *
  * Note: Detox replaces the global `expect`, so value assertions use Node's `assert` (see harness.ts).
  */
@@ -25,20 +29,6 @@ describe(`bingle_jsi introspection + local store (${backend})`, () => {
       method: 'init',
       args: [{local: localStatePath(`bingle_e2e_introspection_${Date.now()}.json`)}],
     });
-  });
-
-  it('getVersions returns a version per module', async () => {
-    const versions = await call({method: 'getVersions', args: []});
-    const modules = Object.keys(versions);
-    assert.ok(modules.length > 0, 'getVersions should report at least one module');
-    for (const name of modules) {
-      assert.strictEqual(
-        typeof versions[name].version,
-        'string',
-        `module ${name} should have a version string`,
-      );
-      assert.ok(versions[name].version.length > 0, `module ${name} version should be non-empty`);
-    }
   });
 
   it('isStarted is false before the engine is started', async () => {
