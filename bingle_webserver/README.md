@@ -116,3 +116,41 @@ curl -X POST http://localhost:12121/sendMessageToNetwork \
        "message": { "text": "Direct message" }
      }'
 ```
+
+### Retrieve local messages
+
+```bash
+curl http://localhost:12121/local/getMessages
+```
+
+Returns the local message list as a JSON array. Each element carries the stored message fields
+(`sender_handle`, `recipient_handles`, `timestamp`, `text`, `progress`, …). For a message whose send
+failed, the response also describes the failure (issue #108, a follow-up to the typed send-failure
+cause from #99):
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `failure_reason` | string | Human-readable reason, for display. Unchanged from before #99. |
+| `failure_category` | string enum | Typed cause, mirroring the `bingle_jsi` read model. One of: `HandleNotFound`, `HandleLookupFailed`, `RecipientNotAdvertised`, `InvalidRecipientId`, `NoRelayAvailable`, `RelayAllocationFailed`, `PeerUnreachable`, `NoResponse`, `MalformedAdvert`, `ProtocolError`, `NotReady`, `Unknown`. |
+| `failure_retryable` | boolean | Whether the failure is transient and the message will keep retrying. Derived server-side from the category, so clients must not hardcode the retryable set. |
+| `failure_kind` | string enum | Raw serde form of the typed cause; retained for back-compat and identical in value to `failure_category`. Prefer `failure_category`. |
+
+All four failure fields are omitted for a message that is pending or delivered. `failure_category`
+and `failure_retryable` are additive — existing readers of `failure_reason`/`failure_kind` are
+unaffected.
+
+```json
+[
+  {
+    "sender_handle": "me",
+    "recipient_handles": ["bob"],
+    "timestamp": 1000,
+    "text": "hi",
+    "progress": 0.5,
+    "failure_reason": "Recipient is not connected right now — will keep retrying",
+    "failure_kind": "RecipientNotAdvertised",
+    "failure_category": "RecipientNotAdvertised",
+    "failure_retryable": true
+  }
+]
+```

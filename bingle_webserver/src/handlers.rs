@@ -6,7 +6,7 @@ use axum::{
     response::IntoResponse,
 };
 use bingle_core::api::network_endpoint::NetworkEndpoint;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::AppState;
 use crate::models::{
@@ -14,7 +14,7 @@ use crate::models::{
     SendMessageToHandleRequest, SendMessageToIdRequest, SendMessageToNetworkRequest,
 };
 use crate::try_start_api;
-use bingle_core::api::bingle_api::BingleError;
+use bingle_core::api::bingle_api::{BingleError, SendFailureKind};
 use bingle_core::blockchain::error::AlgoErrorKind;
 use bingle_local::api::bingle_local_api::{BingleLocalApi, ContactSource};
 
@@ -423,10 +423,48 @@ pub async fn local_add_message(
     }
 }
 
+/// HTTP response item for `GET /local/getMessages`.
+///
+/// Wraps a stored [`bingle_local::api::bingle_local_api::Message`] and adds a deliberate, documented
+/// failure contract for HTTP clients (issue #108, follow-up to #99). Every original message field is
+/// preserved via `#[serde(flatten)]` — including the human-readable `failure_reason` and the raw
+/// `failure_kind` — so existing readers are unaffected; the change is purely additive. Two derived
+/// fields are added for a failed message and omitted while it is pending or delivered:
+///
+/// - `failure_category`: the typed send-failure cause, mirroring the `bingle_jsi` read model. Same
+///   value as the raw `failure_kind`, but named as the documented HTTP contract and kept alongside
+///   it for back-compat.
+/// - `failure_retryable`: whether the failure is transient and the message will keep retrying,
+///   derived from [`SendFailureKind::is_retryable`] so the retryable set stays single-sourced in
+///   `bingle_core` rather than re-encoded here or hardcoded by clients.
+#[derive(Serialize)]
+struct MessageResponse {
+    #[serde(flatten)]
+    message: bingle_local::api::bingle_local_api::Message,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    failure_category: Option<SendFailureKind>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    failure_retryable: Option<bool>,
+}
+
 pub async fn local_get_messages(State(state): State<AppState>) -> impl IntoResponse {
     match local_api_guard(&state) {
         Ok(api) => match api.get_messages() {
-            Ok(list) => AxumJson(list).into_response(),
+            Ok(list) => {
+                let items: Vec<MessageResponse> = list
+                    .into_iter()
+                    .map(|m| {
+                        // SendFailureKind is Copy, so read the cause before moving the message.
+                        let failure_category = m.failure_kind;
+                        MessageResponse {
+                            failure_category,
+                            failure_retryable: failure_category.map(|k| k.is_retryable()),
+                            message: m,
+                        }
+                    })
+                    .collect();
+                AxumJson(items).into_response()
+            }
             Err(e) => handle_bingle_error(e),
         },
         Err(resp) => resp,
