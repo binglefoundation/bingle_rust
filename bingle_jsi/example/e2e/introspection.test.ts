@@ -7,7 +7,7 @@
  * `getMessages` -> `updateMessageStatus` round-trip. Always runs.
  *
  * (`getVersions` is intentionally not covered: it exists in the uniffi trait but is not wired into
- * the native JS bridge — see the #139 note. `version()` — the single-module getter that *is*
+ * the native JS bridge — tracked in #144. `version()` — the single-module getter that *is*
  * bridged — is already covered by smoke.test.ts.)
  *
  * Note: Detox replaces the global `expect`, so value assertions use Node's `assert` (see harness.ts).

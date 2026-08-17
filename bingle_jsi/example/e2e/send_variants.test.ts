@@ -14,8 +14,8 @@
  * bridge** (Kotlin BingleJsiModule / Swift), so they are not reachable from the harness at all:
  * `sendMessageToIdWithResponse` / `sendMessageToHandleWithResponse` (synchronous request/response)
  * and `sendMessageToNetwork` (+ its WithResponse form). The network-source-key path would also need
- * a concrete `NetworkSourceKey` the harness cannot obtain. Deferred to an API-surface follow-up (the
- * bridge should expose these) rather than faked here. See the #139 note.
+ * a concrete `NetworkSourceKey` the harness cannot obtain. Deferred to the API-surface follow-up
+ * #144 (the bridge should expose these) rather than faked here.
  *
  * Note: Detox replaces the global `expect`, so value assertions use Node's `assert` (see harness.ts).
  */
