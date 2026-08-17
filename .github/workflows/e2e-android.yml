@@ -158,6 +158,39 @@ jobs:
           [[ -f /tmp/bingle_e2e_localnet.env ]] || { echo "provisioner not ready:"; tail -n 60 /tmp/bingle_e2e_provisioner.log; exit 1; }
           cat /tmp/bingle_e2e_localnet.env
 
+      # AVD snapshot caching (issue #149). Previously the emulator was created cold every run
+      # (`force-avd-creation: true` + `-no-snapshot`). Instead, cache the AVD + a warm boot
+      # snapshot: on a cache miss the "Create AVD and generate snapshot" step below builds the AVD
+      # and saves a boot snapshot; on a hit the run step boots from it. The key is api-level /
+      # target / arch — changing any of those invalidates the snapshot, so they're baked into the
+      # key; bump the `v<N>` prefix to force a rebuild. See CI-E2E.md.
+      - name: Cache the AVD + snapshot
+        uses: actions/cache@v4
+        id: avd-cache
+        with:
+          path: |
+            ~/.android/avd/*
+            ~/.android/adb*
+          key: avd-v1-api34-google_apis-x86_64
+
+      # Only runs on a cache miss: create the AVD and let the emulator save a boot snapshot on exit
+      # (no `-no-snapshot*` flag, so Quickboot writes the snapshot the run step then loads). Boots
+      # an emulator just to `echo`, so keep it minimal.
+      - name: Create AVD and generate snapshot
+        if: steps.avd-cache.outputs.cache-hit != 'true'
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          avd-name: detox_avd
+          force-avd-creation: false
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -netdelay none -netspeed full
+          disable-animations: false
+          script: echo "generated AVD snapshot for caching"
+
+      # `force-avd-creation: false` reuses the cached (or just-generated) AVD; `-no-snapshot-save`
+      # loads the boot snapshot but leaves the cached copy pristine so the key stays stable.
       - name: Run Detox e2e on an emulator
         uses: reactivecircus/android-emulator-runner@v2
         env:
@@ -167,8 +200,8 @@ jobs:
           target: google_apis
           arch: x86_64
           avd-name: detox_avd
-          force-avd-creation: true
-          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot -netdelay none -netspeed full
+          force-avd-creation: false
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot-save -netdelay none -netspeed full
           disable-animations: true
           script: bash bingle_jsi/example/scripts/ci_run_android_e2e.sh
 
