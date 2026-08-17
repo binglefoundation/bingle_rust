@@ -110,6 +110,18 @@ jobs:
         working-directory: bingle_jsi/example
         run: npm install --legacy-peer-deps
 
+      # Cache the Gradle User Home (~/.gradle/caches + wrapper + configuration cache) so the APK
+      # build below doesn't redownload dependencies and re-run configuration every time. The
+      # example app's `detox build` invokes ./android/gradlew, so setup-gradle's job-wide
+      # instrumentation captures it. cache-read-only is forced false because this workflow only
+      # runs on staging pushes + manual dispatch, and we want staging runs to populate the cache
+      # (the action would otherwise make it read-only on any non-default branch). The cache busts
+      # automatically on Gradle wrapper / build-file changes — see CI-E2E.md.
+      - name: Cache Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
+
       - name: Build the app + androidTest APKs (Detox)
         working-directory: bingle_jsi/example
         run: npm run e2e:build:android
