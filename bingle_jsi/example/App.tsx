@@ -52,6 +52,10 @@ const defaultConfig: BingleJsiConfig = {
   // with `local: null` they fail because the local API is never created. On the iOS simulator the
   // app can write to the host's /tmp; a real device/app supplies a path in its sandbox.
   local: '/tmp/bingle_jsi_harness_state.json',
+  // Push give-up nudge is dormant in the harness: no gateway configured, feature left at default.
+  notify_gateway_url: null,
+  notify_on_giveup: null,
+  notify_env: null,
 };
 
 type CommandStatus = 'idle' | 'running' | 'ok' | 'error';
