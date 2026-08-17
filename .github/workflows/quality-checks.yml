@@ -45,3 +45,28 @@ jobs:
       # exits non-zero on any issue, failing the job and blocking merge.
       - name: Run quality checks (strict)
         run: scripts/run_quality_checks.sh --strict
+
+  # TypeScript typecheck for the bingle_jsi example (app + Detox e2e + the committed
+  # generated bindings). Kept a separate job so the Node toolchain does not weigh down
+  # the Rust gate above. The generated ts/index.ts is committed, so no native build is
+  # needed — just install JS deps and run tsc --noEmit (issue #142).
+  typecheck-example:
+    name: typecheck-example
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install JS dependencies
+        working-directory: bingle_jsi/example
+        run: npm install --legacy-peer-deps
+
+      - name: Typecheck (tsc --noEmit)
+        working-directory: bingle_jsi/example
+        run: npm run typecheck

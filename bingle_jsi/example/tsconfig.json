@@ -9,6 +9,16 @@
     "isolatedModules": true,
     "strict": true,
     "moduleResolution": "node",
+    // moduleResolution "node" (now "node10") is deprecation-errored in TS 6; keep it (it pairs with
+    // module "commonjs") and silence the removal warning until a wider module-resolution move.
+    "ignoreDeprecations": "6.0",
+    // The example imports the sibling package's generated bindings (../ts/index.ts), which
+    // `import ... from 'react-native'`. Resolved from that path, bare `react-native` misses the
+    // example's own copy — map it explicitly so the whole program (example + bindings) typechecks.
+    "baseUrl": ".",
+    "paths": {
+      "react-native": ["node_modules/react-native"]
+    },
     "allowSyntheticDefaultImports": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
