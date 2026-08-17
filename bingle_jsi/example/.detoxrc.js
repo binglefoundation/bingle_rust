@@ -4,7 +4,7 @@
  * iOS needs no native project changes — Detox is configured entirely here; just run
  * `cd ios && pod install` before the first build. Android needs the Detox instrumentation wired into
  * `android/app` (androidTest deps + a DetoxTest runner + a test-runner override in build.gradle).
- * The app is driven through the command-dispatcher screen in App.tsx (see e2e/*.test.js), so the
+ * The app is driven through the command-dispatcher screen in App.tsx (see e2e/*.test.ts), so the
  * same config exercises the whole BingleJsi surface on both platforms.
  */
 /** @type {Detox.DetoxConfig} */

@@ -1,3 +1,4 @@
+/// <reference types="detox" />
 /**
  * Typed send-failure-cause e2e for the bingle_jsi Detox harness (issue #112; validates #99).
  *
@@ -11,8 +12,9 @@
  *   BINGLE_E2E_OFFLINE_HANDLE  a handle registered on-chain but currently offline (no advert),
  *                              used for the RecipientNotAdvertised case; that case skips if unset.
  */
-const assert = require('assert');
-const {call, textOf, sleep, resolveNetworkInputs, localStatePath} = require('./harness');
+import {describe, it, beforeAll, afterAll} from '@jest/globals';
+import assert from 'assert';
+import {call, textOf, sleep, resolveNetworkInputs, localStatePath} from './harness';
 
 const backend = process.env.BINGLE_E2E_BACKEND || 'testnet';
 const passphrase = process.env.BINGLE_E2E_PASSPHRASE || '';
@@ -27,7 +29,7 @@ const describeOrSkip = haveCreds ? describe : describe.skip;
 const LISTEN_TIMEOUT = 90000;
 const FAIL_TIMEOUT = 90000;
 
-async function waitForFeed(substring, timeoutMs) {
+async function waitForFeed(substring: string, timeoutMs: number): Promise<void> {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     if ((await textOf('event-feed')).includes(substring)) {
@@ -39,11 +41,13 @@ async function waitForFeed(substring, timeoutMs) {
 }
 
 /** Poll getMessages until the outbound message with `text` gains a typed failure_kind. */
-async function waitForFailureKind(text, timeoutMs) {
+async function waitForFailureKind(text: string, timeoutMs: number): Promise<any> {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     const msgs = await call({method: 'getMessages', args: []});
-    const m = msgs.find(x => x.text === text && x.sender_handle === handle);
+    const m = msgs.find(
+      (x: any) => x.text === text && x.sender_handle === handle,
+    );
     if (m && m.failure_kind != null) {
       return m;
     }
