@@ -7,6 +7,7 @@ use serde_json::Value;
 use std::sync::{Arc, Mutex};
 
 use crate::common::{HandleMockBingleApi, MockBingleApi};
+use bingle_core::api::bingle_api::SendFailureKind;
 use bingle_local::api::bingle_local_api::BingleLocalApi;
 use bingle_local::api::bingle_local_api_impl::{BingleApiLocalImpl, LocalApiConfig};
 use bingle_test::temp_file_helpers::project_tmp_dir_path;
@@ -422,6 +423,100 @@ async fn test_send_message_to_id_no_recipient_handle_does_not_save() {
         messages.is_empty(),
         "message should not be saved when handle_lookup_by_id returns None"
     );
+}
+
+/// Issue #108: `GET /local/getMessages` must expose the typed failure cause as `failure_category`
+/// plus a derived `failure_retryable` flag, additively alongside the unchanged `failure_reason` and
+/// raw `failure_kind`. A transient cause must be retryable; a permanent one must not.
+#[tokio::test]
+async fn test_get_messages_exposes_failure_category_and_retryable() {
+    let state = setup_state_with_local_api();
+
+    {
+        let local_arc = state.local_api.as_ref().expect("local_api should be Some");
+        let mut guard = local_arc.lock().expect("local_api lock");
+
+        // A transient failure (recipient offline) — still retrying at progress 0.5.
+        guard
+            .add_message(
+                "me".into(),
+                vec!["bob".into()],
+                1000,
+                "transient".into(),
+                None,
+            )
+            .expect("add transient");
+        guard
+            .update_message_status(
+                1000,
+                0.5,
+                Some("Recipient is not connected right now — will keep retrying".into()),
+                Some(SendFailureKind::RecipientNotAdvertised),
+            )
+            .expect("fail transient");
+
+        // A permanent failure (unknown handle) — given up at progress 1.0.
+        guard
+            .add_message(
+                "me".into(),
+                vec!["nope".into()],
+                2000,
+                "permanent".into(),
+                None,
+            )
+            .expect("add permanent");
+        guard
+            .update_message_status(
+                2000,
+                1.0,
+                Some("That handle is not registered".into()),
+                Some(SendFailureKind::HandleNotFound),
+            )
+            .expect("fail permanent");
+
+        // A pending message with no failure — the derived fields must be absent.
+        guard
+            .add_message(
+                "me".into(),
+                vec!["carol".into()],
+                3000,
+                "pending".into(),
+                None,
+            )
+            .expect("add pending");
+    }
+
+    let response = web_handlers::local_get_messages(State(state))
+        .await
+        .into_response();
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let body = axum::body::to_bytes(response.into_body(), 1024 * 1024)
+        .await
+        .unwrap();
+    let messages: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
+    assert_eq!(messages.len(), 3);
+
+    // Transient failure → typed category, retryable true, and back-compat fields unchanged.
+    let transient = &messages[0];
+    assert_eq!(transient["failure_category"], "RecipientNotAdvertised");
+    assert_eq!(transient["failure_retryable"], true);
+    assert_eq!(transient["failure_kind"], "RecipientNotAdvertised");
+    assert_eq!(
+        transient["failure_reason"],
+        "Recipient is not connected right now — will keep retrying"
+    );
+
+    // Permanent failure → typed category, retryable false.
+    let permanent = &messages[1];
+    assert_eq!(permanent["failure_category"], "HandleNotFound");
+    assert_eq!(permanent["failure_retryable"], false);
+
+    // Pending message → no failure fields at all (derived ones omitted, not null).
+    let pending = &messages[2];
+    assert!(pending.get("failure_category").is_none());
+    assert!(pending.get("failure_retryable").is_none());
+    assert!(pending.get("failure_reason").is_none());
 }
 
 #[tokio::test]
