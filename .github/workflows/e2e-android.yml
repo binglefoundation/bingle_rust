@@ -13,7 +13,8 @@ name: e2e-android
 # Runs on pushes to staging and manual dispatch only. See CI-E2E.md.
 on:
   push:
-    branches: [staging]
+    # TEMP (#139 validation): also run on the feature branch. Revert to [staging] before merge.
+    branches: [staging, feat/139-introspection-send-variants]
   workflow_dispatch:
 
 # Latest-push-wins ("heap not queue").
