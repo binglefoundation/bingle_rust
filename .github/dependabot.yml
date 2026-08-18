@@ -1,0 +1,20 @@
+# Dependabot keeps GitHub Actions pinned in .github/workflows/ up to date, so a runtime deprecation
+# (e.g. the Node.js 20 -> 24 move, issue #156) surfaces as an automatic pull request instead of
+# silently rotting until the old runtime is removed and CI breaks.
+#
+# Scoped to the github-actions ecosystem only; the Rust (cargo) tree is intentionally left out here
+# to keep this focused on the CI-action deprecation. Add a `cargo` update block below if we later
+# want automated crate bumps too.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    # "/" scans .github/workflows/ (and any composite actions under .github/).
+    directory: /
+    schedule:
+      interval: weekly
+    # Collapse all action bumps into one PR per week rather than one PR per action, to keep the
+    # review load low on a small CI surface.
+    groups:
+      github-actions:
+        patterns:
+          - "*"
