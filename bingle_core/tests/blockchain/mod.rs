@@ -63,3 +63,6 @@ pub mod test_retry_logic;
 
 #[path = "static_endpoint_guard.rs"]
 pub mod static_endpoint_guard;
+
+#[path = "blockchain_ops_trait.rs"]
+pub mod blockchain_ops_trait;
