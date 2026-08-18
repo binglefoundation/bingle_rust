@@ -25,3 +25,19 @@ retries = 1
 
 [profile.ci.junit]
 path = "junit.xml"
+
+# Integration profile: the localnet integration suite (`--test integration`) shares one algokit
+# localnet and its fixed test accounts, so its cases must run one at a time. test-threads=1 makes
+# nextest run a single test process at a time — serial_test's #[serial] only locks within a process,
+# so it cannot serialize nextest's process-per-test model. The cases already self-cap (most via
+# ntest::timeout(300s)); slow-timeout gives generous headroom so chain deploys / indexer waits are
+# not killed early (period=300s + terminate-after=2 => hard kill at 600s). retries=0: several cases
+# mutate on-chain state (e.g. handle registration), so a retry would hit a collision, not a clean
+# rerun. Emit JUnit for the PR/staging summary. Select with `cargo nextest run --profile integration`.
+[profile.integration]
+test-threads = 1
+slow-timeout = { period = "300s", terminate-after = 2 }
+retries = 0
+
+[profile.integration.junit]
+path = "junit.xml"
