@@ -55,6 +55,11 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
+          # Cache the npm download cache, keyed on the example app's lockfile, so "Install JS
+          # dependencies" doesn't refetch the tree every run (issue #150). Busts on a
+          # package-lock.json change.
+          cache: npm
+          cache-dependency-path: bingle_jsi/example/package-lock.json
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
