@@ -62,11 +62,11 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          # Cache the npm download cache, keyed on the example app's lockfile, so "Install JS
-          # dependencies" doesn't refetch the tree every run (issue #150). Busts on a
-          # package-lock.json change.
+          # Cache the npm download cache (~/.npm) so "Install JS dependencies" doesn't refetch the
+          # tree every run (issue #150). Keyed on package.json because the lockfile is gitignored
+          # (.gitignore) and so is absent on a clean checkout; busts on a package.json change.
           cache: npm
-          cache-dependency-path: bingle_jsi/example/package-lock.json
+          cache-dependency-path: bingle_jsi/example/package.json
 
       - name: Install JS dependencies
         working-directory: bingle_jsi/example

@@ -60,9 +60,11 @@ caches are populated by staging runs and reused by the next one.
   changes (they're in the key); to force a rebuild after an emulator-config change, bump the `v<N>`
   prefix in `e2e-android.yml` or clear the cache.
 - **npm** (`actions/setup-node` with `cache: npm`, step "Install Node") — caches the npm download
-  cache keyed on `bingle_jsi/example/package-lock.json` so "Install JS dependencies" doesn't refetch
-  the dependency tree every run. **Busts** on a `package-lock.json` change. (The same cache is set on
-  the `typecheck-example` job in `quality-checks.yml` — see CI-UNIT-TESTS.md.)
+  cache (`~/.npm`) so "Install JS dependencies" doesn't refetch the dependency tree every run. Keyed
+  on `bingle_jsi/example/package.json`, **not** the lockfile: `package-lock.json` is gitignored (so
+  absent on a clean checkout — pointing the cache at it fails with "paths were not resolved").
+  **Busts** on a `package.json` change. (The same cache is set on the `typecheck-example` job in
+  `quality-checks.yml` — see CI-UNIT-TESTS.md.)
 
 The **Android native development kit (NDK)** is deliberately **not** cached: the whole "Install
 Android SDK packages" step (platform + build-tools + NDK + cmake) is only ~16s, and the NDK alone is
