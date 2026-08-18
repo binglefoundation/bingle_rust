@@ -28,7 +28,7 @@ jobs:
       CARGO_TERM_COLOR: always
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # rustfmt + clippy components are required by the script. openssl is
       # vendored, so clippy's build compiles it from source (perl + cc are
@@ -56,10 +56,10 @@ jobs:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: '20'
           # Cache the npm download cache (~/.npm) so "Install JS dependencies" doesn't refetch the

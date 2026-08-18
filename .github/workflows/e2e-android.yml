@@ -35,10 +35,10 @@ jobs:
       ANDROID_PKG: com.binglejsiexample
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
@@ -52,7 +52,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Install Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: '20'
           # Cache the npm download cache (~/.npm) so "Install JS dependencies" doesn't refetch the
@@ -62,7 +62,7 @@ jobs:
           cache-dependency-path: bingle_jsi/example/package.json
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
 
       # The smoke suite's default init points at localnet (localhost:4001); Detox adb-reverses
       # 4001/8980 to the runner host, so bring up algokit localnet there for the chain query to
@@ -123,7 +123,7 @@ jobs:
       # (the action would otherwise make it read-only on any non-default branch). The cache busts
       # automatically on Gradle wrapper / build-file changes — see CI-E2E.md.
       - name: Cache Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v6
         with:
           cache-read-only: false
 
@@ -170,7 +170,7 @@ jobs:
       # target / arch — changing any of those invalidates the snapshot, so they're baked into the
       # key; bump the `v<N>` prefix to force a rebuild. See CI-E2E.md.
       - name: Cache the AVD + snapshot
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         id: avd-cache
         with:
           path: |
@@ -212,7 +212,7 @@ jobs:
 
       - name: Upload Detox artifacts on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: detox-artifacts
           path: bingle_jsi/example/artifacts
