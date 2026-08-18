@@ -52,6 +52,13 @@ caches are populated by staging runs and reused by the next one.
   staging runs write the cache. **Busts** automatically on Gradle wrapper / build-file changes
   (the action keys on those); to force a miss, bump the Gradle wrapper version or clear the repo's
   Actions caches (Settings → Actions → Caches, or `gh cache delete`).
+- **Android Virtual Device (AVD) + snapshot** (`actions/cache`, step "Cache the AVD + snapshot") —
+  caches `~/.android/avd/*` + `~/.android/adb*` so the emulator boots from a warm snapshot instead
+  of a cold create. On a cache miss the "Create AVD and generate snapshot" step builds the AVD and
+  saves a boot snapshot; the run step loads it with `-no-snapshot-save` (leaving the cached copy
+  pristine). Key: `avd-v1-api34-google_apis-x86_64`. **Busts** when the api-level / target / arch
+  changes (they're in the key); to force a rebuild after an emulator-config change, bump the `v<N>`
+  prefix in `e2e-android.yml` or clear the cache.
 
 ## Suites
 
