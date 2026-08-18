@@ -114,6 +114,13 @@ The large clippy backlog is silenced centrally in `[workspace.lints.clippy]`
 *new* lints outside that backlog and on formatting drift. Override / bypass
 works exactly as for the `unit` check above (admin merge).
 
+The separate **`typecheck-example`** job (`tsc --noEmit` for the bingle_jsi
+example) caches the npm download cache via `actions/setup-node` (`cache: npm`,
+keyed on `bingle_jsi/example/package.json`) so `npm install` doesn't refetch the
+dependency tree each run (issue #150). It's keyed on `package.json`, not the
+lockfile, because `package-lock.json` is gitignored (absent on a clean
+checkout); it busts on a `package.json` change.
+
 Fix locally before pushing:
 
 ```bash

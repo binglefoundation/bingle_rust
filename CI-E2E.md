@@ -59,6 +59,17 @@ caches are populated by staging runs and reused by the next one.
   pristine). Key: `avd-v1-api34-google_apis-x86_64`. **Busts** when the api-level / target / arch
   changes (they're in the key); to force a rebuild after an emulator-config change, bump the `v<N>`
   prefix in `e2e-android.yml` or clear the cache.
+- **npm** (`actions/setup-node` with `cache: npm`, step "Install Node") — caches the npm download
+  cache (`~/.npm`) so "Install JS dependencies" doesn't refetch the dependency tree every run. Keyed
+  on `bingle_jsi/example/package.json`, **not** the lockfile: `package-lock.json` is gitignored (so
+  absent on a clean checkout — pointing the cache at it fails with "paths were not resolved").
+  **Busts** on a `package.json` change. (The same cache is set on the `typecheck-example` job in
+  `quality-checks.yml` — see CI-UNIT-TESTS.md.)
+
+The **Android native development kit (NDK)** is deliberately **not** cached: the whole "Install
+Android SDK packages" step (platform + build-tools + NDK + cmake) is only ~16s, and the NDK alone is
+~2.3 GB — a poor trade against the 10 GB/repo cache budget (issue #150). Revisit only if that step
+grows materially.
 
 ## Suites
 
