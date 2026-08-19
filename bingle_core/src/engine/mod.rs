@@ -407,7 +407,7 @@ impl Engine {
 
     pub(crate) fn get_signing_key(&self) -> Option<SigningKey> {
         let pass = self.opts().algo_passphrase.clone()?;
-        let ops = AlgoOps::new(
+        let ops = AlgoOps::new_for_algorand(
             Some(pass.clone()),
             None,
             self.opts().algo_provider_config.clone(),
