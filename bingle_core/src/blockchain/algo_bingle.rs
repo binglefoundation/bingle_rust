@@ -5,6 +5,7 @@ use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use crate::api::bingle_api::BingleApiBoth;
 use crate::blockchain::algo_ops::{AlgoOps, AppArg, address_to_byte_key};
 use crate::blockchain::error::AlgoError;
 
@@ -2096,5 +2097,67 @@ impl AlgoBingle {
             .tx_id;
         self.ops.wait_for_confirmation(&tx_id, 10)?;
         Ok(tx_id)
+    }
+}
+
+/// Outcome of the on-chain `allow_relay` gate for a relay record.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RelayGate {
+    Allowed,
+    Rejected,
+}
+
+/// Verify a record's on-chain `allow_relay` flag before it is accepted as a relay record.
+///
+/// Resolves the app id, Algorand provider config, and accounts cache from `api`, then checks the
+/// app local state via [`AlgoBingle::check_allow_relay`]. Returns [`RelayGate::Rejected`] when any
+/// of those are unavailable, when `allow_relay` is false, when the id is not opted in to the app,
+/// or when the check errors — otherwise [`RelayGate::Allowed`].
+///
+/// `caller` appears only in log messages so the originating call site stays identifiable. This is
+/// the single source of truth shared by `Engine::ddb_upsert_record` and
+/// `DefaultPrintingHandler::on_ddb_upsert_resolve`.
+pub fn check_relay_allowed(api: &dyn BingleApiBoth, record_id: &str, caller: &str) -> RelayGate {
+    let app_id = match api.get_app_id() {
+        Some(id) => id,
+        None => {
+            tracing::warn!("[{caller}] app_id not available; rejecting relay record id={record_id}");
+            return RelayGate::Rejected;
+        }
+    };
+    let config = match api.get_algo_provider_config() {
+        Some(cfg) => cfg,
+        None => {
+            tracing::warn!(
+                "[{caller}] algo_provider_config not available; rejecting relay record id={record_id}"
+            );
+            return RelayGate::Rejected;
+        }
+    };
+    let cache = api.get_accounts_cache();
+    let ops = AlgoOps::new(None, Some(record_id.to_string()), Some(config));
+    let algo_bingle = match cache {
+        Some(c) => AlgoBingle::new_with_cache(ops, app_id, 0, c),
+        None => AlgoBingle::new(ops, app_id, 0),
+    };
+    match algo_bingle.check_allow_relay(app_id, record_id) {
+        Ok(Some(true)) => {
+            tracing::info!("[{caller}] blockchain verified allow_relay for id={record_id}");
+            RelayGate::Allowed
+        }
+        Ok(Some(false)) => {
+            tracing::warn!("[{caller}] blockchain check FAILED: allow_relay is false for id={record_id}");
+            RelayGate::Rejected
+        }
+        Ok(None) => {
+            tracing::warn!(
+                "[{caller}] blockchain check FAILED: id={record_id} not opted-in to app {app_id}"
+            );
+            RelayGate::Rejected
+        }
+        Err(e) => {
+            tracing::warn!("[{caller}] blockchain check ERROR for id={record_id}: {e}");
+            RelayGate::Rejected
+        }
     }
 }
