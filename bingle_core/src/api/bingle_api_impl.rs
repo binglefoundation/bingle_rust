@@ -562,7 +562,11 @@ impl BingleApi for BingleApiImpl {
 
         // Algorand node connectivity check (fail-fast per requirement)
         if let Some(config) = &options.algo_provider_config {
-            let ops = AlgoOps::factory(options.algo_passphrase.clone(), None, Some(config.clone()));
+            let ops = AlgoOps::new_for_algorand(
+                options.algo_passphrase.clone(),
+                None,
+                Some(config.clone()),
+            );
             if let Err(e) = ops.account_balance() {
                 if let Some(ae) = e.downcast_ref::<AlgoError>()
                     && ae.kind == AlgoErrorKind::HostUnreachable
@@ -588,7 +592,7 @@ impl BingleApi for BingleApiImpl {
                 &options.algo_passphrase,
             )
         {
-            let ops = AlgoOps::factory(Some(pass.clone()), None, Some(config.clone()));
+            let ops = AlgoOps::new_for_algorand(Some(pass.clone()), None, Some(config.clone()));
             if let Some(addr) = ops.address.clone() {
                 let bingle = crate::blockchain::algo_bingle::AlgoBingle::new(
                     ops,
@@ -645,7 +649,8 @@ impl BingleApi for BingleApiImpl {
         // Initialize AlgoOps from provided algoPassphrase if available.
         if let Some(pass) = options.algo_passphrase.clone() {
             // Build AlgoOps with passphrase; it will derive and populate the address.
-            let ops = AlgoOps::factory(Some(pass), None, options.algo_provider_config.clone());
+            let ops =
+                AlgoOps::new_for_algorand(Some(pass), None, options.algo_provider_config.clone());
             // Ensure we have an address; if not, force an early error consistent with private_key_bytes failure.
             let addr = match ops.address.clone() {
                 Some(a) => a,
@@ -1551,7 +1556,8 @@ impl BingleApiImpl {
         };
 
         // Build AlgoOps with provided config
-        let ops = AlgoOps::factory(self.opts().algo_passphrase.clone(), None, Some(config));
+        let ops =
+            AlgoOps::new_for_algorand(self.opts().algo_passphrase.clone(), None, Some(config));
         // Bound the blockchain query: this runs on the DTLS receive path (sender-auth
         // check), so an unreachable node must not stall inbound message processing. A
         // timeout resolves to None (same as unreachable) — the sender retries and the

@@ -2137,7 +2137,7 @@ pub fn check_relay_allowed(api: &dyn BingleApiBoth, record_id: &str, caller: &st
         }
     };
     let cache = api.get_accounts_cache();
-    let ops = AlgoOps::factory(None, Some(record_id.to_string()), Some(config));
+    let ops = AlgoOps::new_for_algorand(None, Some(record_id.to_string()), Some(config));
     let algo_bingle = match cache {
         Some(c) => AlgoBingle::new_with_cache(ops, app_id, 0, c),
         None => AlgoBingle::new(ops, app_id, 0),

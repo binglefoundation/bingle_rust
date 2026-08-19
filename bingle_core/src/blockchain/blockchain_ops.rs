@@ -127,11 +127,12 @@ impl AssetOps for AlgoOps {
 }
 
 impl AlgoOps {
-    /// Factory constructor — the intended replacement for calling [`AlgoOps::new`] directly.
+    /// Algorand-specific constructor — the intended replacement for calling [`AlgoOps::new`]
+    /// directly.
     ///
-    /// Kept alongside `new` during stage 1; a later stage reduces `new`'s visibility so that
-    /// construction goes through this factory (and, eventually, a chain-specific factory trait).
-    pub fn factory(
+    /// Kept alongside `new`; a later stage reduces `new`'s visibility so that construction goes
+    /// through this named constructor (and, eventually, a chain-specific factory trait).
+    pub fn new_for_algorand(
         passphrase: Option<String>,
         address: Option<String>,
         config: Option<AlgoChainConfig>,

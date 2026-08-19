@@ -22,7 +22,7 @@ fn trait_generate_keypair_derives_matching_address() {
         "passphrase must be 25 words"
     );
 
-    let ops = AlgoOps::factory(Some(passphrase), None, None);
+    let ops = AlgoOps::new_for_algorand(Some(passphrase), None, None);
 
     // Distinctly-named trait methods resolve to the trait without qualification.
     assert_eq!(ops.address().expect("address"), id);
@@ -38,7 +38,7 @@ fn trait_generate_keypair_derives_matching_address() {
 
 #[test]
 fn trait_create_address_populates_account() {
-    let mut ops = AlgoOps::factory(None, None, None);
+    let mut ops = AlgoOps::new_for_algorand(None, None, None);
 
     // Trait `create_address` takes no flags (unlike the inherent two-flag method), so it must
     // be called via fully-qualified syntax — otherwise the inherent method wins.
@@ -55,20 +55,20 @@ fn trait_create_address_populates_account() {
 }
 
 #[test]
-fn factory_matches_new_for_address_derivation() {
+fn new_for_algorand_matches_new_for_address_derivation() {
     let (_id, passphrase) = AlgoOps::generate_keypair();
     let via_new = AlgoOps::new(Some(passphrase.clone()), None, None);
-    let via_factory = AlgoOps::factory(Some(passphrase), None, None);
+    let via_ctor = AlgoOps::new_for_algorand(Some(passphrase), None, None);
     assert_eq!(
-        via_new.address, via_factory.address,
-        "factory must derive the same address as new"
+        via_new.address, via_ctor.address,
+        "new_for_algorand must derive the same address as new"
     );
 }
 
 #[test]
 fn trait_verify_rejects_tampered_text() {
     let (_id, passphrase) = AlgoOps::generate_keypair();
-    let ops = AlgoOps::factory(Some(passphrase), None, None);
+    let ops = AlgoOps::new_for_algorand(Some(passphrase), None, None);
     let sig = <AlgoOps as BlockChainOps>::sign(&ops, "original").expect("sign");
     assert!(
         !<AlgoOps as BlockChainOps>::verify(&ops, "tampered", &sig).expect("verify"),
