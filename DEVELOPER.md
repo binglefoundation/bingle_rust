@@ -136,6 +136,13 @@ git config merge.build-number-merge.driver "./scripts/merge_build_number_driver.
 - Rust tests live under `tests/`, organised by module (e.g. `tests/api/`, `tests/dtls/`, `tests/blockchain/`).
 - Test helpers shared across test targets are in `tests/test_util.rs` and `tests/setup_localnet.rs`.
 
+## Public API surface
+The supported public interface of the published crates (`bingle_core`, `bingle_local`,
+`bingle_cli`), the line between supported API and in-workspace-internal `pub`, and the
+doc-comment conventions for public items are documented in
+[`docs/api-surface.md`](docs/api-surface.md). Generate the reference locally with
+`cargo doc --open`.
+
 ## Running Desktop (Rust) Tests
 
 Tests are organised into named Cargo test targets. All targets are defined in `Cargo.toml`.
