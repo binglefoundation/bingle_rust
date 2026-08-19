@@ -14,6 +14,7 @@ dependencies = [
 [[package]]
 name = "algo_ops"
 version = "0.1.0"
+source = "git+https://github.com/richdrich/blockchain_ops_rust?tag=v0.1.0#afcbfd805c489466bd1ec7434326a8a8114a797f"
 dependencies = [
  "algonaut",
  "anyhow",
@@ -656,6 +657,7 @@ dependencies = [
 [[package]]
 name = "blockchain_ops"
 version = "0.1.0"
+source = "git+https://github.com/richdrich/blockchain_ops_rust?tag=v0.1.0#afcbfd805c489466bd1ec7434326a8a8114a797f"
 dependencies = [
  "anyhow",
 ]
