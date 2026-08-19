@@ -1,6 +1,8 @@
 [workspace]
 resolver = "3"
 members = [
+    "blockchain_ops",
+    "algo_ops",
     "bingle_core",
     "bingle_test",
     "bingle_webserver",

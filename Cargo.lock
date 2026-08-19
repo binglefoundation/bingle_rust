@@ -12,6 +12,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "algo_ops"
+version = "0.1.0"
+dependencies = [
+ "algonaut",
+ "anyhow",
+ "base64 0.21.7",
+ "blockchain_ops",
+ "data-encoding",
+ "ed25519-dalek",
+ "rand_core 0.6.4",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "algonaut"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -491,11 +510,13 @@ dependencies = [
 name = "bingle_core"
 version = "3.0.1"
 dependencies = [
+ "algo_ops",
  "algonaut",
  "anyhow",
  "base64 0.21.7",
  "bingle_core",
  "bingle_test",
+ "blockchain_ops",
  "chrono",
  "ctrlc",
  "data-encoding",
@@ -630,6 +651,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cdeb9d870516001442e364c5220d3574d2da8dc765554b4a617230d33fa58ef5"
 dependencies = [
  "objc2",
+]
+
+[[package]]
+name = "blockchain_ops"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
 ]
 
 [[package]]
