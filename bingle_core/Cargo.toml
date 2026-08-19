@@ -50,7 +50,6 @@ test-hooks = []
 [dev-dependencies]
 # env_logger removed in favor of tracing-subscriber
 bingle_test = { path = "../bingle_test" }
-tempfile = "3"
 ntest = "0.9"
 serial_test = "3"
 # Self dev-dependency: turns on `test-hooks` when building bingle_core's own tests (integration test
