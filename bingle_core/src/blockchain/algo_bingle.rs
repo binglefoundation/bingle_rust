@@ -2121,7 +2121,9 @@ pub fn check_relay_allowed(api: &dyn BingleApiBoth, record_id: &str, caller: &st
     let app_id = match api.get_app_id() {
         Some(id) => id,
         None => {
-            tracing::warn!("[{caller}] app_id not available; rejecting relay record id={record_id}");
+            tracing::warn!(
+                "[{caller}] app_id not available; rejecting relay record id={record_id}"
+            );
             return RelayGate::Rejected;
         }
     };
@@ -2146,7 +2148,9 @@ pub fn check_relay_allowed(api: &dyn BingleApiBoth, record_id: &str, caller: &st
             RelayGate::Allowed
         }
         Ok(Some(false)) => {
-            tracing::warn!("[{caller}] blockchain check FAILED: allow_relay is false for id={record_id}");
+            tracing::warn!(
+                "[{caller}] blockchain check FAILED: allow_relay is false for id={record_id}"
+            );
             RelayGate::Rejected
         }
         Ok(None) => {
