@@ -295,3 +295,68 @@ pub fn ddb_upsert_rejected_on_id_mismatch() {
     server.access_unsafe_for_tests(|s: &mut BingleApiImpl| s.stop());
     drop(client);
 }
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn ddb_upsert_relay_record_rejected_without_blockchain_config() {
+    // Server is a relay but has no algo_provider_config or app_id, so a record that claims relay
+    // status (am_relay=true) must be rejected by the blockchain allow_relay gate before it is
+    // upserted. A `tag` is set so the handler passes its responseTag check and actually reaches
+    // the gate; the UpdateResponse (only sent on a successful upsert) is delivered back to the
+    // client, so we observe on the client — mirroring ddb_upsert_success_when_server_is_relay.
+    let (server, client, server_addr, _client_addr) = start_pair(true);
+
+    let client_id = client
+        .access_unsafe_for_tests(|c: &mut BingleApiImpl| c.get_my_id())
+        .expect("client id Some");
+    let signing_key = client
+        .access_unsafe_for_tests(|c| c.get_signing_key())
+        .expect("signing key ok");
+
+    let record = AdvertRecord::new(
+        client_id.clone(),
+        None,
+        Some(true),
+        None,
+        None,
+        "2025-01-01T00:00:00Z".into(),
+        &signing_key,
+    );
+    let up = Message::Ddb(DdbMessage::UpsertResolve(DdbUpsertResolve {
+        app: "ddb".into(),
+        start_id: client_id.clone(),
+        epoch: 1,
+        record,
+        original_signature: "SIG".into(),
+        rippled: false,
+        tag: Some("tag".into()),
+        response_tag: None,
+        text: None,
+        data: None,
+    }));
+
+    let json = marshal::to_json_value(&up);
+
+    let size_before = server.access_unsafe_for_tests(|s: &mut BingleApiImpl| s.ddb_backend_size());
+
+    let nsk = NetworkEndpoint::new_direct(server_addr);
+    let uid = server
+        .access_unsafe_for_tests(|s: &mut BingleApiImpl| s.get_my_id())
+        .unwrap();
+    let ok = client
+        .access_unsafe_for_tests(|c: &mut BingleApiImpl| {
+            c.send_message_to_network(&nsk, &uid, json, None)
+        })
+        .unwrap();
+    assert!(ok, "client send ok");
+
+    std::thread::sleep(Duration::from_millis(200));
+    let size_after = server.access_unsafe_for_tests(|s: &mut BingleApiImpl| s.ddb_backend_size());
+    assert_eq!(
+        size_after, size_before,
+        "relay record with am_relay=true must not be upserted when blockchain config is absent"
+    );
+
+    server.access_unsafe_for_tests(|s: &mut BingleApiImpl| s.stop());
+    drop(client);
+}
