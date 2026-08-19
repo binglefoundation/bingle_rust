@@ -1,4 +1,6 @@
 use crate::api::bingle_api::{BingleApi, BingleApiBoth, BingleApiInternal, BingleError};
+use crate::blockchain::algo_bingle::AlgoBingle;
+use crate::blockchain::algo_ops::AlgoOps;
 use crate::ddb::DdbBackend;
 use crate::engine::RelayState;
 use crate::messages::types::*;
@@ -1005,7 +1007,7 @@ impl MessageHandler for DefaultPrintingHandler {
 
     fn on_ddb_upsert_resolve(
         &self,
-        _api: Arc<dyn BingleApiBoth>,
+        api: Arc<dyn BingleApiBoth>,
         from: &FromStruct,
         up: &DdbUpsertResolve,
     ) {
@@ -1028,16 +1030,79 @@ impl MessageHandler for DefaultPrintingHandler {
             );
             return;
         }
-        // Upsert to backend
-        if let Some(backend) = router.get_ddb_backend() {
-            if let Ok(mut b) = backend.lock() {
-                if !up.record.verify() {
+        // Verify the record signature before taking the backend lock or doing any network I/O.
+        if !up.record.verify() {
+            tracing::warn!(
+                "[handlers::on_ddb_upsert_resolve] signature verification failed for record id={}",
+                up.record.id
+            );
+            return;
+        }
+        // A record that claims relay status must pass the on-chain allow_relay gate, matching the
+        // check enforced in Engine::ddb_upsert_record. Done before taking the backend lock so no
+        // blockchain network I/O is held under the mutex.
+        if up.record.am_relay.unwrap_or(false) {
+            let app_id = match api.get_app_id() {
+                Some(id) => id,
+                None => {
                     tracing::warn!(
-                        "[handlers::on_ddb_upsert_resolve] signature verification failed for record id={}",
+                        "[handlers::on_ddb_upsert_resolve] app_id not available; rejecting relay record id={}",
                         up.record.id
                     );
                     return;
                 }
+            };
+            let config = match api.get_algo_provider_config() {
+                Some(cfg) => cfg,
+                None => {
+                    tracing::warn!(
+                        "[handlers::on_ddb_upsert_resolve] algo_provider_config not available; rejecting relay record id={}",
+                        up.record.id
+                    );
+                    return;
+                }
+            };
+            let cache = api.get_accounts_cache();
+            let ops = AlgoOps::new(None, Some(up.record.id.clone()), Some(config));
+            let algo_bingle = match cache {
+                Some(c) => AlgoBingle::new_with_cache(ops, app_id, 0, c),
+                None => AlgoBingle::new(ops, app_id, 0),
+            };
+            match algo_bingle.check_allow_relay(app_id, &up.record.id) {
+                Ok(Some(true)) => {
+                    tracing::info!(
+                        "[handlers::on_ddb_upsert_resolve] blockchain verified allow_relay for id={}",
+                        up.record.id
+                    );
+                }
+                Ok(Some(false)) => {
+                    tracing::warn!(
+                        "[handlers::on_ddb_upsert_resolve] blockchain check FAILED: allow_relay is false for id={}",
+                        up.record.id
+                    );
+                    return;
+                }
+                Ok(None) => {
+                    tracing::warn!(
+                        "[handlers::on_ddb_upsert_resolve] blockchain check FAILED: id={} not opted-in to app {}",
+                        up.record.id,
+                        app_id
+                    );
+                    return;
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        "[handlers::on_ddb_upsert_resolve] blockchain check ERROR for id={}: {}",
+                        up.record.id,
+                        e
+                    );
+                    return;
+                }
+            }
+        }
+        // Upsert to backend
+        if let Some(backend) = router.get_ddb_backend() {
+            if let Ok(mut b) = backend.lock() {
                 tracing::info!(
                     "[handlers::on_ddb_upsert_resolve] Upserting record: {:?}",
                     up.record
@@ -1060,7 +1125,7 @@ impl MessageHandler for DefaultPrintingHandler {
             if let Some(backend) = router.get_ddb_backend()
                 && let Ok(b) = backend.lock()
             {
-                _api.ripple_message(ripple_json, up.start_id.clone(), &*b);
+                api.ripple_message(ripple_json, up.start_id.clone(), &*b);
             }
 
             // Prepare response JSON and stash on router for Engine/DTLS layer to send.
