@@ -372,7 +372,7 @@ impl AlgoOps {
     /// existing tests, we store the secret key in `passphrase` as a base64-encoded
     /// string with a "b64:" prefix. Note: production code expects an ASCII mnemonic
     /// passphrase to be provided by callers; this storage is only used by tests.
-    pub fn create_address(&mut self, _save: bool, _always_new_address: bool) -> Result<String> {
+    pub fn create_address(&mut self) -> Result<String> {
         use ed25519_dalek::SigningKey;
         use rand_core::{OsRng, RngCore};
 
@@ -1307,6 +1307,9 @@ impl AlgoOps {
     }
 
     /// Extract (creator, reserve) addresses from an asset_information JSON value. Returns None if fields missing.
+    ///
+    /// Production helper used by `recover_reserve_balance`; also `pub` so the reserve-helper
+    /// integration tests can exercise the parsing directly.
     pub fn parse_creator_reserve_from_asset_info_value(
         v: &serde_json::Value,
     ) -> Option<(String, String)> {
@@ -1325,6 +1328,9 @@ impl AlgoOps {
     }
 
     /// From an account_information JSON value, find the holding amount for the given asset id.
+    ///
+    /// Production helper used by `asset_holding` / `recover_reserve_balance`; also `pub` so the
+    /// reserve-helper integration tests can exercise the parsing directly.
     pub fn parse_holding_amount_from_account_value(v: &serde_json::Value, asset_id: u64) -> u64 {
         if let Some(arr) = v.get("assets").and_then(|x| x.as_array()) {
             for holding in arr {

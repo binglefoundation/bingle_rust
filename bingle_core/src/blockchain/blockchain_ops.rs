@@ -75,8 +75,7 @@ impl BlockChainOps for AlgoOps {
     }
 
     fn create_address(&mut self) -> Result<String> {
-        // The inherent create_address ignores its two flags and always mints a fresh address.
-        AlgoOps::create_address(self, true, true)
+        AlgoOps::create_address(self)
     }
 
     fn address(&self) -> Result<String> {
