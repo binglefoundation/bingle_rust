@@ -122,6 +122,7 @@ impl BingleError {
 
 /// Internal-only API for engine control from message handlers and router context.
 /// Not part of the public BingleApi surface. Intended for in-process coordination only.
+#[doc(hidden)]
 pub trait BingleApiInternal: Send + Sync {
     // Mutex message forwarding to Engine (default no-ops so existing tests/mocks need not implement)
     fn mutex_handle_request(&self, _from_id: String, _req: crate::messages::types::MutexRequest) {}
@@ -424,9 +425,11 @@ pub type Handle = String; // User handle string
 pub use super::network_endpoint::{NetworkEndpoint, NetworkEndpointKey};
 
 /// Composite trait required by message handlers: implements both the public API and internal controls.
+#[doc(hidden)]
 pub trait BingleApiBoth: BingleApi + BingleApiInternal {}
 impl<T: BingleApi + BingleApiInternal> BingleApiBoth for T {}
 
+#[doc(hidden)]
 pub type BingleApiBothType = std::sync::Weak<dyn BingleApiBoth>;
 
 /// Progress callback reported during send operations.
