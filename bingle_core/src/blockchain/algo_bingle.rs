@@ -2215,8 +2215,10 @@ impl AlgoBingle {
 }
 
 /// Outcome of the on-chain `allow_relay` gate for a relay record.
+///
+/// Internal to the relay-acceptance path; not part of the supported public API.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RelayGate {
+pub(crate) enum RelayGate {
     /// The record is permitted to relay (its on-chain `allow_relay` flag is set).
     Allowed,
     /// The record is not permitted to relay, or the gate could not be evaluated.
@@ -2233,7 +2235,13 @@ pub enum RelayGate {
 /// `caller` appears only in log messages so the originating call site stays identifiable. This is
 /// the single source of truth shared by `Engine::ddb_upsert_record` and
 /// `DefaultPrintingHandler::on_ddb_upsert_resolve`.
-pub fn check_relay_allowed(api: &dyn BingleApiBoth, record_id: &str, caller: &str) -> RelayGate {
+///
+/// Internal to the relay-acceptance path; not part of the supported public API.
+pub(crate) fn check_relay_allowed(
+    api: &dyn BingleApiBoth,
+    record_id: &str,
+    caller: &str,
+) -> RelayGate {
     let app_id = match api.get_app_id() {
         Some(id) => id,
         None => {
