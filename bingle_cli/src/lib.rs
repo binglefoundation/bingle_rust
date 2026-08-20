@@ -7,6 +7,8 @@
 //! The binary keeps its command dispatch and process-exiting logic in `main.rs`. This library
 //! target exists only so the pure argument parsers can be unit tested from the test tree; its
 //! modules are internal and are hidden from this reference.
+#![warn(missing_docs)]
+
 #[doc(hidden)]
 pub mod chat;
 #[doc(hidden)]

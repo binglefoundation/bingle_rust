@@ -8,6 +8,7 @@
 //!
 //! Registration of a handle on-chain lives in [`api::registration`], and best-effort push
 //! notifications to the notify gateway live in [`api::notify`].
+#![warn(missing_docs)]
 
 pub mod api;
 pub mod module_version;
