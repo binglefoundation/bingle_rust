@@ -1,9 +1,15 @@
+#[cfg(feature = "test-hooks")]
 use std::net::SocketAddr;
+#[cfg(feature = "test-hooks")]
 use std::sync::Arc;
 
+#[cfg(feature = "test-hooks")]
 use crate::dtls::dtls_trait::Dtls;
+#[cfg(feature = "test-hooks")]
 use crate::messages::handlers::MessageHandler;
+#[cfg(feature = "test-hooks")]
 use crate::messages::marshal::to_json_string;
+#[cfg(feature = "test-hooks")]
 use crate::messages::types::*;
 
 /// RelayPingHandler implements the relay triangle test behaviors:
@@ -11,12 +17,14 @@ use crate::messages::types::*;
 /// - On TriangleTest2: send TriangleTest3 to the provided checkingEndpoint.
 ///
 /// Note: We currently do not have identity wiring; checkingId is populated with an empty string.
+#[cfg(feature = "test-hooks")]
 #[derive(Clone)]
 pub struct RelayPingHandler {
     pub dtls: Arc<dyn Dtls>,
     pub peer_relay: Option<SocketAddr>,
 }
 
+#[cfg(feature = "test-hooks")]
 impl RelayPingHandler {
     pub fn new(dtls: Arc<dyn Dtls>, peer_relay: Option<SocketAddr>) -> Self {
         Self { dtls, peer_relay }
@@ -31,6 +39,7 @@ impl RelayPingHandler {
     }
 }
 
+#[cfg(feature = "test-hooks")]
 impl MessageHandler for RelayPingHandler {
     fn on_triangle_test1(
         &self,

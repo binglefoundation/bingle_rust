@@ -1,9 +1,14 @@
 use crate::api::bingle_api::NetworkEndpoint;
+#[cfg(feature = "test-hooks")]
 use std::collections::HashMap;
-use std::net::{IpAddr, SocketAddr};
+#[cfg(feature = "test-hooks")]
+use std::net::IpAddr;
+use std::net::SocketAddr;
+#[cfg(feature = "test-hooks")]
 use std::sync::Mutex;
 
 // Shared TURN ChannelData helpers (reused by both Relay and Client implementations)
+#[cfg(feature = "test-hooks")]
 fn parse_channel_data_header(packet: &[u8]) -> Option<(u16, usize, usize)> {
     if packet.len() < 4 {
         return None;
@@ -139,6 +144,7 @@ pub trait TurnClientHandler {
 }
 
 /// Concrete TURN handler implementing RFC5766 ChannelData wrapping and demux (relay variant)
+#[cfg(feature = "test-hooks")]
 pub struct TurnHandlerImpl {
     // channel -> (source, destination) peer addresses for this channel
     ch_to_pair: Mutex<HashMap<u16, (SocketAddr, SocketAddr)>>,
@@ -149,6 +155,7 @@ pub struct TurnHandlerImpl {
     allowed_addr_to_id: Mutex<HashMap<SocketAddr, String>>,
 }
 
+#[cfg(feature = "test-hooks")]
 impl TurnHandlerImpl {
     pub fn new() -> Self {
         Self {
@@ -214,12 +221,14 @@ impl TurnHandlerImpl {
     }
 }
 
+#[cfg(feature = "test-hooks")]
 impl Default for TurnHandlerImpl {
     fn default() -> Self {
         Self::new()
     }
 }
 
+#[cfg(feature = "test-hooks")]
 impl TurnHandler for TurnHandlerImpl {
     fn handle_listen(&self, source_id: &str, source: &SocketAddr) -> bool {
         // Record id -> addr and addr -> id
@@ -458,6 +467,7 @@ impl TurnHandler for TurnHandlerImpl {
     }
 }
 
+#[cfg(feature = "test-hooks")]
 impl TurnRelayHandler for TurnHandlerImpl {
     fn handle_call(
         &self,
@@ -518,6 +528,7 @@ impl TurnRelayHandler for TurnHandlerImpl {
 }
 
 // Provide client-side control callbacks on TurnHandlerImpl for backward compatibility
+#[cfg(feature = "test-hooks")]
 impl TurnClientHandler for TurnHandlerImpl {
     fn handle_listen_response(&self, relay_address: &SocketAddr, relay_id: &str) {
         if let (Ok(mut id2a), Ok(mut a2id)) = (
@@ -555,9 +566,11 @@ impl TurnClientHandler for TurnHandlerImpl {
     }
 }
 
+#[cfg(feature = "test-hooks")]
 pub type TurnRelayImpl = TurnHandlerImpl;
 
 /// Client-side TURN implementation
+#[cfg(feature = "test-hooks")]
 pub struct TurnClientImpl {
     ch_to_addr: Mutex<HashMap<u16, SocketAddr>>, // channel -> source (originator)
     pair_to_ch: Mutex<HashMap<(SocketAddr, SocketAddr), u16>>, // (a,b) -> ch for both directions
@@ -565,6 +578,7 @@ pub struct TurnClientImpl {
     allowed_addr_to_id: Mutex<HashMap<SocketAddr, String>>, // addr -> id
 }
 
+#[cfg(feature = "test-hooks")]
 impl TurnClientImpl {
     pub fn new() -> Self {
         Self {
@@ -584,12 +598,14 @@ impl TurnClientImpl {
     }
 }
 
+#[cfg(feature = "test-hooks")]
 impl Default for TurnClientImpl {
     fn default() -> Self {
         Self::new()
     }
 }
 
+#[cfg(feature = "test-hooks")]
 impl TurnHandler for TurnClientImpl {
     fn handle_listen(&self, source_id: &str, source: &SocketAddr) -> bool {
         if let (Ok(mut id2a), Ok(mut a2id)) = (
@@ -718,6 +734,7 @@ impl TurnHandler for TurnClientImpl {
     }
 }
 
+#[cfg(feature = "test-hooks")]
 impl TurnClientHandler for TurnClientImpl {
     fn handle_listen_response(&self, relay_address: &SocketAddr, relay_id: &str) {
         if let (Ok(mut id2a), Ok(mut a2id)) = (

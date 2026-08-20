@@ -10,6 +10,7 @@ use crate::api::bingle_api::{
 };
 
 /// Check if a message type may only originate from a relay.
+#[cfg(feature = "test-hooks")]
 pub fn only_from_relay(msg: &Message) -> bool {
     match msg {
         Message::Relay(rm) => match rm {
