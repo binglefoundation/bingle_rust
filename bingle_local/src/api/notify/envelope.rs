@@ -38,6 +38,7 @@ pub struct AlertRequest {
 /// `iss` is the local handle; `audience` is the recipient to wake. Uses the shared signer so the
 /// bytes are byte-for-byte identical to the gateway's `verify.ts` and the committed cross-impl
 /// vector (`route = "alert"`, `bodyHash = sha256("")`, `token`/`env` unused). No new crypto.
+#[doc(hidden)]
 pub fn build_alert_request(
     ops: &AlgoOps,
     iss: &str,
@@ -59,6 +60,7 @@ pub fn build_alert_request(
 
 /// A fresh nonce: base64 (no padding) of [`NONCE_BYTES`] random bytes. Random per request so the
 /// gateway can reject replays.
+#[doc(hidden)]
 pub fn fresh_nonce() -> String {
     let mut bytes = [0u8; NONCE_BYTES];
     // getrandom draws from the OS CSPRNG; on the astronomically unlikely failure fall back to a
@@ -74,11 +76,13 @@ pub fn fresh_nonce() -> String {
 }
 
 /// The alert envelope expiry: a short window ([`ALERT_EXP_SECS`]) ahead of `now_secs`.
+#[doc(hidden)]
 pub fn alert_exp(now_secs: i64) -> i64 {
     now_secs + ALERT_EXP_SECS
 }
 
 /// Current unix time in seconds.
+#[doc(hidden)]
 pub fn now_secs() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -89,6 +93,7 @@ pub fn now_secs() -> i64 {
 /// Whether a gateway HTTP status counts as an accepted best-effort alert. A `2xx` (delivered/queued)
 /// and the gateway's coalescing/rate-limiting `429` are all fine; any other status is treated as a
 /// rejection that is logged and ignored — never retried (the nudge fires only once, on give-up).
+#[doc(hidden)]
 pub fn alert_status_accepted(status: u16) -> bool {
     (200..300).contains(&status) || status == 429
 }

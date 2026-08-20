@@ -17,6 +17,7 @@ use bingle_core::api::bingle_api::BingleError;
 pub struct HttpRegisterPoster;
 
 impl HttpRegisterPoster {
+    /// Create a new HTTP register poster.
     pub fn new() -> Self {
         Self
     }
