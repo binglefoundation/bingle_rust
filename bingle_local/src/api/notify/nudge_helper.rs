@@ -14,6 +14,7 @@ use super::envelope::{alert_exp, build_alert_request, fresh_nonce, now_secs};
 /// recipient this signs a fresh content-free alert envelope with `ops`, issued as `iss`, and hands
 /// it to `poster`. Best-effort: a signing failure for one recipient is logged and skipped; the
 /// poster sends off the delivery path, so this never blocks or fails message delivery.
+#[doc(hidden)]
 pub fn post_giveup_alerts(
     poster: &dyn AlertPoster,
     gateway_url: &str,

@@ -15,6 +15,7 @@ use crate::api::bingle_local_api::Message;
 
 /// A transient-failed message backs off this long before it is eligible to retry again, so a
 /// repeatedly-failing recipient does not starve newer messages (head-of-line blocking).
+#[doc(hidden)]
 pub const RETRY_BACKOFF: Duration = Duration::from_secs(10);
 
 /// Whether a failed pending-message send *string* looks transient (i.e. connectivity-related) and so
@@ -26,6 +27,7 @@ pub const RETRY_BACKOFF: Duration = Duration::from_secs(10);
 /// retryable errors, undelivered sends, and no-route/no-relay/unreachable conditions; matches
 /// `retryable` anywhere so `bingle_core`'s `BingleError::Retryable` display (`"Retryable error: …"`,
 /// e.g. a relay `dtls client connect timeout` while the peer is briefly offline) is transient.
+#[doc(hidden)]
 pub fn is_transient_send_failure(err: &str) -> bool {
     let e = err.to_ascii_lowercase();
     e.contains("retryable")
@@ -41,6 +43,7 @@ pub fn is_transient_send_failure(err: &str) -> bool {
 /// transient (connectivity) failure keeps the message pending and retrying, so the reason says so
 /// rather than leaking the internal error; a permanent failure surfaces the underlying error. The
 /// raw error is still logged for debugging by the caller.
+#[doc(hidden)]
 pub fn pending_failure_reason(err: &str, transient: bool) -> String {
     if transient {
         "Recipient unreachable — will keep retrying".to_string()
@@ -52,6 +55,7 @@ pub fn pending_failure_reason(err: &str, transient: bool) -> String {
 /// A classified send failure: the reliable typed cause plus a concise, human-readable reason for
 /// display (issue #99). `kind` drives retry and UX decisions ([`SendFailureKind::is_retryable`]);
 /// `reason` is safe to surface to the user.
+#[doc(hidden)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SendFailure {
     pub kind: SendFailureKind,
@@ -66,6 +70,7 @@ pub struct SendFailure {
 /// `None`. An `Ok(false)` (an internal guard rejected the send without an error — e.g. send-to-self
 /// or an incomplete endpoint) and any legacy untyped error are mapped to a best-fit kind so callers
 /// always get a classification.
+#[doc(hidden)]
 pub fn classify_send_error(result: &Result<bool, BingleError>) -> Option<SendFailure> {
     match result {
         Ok(true) => None,
@@ -147,6 +152,7 @@ fn humanize_failure(kind: SendFailureKind, detail: &str) -> String {
 /// newer messages behind it — the scheduler always drains the *oldest* message, so without this a
 /// stuck head of queue would block everything (head-of-line blocking). Messages with no recorded
 /// deadline are always eligible.
+#[doc(hidden)]
 pub fn select_sendable_message(
     mut pending: Vec<Message>,
     retry_after: &HashMap<i64, Instant>,

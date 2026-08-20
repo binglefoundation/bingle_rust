@@ -14,6 +14,7 @@ use super::envelope::{AlertRequest, alert_status_accepted};
 pub struct HttpAlertPoster;
 
 impl HttpAlertPoster {
+    /// Create a new HTTP alert poster.
     pub fn new() -> Self {
         Self
     }

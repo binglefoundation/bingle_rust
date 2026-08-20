@@ -34,6 +34,7 @@ pub struct RegisterRequest {
 /// tokens are no longer a fixed 32 bytes, so length is not validated beyond rejecting an empty
 /// token: APNs is the authority on validity (a bad token is pruned on the 410 at fan-out), matching
 /// the gateway's `/register` contract (bingle_notify: relax token validation).
+#[doc(hidden)]
 pub fn encode_apns_token(raw: &[u8]) -> Result<String, BingleError> {
     if raw.is_empty() {
         return Err(BingleError::Other(
@@ -52,6 +53,7 @@ pub fn encode_apns_token(raw: &[u8]) -> Result<String, BingleError> {
 /// `token` is the lowercase-hex device token; `env` is `"sandbox"`/`"production"`. Uses the shared
 /// signer so the bytes are byte-for-byte identical to the gateway's `verify.ts`
 /// (`route = "register"`, `bodyHash = sha256(token + "\n" + env)`). No new crypto.
+#[doc(hidden)]
 pub fn build_register_request(
     ops: &AlgoOps,
     iss: &str,

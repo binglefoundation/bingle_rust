@@ -1,3 +1,6 @@
+//! The [`BingleLocalApi`] trait and the data types it stores: [`Contact`], [`Message`],
+//! [`Keypair`], [`KeypairStatus`], and [`ContactSource`].
+
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -6,34 +9,42 @@ use bingle_core::api::bingle_api::{BingleError, SendFailureKind};
 /// Enum describing how a contact was added to the local store.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ContactSource {
+    /// The contact was added explicitly by the user.
     Manual,
+    /// The contact was learned from an incoming message.
     Received,
 }
 
 /// Contact information stored locally.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Contact {
+    /// The contact's registered handle.
     pub handle: String,
+    /// The contact's Algorand account id.
     pub id: String,
-    /// Arbitrary additional fields (e.g., platform-specific metadata)
+    /// Arbitrary additional fields (e.g., platform-specific metadata).
     pub fields: HashMap<String, String>,
 }
 
 /// Message record stored locally.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Message {
+    /// Handle of the account that sent the message.
     pub sender_handle: String,
+    /// Handles of the recipients the message was addressed to.
     pub recipient_handles: Vec<String>,
-    /// Timestamp (e.g., epoch millis)
+    /// Timestamp (e.g., epoch millis).
     pub timestamp: i64,
+    /// The message body.
     pub text: String,
     /// The cipher suite negotiated for the DTLS session on which this message was received.
     /// Derived by the receiving client from the connection; not transmitted on the wire.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cipher_suite: Option<String>,
-    // Delivery tracking
+    /// Delivery progress from 0.0 to 1.0, where 1.0 means completed, sent, or permanently failed.
     #[serde(default)]
-    pub progress: Option<f32>, // 0.0 to 1.0 (1.0 = completed/sent/failed-permanently)
+    pub progress: Option<f32>,
+    /// Human-readable reason the send failed, when one is known.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub failure_reason: Option<String>,
     /// Typed cause of the send failure (issue #99), set alongside `failure_reason` when a send
@@ -58,11 +69,15 @@ pub const REQUIRED_ALGO: f64 = 1.5;
 /// Result of checking the keypair status.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct KeypairStatus {
+    /// The status string: `None`, `UNFUNDED`, `FUNDED`, `ACTIVE`, or `UPGRADE_REQUIRED`.
     pub status: String,
+    /// The Algorand account id, when a keypair exists.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
+    /// The registered handle, when the account is `ACTIVE`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub handle: Option<String>,
+    /// For an `UNFUNDED` account, the top-up (in ALGOs) needed to reach the funding target.
     #[serde(rename = "requiredAlgo", skip_serializing_if = "Option::is_none")]
     pub required_algo: Option<f64>,
     /// True when this is a last-known status returned during a blockchain outage rather than a
