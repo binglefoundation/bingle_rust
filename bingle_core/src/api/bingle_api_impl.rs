@@ -195,6 +195,19 @@ impl BingleApiImpl {
         }
     }
 
+    /// Construct a messaging engine from the given start options.
+    ///
+    /// This builds a real engine wired to the network and Algorand integration, so it is the
+    /// single supported entry point for creating a [`BingleApiImpl`].
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use bingle_core::api::bingle_api::StartOptions;
+    /// use bingle_core::api::bingle_api_impl::BingleApiImpl;
+    ///
+    /// let api = BingleApiImpl::new(&StartOptions::new("alice".to_string()));
+    /// ```
     pub fn new(options: &StartOptions) -> Arc<Self> {
         tracing::info!("[BingleApiImpl::new][enter]");
         Self::check_dangerous_debug(options);
@@ -224,6 +237,7 @@ impl BingleApiImpl {
 impl BingleApiImpl {
     /// Apply a closure to the owned Engine instance (test-only). The Engine is fully `&self`, so a
     /// shared reference is sufficient; the name is retained for existing call sites.
+    #[doc(hidden)]
     pub fn with_engine_mut<F, R>(&self, f: F) -> R
     where
         F: FnOnce(&Engine) -> R,
@@ -232,11 +246,13 @@ impl BingleApiImpl {
     }
 
     /// Test-oriented constructor to inject a custom DTLS implementation.
+    #[doc(hidden)]
     pub fn new_with_dtls(dtls: Box<dyn Dtls + Send + Sync>) -> Arc<Self> {
         Self::new_with_dtls_and_options(dtls, StartOptions::new("".into()))
     }
 
     /// Test-oriented constructor to inject custom DTLS and options.
+    #[doc(hidden)]
     pub fn new_with_dtls_and_options(
         dtls: Box<dyn Dtls + Send + Sync>,
         options: StartOptions,
@@ -269,6 +285,7 @@ impl BingleApiImpl {
 
     /// Test-only helper: override issuer directly for unit/integration tests.
     /// Not part of the stable API surface.
+    #[doc(hidden)]
     pub fn set_issuer_for_tests(&self, issuer: String) {
         tracing::info!(
             "[BingleApiImpl::set_issuer_for_tests][enter] issuer_len={}",
@@ -279,6 +296,7 @@ impl BingleApiImpl {
     }
 
     /// Test helpers to access the Engine from integration tests (not part of stable API).
+    #[doc(hidden)]
     pub fn engine_state_for_tests(&self) -> Option<EngineState> {
         tracing::trace!("[BingleApiImpl::engine_state_for_tests][enter]");
         let s = Some(self.engine.access(|e| e.state()));
@@ -288,6 +306,7 @@ impl BingleApiImpl {
         );
         s
     }
+    #[doc(hidden)]
     pub fn engine_nat_type_for_tests(&self) -> Option<crate::engine::NatType> {
         tracing::info!("[BingleApiImpl::engine_nat_type_for_tests][enter]");
         let t = Some(self.engine.access(|e| e.nat_type()));
@@ -297,6 +316,7 @@ impl BingleApiImpl {
         );
         t
     }
+    #[doc(hidden)]
     pub fn engine_last_public_addr_for_tests(&self) -> Option<SocketAddr> {
         tracing::info!("[BingleApiImpl::engine_last_public_addr_for_tests][enter]");
         let a = self.engine.access(|e| e.last_public_addr());
@@ -306,6 +326,7 @@ impl BingleApiImpl {
         );
         a
     }
+    #[doc(hidden)]
     pub fn engine_local_bind_addr_for_tests(&self) -> Option<SocketAddr> {
         tracing::info!("[BingleApiImpl::engine_local_bind_addr_for_tests][enter]");
         let a = self.engine.access(|e| e.local_bind_addr_for_tests());
@@ -315,12 +336,15 @@ impl BingleApiImpl {
         );
         a
     }
+    #[doc(hidden)]
     pub fn engine_mux_for_tests(&self) -> Option<Arc<crate::dtls::UdpNetworkMux>> {
         self.engine.access(|e| e.mux_for_tests())
     }
+    #[doc(hidden)]
     pub fn engine_receive_message_for_tests(&self, from_ep: &NetworkEndpoint, data: &[u8]) {
         self.engine.receive_message_for_tests(from_ep, data);
     }
+    #[doc(hidden)]
     pub fn engine_ddb_lookup_for_tests(&self, id: &str) -> Result<NetworkEndpoint, BingleError> {
         tracing::info!(
             "[BingleApiImpl::engine_ddb_lookup_for_tests][enter] id={}",
@@ -334,11 +358,13 @@ impl BingleApiImpl {
         res
     }
 
+    #[doc(hidden)]
     pub fn engine_set_ddb_client_for_tests(&self, ddb: Arc<dyn crate::ddb::DdbClient>) {
         tracing::info!("[BingleApiImpl::engine_set_ddb_client_for_tests][enter]");
         self.engine.set_ddb_client_for_tests(ddb);
     }
 
+    #[doc(hidden)]
     pub fn engine_set_retry_delays_for_tests(&self, delays: Vec<Duration>) {
         self.engine.set_retry_delays_for_packet_transport(delays);
     }
@@ -365,6 +391,7 @@ impl BingleApiImpl {
         ))
     }
 
+    #[doc(hidden)]
     pub fn set_handle_lookup_mock_for_tests(
         &self,
         mock: Box<dyn Fn(&Handle) -> Result<Option<UserId>, String> + Send + Sync>,
@@ -373,6 +400,7 @@ impl BingleApiImpl {
         *m = Some(mock);
     }
 
+    #[doc(hidden)]
     pub fn set_id_to_handle_lookup_mock_for_tests(
         &self,
         mock: Box<dyn Fn(&UserId) -> Result<Option<Handle>, String> + Send + Sync>,
@@ -382,9 +410,11 @@ impl BingleApiImpl {
     }
 
     /// Test-only accessor to the owned Engine (for white-box integration tests).
+    #[doc(hidden)]
     pub fn engine_for_tests(&self) -> &Engine {
         &self.engine
     }
+    #[doc(hidden)]
     pub fn engine_force_stun_consistent_for_tests(&mut self, addr: SocketAddr) {
         tracing::info!(
             "[BingleApiImpl::engine_force_stun_consistent_for_tests][enter] addr={}",
@@ -395,11 +425,13 @@ impl BingleApiImpl {
     }
 
     /// Test-only accessor to the Engine's TURN handler (for white-box integration tests)
+    #[doc(hidden)]
     pub fn engine_turn_client_handler_for_tests(
         &self,
     ) -> Arc<crate::turn::turn_client_handler_impl::TurnClientHandlerImpl> {
         self.engine.access(|e| e.turn_client_handler_for_tests())
     }
+    #[doc(hidden)]
     pub fn engine_turn_relay_handler_for_tests(
         &self,
     ) -> Arc<crate::turn::turn_relay_handler_impl::TurnRelayHandlerImpl> {
@@ -407,11 +439,13 @@ impl BingleApiImpl {
     }
 
     /// Test-only: set the engine's last public address (for self-send guard tests).
+    #[doc(hidden)]
     pub fn engine_set_public_addr_for_tests(&mut self, addr: Option<SocketAddr>) {
         self.engine.set_last_public_addr(addr);
     }
 
     /// Exposed for integration tests: whether a DTLS instance has been created.
+    #[doc(hidden)]
     pub fn has_dtls(&self) -> bool {
         tracing::info!("[BingleApiImpl::has_dtls][enter]");
         // Engine now always has a DTLS instance initialized in new()
@@ -1472,6 +1506,7 @@ impl BingleApi for BingleApiImpl {
 impl BingleApiImpl {
     /// Public entry from the networking layer for inbound messages.
     /// If message contains a responseTag, it is treated as a response and routed to waiter; otherwise it is dispatched to on_message.
+    #[doc(hidden)]
     pub fn handle_incoming_network_message(
         &self,
         sender: UserId,
@@ -1503,6 +1538,7 @@ impl BingleApiImpl {
 
 impl BingleApiImpl {
     /// Lookup a handle by user id using the local cache. Returns None if not present or expired.
+    #[doc(hidden)]
     pub fn handle_lookup_by_id(&self, user_id: &UserId) -> Option<Handle> {
         let expiry_duration = self
             .opts()

@@ -83,10 +83,13 @@ impl SendFailureKind {
     }
 }
 
+/// Errors returned by the Bingle messaging and Algorand operations.
 #[derive(Debug, thiserror::Error)]
 pub enum BingleError {
+    /// An error from the underlying Algorand blockchain layer.
     #[error("Blockchain error: {0}")]
     Algo(#[from] AlgoError),
+    /// A transient error the caller may retry.
     #[error("Retryable error: {0}")]
     Retryable(String),
     /// The requested handle is already registered to another account. Typed so callers
@@ -98,9 +101,12 @@ pub enum BingleError {
     /// underlying human-readable message for logging/display; `kind` drives retry and UX decisions.
     #[error("Send failed ({kind:?}): {detail}")]
     Send {
+        /// The classified cause, driving retry and user-experience decisions.
         kind: SendFailureKind,
+        /// The underlying human-readable message, for logging and display.
         detail: String,
     },
+    /// Any other error, carrying a human-readable message.
     #[error("{0}")]
     Other(String),
 }
@@ -112,6 +118,8 @@ impl From<String> for BingleError {
 }
 
 impl BingleError {
+    /// Convert an [`anyhow::Error`] into a [`BingleError`], preserving an underlying
+    /// Algorand error as [`BingleError::Algo`] and mapping anything else to [`BingleError::Other`].
     pub fn from_anyhow(e: anyhow::Error) -> Self {
         match e.downcast::<AlgoError>() {
             Ok(ae) => BingleError::Algo(ae),
@@ -292,6 +300,7 @@ pub trait BingleApiInternal: Send + Sync {
     }
 }
 
+#[doc(hidden)]
 #[macro_export]
 macro_rules! impl_bingle_api_internal_noop {
     ($struct_name:ident) => {
@@ -421,6 +430,7 @@ macro_rules! impl_bingle_api_internal_noop {
 /// UserId: Algorand address in base32 (RFC 4648, no padding), representing a 32‑byte public key
 /// followed by a 4‑byte checksum (total 36 bytes). Examples: "P577…", "4TKG…".
 pub type UserId = String; // Algorand address (base32, 36-byte decoded)
+/// A user handle: the human-readable name a user registers on-chain and is addressed by.
 pub type Handle = String; // User handle string
 pub use super::network_endpoint::{NetworkEndpoint, NetworkEndpointKey};
 

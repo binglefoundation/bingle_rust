@@ -1,17 +1,28 @@
 use serde::Serialize;
 use std::collections::HashMap;
 
+/// Build and version metadata for a Bingle crate.
+///
+/// Combines the Cargo package version with the build number and, where available, the git commit
+/// (SHA) and build timestamp recorded at compile time.
 #[derive(Serialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct VersionInfo {
+    /// Full version string, `"{cargo_version}.{build_number}"` (for example `"3.0.1.42"`).
     pub version: String,
+    /// Git commit hash (SHA) the crate was built from, if it was available at build time.
     pub git_sha: Option<String>,
+    /// Build timestamp recorded at compile time.
     pub build_timestamp: String,
+    /// Monotonic build number supplied by the build script.
     pub build_number: String,
 }
 
+/// A map from crate/module name to its [`VersionInfo`], used to report versions of several
+/// components together.
 pub type VersionsMap = HashMap<String, VersionInfo>;
 
+/// Return the [`VersionInfo`] for this crate, assembled from compile-time environment values.
 pub fn get_version_info() -> VersionInfo {
     // CARGO_PKG_VERSION is provided by cargo itself
     // BINGLE_BUILD_NUMBER is provided by our build.rs
@@ -31,6 +42,12 @@ pub fn get_version_info() -> VersionInfo {
     }
 }
 
+/// Build a [`VersionInfo`](crate::util::version::VersionInfo) for the calling crate from its own
+/// compile-time environment.
+///
+/// Unlike [`get_version_info`](crate::util::version::get_version_info), which reports
+/// `bingle_core`'s version, this macro expands in the caller's crate so it captures that crate's
+/// `CARGO_PKG_VERSION` and build metadata.
 #[macro_export]
 macro_rules! get_module_version {
     () => {
