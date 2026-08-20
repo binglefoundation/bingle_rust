@@ -4,7 +4,9 @@
 
 use std::cmp::Ordering;
 use std::collections::{BTreeSet, HashSet};
-use std::sync::{Arc, Condvar, Mutex, MutexGuard};
+#[cfg(feature = "test-hooks")]
+use std::sync::MutexGuard;
+use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 use tracing::debug;
 
@@ -26,11 +28,13 @@ pub trait DistributedMutex {
 /// A simple, in-process implementation of `DistributedMutex` backed by
 /// `std::sync::Mutex`. This is not distributed but is useful for testing
 /// and as a placeholder until a networked implementation is provided.
+#[cfg(feature = "test-hooks")]
 #[derive(Debug)]
 pub struct LocalDistributedMutex {
     inner: Mutex<()>,
 }
 
+#[cfg(feature = "test-hooks")]
 impl LocalDistributedMutex {
     pub fn new() -> Self {
         Self {
@@ -44,12 +48,14 @@ impl LocalDistributedMutex {
     }
 }
 
+#[cfg(feature = "test-hooks")]
 impl Default for LocalDistributedMutex {
     fn default() -> Self {
         Self::new()
     }
 }
 
+#[cfg(feature = "test-hooks")]
 impl DistributedMutex for LocalDistributedMutex {
     fn acquire<F, R>(&self, f: F) -> R
     where

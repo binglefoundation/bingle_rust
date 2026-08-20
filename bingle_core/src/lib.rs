@@ -41,19 +41,9 @@ pub mod blockchain;
 #[doc(hidden)]
 pub mod ddb;
 #[doc(hidden)]
-pub mod distributed_mutex;
-#[doc(hidden)]
-pub mod dtls;
-#[doc(hidden)]
 pub mod engine;
-#[doc(hidden)]
-pub mod messages;
 /// Version metadata accessor for `bingle_core`.
 pub mod module_version;
-#[doc(hidden)]
-pub mod packet_transport;
-#[doc(hidden)]
-pub mod protocol;
 #[doc(hidden)]
 pub mod relay;
 #[doc(hidden)]
@@ -61,8 +51,44 @@ pub mod stun;
 // Logging theme constants — internal catalog, not a supported API.
 #[doc(hidden)]
 pub mod themes;
+
+// Modules reached only by bingle_core's own test tree (`tests/`) and nothing else in the
+// workspace. They are `pub` only under the `test-hooks` feature — which this crate's own test
+// build turns on via the self dev-dependency — and `pub(crate)` in a normal/release build and for
+// any downstream crate, so they are physically absent from the external surface (issue #180). The
+// test-only items inside them are gated the same way to keep release builds warning-free. The
+// `test-hooks` arm carries `#[doc(hidden)]` so these modules never appear in the reference and are
+// exempt from the crate-level `missing_docs` lint (docs.rs builds with default features anyway).
+#[cfg(feature = "test-hooks")]
+#[doc(hidden)]
+pub mod distributed_mutex;
+#[cfg(not(feature = "test-hooks"))]
+pub(crate) mod distributed_mutex;
+#[cfg(feature = "test-hooks")]
+#[doc(hidden)]
+pub mod dtls;
+#[cfg(not(feature = "test-hooks"))]
+pub(crate) mod dtls;
+#[cfg(feature = "test-hooks")]
+#[doc(hidden)]
+pub mod messages;
+#[cfg(not(feature = "test-hooks"))]
+pub(crate) mod messages;
+#[cfg(feature = "test-hooks")]
+#[doc(hidden)]
+pub mod packet_transport;
+#[cfg(not(feature = "test-hooks"))]
+pub(crate) mod packet_transport;
+#[cfg(feature = "test-hooks")]
+#[doc(hidden)]
+pub mod protocol;
+#[cfg(not(feature = "test-hooks"))]
+pub(crate) mod protocol;
+#[cfg(feature = "test-hooks")]
 #[doc(hidden)]
 pub mod turn;
+#[cfg(not(feature = "test-hooks"))]
+pub(crate) mod turn;
 
 // Export the primary types so external users can import them directly from the crate root.
 // (The canonical module paths are `blockchain::algo_ops` / `blockchain::algo_bingle`.)

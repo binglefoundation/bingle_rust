@@ -1457,6 +1457,7 @@ pub mod openssl_impl {
         }
 
         /// Enable NULL (no-encryption) ciphers for debugging. Strongly discouraged for production use.
+        #[cfg_attr(not(feature = "test-hooks"), allow(dead_code))]
         pub fn with_null_encryption(self) -> Self {
             if self.dangerous_debug() {
                 self.null_encryption
@@ -1469,6 +1470,7 @@ pub mod openssl_impl {
             self
         }
         /// Set NULL (no-encryption) ciphers on/off for debugging.
+        #[cfg_attr(not(feature = "test-hooks"), allow(dead_code))]
         pub fn set_null_encryption(&mut self, enabled: bool) {
             if self.dangerous_debug() {
                 self.null_encryption

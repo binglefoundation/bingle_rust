@@ -3,7 +3,7 @@ use serde_json::{self, Value as JsonValue};
 
 #[derive(Debug)]
 pub enum MarshalError {
-    Json(serde_json::Error),
+    Json(#[cfg_attr(not(feature = "test-hooks"), allow(dead_code))] serde_json::Error),
 }
 
 impl From<serde_json::Error> for MarshalError {
@@ -96,6 +96,7 @@ pub fn to_json_value(msg: &Message) -> JsonValue {
     }
 }
 
+#[cfg(feature = "test-hooks")]
 pub fn to_json_string(msg: &Message) -> String {
     to_json_value(msg).to_string()
 }
