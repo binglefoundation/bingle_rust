@@ -91,24 +91,28 @@ impl NetworkEndpoint {
         self.relay_id.is_some()
     }
 
-    /// Getters for fields
+    /// The direct internet socket address of this endpoint, if known.
     pub fn inet_socket_address(&self) -> Option<SocketAddr> {
         self.inet_socket_address
     }
+    /// The relay channel this endpoint is reached on, for relay endpoints.
     pub fn relay_channel(&self) -> Option<u16> {
         self.relay_channel
     }
+    /// The socket address of the relay serving this endpoint, for relay endpoints.
     pub fn relay_address(&self) -> Option<SocketAddr> {
         self.relay_address
     }
+    /// The identifier of the relay serving this endpoint, for relay endpoints.
     pub fn relay_id(&self) -> Option<&str> {
         self.relay_id.as_deref()
     }
 
-    /// Setters allowed: relay_address and relay_channel only
+    /// Set the relay address for this endpoint.
     pub fn set_relay_address(&mut self, addr: Option<SocketAddr>) {
         self.relay_address = addr;
     }
+    /// Set the relay channel for this endpoint.
     pub fn set_relay_channel(&mut self, ch: Option<u16>) {
         self.relay_channel = ch;
     }
