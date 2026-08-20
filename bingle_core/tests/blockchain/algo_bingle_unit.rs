@@ -1,5 +1,5 @@
-use bingle_core::algo_ops::AlgoOps;
 use bingle_core::blockchain::algo_bingle::AlgoBingle;
+use bingle_core::blockchain::algo_ops::AlgoOps;
 
 #[test]
 #[cfg(not(target_os = "ios"))]

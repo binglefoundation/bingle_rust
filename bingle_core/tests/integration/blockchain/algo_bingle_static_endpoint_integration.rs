@@ -1,5 +1,5 @@
-use bingle_core::algo_ops::AlgoChainConfig;
 use bingle_core::blockchain::algo_bingle::AlgoBingle;
+use bingle_core::blockchain::algo_ops::AlgoChainConfig;
 
 use crate::setup_localnet;
 use crate::util::test_util;

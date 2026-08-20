@@ -1416,7 +1416,7 @@ pub fn bingle_api_send_message_to_id_relay1_to_client_on_relay2_localnet() {
 
     // Register client_a
     let passphrase_a = "lift all minute first hair appear panel unfold pony property also dinosaur start robot board erupt tent pink essence stem protect ugly orphan absent dust";
-    let ops_a_tmp = bingle_core::algo_ops::AlgoOps::new(
+    let ops_a_tmp = bingle_core::blockchain::algo_ops::AlgoOps::new(
         Some(passphrase_a.to_string()),
         None,
         Some(cfg.clone()),

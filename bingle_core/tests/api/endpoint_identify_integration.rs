@@ -1,10 +1,10 @@
 use crate::util::relay_test_util::wait_for_relays_visible;
 use crate::util::test_util::init_test_logging;
 use crate::util::test_util::register_client_on_blockchain;
-use bingle_core::algo_ops::AlgoChainConfig;
 use bingle_core::api::bingle_api::{BingleApi, StartOptions};
 use bingle_core::api::bingle_api_impl::BingleApiImpl;
 use bingle_core::blockchain::algo_bingle::AlgoBingle;
+use bingle_core::blockchain::algo_ops::AlgoChainConfig;
 use bingle_core::engine::BingleAccessUnsafeForTests;
 use bingle_core::engine::EngineState;
 use bingle_core::stun::{SimpleStunServer, SimpleStunStartOptions};

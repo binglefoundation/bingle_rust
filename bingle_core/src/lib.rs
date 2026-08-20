@@ -64,14 +64,7 @@ pub mod themes;
 #[doc(hidden)]
 pub mod turn;
 
-// Backward-compatible module re-exports
-/// Re-export of [`blockchain::algo_ops`] for importing directly from the crate root.
-pub use blockchain::algo_ops;
-
-/// Re-export of [`blockchain::algo_bingle`] for importing directly from the crate root.
-pub use blockchain::algo_bingle;
-
-// New: export primary types for external users so they can import directly from the crate root
-pub use crate::blockchain::algo_ops::AlgoOps;
-
+// Export the primary types so external users can import them directly from the crate root.
+// (The canonical module paths are `blockchain::algo_ops` / `blockchain::algo_bingle`.)
 pub use crate::blockchain::algo_bingle::AlgoBingle;
+pub use crate::blockchain::algo_ops::AlgoOps;

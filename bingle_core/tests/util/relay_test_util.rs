@@ -1,7 +1,7 @@
 // Common relay test helpers shared across integration test files.
 
-use bingle_core::algo_ops::{AlgoChainConfig, AlgoOps};
 use bingle_core::blockchain::algo_bingle::AlgoBingle;
+use bingle_core::blockchain::algo_ops::{AlgoChainConfig, AlgoOps};
 use std::net::SocketAddr;
 use std::time::{Duration, Instant};
 
