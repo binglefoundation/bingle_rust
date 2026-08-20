@@ -29,6 +29,7 @@
 //!
 //! The supported public interface is documented in `docs/api-surface.md`; modules marked
 //! `#[doc(hidden)]` remain `pub` only for in-workspace use and are not part of that interface.
+#![warn(missing_docs)]
 
 /// Shared utilities: logging, version metadata, and configuration helpers.
 #[macro_use]

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # scripts/run_quality_checks.sh
-# Code-quality report for the Bingle Rust workspace: rustfmt + clippy.
+# Code-quality report for the Bingle Rust workspace: rustfmt + clippy + rustdoc.
 #
 # These are the tools used in the `chore/rustfmt-clippy-cleanup` pass, wrapped
 # for use as a (manual, for now) CI step. Run from the repo root.
@@ -13,12 +13,13 @@
 # Usage:
 #   scripts/run_quality_checks.sh            # report: summary of fmt + clippy, exits 0
 #   scripts/run_quality_checks.sh --detail   # report, but print full fmt diff + clippy output
-#   scripts/run_quality_checks.sh --strict   # gate: fmt must be clean, clippy -D warnings; non-zero on any issue
+#   scripts/run_quality_checks.sh --strict   # gate: fmt clean, clippy -D warnings, published-crate docs clean; non-zero on any issue
 #   scripts/run_quality_checks.sh fix        # auto-apply: cargo fmt --all + cargo clippy --fix
 #
 # Env toggles:
 #   RUN_FMT=0      skip the rustfmt step
 #   RUN_CLIPPY=0   skip the clippy step
+#   RUN_DOCS=0     skip the rustdoc (published-crate docs) step
 
 set -uo pipefail
 
@@ -26,6 +27,13 @@ GREEN='\033[0;32m'; RED='\033[0;31m'; YELLOW='\033[0;33m'; BOLD='\033[1m'; NC='\
 
 RUN_FMT="${RUN_FMT:-1}"
 RUN_CLIPPY="${RUN_CLIPPY:-1}"
+RUN_DOCS="${RUN_DOCS:-1}"
+
+# Published crates whose docs.rs reference is gated: missing_docs must be zero and rustdoc must
+# emit no warnings (broken intra-doc links, invalid HTML). clippy already denies the missing_docs
+# rustc lint under -D warnings; this rustdoc pass additionally catches doc-link/HTML regressions
+# that clippy does not see. Kept in sync with the `publish`-able members.
+DOC_PKGS=(-p bingle_core -p bingle_local -p bingle_cli)
 
 MODE="report"
 DETAIL=0
@@ -144,6 +152,24 @@ if [[ "${RUN_CLIPPY}" == "1" ]]; then
   # In strict mode, clippy's own exit code (with -D warnings) decides pass/fail.
   [[ "${STRICT}" == "1" && "${clippy_rc}" -ne 0 ]] && fail=1
   rm -f "${clippy_log}"
+fi
+
+# -------------------------------------------------------------------- docs
+if [[ "${RUN_DOCS}" == "1" ]]; then
+  section "rustdoc (published crates: ${DOC_PKGS[*]})"
+  docs_log="$(mktemp)"
+  # -D warnings turns any missing-doc or broken-doc-link into a build failure.
+  RUSTDOCFLAGS="-D warnings" cargo doc --no-deps "${DOC_PKGS[@]}" >"${docs_log}" 2>&1
+  docs_rc=$?
+  if [[ "${docs_rc}" -eq 0 ]]; then
+    echo -e "${GREEN}clean${NC}"
+  else
+    dcount="$(grep -cE '^(warning|error)' "${docs_log}")"
+    echo -e "${RED}${dcount} rustdoc issue(s)${NC}  (run: RUSTDOCFLAGS=\"-D warnings\" cargo doc --no-deps ${DOC_PKGS[*]})"
+    [[ "${DETAIL}" == "1" ]] && cat "${docs_log}"
+    [[ "${STRICT}" == "1" ]] && fail=1
+  fi
+  rm -f "${docs_log}"
 fi
 
 # ------------------------------------------------------------------ summary
