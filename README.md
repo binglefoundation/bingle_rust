@@ -196,12 +196,15 @@ Bingle is a Cargo workspace of six crates:
 
 ## API documentation
 
-Generate the Rust API docs locally with `cargo doc --open`. Hosted references (stubs — to be
-published):
+The published crates carry a documented public API. Hosted references live on **docs.rs**:
 
-- `bingle_core` — _[API docs — coming soon]_
-- `bingle_local` — _[API docs — coming soon]_
-- `bingle_jsi` — _[API docs — coming soon]_
+- [`bingle_core`](https://docs.rs/bingle_core) — the messaging engine and Algorand integration.
+- [`bingle_local`](https://docs.rs/bingle_local) — the local-state layer (keypair, queue, contacts).
+- [`bingle_cli`](https://docs.rs/bingle_cli) — the command-line client.
+
+docs.rs builds these automatically from each [crates.io](https://crates.io) release, so the links
+go live with the first publish. For the current checkout, generate the full reference locally with
+`cargo doc --open`.
 
 ## License
 
