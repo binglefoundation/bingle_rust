@@ -1,3 +1,7 @@
+use bingle_core::blockchain::algo_bingle::{
+    ACCOUNT_APP_ADMIN, ACCOUNT_APP_WITHDRAWER, ACCOUNT_ASSET_CREATOR, ACCOUNT_ASSET_FREEZE,
+    ACCOUNT_ASSET_MANAGER, ACCOUNT_ASSET_RESERVE, AlgoBingle,
+};
 /// Integration tests for `AlgoBingle::deploy_app_and_asset`.
 ///
 /// All combinations of (new_app, new_asset) are exercised against a live algokit localnet.
@@ -17,11 +21,7 @@
 ///   - for combinations 1 and 3, the ASA reserve equals the ASSET_RESERVE account
 ///   - for combination 2, the old-app balance is transferred to the new app
 ///   - ALGO balances decrease by exactly (tx_count × MIN_FEE) for each signing account
-use bingle_core::algo_ops::{AlgoChainConfig, AlgoOps};
-use bingle_core::blockchain::algo_bingle::{
-    ACCOUNT_APP_ADMIN, ACCOUNT_APP_WITHDRAWER, ACCOUNT_ASSET_CREATOR, ACCOUNT_ASSET_FREEZE,
-    ACCOUNT_ASSET_MANAGER, ACCOUNT_ASSET_RESERVE, AlgoBingle,
-};
+use bingle_core::blockchain::algo_ops::{AlgoChainConfig, AlgoOps};
 use serial_test::serial;
 use std::collections::HashMap;
 

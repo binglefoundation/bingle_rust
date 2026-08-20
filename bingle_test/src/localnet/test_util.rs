@@ -1,4 +1,4 @@
-use bingle_core::algo_ops::{AlgoChainConfig, AlgoOps, AppArg, address_to_byte_key};
+use bingle_core::blockchain::algo_ops::{AlgoChainConfig, AlgoOps, AppArg, address_to_byte_key};
 use bingle_core::api::bingle_api::{BingleApi, BingleApiInternal, StartOptions};
 use bingle_core::api::bingle_api_impl::BingleApiImpl;
 use bingle_core::blockchain::algo_bingle::{

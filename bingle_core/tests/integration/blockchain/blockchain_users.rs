@@ -1,7 +1,7 @@
 // Granular blockchain test accounts matching the roles in spec/dapp_endpoints.md.
 // Generated via py-algorand-sdk; fund via ensure_funded below.
 
-use bingle_core::algo_ops::AlgoChainConfig;
+use bingle_core::blockchain::algo_ops::AlgoChainConfig;
 
 pub const ALL_ADDRESSES: &[&str] = &[
     ADDRESS_ASSET_CREATOR,
