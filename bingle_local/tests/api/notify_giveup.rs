@@ -2,7 +2,7 @@
 
 use std::sync::{Arc, Mutex};
 
-use bingle_core::blockchain::algo_ops::{AlgoChainConfig, AlgoOps};
+use algo_ops::{AlgoChainConfig, AlgoOps};
 use bingle_local::api::notify::{
     AlertPoster, AlertRequest, alert_status_accepted, build_alert_request,
 };
@@ -84,7 +84,7 @@ fn default_config_gates_on_but_has_no_url() {
 /// passes through and `notify_on_giveup` defaults to `true` when the caller leaves it unset.
 #[test]
 fn with_notify_maps_gateway_url_and_defaults_flag_on() {
-    let default_algo = bingle_core::blockchain::algo_ops::AlgoChainConfig::default();
+    let default_algo = algo_ops::AlgoChainConfig::default();
 
     // Caller supplies a URL and leaves the flag unset ⇒ URL reaches the config, flag defaults on.
     let cfg = LocalApiConfig::with_notify(

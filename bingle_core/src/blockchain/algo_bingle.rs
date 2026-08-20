@@ -6,8 +6,8 @@ use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::api::bingle_api::BingleApiBoth;
-use crate::blockchain::algo_ops::{AlgoOps, AppArg, address_to_byte_key};
-use crate::blockchain::error::AlgoError;
+use algo_ops::error::AlgoError;
+use algo_ops::{AlgoOps, AppArg, address_to_byte_key};
 
 use algonaut::{
     Algod,
@@ -131,7 +131,7 @@ impl AlgoBingle {
     /// # Examples
     ///
     /// ```no_run
-    /// use bingle_core::blockchain::algo_ops::AlgoOps;
+    /// use algo_ops::AlgoOps;
     /// use bingle_core::blockchain::algo_bingle::AlgoBingle;
     ///
     /// let ops = AlgoOps::new_for_algorand(None, None, None);
@@ -1162,7 +1162,7 @@ impl AlgoBingle {
     /// # Examples
     ///
     /// ```no_run
-    /// use bingle_core::blockchain::algo_ops::AlgoOps;
+    /// use algo_ops::AlgoOps;
     /// use bingle_core::blockchain::algo_bingle::AlgoBingle;
     ///
     /// let bingle = AlgoBingle::new(AlgoOps::new_for_algorand(None, None, None), 1234, 5678);
@@ -1669,7 +1669,7 @@ impl AlgoBingle {
     /// # Examples
     ///
     /// ```no_run
-    /// use bingle_core::blockchain::algo_ops::AlgoOps;
+    /// use algo_ops::AlgoOps;
     /// use bingle_core::blockchain::algo_bingle::AlgoBingle;
     ///
     /// let bingle = AlgoBingle::new(AlgoOps::new_for_algorand(None, None, None), 1234, 5678);

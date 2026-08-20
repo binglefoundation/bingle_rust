@@ -93,4 +93,4 @@ pub(crate) mod turn;
 // Export the primary types so external users can import them directly from the crate root.
 // (The canonical module paths are `blockchain::algo_ops` / `blockchain::algo_bingle`.)
 pub use crate::blockchain::algo_bingle::AlgoBingle;
-pub use crate::blockchain::algo_ops::AlgoOps;
+pub use algo_ops::AlgoOps;

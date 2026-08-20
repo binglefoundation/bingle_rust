@@ -1,4 +1,4 @@
-use crate::blockchain::algo_ops::AlgoChainConfig;
+use algo_ops::AlgoChainConfig;
 use serde::Deserialize;
 use std::fs;
 use std::net::{SocketAddr, ToSocketAddrs};

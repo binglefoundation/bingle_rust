@@ -16,12 +16,12 @@ use crate::api::types::{
     InetSocketAddress, Keypair, KeypairStatus, KeypairStatusResponse, Message, NatType,
     NatTypeResponse, NetworkSourceKey, VersionInfo,
 };
+use algo_ops::error::AlgoErrorKind;
 use bingle_core::api::bingle_api::{
     BingleApi, BingleApiBoth, BingleError, SendFailureKind, StartOptions,
 };
 use bingle_core::api::bingle_api_impl::BingleApiImpl;
 use bingle_core::api::network_endpoint::NetworkEndpoint;
-use bingle_core::blockchain::error::AlgoErrorKind;
 use bingle_core::engine::BingleAccess;
 use bingle_core::util::config_utils::{
     parse_node_file_with_ids, parse_stun_file, parse_stun_list, resolve_app_asset_ids,

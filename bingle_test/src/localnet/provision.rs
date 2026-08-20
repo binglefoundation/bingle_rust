@@ -24,7 +24,7 @@ pub fn start_client(
     passphrase: &str,
     stun_list: Vec<SocketAddr>,
     app_id: u64,
-    cfg: bingle_core::blockchain::algo_ops::AlgoChainConfig,
+    cfg: algo_ops::AlgoChainConfig,
 ) -> Arc<BingleApiImpl> {
     let opts = StartOptions {
         handle: handle.into(),

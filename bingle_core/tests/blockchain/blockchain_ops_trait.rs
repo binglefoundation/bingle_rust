@@ -5,8 +5,8 @@
 //! `account_balance`, `account_balance_at`, `wait_for_confirmation`, and the `AssetOps`
 //! methods) are exercised by the blockchain integration tests.
 
-use bingle_core::blockchain::algo_ops::AlgoOps;
-use bingle_core::blockchain::blockchain_ops::BlockChainOps;
+use algo_ops::AlgoOps;
+use blockchain_ops::BlockChainOps;
 
 // Same-named methods (`sign`, `verify`, `generate_keypair`) exist both inherently and on the
 // trait; inherent methods win for `ops.method()` calls, so the trait impls are invoked here via

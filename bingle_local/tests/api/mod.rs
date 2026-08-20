@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use bingle_local::api::{BingleLocalApi, Contact, ContactSource, Keypair, KeypairStatus, Message};
-use bingle_core::blockchain::algo_ops::AlgoOps;
+use algo_ops::AlgoOps;
 
 #[derive(Default)]
 struct DummyLocal {

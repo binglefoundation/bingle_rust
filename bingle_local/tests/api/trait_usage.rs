@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
+use algo_ops::AlgoOps;
 use bingle_core::api::bingle_api::{BingleError, SendFailureKind};
-use bingle_core::blockchain::algo_ops::AlgoOps;
 use bingle_local::api::{BingleLocalApi, Contact, ContactSource, Keypair, KeypairStatus, Message};
 
 #[derive(Default)]

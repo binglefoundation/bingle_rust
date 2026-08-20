@@ -1,4 +1,4 @@
-use bingle_core::blockchain::algo_ops::{AlgoChainConfig, AlgoOps};
+use algo_ops::{AlgoChainConfig, AlgoOps};
 use std::process::Command;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 

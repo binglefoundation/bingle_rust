@@ -1,7 +1,7 @@
 use crate::api::bingle_api::StartOptions;
-use crate::blockchain::algo_ops::AlgoChainConfig;
 use crate::util::config_utils;
 use crate::util::logging::LogMode;
+use algo_ops::AlgoChainConfig;
 use std::net::SocketAddr;
 
 /// Parse command-line arguments into [`StartOptions`].

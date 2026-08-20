@@ -1,8 +1,8 @@
+use algo_ops::AlgoChainConfig;
 use bingle_core::api::bingle_api::{
     BingleApi, BingleError, Handle, NetworkEndpoint, OnConnectHandler, OnListeningHandler,
     OnMessageHandler, ProgressCallback, StartOptions, UserId,
 };
-use bingle_core::blockchain::algo_ops::AlgoChainConfig;
 use serde_json::{Value as JsonValue, json};
 use std::sync::{Arc, Mutex};
 

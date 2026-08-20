@@ -3,8 +3,8 @@
 //! A1: queuing a message resolves the sender handle from cache, so it never needs a live
 //! blockchain read once the account is registered.
 
+use algo_ops::error::{AlgoError, AlgoErrorKind};
 use bingle_core::api::bingle_api::BingleError;
-use bingle_core::blockchain::error::{AlgoError, AlgoErrorKind};
 use bingle_local::api::KeypairStatus;
 use bingle_local::api::bingle_local_api_impl::{resolve_sender_handle, status_or_last_known};
 

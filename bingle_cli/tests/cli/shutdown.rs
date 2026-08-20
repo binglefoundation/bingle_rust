@@ -1,5 +1,5 @@
+use algo_ops::AlgoChainConfig;
 use bingle_core::api::bingle_api::StartOptions;
-use bingle_core::blockchain::algo_ops::AlgoChainConfig;
 use std::net::SocketAddr;
 
 /// Describes the action to take on shutdown regarding static endpoint unregistration.

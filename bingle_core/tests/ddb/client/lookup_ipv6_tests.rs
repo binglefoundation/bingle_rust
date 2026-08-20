@@ -63,7 +63,7 @@ fn ddb_client_lookup_rejects_ipv6() {
     let signing_key = SigningKey::generate(&mut csprng);
     let public_key = signing_key.verifying_key();
     let pk_bytes: [u8; 32] = public_key.to_bytes();
-    let address = bingle_core::blockchain::algo_ops::byte_key_to_address(&pk_bytes).unwrap();
+    let address = algo_ops::byte_key_to_address(&pk_bytes).unwrap();
 
     let advert = AdvertRecord::new(
         address.clone(),
@@ -125,7 +125,7 @@ fn ddb_client_lookup_accepts_ipv4() {
     let signing_key = SigningKey::generate(&mut csprng);
     let public_key = signing_key.verifying_key();
     let pk_bytes: [u8; 32] = public_key.to_bytes();
-    let address = bingle_core::blockchain::algo_ops::byte_key_to_address(&pk_bytes).unwrap();
+    let address = algo_ops::byte_key_to_address(&pk_bytes).unwrap();
 
     let advert = AdvertRecord::new(
         address.clone(),

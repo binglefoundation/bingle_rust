@@ -1,4 +1,4 @@
-use bingle_core::blockchain::algo_ops::AlgoChainConfig;
+use algo_ops::AlgoChainConfig;
 use serial_test::serial;
 
 use crate::setup_localnet;

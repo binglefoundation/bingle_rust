@@ -1,5 +1,5 @@
+use algo_ops::AlgoChainConfig;
 use bingle_core::blockchain::algo_bingle::AlgoBingle;
-use bingle_core::blockchain::algo_ops::AlgoChainConfig;
 use serial_test::serial;
 
 const MIN_FEE: u64 = 1_000;

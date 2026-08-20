@@ -3,7 +3,7 @@ use std::sync::Arc;
 use crate::relay::relay_finder::RelayInfo;
 
 use crate::blockchain::algo_bingle::{AccountsCache, AlgoBingle};
-use crate::blockchain::algo_ops::{AlgoChainConfig, AlgoOps};
+use algo_ops::{AlgoChainConfig, AlgoOps};
 use std::sync::Mutex;
 
 /// Build a reusable discovery closure that queries the Algorand Indexer for
