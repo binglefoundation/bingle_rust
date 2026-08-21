@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # scripts/run_quality_checks.sh
-# Code-quality report for the Bingle Rust workspace: rustfmt + clippy + rustdoc.
+# Code-quality report for the Bingle Rust workspace: toolchain freshness + rustfmt + clippy + rustdoc.
 #
 # These are the tools used in the `chore/rustfmt-clippy-cleanup` pass, wrapped
 # for use as a (manual, for now) CI step. Run from the repo root.
@@ -17,9 +17,10 @@
 #   scripts/run_quality_checks.sh fix        # auto-apply: cargo fmt --all + cargo clippy --fix
 #
 # Env toggles:
-#   RUN_FMT=0      skip the rustfmt step
-#   RUN_CLIPPY=0   skip the clippy step
-#   RUN_DOCS=0     skip the rustdoc (published-crate docs) step
+#   RUN_FMT=0        skip the rustfmt step
+#   RUN_CLIPPY=0     skip the clippy step
+#   RUN_DOCS=0       skip the rustdoc (published-crate docs) step
+#   RUN_TOOLCHAIN=0  skip the toolchain-freshness check (warns when local stable is behind CI's)
 
 set -uo pipefail
 
@@ -28,6 +29,7 @@ GREEN='\033[0;32m'; RED='\033[0;31m'; YELLOW='\033[0;33m'; BOLD='\033[1m'; NC='\
 RUN_FMT="${RUN_FMT:-1}"
 RUN_CLIPPY="${RUN_CLIPPY:-1}"
 RUN_DOCS="${RUN_DOCS:-1}"
+RUN_TOOLCHAIN="${RUN_TOOLCHAIN:-1}"
 
 # Published crates whose docs.rs reference is gated: missing_docs must be zero and rustdoc must
 # emit no warnings (broken intra-doc links, invalid HTML). clippy already denies the missing_docs
@@ -105,6 +107,27 @@ fi
 STRICT=0
 [[ "${MODE}" == "strict" ]] && STRICT=1
 fail=0
+
+# --------------------------------------------------------------- toolchain
+# CI runs on dtolnay/rust-toolchain@stable (always the latest stable), and clippy's lint set grows
+# with each release. A local toolchain that has fallen behind can pass `--strict` here yet fail
+# CI's `quality` job on lints it doesn't know about. Warn when the active stable is behind — and, in
+# strict mode *outside* CI, fail so a stale local run can't give a false green. Skips cleanly if
+# rustup is absent or offline, and never fails inside CI (its toolchain is managed and current).
+if [[ "${RUN_TOOLCHAIN}" == "1" ]] && command -v rustup >/dev/null 2>&1; then
+  section "toolchain freshness"
+  tc_out="$(rustup check 2>/dev/null)"
+  if [[ -z "${tc_out}" ]]; then
+    echo -e "${YELLOW}skipped${NC} (rustup check unavailable — offline?)"
+  elif printf '%s\n' "${tc_out}" | grep -iE '^stable' | grep -qiE 'update available'; then
+    echo -e "${RED}stable toolchain is behind the latest release${NC}  — run: rustup update stable"
+    printf '%s\n' "${tc_out}" | grep -iE '^stable.*update available' | sed 's/^/    /'
+    echo "    (CI uses the latest stable; a stale local clippy can pass here yet fail CI.)"
+    [[ "${STRICT}" == "1" && -z "${CI:-}" ]] && fail=1
+  else
+    echo -e "${GREEN}up to date${NC}"
+  fi
+fi
 
 # --------------------------------------------------------------------- fmt
 if [[ "${RUN_FMT}" == "1" ]]; then
