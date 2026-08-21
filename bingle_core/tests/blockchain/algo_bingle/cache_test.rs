@@ -1,6 +1,6 @@
+use algo_ops::AlgoOps;
 use algonaut::model::indexer::Account;
 use bingle_core::blockchain::algo_bingle::{AccountsCache, AlgoBingle, QueryMode};
-use bingle_core::blockchain::algo_ops::AlgoOps;
 use std::sync::{Arc, Mutex};
 
 #[test]

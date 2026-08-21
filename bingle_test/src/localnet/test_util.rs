@@ -1,4 +1,4 @@
-use bingle_core::blockchain::algo_ops::{AlgoChainConfig, AlgoOps, AppArg, address_to_byte_key};
+use algo_ops::{AlgoChainConfig, AlgoOps, AppArg, address_to_byte_key};
 use bingle_core::api::bingle_api::{BingleApi, BingleApiInternal, StartOptions};
 use bingle_core::api::bingle_api_impl::BingleApiImpl;
 use bingle_core::blockchain::algo_bingle::{
@@ -627,7 +627,7 @@ pub fn start_root_relay(
     addr: SocketAddr,
     passphrase: &str,
     app_id: u64,
-    cfg: bingle_core::blockchain::algo_ops::AlgoChainConfig,
+    cfg: algo_ops::AlgoChainConfig,
 ) -> Arc<BingleApiImpl> {
     tracing::info!(
         "[Test] start_root_relay name={} addr={} app_id={}",

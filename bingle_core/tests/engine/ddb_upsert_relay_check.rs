@@ -10,7 +10,7 @@ pub mod test_util;
 
 struct DummyApi {
     pub app_id: Option<u64>,
-    pub config: Option<bingle_core::blockchain::algo_ops::AlgoChainConfig>,
+    pub config: Option<algo_ops::AlgoChainConfig>,
 }
 
 impl BingleApi for DummyApi {
@@ -38,9 +38,7 @@ impl BingleApi for DummyApi {
     fn get_app_id(&self) -> Option<u64> {
         self.app_id
     }
-    fn get_algo_provider_config(
-        &self,
-    ) -> Option<bingle_core::blockchain::algo_ops::AlgoChainConfig> {
+    fn get_algo_provider_config(&self) -> Option<algo_ops::AlgoChainConfig> {
         self.config.clone()
     }
     fn get_accounts_cache(
@@ -188,7 +186,7 @@ pub fn test_ddb_upsert_relay_requires_blockchain_info() {
 #[cfg(not(target_os = "ios"))]
 pub fn test_ddb_upsert_relay_fails_on_blockchain_error() {
     // Provide a config that points to a non-existent port
-    let config = bingle_core::blockchain::algo_ops::AlgoChainConfig {
+    let config = algo_ops::AlgoChainConfig {
         client_api_url: "http://localhost".to_string(),
         client_api_port: 1234, // Hopefully unused
         indexer_api_url: "http://localhost".to_string(),

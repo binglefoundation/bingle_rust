@@ -5,14 +5,14 @@ use std::io::Write;
 use std::sync::Arc;
 use std::sync::mpsc::{Sender, channel};
 
+use algo_ops::error::{AlgoError, AlgoErrorKind};
+use algo_ops::{AlgoChainConfig, AlgoOps};
 use bingle_core::api::bingle_api::{
     BingleApi, BingleApiInternal, BingleError, OnConnectHandler, OnListeningHandler,
     OnMessageHandler,
 };
 use bingle_core::api::bingle_api_impl::BingleApiImpl;
 use bingle_core::blockchain::algo_bingle::AlgoBingle;
-use bingle_core::blockchain::algo_ops::{AlgoChainConfig, AlgoOps};
-use bingle_core::blockchain::error::{AlgoError, AlgoErrorKind};
 use bingle_core::ddb::{AdvertRecord, InetSocketAddress};
 use bingle_core::engine::BingleAccess;
 use bingle_core::util::cli_utils::{args_request_auto_migrate, parse_start_options_from_args};

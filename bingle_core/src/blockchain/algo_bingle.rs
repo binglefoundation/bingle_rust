@@ -6,8 +6,8 @@ use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::api::bingle_api::BingleApiBoth;
-use crate::blockchain::algo_ops::{AlgoOps, AppArg, address_to_byte_key};
-use crate::blockchain::error::AlgoError;
+use algo_ops::error::AlgoError;
+use algo_ops::{AlgoOps, AppArg, address_to_byte_key};
 
 use algonaut::{
     Algod,
@@ -131,7 +131,7 @@ impl AlgoBingle {
     /// # Examples
     ///
     /// ```no_run
-    /// use bingle_core::blockchain::algo_ops::AlgoOps;
+    /// use algo_ops::AlgoOps;
     /// use bingle_core::blockchain::algo_bingle::AlgoBingle;
     ///
     /// let ops = AlgoOps::new_for_algorand(None, None, None);
@@ -597,11 +597,10 @@ impl AlgoBingle {
             .ops
             .app_global_bytes(new_app_id, "AncestorApps")?
             .unwrap_or_default();
-        let mut ids = Vec::with_capacity(raw.len() / 8);
-        for chunk in raw.chunks_exact(8) {
-            let mut b = [0u8; 8];
-            b.copy_from_slice(chunk);
-            ids.push(u64::from_be_bytes(b));
+        let (chunks, _rem) = raw.as_chunks::<8>();
+        let mut ids = Vec::with_capacity(chunks.len());
+        for b in chunks {
+            ids.push(u64::from_be_bytes(*b));
         }
         Ok(ids)
     }
@@ -1162,7 +1161,7 @@ impl AlgoBingle {
     /// # Examples
     ///
     /// ```no_run
-    /// use bingle_core::blockchain::algo_ops::AlgoOps;
+    /// use algo_ops::AlgoOps;
     /// use bingle_core::blockchain::algo_bingle::AlgoBingle;
     ///
     /// let bingle = AlgoBingle::new(AlgoOps::new_for_algorand(None, None, None), 1234, 5678);
@@ -1669,7 +1668,7 @@ impl AlgoBingle {
     /// # Examples
     ///
     /// ```no_run
-    /// use bingle_core::blockchain::algo_ops::AlgoOps;
+    /// use algo_ops::AlgoOps;
     /// use bingle_core::blockchain::algo_bingle::AlgoBingle;
     ///
     /// let bingle = AlgoBingle::new(AlgoOps::new_for_algorand(None, None, None), 1234, 5678);

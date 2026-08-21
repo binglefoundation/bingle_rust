@@ -238,7 +238,7 @@ impl BingleApi for BothAsApi {
     fn get_app_id(&self) -> Option<u64> {
         self.inner.get_app_id()
     }
-    fn get_algo_provider_config(&self) -> Option<crate::blockchain::algo_ops::AlgoChainConfig> {
+    fn get_algo_provider_config(&self) -> Option<algo_ops::AlgoChainConfig> {
         self.inner.get_algo_provider_config()
     }
     fn start(&self, options: &crate::api::bingle_api::StartOptions) -> Result<(), BingleError> {

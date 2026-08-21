@@ -1,5 +1,5 @@
-use crate::blockchain::algo_ops::AlgoOps;
 use crate::protocol::ISSUER_SUFFIX;
+use algo_ops::AlgoOps;
 
 /// Generate a PKI set from AlgoOps secret:
 /// - CA certificate (PEM) signed by Ed25519 key derived from AlgoOps private key

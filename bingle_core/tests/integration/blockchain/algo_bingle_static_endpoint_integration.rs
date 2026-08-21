@@ -1,5 +1,5 @@
+use algo_ops::AlgoChainConfig;
 use bingle_core::blockchain::algo_bingle::AlgoBingle;
-use bingle_core::blockchain::algo_ops::AlgoChainConfig;
 
 use crate::setup_localnet;
 use crate::util::test_util;
@@ -21,7 +21,7 @@ pub fn set_allow_and_register_endpoint_then_list_and_clear() {
 
     // Extra guard: ensure Indexer is reachable; otherwise skip to avoid false negatives when only algod is up.
     {
-        use bingle_core::blockchain::algo_ops::AlgoOps;
+        use algo_ops::AlgoOps;
         let tmp_ops = AlgoOps::new(
             None,
             Some(test_util::ADDRESS_SPEND.to_string()),

@@ -7,13 +7,13 @@ use crate::api::bingle_api::{BingleError, NetworkEndpoint, StartOptions, UserId}
 use crate::themes;
 
 use crate::blockchain::algo_bingle::RelayGate;
-use crate::blockchain::algo_ops::{AlgoChainConfig, AlgoOps};
 use crate::ddb::{AdvertRecord, DdbBackend, InetSocketAddress};
 use crate::distributed_mutex::DistributedMutex;
 use crate::dtls::{Dtls, DtlsOpenSsl, NetworkMux, UdpNetworkMux};
 use crate::messages::handlers::MessageHandler;
 use crate::messages::types::{Message, RelayMessage, RelayTriangleTest1};
 use crate::messages::{DefaultPrintingHandler, from_json_str};
+use algo_ops::{AlgoChainConfig, AlgoOps};
 
 mod relay_init_mutex;
 use crate::packet_transport::{DtlsReliablePacketTransport, PacketTransport};

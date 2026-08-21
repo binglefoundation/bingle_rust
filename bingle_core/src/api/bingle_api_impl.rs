@@ -14,12 +14,12 @@ use crate::api::bingle_api::{
 };
 use crate::api::pki::generate_pki_from_ops;
 use crate::blockchain::algo_bingle::AccountsCache;
-use crate::blockchain::algo_ops::AlgoOps;
-use crate::blockchain::error::{AlgoError, AlgoErrorKind};
 use crate::dtls::Dtls;
 use crate::engine::{BingleAccess, Engine, EngineState};
 use crate::protocol::ISSUER_SUFFIX;
 use crate::relay::relay_finder::RelayFinderTrait;
+use algo_ops::AlgoOps;
+use algo_ops::error::{AlgoError, AlgoErrorKind};
 use ed25519_dalek::SigningKey;
 
 /// Upper bound on a single hot-path blockchain lookup — the outgoing `handle_lookup`
@@ -569,7 +569,7 @@ impl BingleApi for BingleApiImpl {
     fn get_app_id(&self) -> Option<u64> {
         self.opts().app_id
     }
-    fn get_algo_provider_config(&self) -> Option<crate::blockchain::algo_ops::AlgoChainConfig> {
+    fn get_algo_provider_config(&self) -> Option<algo_ops::AlgoChainConfig> {
         self.opts().algo_provider_config.clone()
     }
     fn get_accounts_cache(&self) -> Option<Arc<Mutex<AccountsCache>>> {

@@ -1,6 +1,6 @@
 use crate::util::test_util::init_test_logging;
+use algo_ops::AlgoOps;
 use bingle_core::api::pki::generate_pki_from_ops;
-use bingle_core::blockchain::algo_ops::AlgoOps;
 use bingle_core::protocol::cert_verify::{dump_ca_public_key_info, dump_cert_info};
 use bingle_core::protocol::{ISSUER_SUFFIX, VIRTUAL_CA};
 

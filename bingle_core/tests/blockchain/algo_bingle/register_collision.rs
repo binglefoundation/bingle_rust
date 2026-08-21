@@ -1,8 +1,8 @@
 // tests/blockchain/algo_bingle/register_collision.rs
+use algo_ops::AlgoOps;
 use algonaut::core::{Address, AppId, AssetId, ToMsgPack};
 use algonaut::transaction::{TransferAsset, builder::CallApplication};
 use bingle_core::blockchain::algo_bingle::AlgoBingle;
-use bingle_core::blockchain::algo_ops::AlgoOps;
 use std::str::FromStr;
 
 #[path = "../../setup_localnet.rs"]

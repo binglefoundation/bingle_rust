@@ -507,7 +507,7 @@ pub fn run_named_test(name: &str) -> bool {
         }
         "blockchain::algo_ops_address_derivation_test::derives_address_from_legacy_b64_seed_when_constructed" => {
             match panic::catch_unwind(|| {
-                crate::blockchain::algo_ops_address_derivation_test::derives_address_from_legacy_b64_seed_when_constructed()
+                algo_ops_address_derivation_test::derives_address_from_legacy_b64_seed_when_constructed()
             }) {
                 Ok(_) => true,
                 Err(e) => {
@@ -532,7 +532,7 @@ pub fn run_named_test(name: &str) -> bool {
         }
         "blockchain::algo_ops_address_derivation_test::derives_address_from_mnemonic_when_constructed" => {
             match panic::catch_unwind(|| {
-                crate::blockchain::algo_ops_address_derivation_test::derives_address_from_mnemonic_when_constructed()
+                algo_ops_address_derivation_test::derives_address_from_mnemonic_when_constructed()
             }) {
                 Ok(_) => true,
                 Err(e) => {
@@ -557,7 +557,7 @@ pub fn run_named_test(name: &str) -> bool {
         }
         "blockchain::algo_ops_more_test::algo_ops_more_suite" => {
             match panic::catch_unwind(|| {
-                crate::blockchain::algo_ops_more_test::algo_ops_more_suite()
+                algo_ops_more_test::algo_ops_more_suite()
             }) {
                 Ok(_) => true,
                 Err(e) => {
@@ -582,7 +582,7 @@ pub fn run_named_test(name: &str) -> bool {
         }
         "blockchain::algo_ops_reserve_helpers::test_parse_creator_reserve_from_asset_info_value_variants" => {
             match panic::catch_unwind(|| {
-                crate::blockchain::algo_ops_reserve_helpers::test_parse_creator_reserve_from_asset_info_value_variants()
+                algo_ops_reserve_helpers::test_parse_creator_reserve_from_asset_info_value_variants()
             }) {
                 Ok(_) => true,
                 Err(e) => {
@@ -607,7 +607,7 @@ pub fn run_named_test(name: &str) -> bool {
         }
         "blockchain::algo_ops_reserve_helpers::test_parse_holding_amount_from_account_value" => {
             match panic::catch_unwind(|| {
-                crate::blockchain::algo_ops_reserve_helpers::test_parse_holding_amount_from_account_value()
+                algo_ops_reserve_helpers::test_parse_holding_amount_from_account_value()
             }) {
                 Ok(_) => true,
                 Err(e) => {
@@ -631,7 +631,7 @@ pub fn run_named_test(name: &str) -> bool {
             }
         }
         "blockchain::algo_ops_test::algo_ops_basic_suite" => {
-            match panic::catch_unwind(|| crate::blockchain::algo_ops_test::algo_ops_basic_suite()) {
+            match panic::catch_unwind(|| algo_ops_test::algo_ops_basic_suite()) {
                 Ok(_) => true,
                 Err(e) => {
                     if let Some(s) = e.downcast_ref::<&str>() {

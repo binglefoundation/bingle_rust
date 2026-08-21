@@ -2,7 +2,7 @@
 //! to the poster. Pulled out of the API impl so the give-up call site stays thin and this policy
 //! (one alert per recipient, best-effort, off the delivery path) is testable on its own.
 
-use bingle_core::blockchain::algo_ops::AlgoOps;
+use algo_ops::AlgoOps;
 
 use super::AlertPoster;
 use super::envelope::{alert_exp, build_alert_request, fresh_nonce, now_secs};

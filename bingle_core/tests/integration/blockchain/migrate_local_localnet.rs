@@ -20,12 +20,7 @@ use test_util::{
 };
 
 /// Poll the account's local state on `app_id` until it holds `Handle == handle`, or panic.
-fn wait_for_handle(
-    ops: &bingle_core::blockchain::algo_ops::AlgoOps,
-    app_id: u64,
-    account: &str,
-    handle: &str,
-) {
+fn wait_for_handle(ops: &algo_ops::AlgoOps, app_id: u64, account: &str, handle: &str) {
     let start = Instant::now();
     while start.elapsed() < Duration::from_secs(30) {
         if let Ok(Some(entries)) = ops.local_state_for_account(app_id, account)

@@ -265,7 +265,7 @@ impl RelayUpdater {
     }
 
     fn id_bucket_u32(&self, id: &str) -> u32 {
-        if let Ok(bytes) = crate::blockchain::algo_ops::address_to_byte_key(id) {
+        if let Ok(bytes) = algo_ops::address_to_byte_key(id) {
             return u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
         }
 

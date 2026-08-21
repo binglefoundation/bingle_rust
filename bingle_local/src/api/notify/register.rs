@@ -5,8 +5,8 @@
 //! ([`AlgoOps::sign_notify_envelope`]) so the bytes match the gateway's `verify.ts` and the
 //! committed cross-impl vector. No new crypto lives here.
 
+use algo_ops::AlgoOps;
 use bingle_core::api::bingle_api::BingleError;
-use bingle_core::blockchain::algo_ops::AlgoOps;
 use serde::Serialize;
 
 /// Body of a `POST /register` to the notify gateway. Field names match the gateway's request schema

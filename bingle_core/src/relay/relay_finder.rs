@@ -362,7 +362,7 @@ impl RelayFinder {
 
     fn id_bucket_u32(&self, id: &str) -> u32 {
         // Attempt to decode Algorand address to bytes and take first 4 bytes
-        if let Ok(bytes) = crate::blockchain::algo_ops::address_to_byte_key(id) {
+        if let Ok(bytes) = algo_ops::address_to_byte_key(id) {
             let b0 = u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
             return b0;
         }

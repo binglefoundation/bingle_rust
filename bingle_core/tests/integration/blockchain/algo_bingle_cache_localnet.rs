@@ -1,5 +1,5 @@
+use algo_ops::AlgoChainConfig;
 use bingle_core::blockchain::algo_bingle::{AccountsCache, AlgoBingle, QueryMode};
-use bingle_core::blockchain::algo_ops::AlgoChainConfig;
 use serial_test::serial;
 use std::sync::{Arc, Mutex};
 

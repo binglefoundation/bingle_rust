@@ -9,9 +9,9 @@
 //! A4 preserves the existing behaviour exactly. The fail-fast handle pre-check (A1) and
 //! idempotent opt-ins (A2) build on this seam in later changes.
 
+use algo_ops::AlgoOps;
 use bingle_core::api::bingle_api::BingleError;
 use bingle_core::blockchain::algo_bingle::AlgoBingle;
-use bingle_core::blockchain::algo_ops::AlgoOps;
 
 /// The minimal set of on-chain operations needed to register a handle.
 ///

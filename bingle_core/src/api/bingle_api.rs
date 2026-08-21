@@ -7,8 +7,8 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use crate::blockchain::algo_bingle::AccountsCache;
-use crate::blockchain::error::AlgoError;
 use crate::util::logging::LogMode;
+use algo_ops::error::AlgoError;
 use ed25519_dalek::SigningKey;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
@@ -484,7 +484,7 @@ pub struct StartOptions {
     pub stun_servers: Option<Vec<SocketAddr>>,
     /// Optional Algorand provider configuration loaded from --node-file.
     #[serde(default)]
-    pub algo_provider_config: Option<crate::blockchain::algo_ops::AlgoChainConfig>,
+    pub algo_provider_config: Option<algo_ops::AlgoChainConfig>,
     /// Optional human-readable network name from the node file (e.g., mainnet, testnet).
     #[serde(default)]
     pub algo_network: Option<String>,
@@ -578,7 +578,7 @@ pub trait BingleApi: Send + Sync {
     /// Returns the configured application id, if any, from StartOptions. Preferred over env vars.
     fn get_app_id(&self) -> Option<u64>;
     /// Returns the configured Algorand provider config from StartOptions, if any.
-    fn get_algo_provider_config(&self) -> Option<crate::blockchain::algo_ops::AlgoChainConfig>;
+    fn get_algo_provider_config(&self) -> Option<algo_ops::AlgoChainConfig>;
     /// Returns the persistent accounts cache for the Algorand Indexer, if available.
     fn get_accounts_cache(&self) -> Option<Arc<Mutex<AccountsCache>>> {
         None

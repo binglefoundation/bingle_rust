@@ -1,9 +1,9 @@
 use crate::setup_localnet;
 use crate::util::test_util;
+use algo_ops::AlgoOps;
 use bingle_core::api::bingle_api::{BingleApi, StartOptions};
 use bingle_core::api::bingle_api_impl::BingleApiImpl;
 use bingle_core::blockchain::algo_bingle::AlgoBingle;
-use bingle_core::blockchain::algo_ops::AlgoOps;
 use bingle_core::engine::BingleAccessUnsafeForTests;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 

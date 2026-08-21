@@ -123,7 +123,7 @@ pub trait BingleLocalApi: Send + Sync {
     fn ensure_local_migrated(&self) -> Result<Option<String>, BingleError>;
 
     /// Get an AlgoOps instance configured with the current keypair.
-    fn get_algo_ops(&self) -> Result<bingle_core::blockchain::algo_ops::AlgoOps, BingleError>;
+    fn get_algo_ops(&self) -> Result<algo_ops::AlgoOps, BingleError>;
 
     /// Add a contact to the local store.
     fn add_contact(

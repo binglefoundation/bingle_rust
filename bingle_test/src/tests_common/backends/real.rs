@@ -1,7 +1,7 @@
 // #![cfg(not(target_os = "ios"))]
 
 use crate::tests_common::TestAlgo;
-use bingle_core::blockchain::algo_ops::{self, AlgoOps};
+use algo_ops::{self, AlgoOps};
 
 fn err<E: std::fmt::Display>(e: E) -> String {
     format!("{}", e)

@@ -1,8 +1,8 @@
 use std::sync::{Arc, Mutex};
 
 use crate::common::{CapturingMockBingleApi, TrackingMockBingleApi};
+use algo_ops::AlgoOps;
 use bingle_core::api::bingle_api::{BingleError, SendFailureKind, StartOptions};
-use bingle_core::blockchain::algo_ops::AlgoOps;
 use bingle_local::api::bingle_local_api::{
     BingleLocalApi, Contact, ContactSource, Keypair, KeypairStatus, Message,
 };

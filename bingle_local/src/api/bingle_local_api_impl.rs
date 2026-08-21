@@ -10,10 +10,10 @@ use crate::api::{
     BingleLocalApi, ChainRegistrationOps, Contact, ContactSource, Keypair, KeypairStatus, Message,
     REQUIRED_ALGO, run_registration,
 };
+use algo_ops::error::AlgoErrorKind;
+use algo_ops::{AlgoChainConfig, AlgoOps};
 use bingle_core::api::bingle_api::{BingleError, SendFailureKind};
 use bingle_core::blockchain::algo_bingle::AlgoBingle;
-use bingle_core::blockchain::algo_ops::{AlgoChainConfig, AlgoOps};
-use bingle_core::blockchain::error::AlgoErrorKind;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};

@@ -59,7 +59,7 @@ impl DdbClientImpl {
     pub fn new(
         api: crate::api::bingle_api::BingleApiBothType,
         app_id: u64,
-        cfg: Option<crate::blockchain::algo_ops::AlgoChainConfig>,
+        cfg: Option<algo_ops::AlgoChainConfig>,
     ) -> Self {
         let cache = api.upgrade().and_then(|a| a.get_accounts_cache());
         let discover = crate::relay::discovery::indexer_discover_closure(app_id, cfg, cache);

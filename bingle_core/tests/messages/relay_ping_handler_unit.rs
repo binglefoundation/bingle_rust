@@ -167,9 +167,7 @@ impl BingleApi for MockApi {
         _handler: Option<std::sync::Arc<bingle_core::api::bingle_api::OnListeningHandler>>,
     ) {
     }
-    fn get_algo_provider_config(
-        &self,
-    ) -> Option<bingle_core::blockchain::algo_ops::AlgoChainConfig> {
+    fn get_algo_provider_config(&self) -> Option<algo_ops::AlgoChainConfig> {
         None
     }
     fn get_user_id(&self) -> Option<String> {

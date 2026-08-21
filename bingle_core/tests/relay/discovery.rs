@@ -1,4 +1,4 @@
-use bingle_core::blockchain::algo_ops::AlgoChainConfig;
+use algo_ops::AlgoChainConfig;
 use bingle_core::relay::discovery::indexer_discover_closure;
 
 /// Regression: the discovery closure used to `panic!` when the indexer query failed,
