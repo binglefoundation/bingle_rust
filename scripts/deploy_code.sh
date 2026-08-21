@@ -102,6 +102,38 @@ if [[ $SKIP_NATIVE -eq 0 ]]; then
 fi
 ok "environment, branch ($BRANCH), and clean tree"
 
+# ── preflight: version must not go backwards ──────────────────────────
+# Guard against a fumbled version string (a dropped digit, or "0.3.1" typed as
+# "3.0.1") shipping a release that sorts below the last one. The requested
+# version must be >= the version currently in the tree — which, because every
+# deploy commits its own bump, is the last released version. Equal is permitted
+# so a partially-completed release can be resumed by re-running the same command
+# (the per-crate/-npm "already published, skipping" checks make that safe).
+# Note: this only catches going *backwards*; a typo that happens to sort higher
+# (e.g. 0.3.0 -> 3.0.1) still passes, so eyeball the version before confirming.
+current_version="$(python3 - <<'PY'
+import re, pathlib
+text = pathlib.Path("bingle_core/Cargo.toml").read_text()
+m = re.search(r'\[package\][^\[]*?\nversion\s*=\s*"([^"]*)"', text, re.S)
+print(m.group(1) if m else "")
+PY
+)"
+[[ -n "$current_version" ]] || die "could not read the current version from bingle_core/Cargo.toml"
+if ! python3 - "$current_version" "$VERSION" <<'PY'
+import sys
+def core(v):  # numeric X.Y.Z, ignoring any pre-release/build suffix
+    return tuple(int(x) for x in v.split('-', 1)[0].split('.')[:3])
+sys.exit(0 if core(sys.argv[2]) >= core(sys.argv[1]) else 1)
+PY
+then
+  die "requested version '$VERSION' is lower than the current version '$current_version' — refusing to release backwards"
+fi
+if [[ "$VERSION" == "$current_version" ]]; then
+  warn "requested version '$VERSION' equals the current version — assuming a resumed or repeat release"
+else
+  ok "version $VERSION is ahead of current $current_version"
+fi
+
 # ── preflight: publish auth ───────────────────────────────────────────
 # npm publishing is the one step that can block on an interactive browser prompt,
 # and it lands *after* the ~10-minute native build: with account 2FA set to
