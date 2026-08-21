@@ -1,4 +1,4 @@
-# Bingle
+# Bingle <img src="docs/assets/bingle_logo.png" alt="Bingle logo" height="40" align="right" />
 
 Bingle is a decentralized, peer-to-peer messaging protocol that lets users communicate securely and privately
 — so your conversations stay yours, with nobody able to read or shut them down.
