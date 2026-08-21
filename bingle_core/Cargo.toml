@@ -21,8 +21,8 @@ crate-type = ["rlib"]
 
 [dependencies]
 # Core deps kept iOS-friendly; heavy platform-specific deps remain gated below.
-blockchain_ops = { git = "https://github.com/richdrich/blockchain_ops_rust", rev = "bc862efe679b958622cd0f1f61beb2820a6957ba" }
-algo_ops = { git = "https://github.com/richdrich/blockchain_ops_rust", rev = "bc862efe679b958622cd0f1f61beb2820a6957ba" }
+blockchain_ops = "0.6.0"
+algo_ops = "0.6.0"
 algonaut = "0.8.0"
 anyhow = "1"
 thiserror = "1"

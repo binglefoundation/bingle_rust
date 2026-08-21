@@ -18,7 +18,7 @@ path = "src/lib.rs"
 
 [dependencies]
 bingle_core = { path = "../bingle_core", version = "3.0.1" }
-algo_ops = { git = "https://github.com/richdrich/blockchain_ops_rust", rev = "bc862efe679b958622cd0f1f61beb2820a6957ba" }
+algo_ops = "0.6.0"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tracing = "0.1"

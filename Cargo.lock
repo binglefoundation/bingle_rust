@@ -14,7 +14,8 @@ dependencies = [
 [[package]]
 name = "algo_ops"
 version = "0.6.0"
-source = "git+https://github.com/richdrich/blockchain_ops_rust?rev=bc862efe679b958622cd0f1f61beb2820a6957ba#bc862efe679b958622cd0f1f61beb2820a6957ba"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e6903c89fba8d4b28353e205f4db8d8e9931072b2dfd8bd2cb31bb778d1c13ef"
 dependencies = [
  "algonaut",
  "anyhow",
@@ -661,7 +662,8 @@ dependencies = [
 [[package]]
 name = "blockchain_ops"
 version = "0.6.0"
-source = "git+https://github.com/richdrich/blockchain_ops_rust?rev=bc862efe679b958622cd0f1f61beb2820a6957ba#bc862efe679b958622cd0f1f61beb2820a6957ba"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7a7b78c1b0f1ba5be95e68e02265a37c05a5031d100ba0a3751565cc905e1abf"
 dependencies = [
  "anyhow",
 ]
