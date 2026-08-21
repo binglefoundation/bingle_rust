@@ -10,8 +10,8 @@
 // To keep CI green in environments without testnet credentials, this test only
 // runs when BINGLE_RUN_TESTNET=1 is set in the environment. Otherwise it exits early.
 
+use algo_ops::AlgoOps;
 use bingle_core::AlgoBingle;
-use bingle_core::AlgoOps;
 use bingle_core::api::bingle_api::{BingleApi, StartOptions};
 use bingle_core::api::bingle_api_impl::BingleApiImpl;
 use bingle_core::engine::{BingleAccess, BingleAccessUnsafeForTests};
