@@ -108,7 +108,7 @@ pub fn assert_localnet_available() {
 pub fn ops_from_mnemonic(addr: &str, mnem: &str, cfg: AlgoChainConfig) -> AlgoOps {
     // Pass the mnemonic directly as the passphrase (ASCII string)
     let pass = mnem.to_string();
-    AlgoOps::new(Some(pass), Some(addr.to_string()), Some(cfg))
+    AlgoOps::new_for_algorand(Some(pass), Some(addr.to_string()), Some(cfg))
 }
 
 #[allow(dead_code)]

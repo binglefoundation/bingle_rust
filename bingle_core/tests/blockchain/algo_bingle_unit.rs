@@ -5,7 +5,7 @@ use bingle_core::blockchain::algo_bingle::AlgoBingle;
 #[cfg(not(target_os = "ios"))]
 pub fn algo_bingle_param_validation() {
     // Minimal ops; methods should fail fast on invalid params without network access
-    let ops = AlgoOps::new(
+    let ops = AlgoOps::new_for_algorand(
         None,
         Some("P577PSTDICQ6PQFBR5YMDMJ2YVK7LT5V4GOPNVDLCEDJIL7XGRWC5BRFWA".to_string()),
         None,

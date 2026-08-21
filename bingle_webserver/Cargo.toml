@@ -21,7 +21,7 @@ anyhow = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 bingle_core = { path = "../bingle_core", version = "3.0.1" }
-algo_ops = "0.4.0"
+algo_ops = "0.6.0"
 bingle_local = { path = "../bingle_local", version = "3.0.1" }
 
 [dev-dependencies]

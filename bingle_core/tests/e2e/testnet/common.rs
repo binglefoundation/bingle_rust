@@ -26,7 +26,7 @@ pub fn load_testnet_config() -> (Option<String>, algo_ops::AlgoChainConfig, u64,
 }
 
 pub fn build_ops(passphrase: &str, provider_cfg: &algo_ops::AlgoChainConfig) -> AlgoOps {
-    AlgoOps::new(
+    AlgoOps::new_for_algorand(
         Some(passphrase.to_string()),
         None,
         Some(provider_cfg.clone()),

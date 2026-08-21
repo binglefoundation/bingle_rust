@@ -41,7 +41,7 @@ impl AlertPoster for RecordingPoster {
 }
 
 fn test_ops() -> AlgoOps {
-    AlgoOps::new(
+    AlgoOps::new_for_algorand(
         Some(TEST_MNEMONIC.to_string()),
         None,
         Some(AlgoChainConfig::default()),

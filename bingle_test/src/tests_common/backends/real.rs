@@ -27,7 +27,7 @@ impl TestAlgo for RealBackend {
         } else {
             None
         };
-        let inner = AlgoOps::new(passphrase, address, cfg);
+        let inner = AlgoOps::new_for_algorand(passphrase, address, cfg);
         Self { inner }
     }
 

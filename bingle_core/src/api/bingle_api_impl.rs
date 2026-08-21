@@ -382,7 +382,7 @@ impl BingleApiImpl {
             .get_algo_provider_config()
             .ok_or_else(|| BingleError::Other("algo_provider_config not configured".to_string()))?;
         // Handle lookups only issue public Indexer queries, so no account is needed.
-        let ops = AlgoOps::new_indexer(Some(config));
+        let ops = AlgoOps::new_for_algorand(None, None, Some(config));
         Ok(crate::blockchain::algo_bingle::AlgoBingle::new_with_cache(
             ops,
             app_id,

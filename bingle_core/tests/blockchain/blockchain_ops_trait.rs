@@ -57,7 +57,7 @@ fn trait_create_address_populates_account() {
 #[test]
 fn new_for_algorand_matches_new_for_address_derivation() {
     let (_id, passphrase) = AlgoOps::generate_keypair();
-    let via_new = AlgoOps::new(Some(passphrase.clone()), None, None);
+    let via_new = AlgoOps::new_for_algorand(Some(passphrase.clone()), None, None);
     let via_ctor = AlgoOps::new_for_algorand(Some(passphrase), None, None);
     assert_eq!(
         via_new.address, via_ctor.address,
