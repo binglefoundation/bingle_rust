@@ -132,26 +132,36 @@ if [[ "${RUN_CLIPPY}" == "1" ]]; then
     clippy_rc=$?
   fi
 
-  errors="$(grep -cE '^error(\[|:)' "${clippy_log}")"
+  # Strip ANSI before counting: CI sets CARGO_TERM_COLOR=always, which forces color even when
+  # cargo's stderr is redirected to a file, so uncolored `^error`/`^warning` greps would miss
+  # every line and misreport a failing run as "clean".
+  sed -E $'s/\x1b\\[[0-9;]*m//g' "${clippy_log}" > "${clippy_log}.plain"
+  errors="$(grep -cE '^error(\[|:)' "${clippy_log}.plain")"
   # per-warning lines only (exclude the "generated N warnings" summary lines)
-  warns="$(grep -E '^warning: ' "${clippy_log}" | grep -vcE 'generated .* warning')"
+  warns="$(grep -E '^warning: ' "${clippy_log}.plain" | grep -vcE 'generated .* warning')"
 
   if [[ "${errors}" -gt 0 ]]; then
     echo -e "${RED}${errors} error(s), ${warns} warning(s)${NC}"
   elif [[ "${warns}" -gt 0 ]]; then
     echo -e "${YELLOW}${warns} warning(s), 0 errors${NC}  — top lints:"
-    grep -E '^warning: ' "${clippy_log}" | grep -vE 'generated .* warning' \
+    grep -E '^warning: ' "${clippy_log}.plain" | grep -vE 'generated .* warning' \
       | sed -E 's/^warning: //' | sort | uniq -c | sort -rn | head -12 \
       | sed 's/^/    /'
     echo -e "    ${BOLD}...${NC} (many are auto-fixable: $0 fix)"
+  elif [[ "${clippy_rc}" -ne 0 ]]; then
+    # Non-zero exit but the line heuristic saw nothing (unusual/colored output): never hide it.
+    echo -e "${RED}clippy failed (exit ${clippy_rc})${NC}"
   else
     echo -e "${GREEN}clean${NC}"
   fi
 
-  [[ "${DETAIL}" == "1" ]] && { echo; cat "${clippy_log}"; }
+  # On failure, always surface the diagnostics (not just under --detail) so CI shows the cause.
+  if [[ "${DETAIL}" == "1" || ( "${STRICT}" == "1" && "${clippy_rc}" -ne 0 ) ]]; then
+    echo; grep -E '^(error|warning)' "${clippy_log}.plain" | head -60
+  fi
   # In strict mode, clippy's own exit code (with -D warnings) decides pass/fail.
   [[ "${STRICT}" == "1" && "${clippy_rc}" -ne 0 ]] && fail=1
-  rm -f "${clippy_log}"
+  rm -f "${clippy_log}" "${clippy_log}.plain"
 fi
 
 # -------------------------------------------------------------------- docs
