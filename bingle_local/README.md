@@ -1,4 +1,4 @@
-# bingle_local
+# bingle_local <img src="https://raw.githubusercontent.com/binglefoundation/bingle_rust/staging/docs/assets/bingle_logo.png" alt="Bingle logo" height="36" align="right" />
 
 Bingle is a decentralized, peer-to-peer messaging protocol that lets users communicate securely and privately
 — so your conversations stay yours, with nobody able to read or shut them down.
