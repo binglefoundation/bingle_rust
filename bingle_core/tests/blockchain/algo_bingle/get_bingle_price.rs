@@ -1,7 +1,7 @@
 // tests/blockchain/algo_bingle/get_bingle_price.rs
 // Unit-style tests for price extraction logic without requiring a live Algod node.
 
-use bingle_core::algo_bingle::AlgoBingle;
+use bingle_core::blockchain::algo_bingle::AlgoBingle;
 
 #[test]
 #[cfg(not(target_os = "ios"))]

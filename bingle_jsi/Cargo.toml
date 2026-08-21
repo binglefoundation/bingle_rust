@@ -1,6 +1,6 @@
 [package]
 name = "bingle_jsi"
-version = "0.3.0"
+version = "3.0.1"
 edition = "2024"
 description = "React Native JSI bridge for Bingle using uniffi proc macros."
 license = "MIT OR Apache-2.0"
@@ -18,12 +18,20 @@ crate-type = ["lib", "staticlib", "cdylib"]
 [dependencies]
 uniffi = { version = "0.28", features = ["cli"] }
 thiserror = "1"
-bingle_core = { path = "../bingle_core", version = "0.3.0" }
-bingle_local = { path = "../bingle_local", version = "0.3.0" }
+bingle_core = { path = "../bingle_core", version = "3.0.1" }
+algo_ops = "0.6.0"
+bingle_local = { path = "../bingle_local", version = "3.0.1" }
 serde_json = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["registry"] }
 chrono = { version = "0.4", features = ["serde"] }
+
+# Android needs rustls-platform-verifier initialized with the JNI context before any HTTPS to an
+# Algorand node (issue #135). Same versions already resolved transitively via algonaut->reqwest, so
+# these are feature-unified with that instance (the global the reqwest Verifier reads).
+[target.'cfg(target_os = "android")'.dependencies]
+jni = "0.22"
+rustls-platform-verifier = "0.7"
 
 [dev-dependencies]
 uniffi = { version = "0.28", features = ["build"] }

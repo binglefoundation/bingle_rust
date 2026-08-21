@@ -10,6 +10,11 @@ set -euo pipefail
 #
 # Usage:
 #   bash bingle_jsi/scripts/build_android.sh
+#   BINGLE_ANDROID_ABIS=x86_64 bash bingle_jsi/scripts/build_android.sh   # one ABI (fast, for tests)
+#
+# BINGLE_ANDROID_ABIS: comma-separated ABIs to build (default: all — arm64-v8a,armeabi-v7a,x86_64).
+# For a fast test/e2e build, restrict to just the emulator's ABI (like the iOS BINGLE_IOS_SIM_ONLY
+# build): arm64-v8a on an Apple-silicon emulator, x86_64 on a Linux CI emulator.
 #
 # Output:
 #   bingle_jsi/android/src/main/jniLibs/{arm64-v8a,armeabi-v7a,x86_64}/libbingle_jsi.so
@@ -144,17 +149,28 @@ export RANLIB_x86_64_linux_android="$NDK_BIN/llvm-ranlib"
 
 # ── Android target triples ────────────────────────────────────────────
 
-declare -A TARGETS
-TARGETS=(
-  ["aarch64-linux-android"]="arm64-v8a"
-  ["armv7-linux-androideabi"]="armeabi-v7a"
-  ["x86_64-linux-android"]="x86_64"
+declare -A ABI_TO_TARGET=(
+  ["arm64-v8a"]="aarch64-linux-android"
+  ["armeabi-v7a"]="armv7-linux-androideabi"
+  ["x86_64"]="x86_64-linux-android"
 )
+
+# Which ABIs to build (default: all). BINGLE_ANDROID_ABIS restricts to a subset for fast builds.
+if [[ -n "${BINGLE_ANDROID_ABIS:-}" ]]; then
+  IFS=',' read -r -a ABIS <<< "$BINGLE_ANDROID_ABIS"
+else
+  ABIS=(arm64-v8a armeabi-v7a x86_64)
+fi
 
 # ── install targets and build ─────────────────────────────────────────
 
-for target in "${!TARGETS[@]}"; do
-  abi="${TARGETS[$target]}"
+BINDING_TARGET=""
+for abi in "${ABIS[@]}"; do
+  target="${ABI_TO_TARGET[$abi]:-}"
+  if [[ -z "$target" ]]; then
+    echo "Error: unknown Android ABI '$abi' (expected: arm64-v8a, armeabi-v7a, x86_64)" >&2
+    exit 1
+  fi
   ensure_target "$target"
 
   echo "Building $CRATE_NAME for $target ($abi)..."
@@ -170,6 +186,7 @@ for target in "${!TARGETS[@]}"; do
   mkdir -p "$JNILIBS_DIR/$abi"
   cp "$SO_FILE" "$JNILIBS_DIR/$abi/lib${CRATE_NAME}.so"
   echo "  -> $JNILIBS_DIR/$abi/lib${CRATE_NAME}.so"
+  BINDING_TARGET="$target"
 done
 
 # ── generate Kotlin bindings via uniffi-bindgen ───────────────────────
@@ -177,8 +194,8 @@ done
 echo "Generating Kotlin bindings..."
 mkdir -p "$GENERATED_DIR"
 
-# Use the arm64 library for binding generation (all ABIs share the same interface)
-BINDING_LIB="$BUILD_DIR/aarch64-linux-android/release/lib${CRATE_NAME}.so"
+# Use any built library for binding generation (all ABIs share the same interface).
+BINDING_LIB="$BUILD_DIR/$BINDING_TARGET/release/lib${CRATE_NAME}.so"
 
 "${CARGO_CMD[@]}" run -p bingle_jsi --bin uniffi-bindgen -- generate \
   --library "$BINDING_LIB" \

@@ -5,15 +5,16 @@ use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::blockchain::algo_ops::{AlgoOps, AppArg, address_to_byte_key};
-use crate::blockchain::error::AlgoError;
+use crate::api::bingle_api::BingleApiBoth;
+use algo_ops::error::AlgoError;
+use algo_ops::{AlgoOps, AppArg, address_to_byte_key};
 
 use algonaut::{
     Algod,
-    core::{Address, AppId, AssetId, MicroAlgos, ToMsgPack},
+    core::{Address, AppId, AssetId, ToMsgPack},
     model::algod::SuggestedParams,
     transaction::{
-        Pay, TransferAsset,
+        TransferAsset,
         account::Account,
         builder::{CallApplication, ClawbackAsset, UpdateAsset},
         transaction::Transaction,
@@ -37,19 +38,31 @@ use algonaut::{
 /// validation logic in the provided contract.
 #[derive(Debug, Clone)]
 pub struct AlgoBingle {
+    /// The generic Algorand helpers used to sign and submit transactions, holding the
+    /// signing account and node/indexer configuration.
     pub ops: AlgoOps,
+    /// The Bingle application id this instance operates on (0 when not yet resolved).
     pub app_id: u64,
+    /// The Bingle$ Algorand standard asset (ASA) id this instance operates on (0 when not
+    /// yet resolved).
     pub asset_id: u64,
+    /// An optional shared cache of indexer-derived accounts, used to avoid full rescans on
+    /// repeated handle and endpoint lookups.
     pub cache: Option<Arc<Mutex<AccountsCache>>>,
 }
 
 /// Named account keys for `deploy_app_and_asset`. Each maps to an `AlgoOps` instance
 /// whose address and signing key are used for the corresponding deployment role.
 pub const ACCOUNT_APP_ADMIN: &str = "APP_ADMIN";
+/// Account key for the app withdrawer role in [`AlgoBingle::deploy_app_and_asset`].
 pub const ACCOUNT_APP_WITHDRAWER: &str = "APP_WITHDRAWER";
+/// Account key for the asset creator role in [`AlgoBingle::deploy_app_and_asset`].
 pub const ACCOUNT_ASSET_CREATOR: &str = "ASSET_CREATOR";
+/// Account key for the asset reserve role in [`AlgoBingle::deploy_app_and_asset`].
 pub const ACCOUNT_ASSET_RESERVE: &str = "ASSET_RESERVE";
+/// Account key for the asset manager role in [`AlgoBingle::deploy_app_and_asset`].
 pub const ACCOUNT_ASSET_MANAGER: &str = "ASSET_MANAGER";
+/// Account key for the asset freeze role in [`AlgoBingle::deploy_app_and_asset`].
 pub const ACCOUNT_ASSET_FREEZE: &str = "ASSET_FREEZE";
 
 const INDEXER_PAGE_SIZE: u64 = 100;
@@ -62,6 +75,8 @@ fn indexer_excludes() -> Option<Vec<String>> {
     ])
 }
 
+/// Cached set of indexer-derived accounts opted in to a Bingle app, so handle and endpoint
+/// lookups can reuse a prior scan instead of paging the indexer from scratch each time.
 #[derive(Debug, Default, Clone)]
 pub struct AccountsCache {
     /// The last round number that was fully processed.
@@ -72,10 +87,15 @@ pub struct AccountsCache {
     pub accounts: HashMap<String, algonaut::model::indexer::Account>,
 }
 
+/// How an indexer account query interacts with the [`AccountsCache`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum QueryMode {
-    Refresh,   // Incremental if cache exists, else Full
+    /// Incrementally update the cache from the last processed round, or do a full scan if no
+    /// cache exists yet.
+    Refresh, // Incremental if cache exists, else Full
+    /// Serve results from the cache only, without contacting the network.
     CacheOnly, // Use cache without network
+    /// Discard the cache and rebuild it with a full account scan.
     ForceFull, // Force a full scan
 }
 
@@ -101,6 +121,24 @@ const REGISTRATION_TXN_COUNT: u64 = 12;
 const REGISTRATION_SAFETY_MARGIN_MICROALGOS: u64 = 10_000;
 
 impl AlgoBingle {
+    /// Create an [`AlgoBingle`] bound to the given [`AlgoOps`],
+    /// application id, and Bingle$ asset id, without a shared accounts cache.
+    ///
+    /// Pass `app_id` or `asset_id` as `0` when the resource is not yet known (for example when
+    /// it will be resolved by [`AlgoBingle::deploy_app_and_asset`]). To reuse indexer scans
+    /// across lookups, use [`AlgoBingle::new_with_cache`] instead.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use algo_ops::AlgoOps;
+    /// use bingle_core::blockchain::algo_bingle::AlgoBingle;
+    ///
+    /// let ops = AlgoOps::new_for_algorand(None, None, None);
+    /// let bingle = AlgoBingle::new(ops, 1234, 5678);
+    /// let owner = bingle.handle_lookup("alice")?;
+    /// # Ok::<(), anyhow::Error>(())
+    /// ```
     pub fn new(ops: AlgoOps, app_id: u64, asset_id: u64) -> Self {
         // Debug-print the AlgoOps configuration for visibility
         algo_log!(
@@ -117,6 +155,10 @@ impl AlgoBingle {
         }
     }
 
+    /// Create an [`AlgoBingle`] that shares the given [`AccountsCache`], so repeated handle and
+    /// endpoint lookups can reuse indexer scans instead of paging from scratch each time.
+    ///
+    /// Otherwise identical to [`AlgoBingle::new`].
     pub fn new_with_cache(
         ops: AlgoOps,
         app_id: u64,
@@ -161,11 +203,11 @@ impl AlgoBingle {
     /// The **post-registration minimum balance** (Algorand MBR) a *registered* account must retain,
     /// read live from this account's app: base + app opt-in (incl. local schema) + asset opt-in.
     ///
-    /// Unlike [`required_funding`], this excludes the one-time Bingle$ price and registration
+    /// Unlike [`Self::required_funding`], this excludes the one-time Bingle$ price and registration
     /// transaction fees — those are spent *at* registration, so charging them again would report a
     /// freshly registered account as short by exactly what it just paid. Algorand enforces this MBR
     /// on-chain, so a successfully registered account is always at or above it. Use this to decide
-    /// whether an already-registered account can operate; use [`required_funding`] for the funding
+    /// whether an already-registered account can operate; use [`Self::required_funding`] for the funding
     /// needed to reach registration. Errors propagate so the caller can fall back if the chain is
     /// unreachable.
     pub fn post_registration_mbr(&self) -> Result<f64> {
@@ -174,7 +216,7 @@ impl AlgoBingle {
     }
 
     /// Pure model of the post-registration minimum balance in microalgos (base + app opt-in incl.
-    /// schema + asset opt-in). Shared with [`registration_funding_algos`], which adds the one-time
+    /// schema + asset opt-in). Shared with [`Self::registration_funding_algos`], which adds the one-time
     /// price + fees + safety margin on top.
     pub fn post_registration_mbr_microalgos(local_uints: u64, local_byte_slices: u64) -> u64 {
         let app_optin_mbr = MBR_APP_OPTIN_BASE_MICROALGOS
@@ -183,14 +225,14 @@ impl AlgoBingle {
         MBR_BASE_MICROALGOS + app_optin_mbr + MBR_ASSET_OPTIN_MICROALGOS
     }
 
-    /// [`post_registration_mbr_microalgos`] expressed in ALGOs.
+    /// [`Self::post_registration_mbr_microalgos`] expressed in ALGOs.
     pub fn post_registration_mbr_algos(local_uints: u64, local_byte_slices: u64) -> f64 {
         Self::post_registration_mbr_microalgos(local_uints, local_byte_slices) as f64
             / MICROALGOS_PER_ALGO as f64
     }
 
     /// Pure cost model for registering a handle: the post-registration minimum balance
-    /// ([`post_registration_mbr_microalgos`]) + the Bingle$ price + the registration transaction
+    /// ([`Self::post_registration_mbr_microalgos`]) + the Bingle$ price + the registration transaction
     /// fees + a safety margin. The MBR/fee figures are Algorand protocol constants; `price_microalgos`
     /// and the app schema `(local_uints, local_byte_slices)` are read on-chain by
     /// [`AlgoBingle::required_funding`].
@@ -555,11 +597,10 @@ impl AlgoBingle {
             .ops
             .app_global_bytes(new_app_id, "AncestorApps")?
             .unwrap_or_default();
-        let mut ids = Vec::with_capacity(raw.len() / 8);
-        for chunk in raw.chunks_exact(8) {
-            let mut b = [0u8; 8];
-            b.copy_from_slice(chunk);
-            ids.push(u64::from_be_bytes(b));
+        let (chunks, _rem) = raw.as_chunks::<8>();
+        let mut ids = Vec::with_capacity(chunks.len());
+        for b in chunks {
+            ids.push(u64::from_be_bytes(*b));
         }
         Ok(ids)
     }
@@ -778,6 +819,16 @@ impl AlgoBingle {
         sync_result
     }
 
+    /// Synchronous implementation behind [`AlgoBingle::list_static_endpoints_via_indexer`],
+    /// listing `(address, static_endpoint)` pairs for accounts opted in to `app_id`.
+    ///
+    /// Prefer [`AlgoBingle::list_static_endpoints_via_indexer`], which dispatches to this on a
+    /// dedicated thread when called from within a tokio runtime.
+    ///
+    /// # Errors
+    ///
+    /// Errors if the indexer query fails; a host-unreachable failure is treated as a transient
+    /// condition and logged at info level before being returned.
     pub fn list_static_endpoints_via_indexer_sync(
         &self,
         app_id: u64,
@@ -1095,8 +1146,31 @@ impl AlgoBingle {
         Ok(())
     }
 
-    /// Lookup a Bingle handle on-chain using the Indexer.
-    /// Returns the address of the oldest account that has this handle registered in its local state.
+    /// Look up a Bingle handle on-chain using the indexer, returning the address of the oldest
+    /// account that has this handle registered in its local state.
+    ///
+    /// Handles are matched by their normalised form (see [`AlgoBingle::normalize_handle`]), and
+    /// ties on registration time are broken deterministically by address. Returns `Ok(None)` when
+    /// no account holds the handle.
+    ///
+    /// # Errors
+    ///
+    /// Errors if no application id is available (neither on this instance nor in the
+    /// [`AlgoOps`] config) or if the indexer query fails.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use algo_ops::AlgoOps;
+    /// use bingle_core::blockchain::algo_bingle::AlgoBingle;
+    ///
+    /// let bingle = AlgoBingle::new(AlgoOps::new_for_algorand(None, None, None), 1234, 5678);
+    /// match bingle.handle_lookup("alice")? {
+    ///     Some(address) => println!("alice is owned by {address}"),
+    ///     None => println!("alice is not registered"),
+    /// }
+    /// # Ok::<(), anyhow::Error>(())
+    /// ```
     pub fn handle_lookup(&self, handle: &str) -> Result<Option<String>> {
         let app_id = if self.app_id != 0 {
             self.app_id
@@ -1347,6 +1421,15 @@ impl AlgoBingle {
         Address::from_str(&addr_str).map_err(|e| anyhow!("invalid app address: {e}"))
     }
 
+    /// Submit a group of already-signed, msgpack-encoded transactions and wait for confirmation
+    /// of the first transaction in the group.
+    ///
+    /// Returns the transaction id reported by the node for the submitted group.
+    ///
+    /// # Errors
+    ///
+    /// Errors if the node rejects the raw submission or if confirmation is not observed within
+    /// the wait window.
     pub fn broadcast_group(&self, client: &Algod, signed_group: Vec<Vec<u8>>) -> Result<String> {
         // Concatenate msgpack-encoded signed transactions into one byte array as per Algod API.
         let mut bytes: Vec<u8> = Vec::new();
@@ -1364,6 +1447,17 @@ impl AlgoBingle {
         Ok(txid)
     }
 
+    /// Compute and assign the Algorand atomic-transfer group id to every transaction in `txns`,
+    /// binding them into a single atomic group.
+    ///
+    /// The group id is derived like the Python software development kit (SDK):
+    /// `sha512_256("TG" || msgpack({ txlist: [txid, …] }))`, where each `txid` is
+    /// `sha512_256("TX" || msgpack(tx))`.
+    ///
+    /// # Errors
+    ///
+    /// Errors if `txns` is empty, if it holds more than 15 transactions (the limit of the minimal
+    /// built-in msgpack encoder), or if any transaction fails to msgpack-encode.
     pub fn assign_group_id(txns: &mut [Transaction]) -> Result<()> {
         // Try to use algonaut's internal grouping if available via feature gates; otherwise compute manually.
         // We attempt the canonical SDK approach from Python: gid = sha512_256("TG" || msgpack({txlist:[txid...]})).
@@ -1443,42 +1537,19 @@ impl AlgoBingle {
         }
         // Ensure the caller (sender) is opted in to receive the asset from the app's inner tx
         let _ = self.opt_in_sender_to_asset(asset_id)?;
-        let client = self.ops.algod_client()?;
-        let params = self.params(&client)?;
-        let (account, sender) = self.sender_account()?;
-        let app_addr = self.app_address(app_id)?;
-        algo_log!("[buy_bingle] app_addr: {:#?}", app_addr);
+        let app_addr = self.app_address(app_id)?.to_string();
+        algo_log!("[buy_bingle] app_addr: {app_addr}");
 
-        // 1) Payment: sender -> app address for price. The app will verify this and perform
-        //    an inner tx moving 1 unit of the ASA from the creator-held reserve to the sender.
-        let tx_pay = Pay::new(sender, app_addr, MicroAlgos(price_microalgos))
-            .note(AlgoOps::unique_note())
-            .build(&params)
-            .map_err(|e| anyhow!("build pay: {e}"))?;
-        algo_log!("[buy_bingle] tx_pay: {:#?}", tx_pay);
-
-        // 2) App call: buy_bingle()void with foreign asset, built via AlgoOps helper
-        let tx_app =
-            self.ops
-                .build_call_app_tx(app_id, Some(asset_id), Some("buy_bingle()void"), &[])?;
-        algo_log!("[buy_bingle] tx_app: {:#?}", tx_app);
-
-        // Group, sign, and send
-        let mut txs = vec![tx_pay, tx_app];
-        Self::assign_group_id(&mut txs)?;
-
-        let s1 = account
-            .sign(txs.remove(0))
-            .map_err(|e| anyhow!("sign pay: {e}"))?
-            .to_msg_pack()
-            .map_err(|e| anyhow!("encode signed pay: {e}"))?;
-        let s2 = account
-            .sign(txs.remove(0))
-            .map_err(|e| anyhow!("sign app: {e}"))?
-            .to_msg_pack()
-            .map_err(|e| anyhow!("encode signed app: {e}"))?;
-
-        self.broadcast_group(&client, vec![s1, s2])
+        // Atomic group: payment (sender -> app for the price) + `buy_bingle()void` app-call with the
+        // ASA as a foreign asset. The app verifies the payment and, via an inner tx, moves 1 unit of
+        // the ASA from the creator-held reserve to the sender. Signed together and broadcast as one
+        // group.
+        self.ops
+            .transaction_group()
+            .payment(&app_addr, price_microalgos)
+            .call_app(app_id, Some("buy_bingle()void"), &[])
+            .foreign_asset(asset_id)
+            .sign_and_send()
     }
 
     /// Call sell_bingle. Requires:
@@ -1504,64 +1575,52 @@ impl AlgoBingle {
         // Ensure the app account is opted-in to the ASA so it can receive transfers
         self.ops
             .opt_in_app_to_asset(app_id, asset_id, "opt_in_to_bingle(uint64)void")?;
-        let client = self.ops.algod_client()?;
-        let params = self.params(&client)?;
-        let (account, sender) = self.sender_account()?;
-        let app_addr = self.app_address(app_id)?;
+        let app_addr = self.app_address(app_id)?.to_string();
+        let self_addr = self.ops.address_str()?;
 
         let payout = price_microalgos
             .checked_mul(amount)
             .ok_or_else(|| anyhow!("payout overflow"))?;
 
-        // 1) Asset xfer: sender -> app address of `amount`
-        let tx_ax = TransferAsset::new(sender, AssetId(asset_id), amount, app_addr)
-            .note(AlgoOps::unique_note())
-            .build(&params)
-            .map_err(|e| anyhow!("build axfer: {e}"))?;
-
-        // 2) Payout payment: sender -> sender for `payout` (satisfies on-chain payment check)
-        let tx_pay = Pay::new(sender, sender, MicroAlgos(payout))
-            .note(AlgoOps::unique_note())
-            .build(&params)
-            .map_err(|e| anyhow!("build pay: {e}"))?;
-
-        // 3) App call: sell_bingle(uint64)void
-        let mut app_args: Vec<Vec<u8>> = Vec::new();
-        app_args.push(AlgoOps::arc4_selector("sell_bingle(uint64)void").to_vec());
-        // ARC-4 uint64 as 8-byte big endian
-        app_args.push({ amount }.to_be_bytes().to_vec());
-        let tx_app = CallApplication::new(sender, AppId(app_id))
-            .app_arguments(app_args)
-            .foreign_assets(vec![AssetId(asset_id)])
-            .note(AlgoOps::unique_note())
-            .build(&params)
-            .map_err(|e| anyhow!("build app call: {e}"))?;
-
-        let mut txs = vec![tx_ax, tx_pay, tx_app];
-        Self::assign_group_id(&mut txs)?;
-
-        let s1 = account
-            .sign(txs.remove(0))
-            .map_err(|e| anyhow!("sign axfer: {e}"))?
-            .to_msg_pack()
-            .map_err(|e| anyhow!("encode signed axfer: {e}"))?;
-        let s2 = account
-            .sign(txs.remove(0))
-            .map_err(|e| anyhow!("sign pay: {e}"))?
-            .to_msg_pack()
-            .map_err(|e| anyhow!("encode signed pay: {e}"))?;
-        let s3 = account
-            .sign(txs.remove(0))
-            .map_err(|e| anyhow!("sign app: {e}"))?
-            .to_msg_pack()
-            .map_err(|e| anyhow!("encode signed app: {e}"))?;
-
-        self.broadcast_group(&client, vec![s1, s2, s3])
+        // Atomic group: asset transfer (sender -> app of `amount` units) + a self-payment of
+        // `payout` (satisfies the on-chain payment check) + `sell_bingle(uint64)void` app-call
+        // carrying `amount` as its ARC-4 uint64 argument, with the ASA as a foreign asset.
+        self.ops
+            .transaction_group()
+            .asset_transfer(asset_id, amount, &app_addr)
+            .payment(&self_addr, payout)
+            .call_app(
+                app_id,
+                Some("sell_bingle(uint64)void"),
+                &[AppArg::Uint(amount)],
+            )
+            .foreign_asset(asset_id)
+            .sign_and_send()
     }
 
-    /// Call register(handle). Requires:
-    /// - app_id, asset_id as above
-    /// - price_units: the fee in Bingle$ units (as configured on-chain price)
+    /// Register `handle` on-chain for the signing account, paying `price_units` of Bingle$.
+    ///
+    /// Before submitting, this checks handle uniqueness via the indexer and, afterwards, verifies
+    /// that the signing account is the deterministic winner for the handle. `price_units` is the
+    /// fee in Bingle$ units (the on-chain configured price). Returns the submitted transaction id
+    /// on success.
+    ///
+    /// # Errors
+    ///
+    /// Errors if `app_id` or `asset_id` is `0`, if `handle` is empty, if the handle is already
+    /// registered to a different account, or if any indexer query or transaction submission fails.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use algo_ops::AlgoOps;
+    /// use bingle_core::blockchain::algo_bingle::AlgoBingle;
+    ///
+    /// let bingle = AlgoBingle::new(AlgoOps::new_for_algorand(None, None, None), 1234, 5678);
+    /// let txid = bingle.register(1234, 5678, "alice", 1)?;
+    /// println!("registered in {txid}");
+    /// # Ok::<(), anyhow::Error>(())
+    /// ```
     pub fn register(
         &self,
         app_id: u64,
@@ -1610,10 +1669,6 @@ impl AlgoBingle {
         handle: &str,
         price_units: u64,
     ) -> Result<String> {
-        let client = self.ops.algod_client()?;
-        let params = self.params(&client)?;
-        let (account, sender) = self.sender_account()?;
-
         // Ensure the app account is opted-in to the ASA so it can receive the registration fee
         self.ops
             .opt_in_app_to_asset(app_id, asset_id, "opt_in_to_bingle(uint64)void")?;
@@ -1622,51 +1677,29 @@ impl AlgoBingle {
         let _ = self.opt_in_sender_to_asset(asset_id)?;
         // Ensure the caller is opted-in to the application local state to avoid logic eval error
         self.ops.opt_in_app(app_id)?;
-        let app_addr = self.app_address(app_id)?;
+        let app_addr = self.app_address(app_id)?.to_string();
 
-        // 2) ASA fee: sender -> app address amount = price_units
-        let tx_ax = TransferAsset::new(sender, AssetId(asset_id), price_units, app_addr)
-            .note(AlgoOps::unique_note())
-            .build(&params)
-            .map_err(|e| anyhow!("build axfer: {e}"))?;
-        // Print the full asset transfer transaction (tx_ax) with all fields for visibility
-        algo_log!("tx_ax: {:#?}", tx_ax);
-
-        // 3) App call: register(string)void with handle arg
-        // ARC-4 string encoding: 2-byte big-endian length prefix + UTF-8 bytes
-        let mut app_args: Vec<Vec<u8>> = Vec::new();
-        app_args.push(AlgoOps::arc4_selector("register(string)void").to_vec());
+        // ARC-4 string encoding for the `handle` argument: 2-byte big-endian length prefix + UTF-8.
         let handle_bytes = handle.as_bytes();
-        let len = handle_bytes.len();
-        if len > u16::MAX as usize {
+        if handle_bytes.len() > u16::MAX as usize {
             bail!("handle too long");
         }
-        let mut arg = Vec::with_capacity(2 + len);
-        arg.extend_from_slice(&(len as u16).to_be_bytes());
-        arg.extend_from_slice(handle_bytes);
-        app_args.push(arg);
-        let tx_app = CallApplication::new(sender, AppId(app_id))
-            .app_arguments(app_args)
-            .foreign_assets(vec![AssetId(asset_id)])
-            .note(AlgoOps::unique_note())
-            .build(&params)
-            .map_err(|e| anyhow!("build app call: {e}"))?;
+        let mut handle_arg = Vec::with_capacity(2 + handle_bytes.len());
+        handle_arg.extend_from_slice(&(handle_bytes.len() as u16).to_be_bytes());
+        handle_arg.extend_from_slice(handle_bytes);
 
-        let mut txs = vec![tx_ax, tx_app];
-        Self::assign_group_id(&mut txs)?;
-
-        let s1 = account
-            .sign(txs.remove(0))
-            .map_err(|e| anyhow!("sign axfer: {e}"))?
-            .to_msg_pack()
-            .map_err(|e| anyhow!("encode signed axfer: {e}"))?;
-        let s2 = account
-            .sign(txs.remove(0))
-            .map_err(|e| anyhow!("sign app: {e}"))?
-            .to_msg_pack()
-            .map_err(|e| anyhow!("encode signed app: {e}"))?;
-
-        self.broadcast_group(&client, vec![s1, s2])
+        // Atomic group: ASA fee transfer (sender -> app, `price_units`) + `register(string)void`
+        // app-call carrying the handle as its ARC-4 string argument, with the ASA as a foreign asset.
+        self.ops
+            .transaction_group()
+            .asset_transfer(asset_id, price_units, &app_addr)
+            .call_app(
+                app_id,
+                Some("register(string)void"),
+                &[AppArg::Bytes(handle_arg)],
+            )
+            .foreign_asset(asset_id)
+            .sign_and_send()
     }
 
     /// Wait up to 15 seconds for indexer to catch up and verify that `expected_winner` is the owner of `handle`.
@@ -2096,5 +2129,81 @@ impl AlgoBingle {
             .tx_id;
         self.ops.wait_for_confirmation(&tx_id, 10)?;
         Ok(tx_id)
+    }
+}
+
+/// Outcome of the on-chain `allow_relay` gate for a relay record.
+///
+/// Internal to the relay-acceptance path; not part of the supported public API.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum RelayGate {
+    /// The record is permitted to relay (its on-chain `allow_relay` flag is set).
+    Allowed,
+    /// The record is not permitted to relay, or the gate could not be evaluated.
+    Rejected,
+}
+
+/// Verify a record's on-chain `allow_relay` flag before it is accepted as a relay record.
+///
+/// Resolves the app id, Algorand provider config, and accounts cache from `api`, then checks the
+/// app local state via [`AlgoBingle::check_allow_relay`]. Returns [`RelayGate::Rejected`] when any
+/// of those are unavailable, when `allow_relay` is false, when the id is not opted in to the app,
+/// or when the check errors — otherwise [`RelayGate::Allowed`].
+///
+/// `caller` appears only in log messages so the originating call site stays identifiable. This is
+/// the single source of truth shared by `Engine::ddb_upsert_record` and
+/// `DefaultPrintingHandler::on_ddb_upsert_resolve`.
+///
+/// Internal to the relay-acceptance path; not part of the supported public API.
+pub(crate) fn check_relay_allowed(
+    api: &dyn BingleApiBoth,
+    record_id: &str,
+    caller: &str,
+) -> RelayGate {
+    let app_id = match api.get_app_id() {
+        Some(id) => id,
+        None => {
+            tracing::warn!(
+                "[{caller}] app_id not available; rejecting relay record id={record_id}"
+            );
+            return RelayGate::Rejected;
+        }
+    };
+    let config = match api.get_algo_provider_config() {
+        Some(cfg) => cfg,
+        None => {
+            tracing::warn!(
+                "[{caller}] algo_provider_config not available; rejecting relay record id={record_id}"
+            );
+            return RelayGate::Rejected;
+        }
+    };
+    let cache = api.get_accounts_cache();
+    let ops = AlgoOps::new_for_algorand(None, Some(record_id.to_string()), Some(config));
+    let algo_bingle = match cache {
+        Some(c) => AlgoBingle::new_with_cache(ops, app_id, 0, c),
+        None => AlgoBingle::new(ops, app_id, 0),
+    };
+    match algo_bingle.check_allow_relay(app_id, record_id) {
+        Ok(Some(true)) => {
+            tracing::info!("[{caller}] blockchain verified allow_relay for id={record_id}");
+            RelayGate::Allowed
+        }
+        Ok(Some(false)) => {
+            tracing::warn!(
+                "[{caller}] blockchain check FAILED: allow_relay is false for id={record_id}"
+            );
+            RelayGate::Rejected
+        }
+        Ok(None) => {
+            tracing::warn!(
+                "[{caller}] blockchain check FAILED: id={record_id} not opted-in to app {app_id}"
+            );
+            RelayGate::Rejected
+        }
+        Err(e) => {
+            tracing::warn!("[{caller}] blockchain check ERROR for id={record_id}: {e}");
+            RelayGate::Rejected
+        }
     }
 }

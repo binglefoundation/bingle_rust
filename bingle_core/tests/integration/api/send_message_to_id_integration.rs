@@ -28,7 +28,7 @@ fn start_relay(
     passphrase: &str,
     stun_list: Vec<SocketAddr>,
     app_id: u64,
-    cfg: bingle_core::blockchain::algo_ops::AlgoChainConfig,
+    cfg: algo_ops::AlgoChainConfig,
 ) -> Arc<BingleApiImpl> {
     tracing::info!(
         "[Test] start_relay name={} stun_list={:?} app_id={}",
@@ -75,7 +75,7 @@ fn start_client_at_addr(
     addr: SocketAddr,
     stun_list: Vec<SocketAddr>,
     app_id: u64,
-    cfg: bingle_core::blockchain::algo_ops::AlgoChainConfig,
+    cfg: algo_ops::AlgoChainConfig,
 ) -> Arc<BingleApiImpl> {
     tracing::info!(
         "[Test] start_client_at_addr name={} addr={} stun_list={:?} app_id={}",
@@ -113,7 +113,7 @@ fn start_client(
     passphrase: &str,
     stun_list: Vec<SocketAddr>,
     app_id: u64,
-    cfg: bingle_core::blockchain::algo_ops::AlgoChainConfig,
+    cfg: algo_ops::AlgoChainConfig,
 ) -> Arc<BingleApiImpl> {
     tracing::info!(
         "[Test] start_client name={} stun_list={:?} app_id={}",
@@ -1416,7 +1416,7 @@ pub fn bingle_api_send_message_to_id_relay1_to_client_on_relay2_localnet() {
 
     // Register client_a
     let passphrase_a = "lift all minute first hair appear panel unfold pony property also dinosaur start robot board erupt tent pink essence stem protect ugly orphan absent dust";
-    let ops_a_tmp = bingle_core::algo_ops::AlgoOps::new(
+    let ops_a_tmp = algo_ops::AlgoOps::new_for_algorand(
         Some(passphrase_a.to_string()),
         None,
         Some(cfg.clone()),

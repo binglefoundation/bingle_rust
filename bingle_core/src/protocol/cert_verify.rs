@@ -290,6 +290,7 @@ pub fn peer_certificate_handler() -> HandlePeerCertificate {
     handler
 }
 
+#[cfg(feature = "test-hooks")]
 pub fn peer_certificate_accept_all_handler() -> HandlePeerCertificate {
     fn handler(cert_pem: &[u8], _ca_pem: &[u8]) -> Result<String> {
         tracing::debug!(

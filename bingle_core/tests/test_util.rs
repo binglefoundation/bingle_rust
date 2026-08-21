@@ -1,4 +1,4 @@
-use bingle_core::algo_ops::{AlgoChainConfig, AlgoOps, AppArg, address_to_byte_key};
+use algo_ops::{AlgoChainConfig, AlgoOps, AppArg, address_to_byte_key};
 use bingle_core::api::bingle_api::{BingleApi, BingleApiInternal, StartOptions};
 use bingle_core::api::bingle_api_impl::BingleApiImpl;
 use bingle_core::blockchain::algo_bingle::{
@@ -108,7 +108,7 @@ pub fn assert_localnet_available() {
 pub fn ops_from_mnemonic(addr: &str, mnem: &str, cfg: AlgoChainConfig) -> AlgoOps {
     // Pass the mnemonic directly as the passphrase (ASCII string)
     let pass = mnem.to_string();
-    AlgoOps::new(Some(pass), Some(addr.to_string()), Some(cfg))
+    AlgoOps::new_for_algorand(Some(pass), Some(addr.to_string()), Some(cfg))
 }
 
 #[allow(dead_code)]
@@ -627,7 +627,7 @@ pub fn start_root_relay(
     addr: SocketAddr,
     passphrase: &str,
     app_id: u64,
-    cfg: bingle_core::blockchain::algo_ops::AlgoChainConfig,
+    cfg: algo_ops::AlgoChainConfig,
 ) -> Arc<BingleApiImpl> {
     tracing::info!(
         "[Test] start_root_relay name={} addr={} app_id={}",

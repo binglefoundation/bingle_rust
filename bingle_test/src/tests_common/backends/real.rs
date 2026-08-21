@@ -1,7 +1,7 @@
 // #![cfg(not(target_os = "ios"))]
 
 use crate::tests_common::TestAlgo;
-use bingle_core::algo_ops::{self, AlgoOps};
+use algo_ops::{self, AlgoOps};
 
 fn err<E: std::fmt::Display>(e: E) -> String {
     format!("{}", e)
@@ -27,14 +27,12 @@ impl TestAlgo for RealBackend {
         } else {
             None
         };
-        let inner = AlgoOps::new(passphrase, address, cfg);
+        let inner = AlgoOps::new_for_algorand(passphrase, address, cfg);
         Self { inner }
     }
 
-    fn create_address(&mut self, save: bool, always_new_address: bool) -> Result<String, String> {
-        self.inner
-            .create_address(save, always_new_address)
-            .map_err(err)
+    fn create_address(&mut self, _save: bool, _always_new_address: bool) -> Result<String, String> {
+        self.inner.create_address().map_err(err)
     }
 
     fn public_key_bytes(&self) -> Result<[u8; 32], String> {

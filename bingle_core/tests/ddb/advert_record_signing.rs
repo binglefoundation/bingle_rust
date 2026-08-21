@@ -10,7 +10,7 @@ fn test_advert_record_signing_and_verification() {
 
     // Convert public key to Algorand address
     let pk_bytes: [u8; 32] = public_key.to_bytes();
-    let address = bingle_core::blockchain::algo_ops::byte_key_to_address(&pk_bytes).unwrap();
+    let address = algo_ops::byte_key_to_address(&pk_bytes).unwrap();
 
     let record = AdvertRecord::new(
         address.clone(),
@@ -36,7 +36,7 @@ fn test_advert_record_verification_failure() {
     let public_key = signing_key.verifying_key();
 
     let pk_bytes: [u8; 32] = public_key.to_bytes();
-    let address = bingle_core::blockchain::algo_ops::byte_key_to_address(&pk_bytes).unwrap();
+    let address = algo_ops::byte_key_to_address(&pk_bytes).unwrap();
 
     let mut record = AdvertRecord::new(
         address.clone(),

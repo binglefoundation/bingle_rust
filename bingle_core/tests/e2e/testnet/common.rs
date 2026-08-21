@@ -17,12 +17,7 @@ pub fn env_var(name: &str) -> Option<String> {
 }
 
 /// Load testnet node config + ids from the standard bundled file.
-pub fn load_testnet_config() -> (
-    Option<String>,
-    bingle_core::blockchain::algo_ops::AlgoChainConfig,
-    u64,
-    Option<u64>,
-) {
+pub fn load_testnet_config() -> (Option<String>, algo_ops::AlgoChainConfig, u64, Option<u64>) {
     let node_path = "nodely_staging_testnet_node.json";
     let (network_name, provider_cfg, node_app_id, node_asset_id) =
         parse_node_file_with_ids(node_path).expect("parse testnet node file");
@@ -30,11 +25,8 @@ pub fn load_testnet_config() -> (
     (network_name, provider_cfg, app_id, node_asset_id)
 }
 
-pub fn build_ops(
-    passphrase: &str,
-    provider_cfg: &bingle_core::blockchain::algo_ops::AlgoChainConfig,
-) -> AlgoOps {
-    AlgoOps::new(
+pub fn build_ops(passphrase: &str, provider_cfg: &algo_ops::AlgoChainConfig) -> AlgoOps {
+    AlgoOps::new_for_algorand(
         Some(passphrase.to_string()),
         None,
         Some(provider_cfg.clone()),
@@ -61,7 +53,7 @@ pub fn load_stun_servers() -> Vec<SocketAddr> {
 pub fn make_start_options(
     handle: &str,
     passphrase: &str,
-    provider_cfg: &bingle_core::blockchain::algo_ops::AlgoChainConfig,
+    provider_cfg: &algo_ops::AlgoChainConfig,
     network_name: Option<String>,
     app_id: u64,
     asset_id: Option<u64>,

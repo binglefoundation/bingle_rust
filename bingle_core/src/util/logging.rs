@@ -11,6 +11,11 @@ use tracing_subscriber::registry::LookupSpan;
 
 static ALGO_DEBUG: OnceLock<bool> = OnceLock::new();
 
+/// Returns `true` when Algorand debug logging is enabled via the environment.
+///
+/// The first call reads `BINGLE_ALGO_DEBUG`, then `RUST_COMMS_DEBUG`, then
+/// `BINGLE_DEBUG`; a value of `1` or `true` (case-insensitive) enables it. The
+/// result is cached for the lifetime of the process.
 pub fn is_algo_debug_enabled() -> bool {
     *ALGO_DEBUG.get_or_init(|| {
         std::env::var("BINGLE_ALGO_DEBUG")
@@ -21,6 +26,7 @@ pub fn is_algo_debug_enabled() -> bool {
     })
 }
 
+#[doc(hidden)]
 #[macro_export]
 macro_rules! algo_log {
     ($($arg:tt)*) => {
@@ -36,16 +42,19 @@ use chrono::Local;
 // Deprecated file logger shim. All logging should go through the `log` facade.
 // These functions are kept as no-ops (or simple log forwarding) to avoid touching all call sites.
 
+#[doc(hidden)]
 /// No-op: previously appended to a debug log file. Use the `log` crate instead.
 pub fn removed_log_line<S: AsRef<str>>(_msg: S) {
     // intentionally empty
 }
 
+#[doc(hidden)]
 /// Forward to warn! only; no file writes.
 pub fn tee_stderr<S: AsRef<str>>(msg: S) {
     tracing::warn!("{}", msg.as_ref());
 }
 
+#[doc(hidden)]
 #[macro_export]
 macro_rules! info_theme {
     ($theme:expr, $($arg:tt)*) => {
@@ -53,6 +62,7 @@ macro_rules! info_theme {
     };
 }
 
+#[doc(hidden)]
 #[macro_export]
 macro_rules! warn_theme {
     ($theme:expr, $($arg:tt)*) => {
@@ -60,6 +70,7 @@ macro_rules! warn_theme {
     };
 }
 
+#[doc(hidden)]
 #[macro_export]
 macro_rules! error_theme {
     ($theme:expr, $($arg:tt)*) => {
@@ -67,6 +78,7 @@ macro_rules! error_theme {
     };
 }
 
+#[doc(hidden)]
 #[macro_export]
 macro_rules! debug_theme {
     ($theme:expr, $($arg:tt)*) => {
@@ -76,17 +88,26 @@ macro_rules! debug_theme {
 
 use serde::{Deserialize, Serialize};
 
+/// Output style used by [`BingleFormatter`] when rendering log events.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub enum LogMode {
+    /// Plain text with no color escapes, including the peer handle.
     #[default]
     Plain,
+    /// Colorized output using American National Standards Institute (ANSI)
+    /// escape codes, including the peer handle.
     ANSI,
+    /// Plain output tailored for Amazon Web Services (AWS) log collectors,
+    /// omitting the peer handle.
     AWS,
+    /// Plain output for the JavaScript bridge, omitting the peer handle.
     JS,
 }
 
+#[doc(hidden)]
 pub struct HandleExtension(pub String);
 
+#[doc(hidden)]
 #[derive(Default)]
 pub struct HandleVisitor {
     pub handle: Option<String>,
@@ -106,7 +127,12 @@ impl Visit for HandleVisitor {
     }
 }
 
+/// Tracing event formatter that renders Bingle log lines in a chosen [`LogMode`].
+///
+/// It prefixes each line with a timestamp and, in the handle-aware modes, the
+/// peer handle taken from the surrounding span.
 pub struct BingleFormatter {
+    /// Output style used when rendering each log event.
     pub mode: LogMode,
 }
 
@@ -121,6 +147,20 @@ impl Default for BingleFormatter {
     }
 }
 
+/// Initializes the global tracing subscriber with the Bingle log formatter.
+///
+/// The log level comes from the `RUST_LOG` environment variable, defaulting to
+/// `info`, and events are rendered with [`BingleFormatter`]. This is safe to
+/// call more than once; only the first call installs the subscriber.
+///
+/// # Examples
+///
+/// ```no_run
+/// use bingle_core::util::logging::init_logging;
+///
+/// init_logging();
+/// tracing::info!("logging is ready");
+/// ```
 pub fn init_logging() {
     use tracing_subscriber::layer::SubscriberExt;
     use tracing_subscriber::util::SubscriberInitExt;
@@ -225,6 +265,7 @@ fn hash_str(s: &str) -> usize {
     h
 }
 
+#[doc(hidden)]
 pub struct HandleLayer;
 
 impl<S> Layer<S> for HandleLayer

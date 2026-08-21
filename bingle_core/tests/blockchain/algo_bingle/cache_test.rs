@@ -1,6 +1,6 @@
+use algo_ops::AlgoOps;
 use algonaut::model::indexer::Account;
 use bingle_core::blockchain::algo_bingle::{AccountsCache, AlgoBingle, QueryMode};
-use bingle_core::blockchain::algo_ops::AlgoOps;
 use std::sync::{Arc, Mutex};
 
 #[test]
@@ -15,7 +15,7 @@ pub fn test_cache_only_mode() {
     }
 
     // Placeholder AlgoOps - using dummy address
-    let ops = AlgoOps::new(
+    let ops = AlgoOps::new_for_algorand(
         None,
         Some("P577PSTDICQ6PQFBR5YMDMJ2YVK7LT5V4GOPNVDLCEDJIL7XGRWC5BRFWA".to_string()),
         None,
@@ -50,7 +50,7 @@ pub fn test_cache_lifetime_fallback() {
         c.last_round = 100;
     }
 
-    let ops = AlgoOps::new(
+    let ops = AlgoOps::new_for_algorand(
         None,
         Some("P577PSTDICQ6PQFBR5YMDMJ2YVK7LT5V4GOPNVDLCEDJIL7XGRWC5BRFWA".to_string()),
         None,

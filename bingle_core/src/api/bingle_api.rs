@@ -7,18 +7,89 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use crate::blockchain::algo_bingle::AccountsCache;
-use crate::blockchain::error::AlgoError;
 use crate::util::logging::LogMode;
+use algo_ops::error::AlgoError;
 use ed25519_dalek::SigningKey;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::sync::Mutex;
 use std::time::Duration;
 
+/// Typed cause of an outbound-message send failure (issue #99).
+///
+/// Emitted at the point in the send pipeline where the cause is actually known, so the reason is
+/// reliable rather than reverse-engineered from a display string by the client. A send flows
+/// `handle -> id -> endpoint -> DTLS`; each variant records where and why it stopped. Clients use
+/// [`SendFailureKind::is_retryable`] to decide whether to keep a message pending for retry versus
+/// mark it permanently failed, and can show cause-specific messaging.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SendFailureKind {
+    // --- resolution: handle -> id ---
+    /// The handle is not registered on chain, so it resolves to no account (permanent).
+    HandleNotFound,
+    /// Resolving the handle failed because the blockchain/node call errored (transient while the
+    /// node is unreachable; the handle may resolve once the node recovers).
+    HandleLookupFailed,
+    // --- resolution: id -> endpoint ---
+    /// The recipient id has no AdvertRecord in the distributed database (DDB): the user is not
+    /// currently connected/advertising (transient; they may reconnect).
+    RecipientNotAdvertised,
+    /// The recipient id is not a valid account address (base32 decode / length check failed)
+    /// (permanent).
+    InvalidRecipientId,
+    // --- transport / relay ---
+    /// No relay was available to route the message or to query the DDB through (transient).
+    NoRelayAvailable,
+    /// A relay channel could not be allocated for the recipient (relay Call failed) (transient).
+    RelayAllocationFailed,
+    /// The recipient's endpoint is resolved but the peer could not be reached over DTLS
+    /// (connect timeout / no route — peer offline) (transient).
+    PeerUnreachable,
+    /// A request was sent but the peer or relay did not answer within the timeout (transient).
+    NoResponse,
+    // --- protocol / data ---
+    /// The recipient's AdvertRecord was present but unusable (bad signature, missing host/port,
+    /// or neither relayId nor endpoint) (permanent).
+    MalformedAdvert,
+    /// A network peer returned an unexpected/protocol-invalid response (permanent).
+    ProtocolError,
+    // --- engine / catch-all ---
+    /// The local engine or account was not ready to send (transient).
+    NotReady,
+    /// The cause was not captured or does not fit another variant (treated as permanent).
+    Unknown,
+}
+
+impl SendFailureKind {
+    /// Whether a message that failed with this cause should stay pending and be retried, rather
+    /// than being marked permanently failed. Retryable causes are transient (connectivity, the
+    /// recipient not being connected yet, a slow/absent response); permanent causes reflect a
+    /// stable condition (unknown handle, invalid id, malformed data) that a retry cannot fix.
+    pub fn is_retryable(&self) -> bool {
+        match self {
+            SendFailureKind::HandleLookupFailed
+            | SendFailureKind::RecipientNotAdvertised
+            | SendFailureKind::NoRelayAvailable
+            | SendFailureKind::RelayAllocationFailed
+            | SendFailureKind::PeerUnreachable
+            | SendFailureKind::NoResponse
+            | SendFailureKind::NotReady => true,
+            SendFailureKind::HandleNotFound
+            | SendFailureKind::InvalidRecipientId
+            | SendFailureKind::MalformedAdvert
+            | SendFailureKind::ProtocolError
+            | SendFailureKind::Unknown => false,
+        }
+    }
+}
+
+/// Errors returned by the Bingle messaging and Algorand operations.
 #[derive(Debug, thiserror::Error)]
 pub enum BingleError {
+    /// An error from the underlying Algorand blockchain layer.
     #[error("Blockchain error: {0}")]
     Algo(#[from] AlgoError),
+    /// A transient error the caller may retry.
     #[error("Retryable error: {0}")]
     Retryable(String),
     /// The requested handle is already registered to another account. Typed so callers
@@ -26,6 +97,16 @@ pub enum BingleError {
     /// funding/other failure. The payload is the owning account address.
     #[error("Handle already in use by {0}")]
     HandleTaken(String),
+    /// A send failed with a typed, reliably-classified cause (issue #99). `detail` carries the
+    /// underlying human-readable message for logging/display; `kind` drives retry and UX decisions.
+    #[error("Send failed ({kind:?}): {detail}")]
+    Send {
+        /// The classified cause, driving retry and user-experience decisions.
+        kind: SendFailureKind,
+        /// The underlying human-readable message, for logging and display.
+        detail: String,
+    },
+    /// Any other error, carrying a human-readable message.
     #[error("{0}")]
     Other(String),
 }
@@ -37,6 +118,8 @@ impl From<String> for BingleError {
 }
 
 impl BingleError {
+    /// Convert an [`anyhow::Error`] into a [`BingleError`], preserving an underlying
+    /// Algorand error as [`BingleError::Algo`] and mapping anything else to [`BingleError::Other`].
     pub fn from_anyhow(e: anyhow::Error) -> Self {
         match e.downcast::<AlgoError>() {
             Ok(ae) => BingleError::Algo(ae),
@@ -47,6 +130,7 @@ impl BingleError {
 
 /// Internal-only API for engine control from message handlers and router context.
 /// Not part of the public BingleApi surface. Intended for in-process coordination only.
+#[doc(hidden)]
 pub trait BingleApiInternal: Send + Sync {
     // Mutex message forwarding to Engine (default no-ops so existing tests/mocks need not implement)
     fn mutex_handle_request(&self, _from_id: String, _req: crate::messages::types::MutexRequest) {}
@@ -216,6 +300,7 @@ pub trait BingleApiInternal: Send + Sync {
     }
 }
 
+#[doc(hidden)]
 #[macro_export]
 macro_rules! impl_bingle_api_internal_noop {
     ($struct_name:ident) => {
@@ -345,13 +430,16 @@ macro_rules! impl_bingle_api_internal_noop {
 /// UserId: Algorand address in base32 (RFC 4648, no padding), representing a 32‑byte public key
 /// followed by a 4‑byte checksum (total 36 bytes). Examples: "P577…", "4TKG…".
 pub type UserId = String; // Algorand address (base32, 36-byte decoded)
+/// A user handle: the human-readable name a user registers on-chain and is addressed by.
 pub type Handle = String; // User handle string
 pub use super::network_endpoint::{NetworkEndpoint, NetworkEndpointKey};
 
 /// Composite trait required by message handlers: implements both the public API and internal controls.
+#[doc(hidden)]
 pub trait BingleApiBoth: BingleApi + BingleApiInternal {}
 impl<T: BingleApi + BingleApiInternal> BingleApiBoth for T {}
 
+#[doc(hidden)]
 pub type BingleApiBothType = std::sync::Weak<dyn BingleApiBoth>;
 
 /// Progress callback reported during send operations.
@@ -396,7 +484,7 @@ pub struct StartOptions {
     pub stun_servers: Option<Vec<SocketAddr>>,
     /// Optional Algorand provider configuration loaded from --node-file.
     #[serde(default)]
-    pub algo_provider_config: Option<crate::blockchain::algo_ops::AlgoChainConfig>,
+    pub algo_provider_config: Option<algo_ops::AlgoChainConfig>,
     /// Optional human-readable network name from the node file (e.g., mainnet, testnet).
     #[serde(default)]
     pub algo_network: Option<String>,
@@ -490,7 +578,7 @@ pub trait BingleApi: Send + Sync {
     /// Returns the configured application id, if any, from StartOptions. Preferred over env vars.
     fn get_app_id(&self) -> Option<u64>;
     /// Returns the configured Algorand provider config from StartOptions, if any.
-    fn get_algo_provider_config(&self) -> Option<crate::blockchain::algo_ops::AlgoChainConfig>;
+    fn get_algo_provider_config(&self) -> Option<algo_ops::AlgoChainConfig>;
     /// Returns the persistent accounts cache for the Algorand Indexer, if available.
     fn get_accounts_cache(&self) -> Option<Arc<Mutex<AccountsCache>>> {
         None

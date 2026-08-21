@@ -33,10 +33,12 @@ pub type NewOutboundSessionObserver = Arc<dyn Fn(&NetworkEndpoint) + Send + Sync
 pub trait PacketTransport {
     fn send(&self, to: &NetworkEndpoint, block: &[u8]) -> Result<(), String>;
 
+    #[cfg_attr(not(feature = "test-hooks"), allow(dead_code))]
     fn get_handle_message(&self) -> Option<PacketTransportHandleMessage>;
 
     fn set_handle_message(&self, handler: Option<PacketTransportHandleMessage>);
 
+    #[cfg_attr(not(feature = "test-hooks"), allow(dead_code))]
     fn with_handle_message(self, handler: PacketTransportHandleMessage) -> Self
     where
         Self: Sized;
@@ -153,6 +155,7 @@ impl DtlsReliablePacketTransport {
         self.dtls.as_ref()
     }
 
+    #[cfg_attr(not(feature = "test-hooks"), allow(dead_code))]
     pub fn set_mtu(&mut self, mtu: usize) {
         self.mtu = mtu;
     }
@@ -161,10 +164,12 @@ impl DtlsReliablePacketTransport {
         *self.retry_delays.lock().unwrap() = delays;
     }
 
+    #[cfg_attr(not(feature = "test-hooks"), allow(dead_code))]
     pub fn mtu(&self) -> usize {
         self.mtu
     }
 
+    #[cfg_attr(not(feature = "test-hooks"), allow(dead_code))]
     pub fn dispatch_handle_message(
         &self,
         from: &NetworkEndpoint,
@@ -183,6 +188,7 @@ impl DtlsReliablePacketTransport {
         )
     }
 
+    #[cfg_attr(not(feature = "test-hooks"), allow(dead_code))]
     pub fn on_new_session(&self, endpoint: &NetworkEndpoint) -> Result<(), String> {
         Self::handle_new_dtls_session(
             &self.endpoint_sessions,
@@ -647,6 +653,7 @@ impl PacketTransport for DtlsReliablePacketTransport {
         ))
     }
 
+    #[cfg_attr(not(feature = "test-hooks"), allow(dead_code))]
     fn get_handle_message(&self) -> Option<PacketTransportHandleMessage> {
         match self.handle_message.lock() {
             Ok(g) => g.clone(),
@@ -674,6 +681,7 @@ impl PacketTransport for DtlsReliablePacketTransport {
         }
     }
 
+    #[cfg_attr(not(feature = "test-hooks"), allow(dead_code))]
     fn with_handle_message(self, handler: PacketTransportHandleMessage) -> Self
     where
         Self: Sized,

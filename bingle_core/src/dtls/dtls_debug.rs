@@ -444,6 +444,7 @@ fn parse_extensions(mut data: &[u8]) -> Option<Vec<ExtensionJson>> {
 
 /// Convert a JSON string produced by `dtls_udp_to_json` back into raw UDP datagram bytes.
 /// Returns Err(String) if the JSON is invalid or inconsistent (e.g., length mismatch).
+#[cfg(feature = "test-hooks")]
 pub fn json_to_dtls_udp(json: &str) -> Result<Vec<u8>, String> {
     let packet: DtlsUdpPacketJson = serde_json::from_str(json).map_err(|e| e.to_string())?;
     let mut out: Vec<u8> = Vec::new();

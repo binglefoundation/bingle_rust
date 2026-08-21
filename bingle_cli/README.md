@@ -1,4 +1,4 @@
-# bingle_cli
+# bingle_cli <img src="https://raw.githubusercontent.com/binglefoundation/bingle_rust/staging/docs/assets/bingle_logo.png" alt="Bingle logo" height="36" align="right" />
 
 Bingle is a decentralized, peer-to-peer messaging protocol that lets users communicate securely and privately
 — so your conversations stay yours, with nobody able to read or shut them down.
@@ -44,3 +44,7 @@ bingle_cli run --handle alice --passphrase "word1 word2 ... word25"
 
 Full source, the wallet/handle setup walkthrough, relay operation, and the developer guide live in
 the [`bingle_rust`](https://github.com/binglefoundation/bingle_rust) repository on GitHub.
+
+`bingle_cli` is a binary — its interface is the command line itself; run `bingle_cli --help` for
+the full command reference. A hosted crate reference is on
+[docs.rs/bingle_cli](https://docs.rs/bingle_cli) (built automatically from each crates.io release).

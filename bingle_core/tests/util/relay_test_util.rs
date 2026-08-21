@@ -1,6 +1,6 @@
 // Common relay test helpers shared across integration test files.
 
-use bingle_core::algo_ops::{AlgoChainConfig, AlgoOps};
+use algo_ops::{AlgoChainConfig, AlgoOps};
 use bingle_core::blockchain::algo_bingle::AlgoBingle;
 use std::net::SocketAddr;
 use std::time::{Duration, Instant};
@@ -89,7 +89,7 @@ pub fn wait_for_handles_visible(
     handles: &[&str],
     timeout: Duration,
 ) -> bool {
-    let indexer = AlgoBingle::new(AlgoOps::new_indexer(Some(cfg)), app_id, 0);
+    let indexer = AlgoBingle::new(AlgoOps::new_for_algorand(None, None, Some(cfg)), app_id, 0);
     let start = Instant::now();
     while start.elapsed() < timeout {
         let all_visible = handles

@@ -18,13 +18,16 @@ pub mod http_register_poster;
 pub mod nudge_helper;
 pub mod register;
 
-pub use envelope::{
-    AlertRequest, alert_exp, alert_status_accepted, build_alert_request, fresh_nonce, now_secs,
-};
+pub use envelope::AlertRequest;
+#[doc(hidden)]
+pub use envelope::{alert_exp, alert_status_accepted, build_alert_request, fresh_nonce, now_secs};
 pub use http_alert_poster::HttpAlertPoster;
 pub use http_register_poster::HttpRegisterPoster;
+#[doc(hidden)]
 pub use nudge_helper::post_giveup_alerts;
-pub use register::{RegisterRequest, build_register_request, encode_apns_token};
+pub use register::RegisterRequest;
+#[doc(hidden)]
+pub use register::{build_register_request, encode_apns_token};
 
 /// Best-effort delivery of an `/alert` POST to the notify gateway.
 ///
@@ -45,6 +48,13 @@ pub trait AlertPoster: Send + Sync {
 /// malformed token or failed auth, `Err` on a transport/spawn failure). A seam so tests can observe
 /// the request without a live gateway.
 pub trait RegisterPoster: Send + Sync {
+    /// Send `body` to `{gateway_url}/register`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Ok(true)` when the gateway accepts the registration (2xx), `Ok(false)` on a
+    /// rejection such as a malformed token or failed auth, and `Err` on a transport or spawn
+    /// failure.
     fn post_register(
         &self,
         gateway_url: &str,

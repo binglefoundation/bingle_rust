@@ -10,16 +10,16 @@ use uuid::Uuid;
 
 use crate::api::bingle_api::{
     BingleApi, BingleError, Handle, NetworkEndpoint, OnConnectHandler, OnMessageHandler,
-    ProgressCallback, StartOptions, UserId,
+    ProgressCallback, SendFailureKind, StartOptions, UserId,
 };
 use crate::api::pki::generate_pki_from_ops;
 use crate::blockchain::algo_bingle::AccountsCache;
-use crate::blockchain::algo_ops::AlgoOps;
-use crate::blockchain::error::{AlgoError, AlgoErrorKind};
 use crate::dtls::Dtls;
 use crate::engine::{BingleAccess, Engine, EngineState};
 use crate::protocol::ISSUER_SUFFIX;
 use crate::relay::relay_finder::RelayFinderTrait;
+use algo_ops::AlgoOps;
+use algo_ops::error::{AlgoError, AlgoErrorKind};
 use ed25519_dalek::SigningKey;
 
 /// Upper bound on a single hot-path blockchain lookup — the outgoing `handle_lookup`
@@ -195,6 +195,19 @@ impl BingleApiImpl {
         }
     }
 
+    /// Construct a messaging engine from the given start options.
+    ///
+    /// This builds a real engine wired to the network and Algorand integration, so it is the
+    /// single supported entry point for creating a [`BingleApiImpl`].
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use bingle_core::api::bingle_api::StartOptions;
+    /// use bingle_core::api::bingle_api_impl::BingleApiImpl;
+    ///
+    /// let api = BingleApiImpl::new(&StartOptions::new("alice".to_string()));
+    /// ```
     pub fn new(options: &StartOptions) -> Arc<Self> {
         tracing::info!("[BingleApiImpl::new][enter]");
         Self::check_dangerous_debug(options);
@@ -224,6 +237,7 @@ impl BingleApiImpl {
 impl BingleApiImpl {
     /// Apply a closure to the owned Engine instance (test-only). The Engine is fully `&self`, so a
     /// shared reference is sufficient; the name is retained for existing call sites.
+    #[doc(hidden)]
     pub fn with_engine_mut<F, R>(&self, f: F) -> R
     where
         F: FnOnce(&Engine) -> R,
@@ -232,11 +246,13 @@ impl BingleApiImpl {
     }
 
     /// Test-oriented constructor to inject a custom DTLS implementation.
+    #[doc(hidden)]
     pub fn new_with_dtls(dtls: Box<dyn Dtls + Send + Sync>) -> Arc<Self> {
         Self::new_with_dtls_and_options(dtls, StartOptions::new("".into()))
     }
 
     /// Test-oriented constructor to inject custom DTLS and options.
+    #[doc(hidden)]
     pub fn new_with_dtls_and_options(
         dtls: Box<dyn Dtls + Send + Sync>,
         options: StartOptions,
@@ -269,6 +285,7 @@ impl BingleApiImpl {
 
     /// Test-only helper: override issuer directly for unit/integration tests.
     /// Not part of the stable API surface.
+    #[doc(hidden)]
     pub fn set_issuer_for_tests(&self, issuer: String) {
         tracing::info!(
             "[BingleApiImpl::set_issuer_for_tests][enter] issuer_len={}",
@@ -279,6 +296,7 @@ impl BingleApiImpl {
     }
 
     /// Test helpers to access the Engine from integration tests (not part of stable API).
+    #[doc(hidden)]
     pub fn engine_state_for_tests(&self) -> Option<EngineState> {
         tracing::trace!("[BingleApiImpl::engine_state_for_tests][enter]");
         let s = Some(self.engine.access(|e| e.state()));
@@ -288,6 +306,7 @@ impl BingleApiImpl {
         );
         s
     }
+    #[doc(hidden)]
     pub fn engine_nat_type_for_tests(&self) -> Option<crate::engine::NatType> {
         tracing::info!("[BingleApiImpl::engine_nat_type_for_tests][enter]");
         let t = Some(self.engine.access(|e| e.nat_type()));
@@ -297,6 +316,7 @@ impl BingleApiImpl {
         );
         t
     }
+    #[doc(hidden)]
     pub fn engine_last_public_addr_for_tests(&self) -> Option<SocketAddr> {
         tracing::info!("[BingleApiImpl::engine_last_public_addr_for_tests][enter]");
         let a = self.engine.access(|e| e.last_public_addr());
@@ -306,6 +326,7 @@ impl BingleApiImpl {
         );
         a
     }
+    #[doc(hidden)]
     pub fn engine_local_bind_addr_for_tests(&self) -> Option<SocketAddr> {
         tracing::info!("[BingleApiImpl::engine_local_bind_addr_for_tests][enter]");
         let a = self.engine.access(|e| e.local_bind_addr_for_tests());
@@ -315,12 +336,15 @@ impl BingleApiImpl {
         );
         a
     }
+    #[doc(hidden)]
     pub fn engine_mux_for_tests(&self) -> Option<Arc<crate::dtls::UdpNetworkMux>> {
         self.engine.access(|e| e.mux_for_tests())
     }
+    #[doc(hidden)]
     pub fn engine_receive_message_for_tests(&self, from_ep: &NetworkEndpoint, data: &[u8]) {
         self.engine.receive_message_for_tests(from_ep, data);
     }
+    #[doc(hidden)]
     pub fn engine_ddb_lookup_for_tests(&self, id: &str) -> Result<NetworkEndpoint, BingleError> {
         tracing::info!(
             "[BingleApiImpl::engine_ddb_lookup_for_tests][enter] id={}",
@@ -334,11 +358,13 @@ impl BingleApiImpl {
         res
     }
 
+    #[doc(hidden)]
     pub fn engine_set_ddb_client_for_tests(&self, ddb: Arc<dyn crate::ddb::DdbClient>) {
         tracing::info!("[BingleApiImpl::engine_set_ddb_client_for_tests][enter]");
         self.engine.set_ddb_client_for_tests(ddb);
     }
 
+    #[doc(hidden)]
     pub fn engine_set_retry_delays_for_tests(&self, delays: Vec<Duration>) {
         self.engine.set_retry_delays_for_packet_transport(delays);
     }
@@ -356,7 +382,7 @@ impl BingleApiImpl {
             .get_algo_provider_config()
             .ok_or_else(|| BingleError::Other("algo_provider_config not configured".to_string()))?;
         // Handle lookups only issue public Indexer queries, so no account is needed.
-        let ops = AlgoOps::new_indexer(Some(config));
+        let ops = AlgoOps::new_for_algorand(None, None, Some(config));
         Ok(crate::blockchain::algo_bingle::AlgoBingle::new_with_cache(
             ops,
             app_id,
@@ -365,6 +391,7 @@ impl BingleApiImpl {
         ))
     }
 
+    #[doc(hidden)]
     pub fn set_handle_lookup_mock_for_tests(
         &self,
         mock: Box<dyn Fn(&Handle) -> Result<Option<UserId>, String> + Send + Sync>,
@@ -373,6 +400,7 @@ impl BingleApiImpl {
         *m = Some(mock);
     }
 
+    #[doc(hidden)]
     pub fn set_id_to_handle_lookup_mock_for_tests(
         &self,
         mock: Box<dyn Fn(&UserId) -> Result<Option<Handle>, String> + Send + Sync>,
@@ -382,9 +410,11 @@ impl BingleApiImpl {
     }
 
     /// Test-only accessor to the owned Engine (for white-box integration tests).
+    #[doc(hidden)]
     pub fn engine_for_tests(&self) -> &Engine {
         &self.engine
     }
+    #[doc(hidden)]
     pub fn engine_force_stun_consistent_for_tests(&mut self, addr: SocketAddr) {
         tracing::info!(
             "[BingleApiImpl::engine_force_stun_consistent_for_tests][enter] addr={}",
@@ -395,11 +425,13 @@ impl BingleApiImpl {
     }
 
     /// Test-only accessor to the Engine's TURN handler (for white-box integration tests)
+    #[doc(hidden)]
     pub fn engine_turn_client_handler_for_tests(
         &self,
     ) -> Arc<crate::turn::turn_client_handler_impl::TurnClientHandlerImpl> {
         self.engine.access(|e| e.turn_client_handler_for_tests())
     }
+    #[doc(hidden)]
     pub fn engine_turn_relay_handler_for_tests(
         &self,
     ) -> Arc<crate::turn::turn_relay_handler_impl::TurnRelayHandlerImpl> {
@@ -407,11 +439,13 @@ impl BingleApiImpl {
     }
 
     /// Test-only: set the engine's last public address (for self-send guard tests).
+    #[doc(hidden)]
     pub fn engine_set_public_addr_for_tests(&mut self, addr: Option<SocketAddr>) {
         self.engine.set_last_public_addr(addr);
     }
 
     /// Exposed for integration tests: whether a DTLS instance has been created.
+    #[doc(hidden)]
     pub fn has_dtls(&self) -> bool {
         tracing::info!("[BingleApiImpl::has_dtls][enter]");
         // Engine now always has a DTLS instance initialized in new()
@@ -462,7 +496,12 @@ impl BingleApiImpl {
                 if err.contains("rejecting") {
                     Ok(false)
                 } else {
-                    Err(BingleError::Retryable(err))
+                    // The endpoint resolved but the peer could not be reached over DTLS (connect
+                    // timeout / no route — peer offline): a transient, retryable cause (issue #99).
+                    Err(BingleError::Send {
+                        kind: SendFailureKind::PeerUnreachable,
+                        detail: err,
+                    })
                 }
             }
         }
@@ -530,7 +569,7 @@ impl BingleApi for BingleApiImpl {
     fn get_app_id(&self) -> Option<u64> {
         self.opts().app_id
     }
-    fn get_algo_provider_config(&self) -> Option<crate::blockchain::algo_ops::AlgoChainConfig> {
+    fn get_algo_provider_config(&self) -> Option<algo_ops::AlgoChainConfig> {
         self.opts().algo_provider_config.clone()
     }
     fn get_accounts_cache(&self) -> Option<Arc<Mutex<AccountsCache>>> {
@@ -557,7 +596,11 @@ impl BingleApi for BingleApiImpl {
 
         // Algorand node connectivity check (fail-fast per requirement)
         if let Some(config) = &options.algo_provider_config {
-            let ops = AlgoOps::new(options.algo_passphrase.clone(), None, Some(config.clone()));
+            let ops = AlgoOps::new_for_algorand(
+                options.algo_passphrase.clone(),
+                None,
+                Some(config.clone()),
+            );
             if let Err(e) = ops.account_balance() {
                 if let Some(ae) = e.downcast_ref::<AlgoError>()
                     && ae.kind == AlgoErrorKind::HostUnreachable
@@ -583,7 +626,7 @@ impl BingleApi for BingleApiImpl {
                 &options.algo_passphrase,
             )
         {
-            let ops = AlgoOps::new(Some(pass.clone()), None, Some(config.clone()));
+            let ops = AlgoOps::new_for_algorand(Some(pass.clone()), None, Some(config.clone()));
             if let Some(addr) = ops.address.clone() {
                 let bingle = crate::blockchain::algo_bingle::AlgoBingle::new(
                     ops,
@@ -640,7 +683,8 @@ impl BingleApi for BingleApiImpl {
         // Initialize AlgoOps from provided algoPassphrase if available.
         if let Some(pass) = options.algo_passphrase.clone() {
             // Build AlgoOps with passphrase; it will derive and populate the address.
-            let ops = AlgoOps::new(Some(pass), None, options.algo_provider_config.clone());
+            let ops =
+                AlgoOps::new_for_algorand(Some(pass), None, options.algo_provider_config.clone());
             // Ensure we have an address; if not, force an early error consistent with private_key_bytes failure.
             let addr = match ops.address.clone() {
                 Some(a) => a,
@@ -1026,7 +1070,16 @@ impl BingleApi for BingleApiImpl {
                 if let Some(cb) = progress.as_ref() {
                     cb(100, format!("Handle lookup failed: {}", e));
                 }
-                return Err(e);
+                // The handle could not be resolved because the blockchain/node call errored — a
+                // transient condition while the node is unreachable (issue #99). Preserve any
+                // already-typed cause; otherwise classify as a handle-lookup failure.
+                return Err(match e {
+                    BingleError::Send { .. } => e,
+                    other => BingleError::Send {
+                        kind: SendFailureKind::HandleLookupFailed,
+                        detail: other.to_string(),
+                    },
+                });
             }
         };
 
@@ -1048,8 +1101,14 @@ impl BingleApi for BingleApiImpl {
             if let Some(cb) = progress.as_ref() {
                 cb(100, format!("Handle not found: {}", handle));
             }
-            tracing::info!("[BingleApiImpl::send_message_to_handle][exit] return=false");
-            Ok(false)
+            tracing::info!("[BingleApiImpl::send_message_to_handle][exit] return=HandleNotFound");
+            // The handle is not registered on chain: a permanent failure. Return a typed cause
+            // rather than the ambiguous `Ok(false)` so the client can distinguish "no such handle"
+            // from a transient delivery failure (issue #99).
+            Err(BingleError::Send {
+                kind: SendFailureKind::HandleNotFound,
+                detail: format!("handle not found: {}", handle),
+            })
         }
     }
 
@@ -1125,7 +1184,13 @@ impl BingleApi for BingleApiImpl {
                         if let Some(cb) = progress.as_ref() {
                             cb(100, "Self-relay with no relay address".to_string());
                         }
-                        return Ok(false);
+                        return Err(BingleError::Send {
+                            kind: SendFailureKind::RelayAllocationFailed,
+                            detail: format!(
+                                "self-relay but no relay address for user_id {}",
+                                user_id
+                            ),
+                        });
                     }
                 } else {
                     tracing::info!(
@@ -1173,7 +1238,10 @@ impl BingleApi for BingleApiImpl {
                             if let Some(cb) = progress.as_ref() {
                                 cb(100, format!("Relay allocation failed: {}", err));
                             }
-                            return Ok(false);
+                            return Err(BingleError::Send {
+                                kind: SendFailureKind::RelayAllocationFailed,
+                                detail: format!("relay channel allocation failed: {}", err),
+                            });
                         }
                     }
                 }
@@ -1185,7 +1253,13 @@ impl BingleApi for BingleApiImpl {
             );
             self.send_over_dtls(&effective_nsk, message)
         } else {
-            Ok(false)
+            // The recipient id is not a valid account address (base32 decode / length check failed
+            // above): a permanent failure, surfaced as a typed cause rather than `Ok(false)`
+            // (issue #99).
+            Err(BingleError::Send {
+                kind: SendFailureKind::InvalidRecipientId,
+                detail: format!("invalid recipient id: {}", user_id),
+            })
         };
 
         let ok = ok_res.as_ref().copied().unwrap_or(false);
@@ -1372,7 +1446,12 @@ impl BingleApi for BingleApiImpl {
             #[allow(unused)]
             {}
             if sent_ok {
-                Err(BingleError::Retryable(err))
+                // The request was sent but the peer/relay did not answer within the timeout: a
+                // transient, retryable cause (issue #99).
+                Err(BingleError::Send {
+                    kind: SendFailureKind::NoResponse,
+                    detail: err,
+                })
             } else {
                 Err(BingleError::Other(err))
             }
@@ -1427,6 +1506,7 @@ impl BingleApi for BingleApiImpl {
 impl BingleApiImpl {
     /// Public entry from the networking layer for inbound messages.
     /// If message contains a responseTag, it is treated as a response and routed to waiter; otherwise it is dispatched to on_message.
+    #[doc(hidden)]
     pub fn handle_incoming_network_message(
         &self,
         sender: UserId,
@@ -1458,6 +1538,7 @@ impl BingleApiImpl {
 
 impl BingleApiImpl {
     /// Lookup a handle by user id using the local cache. Returns None if not present or expired.
+    #[doc(hidden)]
     pub fn handle_lookup_by_id(&self, user_id: &UserId) -> Option<Handle> {
         let expiry_duration = self
             .opts()
@@ -1511,7 +1592,8 @@ impl BingleApiImpl {
         };
 
         // Build AlgoOps with provided config
-        let ops = AlgoOps::new(self.opts().algo_passphrase.clone(), None, Some(config));
+        let ops =
+            AlgoOps::new_for_algorand(self.opts().algo_passphrase.clone(), None, Some(config));
         // Bound the blockchain query: this runs on the DTLS receive path (sender-auth
         // check), so an unreachable node must not stall inbound message processing. A
         // timeout resolves to None (same as unreachable) — the sender retries and the

@@ -1,4 +1,4 @@
-use bingle_core::api::bingle_api::{BingleApi, BingleError, NetworkEndpoint};
+use bingle_core::api::bingle_api::{BingleApi, BingleError, NetworkEndpoint, SendFailureKind};
 use bingle_core::api::bingle_api_impl::BingleApiImpl;
 use bingle_core::ddb::DdbClient;
 use bingle_core::dtls::{Dtls, HandleMessage, HandlePeerCertificate, Result as DtlsResult};
@@ -244,11 +244,22 @@ fn test_send_message_to_handle_not_found() {
     api.set_handle_lookup_mock_for_tests(Box::new(|_| Ok(None)));
 
     let msg = json!({"hello": "world"});
-    let ok = api
+    // An unregistered handle now yields the typed HandleNotFound cause rather than the ambiguous
+    // Ok(false) (issue #99).
+    let err = api
         .send_message_to_handle(&"unknown_handle".to_string(), msg, None)
-        .unwrap();
+        .expect_err("unknown handle should be a typed send failure");
 
-    assert!(!ok);
+    assert!(
+        matches!(
+            err,
+            BingleError::Send {
+                kind: SendFailureKind::HandleNotFound,
+                ..
+            }
+        ),
+        "expected HandleNotFound, got {err:?}"
+    );
 }
 
 #[test]
@@ -259,9 +270,21 @@ fn test_send_message_to_handle_lookup_error() {
     api.set_handle_lookup_mock_for_tests(Box::new(|_| Err("Lookup failed".to_string())));
 
     let msg = json!({"hello": "world"});
-    let ok = api.send_message_to_handle(&"any_handle".to_string(), msg, None);
+    let err = api
+        .send_message_to_handle(&"any_handle".to_string(), msg, None)
+        .expect_err("a lookup error should surface as an error");
 
-    assert!(ok.is_err());
+    // A blockchain/node lookup error is classified as a transient HandleLookupFailed (issue #99).
+    assert!(
+        matches!(
+            err,
+            BingleError::Send {
+                kind: SendFailureKind::HandleLookupFailed,
+                ..
+            }
+        ),
+        "expected HandleLookupFailed, got {err:?}"
+    );
 }
 
 #[test]

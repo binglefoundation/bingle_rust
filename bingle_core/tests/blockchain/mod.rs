@@ -1,13 +1,17 @@
 // Grouped blockchain tests
+//
+// Note: the pure AlgoOps unit tests (address derivation, sign-notify envelope,
+// reserve helpers, account_balance, generate_keypair, asset_holding,
+// set_asset_clawback, node errors, retry logic, change-reserve param checks)
+// were moved to the standalone `algo_ops` crate's test suite. The
+// bingle_test-backend AlgoOps trait tests (algo_ops_test, asset_ops_test,
+// algo_ops_more_test) and all AlgoBingle tests remain here.
 
 #[path = "algo_ops_test.rs"]
 pub mod algo_ops_test;
 
 #[path = "asset_ops_test.rs"]
 pub mod asset_ops_test;
-
-#[path = "algo_change_reserve_unit.rs"]
-pub mod algo_change_reserve_unit;
 
 #[path = "algo_ops_more_test.rs"]
 pub mod algo_ops_more_test;
@@ -34,32 +38,8 @@ pub mod required_funding;
 #[path = "algo_bingle_unit.rs"]
 pub mod algo_bingle_unit;
 
-#[path = "algo_ops_address_derivation_test.rs"]
-pub mod algo_ops_address_derivation_test;
-
-#[path = "algo_ops_sign_notify_envelope_test.rs"]
-pub mod algo_ops_sign_notify_envelope_test;
-
-#[path = "algo_ops_reserve_helpers.rs"]
-pub mod algo_ops_reserve_helpers;
-
-// New unit covering keypair generation helper
-#[path = "account_balance_test.rs"]
-pub mod account_balance_test;
-#[path = "generate_keypair.rs"]
-pub mod generate_keypair;
-
-#[path = "asset_holding_test.rs"]
-pub mod asset_holding_test;
-
-#[path = "set_asset_clawback_test.rs"]
-pub mod set_asset_clawback_test;
-
-#[path = "test_node_errors.rs"]
-pub mod test_node_errors;
-
-#[path = "test_retry_logic.rs"]
-pub mod test_retry_logic;
-
 #[path = "static_endpoint_guard.rs"]
 pub mod static_endpoint_guard;
+
+#[path = "blockchain_ops_trait.rs"]
+pub mod blockchain_ops_trait;

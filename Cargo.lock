@@ -12,6 +12,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "algo_ops"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e6903c89fba8d4b28353e205f4db8d8e9931072b2dfd8bd2cb31bb778d1c13ef"
+dependencies = [
+ "algonaut",
+ "anyhow",
+ "base64 0.21.7",
+ "blockchain_ops",
+ "data-encoding",
+ "ed25519-dalek",
+ "rand_core 0.6.4",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "algonaut"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -470,8 +491,9 @@ dependencies = [
 
 [[package]]
 name = "bingle_cli"
-version = "0.3.0"
+version = "3.0.1"
 dependencies = [
+ "algo_ops",
  "bingle_core",
  "bingle_local",
  "bingle_test",
@@ -489,13 +511,15 @@ dependencies = [
 
 [[package]]
 name = "bingle_core"
-version = "0.3.0"
+version = "3.0.1"
 dependencies = [
+ "algo_ops",
  "algonaut",
  "anyhow",
  "base64 0.21.7",
  "bingle_core",
  "bingle_test",
+ "blockchain_ops",
  "chrono",
  "ctrlc",
  "data-encoding",
@@ -510,7 +534,6 @@ dependencies = [
  "serial_test",
  "sha2 0.10.9",
  "stun-rs",
- "tempfile",
  "thiserror 1.0.69",
  "tokio",
  "tokio-openssl",
@@ -522,12 +545,15 @@ dependencies = [
 
 [[package]]
 name = "bingle_jsi"
-version = "0.3.0"
+version = "3.0.1"
 dependencies = [
+ "algo_ops",
  "bingle_core",
  "bingle_local",
  "bingle_test",
  "chrono",
+ "jni",
+ "rustls-platform-verifier",
  "serde_json",
  "tempfile",
  "thiserror 1.0.69",
@@ -539,8 +565,9 @@ dependencies = [
 
 [[package]]
 name = "bingle_local"
-version = "0.3.0"
+version = "3.0.1"
 dependencies = [
+ "algo_ops",
  "base64 0.21.7",
  "bingle_core",
  "bingle_test",
@@ -555,8 +582,9 @@ dependencies = [
 
 [[package]]
 name = "bingle_test"
-version = "0.3.0"
+version = "3.0.1"
 dependencies = [
+ "algo_ops",
  "base64 0.21.7",
  "bingle_core",
  "chrono",
@@ -571,8 +599,9 @@ dependencies = [
 
 [[package]]
 name = "bingle_webserver"
-version = "0.3.0"
+version = "3.0.1"
 dependencies = [
+ "algo_ops",
  "anyhow",
  "axum",
  "bingle_core",
@@ -628,6 +657,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cdeb9d870516001442e364c5220d3574d2da8dc765554b4a617230d33fa58ef5"
 dependencies = [
  "objc2",
+]
+
+[[package]]
+name = "blockchain_ops"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7a7b78c1b0f1ba5be95e68e02265a37c05a5031d100ba0a3751565cc905e1abf"
+dependencies = [
+ "anyhow",
 ]
 
 [[package]]

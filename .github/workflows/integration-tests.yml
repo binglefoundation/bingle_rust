@@ -1,0 +1,100 @@
+name: integration-tests
+
+# Runs the localnet `integration` suite (bingle_core + bingle_cli) against a real, in-CI algokit
+# localnet on pushes to staging (issue #136). Unlike the unit gate (CI-UNIT-TESTS.md), these tests
+# deploy the BingleDapp, register handles/relays, and drive chain + transport end to end, so they
+# need Docker (localnet) — available natively on ubuntu-latest (see #110). Reuses the localnet +
+# puya-compile tooling built for the Android e2e (issue #32 / CI-E2E.md).
+#
+# Post-merge only (not on pull requests): the suite is heavy and needs a live localnet. See
+# CI-INTEGRATION.md.
+on:
+  push:
+    branches: [staging]
+  workflow_dispatch:
+
+# Latest-push-wins ("heap not queue"): a newer push to staging cancels the older in-flight run
+# rather than queueing behind it (issue #136).
+concurrency:
+  group: integration-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  checks: write        # allow the test-reporter to publish the JUnit summary
+
+jobs:
+  integration:
+    name: integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      CARGO_TERM_COLOR: always
+      # Fail the build on any compiler warning, matching the "no warnings" requirement in CLAUDE.md
+      # (quality-checks already lints these targets with -D warnings via clippy --all-targets).
+      RUSTFLAGS: "-D warnings"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@v2
+
+      # nextest gives per-test JUnit output and a hard per-test timeout; the [profile.integration] in
+      # .config/nextest.toml runs the suite single-threaded so its shared localnet accounts don't clash.
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@nextest
+
+      # Bring up algokit localnet (native Docker on Linux). The integration tests probe algod at
+      # localhost:4001 and skip cleanly when it is down, so wait until 4001 (algod) and 8980 (indexer)
+      # are reachable — otherwise the suite would silently skip and pass. Mirrors e2e-android.yml.
+      - name: Start algokit localnet
+        run: |
+          pipx install algokit
+          algokit localnet start
+          for _ in $(seq 1 60); do
+            (nc -z localhost 4001 && nc -z localhost 8980) && break
+            sleep 2
+          done
+          nc -z localhost 4001 && nc -z localhost 8980 || { echo "localnet not reachable"; exit 1; }
+
+      # The tests deploy the BingleDapp from its compiled TEAL + arc56 artifacts, which are gitignored
+      # build outputs (dapp_projects/README.md). Compile them with puya directly (skips typed-client
+      # generation — the Rust harness only reads .approval.teal/.clear.teal/.arc56.json). Mirrors
+      # e2e-android.yml.
+      - name: Build the dapp artifacts (puya)
+        working-directory: dapp_projects
+        run: |
+          pipx install poetry
+          poetry install
+          poetry run algokit --no-color compile python \
+            smart_contracts/bingle_dapp/contract.py \
+            --out-dir "$(pwd)/smart_contracts/artifacts/bingle_dapp" \
+            --output-source-map
+
+      # Compile the integration test targets first, so a build/compile break is reported as a failure
+      # (not a silent skip). --locked keeps CI honest about Cargo.lock.
+      - name: Build integration tests
+        run: >
+          cargo test --no-run --locked
+          -p bingle_core -p bingle_cli
+          --test integration
+
+      - name: Run integration tests
+        run: >
+          cargo nextest run --profile integration --no-fail-fast
+          -p bingle_core -p bingle_cli
+          --test integration
+
+      # Publish a readable pass/fail table on the run even when tests fail.
+      - name: Publish test report
+        uses: dorny/test-reporter@v3
+        if: always()
+        with:
+          name: integration test results
+          path: target/nextest/integration/junit.xml
+          reporter: java-junit
+          fail-on-error: false

@@ -17,7 +17,7 @@
 ///   - for combinations 1 and 3, the ASA reserve equals the ASSET_RESERVE account
 ///   - for combination 2, the old-app balance is transferred to the new app
 ///   - ALGO balances decrease by exactly (tx_count × MIN_FEE) for each signing account
-use bingle_core::algo_ops::{AlgoChainConfig, AlgoOps};
+use algo_ops::{AlgoChainConfig, AlgoOps};
 use bingle_core::blockchain::algo_bingle::{
     ACCOUNT_APP_ADMIN, ACCOUNT_APP_WITHDRAWER, ACCOUNT_ASSET_CREATOR, ACCOUNT_ASSET_FREEZE,
     ACCOUNT_ASSET_MANAGER, ACCOUNT_ASSET_RESERVE, AlgoBingle,

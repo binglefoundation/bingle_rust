@@ -33,9 +33,7 @@ impl BingleApi for DummyApi {
     fn get_app_id(&self) -> Option<u64> {
         None
     }
-    fn get_algo_provider_config(
-        &self,
-    ) -> Option<bingle_core::blockchain::algo_ops::AlgoChainConfig> {
+    fn get_algo_provider_config(&self) -> Option<algo_ops::AlgoChainConfig> {
         None
     }
     fn start(

@@ -28,7 +28,7 @@ jobs:
       CARGO_TERM_COLOR: always
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # rustfmt + clippy components are required by the script. openssl is
       # vendored, so clippy's build compiles it from source (perl + cc are
@@ -45,3 +45,33 @@ jobs:
       # exits non-zero on any issue, failing the job and blocking merge.
       - name: Run quality checks (strict)
         run: scripts/run_quality_checks.sh --strict
+
+  # TypeScript typecheck for the bingle_jsi example (app + Detox e2e + the committed
+  # generated bindings). Kept a separate job so the Node toolchain does not weigh down
+  # the Rust gate above. The generated ts/index.ts is committed, so no native build is
+  # needed — just install JS deps and run tsc --noEmit (issue #142).
+  typecheck-example:
+    name: typecheck-example
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: '20'
+          # Cache the npm download cache (~/.npm) so "Install JS dependencies" doesn't refetch the
+          # tree every run (issue #150). Keyed on package.json because the lockfile is gitignored
+          # (.gitignore) and so is absent on a clean checkout; busts on a package.json change.
+          cache: npm
+          cache-dependency-path: bingle_jsi/example/package.json
+
+      - name: Install JS dependencies
+        working-directory: bingle_jsi/example
+        run: npm install --legacy-peer-deps
+
+      - name: Typecheck (tsc --noEmit)
+        working-directory: bingle_jsi/example
+        run: npm run typecheck

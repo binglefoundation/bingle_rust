@@ -1,11 +1,8 @@
 pub mod algo_bingle_buy_flow_localnet;
+pub mod algo_bingle_sell_flow_localnet;
 pub mod algo_bingle_integration_localnet;
 pub mod algo_bingle_register_opt_in_app_localnet;
 pub mod algo_bingle_static_endpoint_integration;
-pub mod algo_ops_integration_localnet;
-pub mod asset_clawback_creator_localnet;
-pub mod asset_configured_creator_localnet;
-pub mod asset_manager_creator_localnet;
 pub mod blockchain_users;
 pub mod unique_handle;
 pub mod migrate_local_localnet;

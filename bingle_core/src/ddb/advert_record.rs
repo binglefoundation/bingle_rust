@@ -144,7 +144,7 @@ impl AdvertRecord {
             None => return false,
         };
 
-        let pk_bytes = match crate::blockchain::algo_ops::address_to_byte_key(&self.id) {
+        let pk_bytes = match algo_ops::address_to_byte_key(&self.id) {
             Ok(pk) => pk,
             Err(_) => return false,
         };

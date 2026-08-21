@@ -5,14 +5,14 @@ use std::io::Write;
 use std::sync::Arc;
 use std::sync::mpsc::{Sender, channel};
 
+use algo_ops::error::{AlgoError, AlgoErrorKind};
+use algo_ops::{AlgoChainConfig, AlgoOps};
 use bingle_core::api::bingle_api::{
     BingleApi, BingleApiInternal, BingleError, OnConnectHandler, OnListeningHandler,
     OnMessageHandler,
 };
 use bingle_core::api::bingle_api_impl::BingleApiImpl;
 use bingle_core::blockchain::algo_bingle::AlgoBingle;
-use bingle_core::blockchain::algo_ops::{AlgoChainConfig, AlgoOps};
-use bingle_core::blockchain::error::{AlgoError, AlgoErrorKind};
 use bingle_core::ddb::{AdvertRecord, InetSocketAddress};
 use bingle_core::engine::BingleAccess;
 use bingle_core::util::cli_utils::{args_request_auto_migrate, parse_start_options_from_args};
@@ -287,7 +287,7 @@ fn cmd_run(mut args: Vec<String>) {
             .and_then(|s| s.parse::<u64>().ok())
     });
     if let Some(app_id) = app_id_for_check {
-        let ops = AlgoOps::new(None, None, opts.algo_provider_config.clone());
+        let ops = AlgoOps::new_for_algorand(None, None, opts.algo_provider_config.clone());
         let asset_id_for_ctor = opts
             .asset_id
             .or_else(|| opts.algo_provider_config.as_ref().and_then(|c| c.asset_id))
@@ -332,7 +332,7 @@ fn cmd_run(mut args: Vec<String>) {
     if auto_migrate {
         match (app_id_for_check, opts.algo_passphrase.as_ref()) {
             (Some(app_id), Some(passphrase)) => {
-                let ops = AlgoOps::new(
+                let ops = AlgoOps::new_for_algorand(
                     Some(passphrase.clone()),
                     None,
                     opts.algo_provider_config.clone(),
@@ -385,7 +385,7 @@ fn cmd_run(mut args: Vec<String>) {
                         "--static-ip was provided but no Algorand passphrase (--passphrase) was set; skipping on-chain register_endpoint"
                     );
                 } else {
-                    let ops = AlgoOps::new(
+                    let ops = AlgoOps::new_for_algorand(
                         opts.algo_passphrase.clone(),
                         None,
                         opts.algo_provider_config.clone(),
@@ -577,7 +577,8 @@ fn cmd_run(mut args: Vec<String>) {
             algo_provider_config,
             asset_id,
         } => {
-            let ops = AlgoOps::new(Some(passphrase), None, algo_provider_config.clone());
+            let ops =
+                AlgoOps::new_for_algorand(Some(passphrase), None, algo_provider_config.clone());
             let asset_id_for_ctor = asset_id
                 .or_else(|| algo_provider_config.as_ref().and_then(|c| c.asset_id))
                 .unwrap_or(0);
@@ -731,17 +732,16 @@ impl bingle_cli::chat_send::MessageSender for EngineSender {
         &self,
         target: &bingle_cli::chat_send::SendTarget,
         message: &serde_json::Value,
-    ) -> Result<bool, String> {
+    ) -> Result<bool, bingle_core::api::bingle_api::BingleError> {
         use bingle_cli::chat_send::SendTarget;
+        // Return the typed error unchanged so the send-failure cause survives to the classifier
+        // (issue #99).
         match target {
-            SendTarget::Handle(handle) => self
-                .api
-                .send_message_to_handle(handle, message.clone(), None)
-                .map_err(|e| e.to_string()),
-            SendTarget::Id(id) => self
-                .api
-                .send_message_to_id(id, message.clone(), None)
-                .map_err(|e| e.to_string()),
+            SendTarget::Handle(handle) => {
+                self.api
+                    .send_message_to_handle(handle, message.clone(), None)
+            }
+            SendTarget::Id(id) => self.api.send_message_to_id(id, message.clone(), None),
         }
     }
 }
@@ -1309,7 +1309,7 @@ fn cmd_checkrelays(mut args: Vec<String>) {
         };
 
     // Build AlgoOps for discovery using same config
-    let ops = AlgoOps::new(Some(pass.clone()), None, algo_provider_config.clone());
+    let ops = AlgoOps::new_for_algorand(Some(pass.clone()), None, algo_provider_config.clone());
     let my_address = match &ops.address {
         Some(a) => a.clone(),
         None => {
@@ -1564,7 +1564,7 @@ fn cmd_register(args: Vec<String>) {
         };
 
     // Build AlgoOps with provided passphrase; address is derived immediately in AlgoOps::new
-    let ops = AlgoOps::new(Some(passphrase.clone()), None, Some(cfg));
+    let ops = AlgoOps::new_for_algorand(Some(passphrase.clone()), None, Some(cfg));
     let address = match ops.address.as_ref() {
         Some(a) => a.clone(),
         None => {
@@ -1728,7 +1728,7 @@ fn cmd_buybingle(args: Vec<String>) {
         };
 
     // Ops
-    let ops = AlgoOps::new(Some(passphrase.clone()), None, Some(cfg));
+    let ops = AlgoOps::new_for_algorand(Some(passphrase.clone()), None, Some(cfg));
     let address = ops.address.as_ref().cloned().unwrap_or_else(|| {
         warn!("Invalid passphrase: unable to derive address.");
         std::process::exit(2);
@@ -1881,7 +1881,7 @@ fn cmd_sellbingle(args: Vec<String>) {
         };
 
     // Ops
-    let ops = AlgoOps::new(Some(passphrase.clone()), None, Some(cfg));
+    let ops = AlgoOps::new_for_algorand(Some(passphrase.clone()), None, Some(cfg));
     let address = ops.address.as_ref().cloned().unwrap_or_else(|| {
         warn!("Invalid passphrase: unable to derive address.");
         std::process::exit(2);

@@ -1,6 +1,6 @@
 use crate::util::test_util::init_test_logging;
+use algo_ops::AlgoOps;
 use bingle_core::api::pki::generate_pki_from_ops;
-use bingle_core::blockchain::algo_ops::AlgoOps;
 use bingle_core::protocol::cert_verify::{dump_ca_public_key_info, dump_cert_info};
 use bingle_core::protocol::{ISSUER_SUFFIX, VIRTUAL_CA};
 
@@ -16,7 +16,7 @@ pub fn generate_pki_from_ops_produces_valid_chain_and_expected_cns() {
     // Initialize AlgoOps using predefined mnemonic and address
     let passphrase = test_util::PASSPHRASE_SPEND.to_string();
     let address = test_util::ADDRESS_SPEND.to_string();
-    let ops = AlgoOps::new(Some(passphrase), Some(address.clone()), None);
+    let ops = AlgoOps::new_for_algorand(Some(passphrase), Some(address.clone()), None);
 
     let (ca_pem, server_cert_pem, _server_key_pem, client_cert_pem, _client_key_pem) =
         generate_pki_from_ops(&ops).expect("generate pki");

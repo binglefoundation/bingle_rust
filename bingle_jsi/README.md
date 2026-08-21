@@ -1,4 +1,4 @@
-# bingle_jsi
+# bingle_jsi <img src="https://raw.githubusercontent.com/binglefoundation/bingle_rust/staging/docs/assets/bingle_logo.png" alt="Bingle logo" height="36" align="right" />
 
 Bingle is a decentralized, peer-to-peer messaging protocol that lets users communicate securely and privately
 — so your conversations stay yours, with nobody able to read or shut them down.
@@ -18,9 +18,10 @@ apps can call the Bingle engine in
 It is part of [`bingle_rust`](https://github.com/binglefoundation/bingle_rust), the Rust reference implementation of
 the Bingle protocol.
 
-> **Android is under development and unsupported.** Only the iOS bridge is currently supported. The
-> Android bindings and build scripts are provided for development purposes, may be incomplete or
-> broken, and should not be relied on.
+> **Android is under development.** The iOS bridge is the primary supported target. The Android
+> bridge now builds and links, and the example app runs the Detox e2e harness on an emulator (issue
+> #130); messaging/failure-cause coverage and a CI lane are in progress (issues #131, #132). Treat
+> Android as not yet production-ready.
 
 ## Installing
 
@@ -464,6 +465,99 @@ GEM_PATH=/opt/homebrew/Cellar/cocoapods/1.16.2_1/libexec \
 GEM_HOME=/opt/homebrew/Cellar/cocoapods/1.16.2_1/libexec \
 ruby -I /opt/homebrew/Cellar/cocoapods/1.16.2_1/libexec/gems/xcodeproj-1.27.0/lib \
   bingle_jsi/scripts/<script>.rb
+```
+
+---
+
+### End-to-end tests (Detox — Layer 3)
+
+Layer 3 drives the **real TypeScript → native → Rust path** in an iOS simulator
+via [Detox](https://wix.github.io/Detox/), through the example app's
+command-dispatcher harness (issue #109/#116). Unlike the Layer 2 Swift tests
+(Swift bridge → Rust), these exercise the shipped `ts/` interface exactly as a
+React Native app calls it.
+
+One-time prerequisite (a newer Homebrew needs the third-party tap trusted):
+
+```bash
+brew tap wix/brew && brew trust wix/brew && brew install applesimutils
+```
+
+Then run the whole suite from a clean checkout with a single command:
+
+```bash
+bash bingle_jsi/example/scripts/run_e2e_ios.sh
+```
+
+That builds the simulator xcframework, installs JS + pods, builds the app with
+Detox, opens Metro in its own Terminal window (like `react-native run-ios`, left
+running), and runs the e2e. To iterate on the tests without rebuilding (app
+already built, faster):
+
+```bash
+bash bingle_jsi/example/scripts/run_e2e_ios.sh --test-only
+```
+
+The smoke suite (`bingle_jsi/example/e2e/smoke.test.ts`) launches the app, calls
+`version()` before init, then inits (enabling the `bingle_local` API via a
+state-file path) and round-trips a generated keypair. Add coverage by dropping a
+new `e2e/*.test.ts` that uses the `call({ method, args })` helper in
+`e2e/harness.ts` — no per-method UI. Notes and gotchas are documented in
+`bingle_jsi/example/README.md` and inline in those files.
+
+#### Network e2e — send + echo (issue #111)
+
+`e2e/messaging.test.ts` drives the full send/receive path against a real network:
+it sends a message to a live echo peer and asserts both delivery and the echoed
+reply. It **skips cleanly** unless a backend and a funded, already-registered
+sender are provided via the environment (so the default run stays offline):
+
+| Env var | Meaning |
+| --- | --- |
+| `BINGLE_E2E_BACKEND` | `testnet` (default) or `localnet` (self-provisioning, #123) |
+| `BINGLE_E2E_PASSPHRASE` | mnemonic of a funded, registered sender account (testnet) |
+| `BINGLE_E2E_HANDLE` | that account's registered handle (testnet) |
+| `BINGLE_E2E_ECHO_TO` | echo peer handle; defaults to `echo-testnet-1` on testnet |
+| `BINGLE_E2E_OFFLINE_HANDLE` | optional; a handle registered but offline, for the `RecipientNotAdvertised` failure-cause case (#112) |
+
+`run_e2e_ios.sh` stages the node-file (`nodely_staging_testnet_node.json` for
+testnet) and `stunservers.txt` to `/tmp` and passes the env through. On testnet
+`BINGLE_E2E_ECHO_TO` defaults to the always-live `echo-testnet-1`, so you only
+supply the funded sender:
+
+```bash
+BINGLE_E2E_PASSPHRASE="word word … word" \
+BINGLE_E2E_HANDLE=my-testnet-handle \
+  bash bingle_jsi/example/scripts/run_e2e_ios.sh --test-only
+```
+
+`e2e/messaging.test.ts` (#111) covers send + echo; `e2e/failure_causes.test.ts`
+(#112, validates #99) covers typed failure causes — an unregistered handle →
+`HandleNotFound` (permanent), and, when `BINGLE_E2E_OFFLINE_HANDLE` is set, a
+registered-but-offline recipient → `RecipientNotAdvertised` (retryable) — read
+via `getMessages().failure_kind` and the `failureKindIsRetryable` helper.
+
+##### localnet backend (issue #123)
+
+For CI and offline runs, `BINGLE_E2E_BACKEND=localnet` needs no credentials: the
+script ensures `algokit localnet` is running, builds and launches the Rust
+provisioner (`bingle_test`'s `localnet_e2e_provisioner`), and waits for it to
+come up. The provisioner deploys the Bingle app + asset, stands up two root
+relays and STUN servers, registers and starts an in-process echo peer
+(`echo-localnet-1`, the counterpart of testnet's `echo-testnet-1`), and registers
+a funded sender plus a registered-but-offline fixture. It writes the node-file,
+STUN list and a `BINGLE_E2E_*` env file (`/tmp/bingle_e2e_localnet.env`, its
+readiness signal) that the script sources, so all credentials are derived
+automatically. The provisioner is killed on exit. Requires `algokit` +
+`algokit localnet` and the `goal` CLI on `PATH`.
+
+On localnet the provisioner registers the offline fixture and exports
+`BINGLE_E2E_OFFLINE_HANDLE` automatically, so the failure suite's
+`RecipientNotAdvertised` case runs too.
+
+```bash
+BINGLE_E2E_BACKEND=localnet \
+  bash bingle_jsi/example/scripts/run_e2e_ios.sh
 ```
 
 ---

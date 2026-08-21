@@ -1,7 +1,7 @@
 // tests/blockchain/algo_bingle/required_funding.rs
 // Unit-style tests for the registration cost model, without a live Algod node (issue #15, A3b).
 
-use bingle_core::algo_bingle::AlgoBingle;
+use bingle_core::blockchain::algo_bingle::AlgoBingle;
 
 fn approx(a: f64, b: f64) -> bool {
     (a - b).abs() < 1e-9

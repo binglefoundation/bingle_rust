@@ -1,3 +1,6 @@
+//! The concrete [`BingleLocalApi`] implementation [`BingleApiLocalImpl`] and its
+//! [`LocalApiConfig`].
+
 use crate::api::notify::envelope::{fresh_nonce, now_secs};
 use crate::api::notify::{
     AlertPoster, HttpAlertPoster, HttpRegisterPoster, RegisterPoster, build_register_request,
@@ -7,10 +10,10 @@ use crate::api::{
     BingleLocalApi, ChainRegistrationOps, Contact, ContactSource, Keypair, KeypairStatus, Message,
     REQUIRED_ALGO, run_registration,
 };
-use bingle_core::api::bingle_api::BingleError;
+use algo_ops::error::AlgoErrorKind;
+use algo_ops::{AlgoChainConfig, AlgoOps};
+use bingle_core::api::bingle_api::{BingleError, SendFailureKind};
 use bingle_core::blockchain::algo_bingle::AlgoBingle;
-use bingle_core::blockchain::algo_ops::{AlgoChainConfig, AlgoOps};
-use bingle_core::blockchain::error::AlgoErrorKind;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
@@ -19,8 +22,11 @@ use std::sync::{Arc, Mutex};
 /// Includes the blockchain provider configuration and required ids.
 #[derive(Debug, Clone)]
 pub struct LocalApiConfig {
+    /// Algorand node and indexer connection configuration.
     pub algo_config: AlgoChainConfig,
+    /// Id of the Bingle application on-chain.
     pub app_id: u64,
+    /// Id of the Bingle$ asset on-chain.
     pub asset_id: u64,
     /// Feature gate for the give-up nudge (bingle_notify #11). When `true` (the current default),
     /// a store-and-retry give-up POSTs a content-free `/alert` to the notify gateway so the
@@ -88,10 +94,11 @@ impl LocalApiConfig {
 /// account is not ACTIVE.
 ///
 /// `required_target_algos` is the balance considered adequate to register: the
-/// live cost from [`required_funding_algos`] when it can be read, or `REQUIRED_ALGO`
+/// live cost from `required_funding_algos` when it can be read, or `REQUIRED_ALGO`
 /// as a fallback. For UNFUNDED, `required_algo` is the **top-up** to reach that
 /// target (`required_target_algos - balance_algos`), so a semi-funded account is
 /// only asked for the shortfall (issue #15, A3/A3b).
+#[doc(hidden)]
 pub fn keypair_status_from_facts(
     algorand_id: String,
     has_asset: bool,
@@ -174,6 +181,10 @@ pub struct BingleApiLocalImpl {
 const NETWORK_CHECK_TTL: std::time::Duration = std::time::Duration::from_secs(5);
 
 impl BingleApiLocalImpl {
+    /// Create a new local API implementation from `config`.
+    ///
+    /// Starts with no keypair, an empty contact store and message queue, and the default HTTP
+    /// notify posters. Generate or import a keypair before calling the on-chain operations.
     pub fn new(config: LocalApiConfig) -> Self {
         Self {
             keypair: Mutex::new(None),
@@ -214,6 +225,7 @@ impl BingleApiLocalImpl {
 
     /// Seed the memoized local handle (tests only). Lets a test exercise the give-up nudge, which
     /// signs the envelope as the local handle, without a live blockchain read to resolve it.
+    #[doc(hidden)]
     pub fn seed_own_handle_for_tests(&self, handle: String) {
         if let Ok(mut g) = self.own_handle.lock() {
             *g = Some(handle);
@@ -340,6 +352,7 @@ impl BingleApiLocalImpl {
 /// Returns the cached handle without invoking `fetch_status` when one is known, so queuing a
 /// send never needs a live blockchain read once the account is registered. Only a genuine first
 /// run (no cache) falls back to a fresh status read.
+#[doc(hidden)]
 pub fn resolve_sender_handle<F>(
     cached_handle: Option<String>,
     fetch_status: F,
@@ -358,6 +371,7 @@ where
 
 /// Whether a `BingleError` indicates the blockchain host was unreachable (a transient network
 /// outage) as opposed to a genuine failure. Used to decide when to fall back to cached state.
+#[doc(hidden)]
 pub fn algo_host_unreachable(err: &BingleError) -> bool {
     matches!(err, BingleError::Algo(ae) if ae.kind == AlgoErrorKind::HostUnreachable)
 }
@@ -368,6 +382,7 @@ pub fn algo_host_unreachable(err: &BingleError) -> bool {
 /// status exists; any other error (or a genuine first run with no cache) propagates so callers
 /// still see NoBlockchain. The returned cached status is flagged `stale` so the UI can show it as
 /// unavailable rather than a freshly confirmed read (issue #31).
+#[doc(hidden)]
 pub fn status_or_last_known(
     err: BingleError,
     cached: Option<KeypairStatus>,
@@ -608,7 +623,8 @@ impl BingleLocalApi for BingleApiLocalImpl {
             self.config.algo_config.app_id,
             self.config.algo_config.asset_id,
         );
-        let ops = AlgoOps::new(Some(pass), None, Some(self.config.algo_config.clone()));
+        let ops =
+            AlgoOps::new_for_algorand(Some(pass), None, Some(self.config.algo_config.clone()));
         let mut cache_guard = match self.algo_ops.lock() {
             Ok(g) => g,
             Err(e) => {
@@ -779,6 +795,7 @@ impl BingleLocalApi for BingleApiLocalImpl {
             cipher_suite,
             progress: Some(1.0),
             failure_reason: None,
+            failure_kind: None,
         };
         let mut guard = match self.messages.lock() {
             Ok(g) => g,
@@ -832,6 +849,7 @@ impl BingleLocalApi for BingleApiLocalImpl {
             cipher_suite: None,
             progress: Some(0.0),
             failure_reason: None,
+            failure_kind: None,
         };
 
         let mut guard = match self.messages.lock() {
@@ -851,6 +869,7 @@ impl BingleLocalApi for BingleApiLocalImpl {
         timestamp: i64,
         progress: f32,
         failure_reason: Option<String>,
+        failure_kind: Option<SendFailureKind>,
     ) -> Result<(), BingleError> {
         let mut guard = match self.messages.lock() {
             Ok(g) => g,
@@ -872,6 +891,9 @@ impl BingleLocalApi for BingleApiLocalImpl {
                 msg.progress = Some(progress);
                 if failure_reason.is_some() || progress >= 1.0 {
                     msg.failure_reason = failure_reason;
+                    // Keep the typed cause in lockstep with the reason: set on failure, cleared on
+                    // a successful/terminal send with no reason (issue #99).
+                    msg.failure_kind = failure_kind;
                 }
                 if msg.failure_reason.is_some() {
                     Some((msg.timestamp, msg.recipient_handles.clone()))

@@ -10,6 +10,7 @@ use crate::api::bingle_api::{
 };
 
 /// Check if a message type may only originate from a relay.
+#[cfg(feature = "test-hooks")]
 pub fn only_from_relay(msg: &Message) -> bool {
     match msg {
         Message::Relay(rm) => match rm {
@@ -100,7 +101,7 @@ impl BingleApi for LockingApiWrapper {
     fn get_app_id(&self) -> Option<u64> {
         self.api("get_app_id").and_then(|a| a.get_app_id())
     }
-    fn get_algo_provider_config(&self) -> Option<crate::blockchain::algo_ops::AlgoChainConfig> {
+    fn get_algo_provider_config(&self) -> Option<algo_ops::AlgoChainConfig> {
         self.api("get_algo_provider_config")
             .and_then(|a| a.get_algo_provider_config())
     }

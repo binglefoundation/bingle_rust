@@ -1,10 +1,10 @@
+use algo_ops::AlgoOps;
 use bingle_core::blockchain::algo_bingle::AlgoBingle;
-use bingle_core::blockchain::algo_ops::AlgoOps;
 
 #[test]
 #[cfg(not(target_os = "ios"))]
 pub fn test_set_allow_relay_param_validation() {
-    let ops = AlgoOps::new(
+    let ops = AlgoOps::new_for_algorand(
         None,
         Some("P577PSTDICQ6PQFBR5YMDMJ2YVK7LT5V4GOPNVDLCEDJIL7XGRWC5BRFWA".to_string()),
         None,

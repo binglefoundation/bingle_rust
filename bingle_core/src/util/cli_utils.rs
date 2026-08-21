@@ -1,12 +1,14 @@
 use crate::api::bingle_api::StartOptions;
-use crate::blockchain::algo_ops::AlgoChainConfig;
 use crate::util::config_utils;
 use crate::util::logging::LogMode;
+use algo_ops::AlgoChainConfig;
 use std::net::SocketAddr;
 
-/// Parse CLI arguments into StartOptions.
+/// Parse command-line arguments into [`StartOptions`].
 ///
 /// Supported options:
+///
+/// ```text
 ///  --handle <handle>
 ///  <positional_handle> (if --handle not given)
 ///  --passphrase <text>
@@ -16,6 +18,7 @@ use std::net::SocketAddr;
 ///  --stun-servers-file <file>
 ///  --node-file <file>
 ///  --auto-migrate
+/// ```
 ///
 /// Note: `--auto-migrate` is tolerated here (it does not affect `StartOptions`, mirroring
 /// `--debug`, to keep `StartOptions` stable for existing tests). Whether a run should perform the

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # scripts/run_quality_checks.sh
-# Code-quality report for the Bingle Rust workspace: rustfmt + clippy.
+# Code-quality report for the Bingle Rust workspace: toolchain freshness + rustfmt + clippy + rustdoc.
 #
 # These are the tools used in the `chore/rustfmt-clippy-cleanup` pass, wrapped
 # for use as a (manual, for now) CI step. Run from the repo root.
@@ -13,12 +13,14 @@
 # Usage:
 #   scripts/run_quality_checks.sh            # report: summary of fmt + clippy, exits 0
 #   scripts/run_quality_checks.sh --detail   # report, but print full fmt diff + clippy output
-#   scripts/run_quality_checks.sh --strict   # gate: fmt must be clean, clippy -D warnings; non-zero on any issue
+#   scripts/run_quality_checks.sh --strict   # gate: fmt clean, clippy -D warnings, published-crate docs clean; non-zero on any issue
 #   scripts/run_quality_checks.sh fix        # auto-apply: cargo fmt --all + cargo clippy --fix
 #
 # Env toggles:
-#   RUN_FMT=0      skip the rustfmt step
-#   RUN_CLIPPY=0   skip the clippy step
+#   RUN_FMT=0        skip the rustfmt step
+#   RUN_CLIPPY=0     skip the clippy step
+#   RUN_DOCS=0       skip the rustdoc (published-crate docs) step
+#   RUN_TOOLCHAIN=0  skip the toolchain-freshness check (warns when local stable is behind CI's)
 
 set -uo pipefail
 
@@ -26,6 +28,14 @@ GREEN='\033[0;32m'; RED='\033[0;31m'; YELLOW='\033[0;33m'; BOLD='\033[1m'; NC='\
 
 RUN_FMT="${RUN_FMT:-1}"
 RUN_CLIPPY="${RUN_CLIPPY:-1}"
+RUN_DOCS="${RUN_DOCS:-1}"
+RUN_TOOLCHAIN="${RUN_TOOLCHAIN:-1}"
+
+# Published crates whose docs.rs reference is gated: missing_docs must be zero and rustdoc must
+# emit no warnings (broken intra-doc links, invalid HTML). clippy already denies the missing_docs
+# rustc lint under -D warnings; this rustdoc pass additionally catches doc-link/HTML regressions
+# that clippy does not see. Kept in sync with the `publish`-able members.
+DOC_PKGS=(-p bingle_core -p bingle_local -p bingle_cli)
 
 MODE="report"
 DETAIL=0
@@ -98,6 +108,27 @@ STRICT=0
 [[ "${MODE}" == "strict" ]] && STRICT=1
 fail=0
 
+# --------------------------------------------------------------- toolchain
+# CI runs on dtolnay/rust-toolchain@stable (always the latest stable), and clippy's lint set grows
+# with each release. A local toolchain that has fallen behind can pass `--strict` here yet fail
+# CI's `quality` job on lints it doesn't know about. Warn when the active stable is behind — and, in
+# strict mode *outside* CI, fail so a stale local run can't give a false green. Skips cleanly if
+# rustup is absent or offline, and never fails inside CI (its toolchain is managed and current).
+if [[ "${RUN_TOOLCHAIN}" == "1" ]] && command -v rustup >/dev/null 2>&1; then
+  section "toolchain freshness"
+  tc_out="$(rustup check 2>/dev/null)"
+  if [[ -z "${tc_out}" ]]; then
+    echo -e "${YELLOW}skipped${NC} (rustup check unavailable — offline?)"
+  elif printf '%s\n' "${tc_out}" | grep -iE '^stable' | grep -qiE 'update available'; then
+    echo -e "${RED}stable toolchain is behind the latest release${NC}  — run: rustup update stable"
+    printf '%s\n' "${tc_out}" | grep -iE '^stable.*update available' | sed 's/^/    /'
+    echo "    (CI uses the latest stable; a stale local clippy can pass here yet fail CI.)"
+    [[ "${STRICT}" == "1" && -z "${CI:-}" ]] && fail=1
+  else
+    echo -e "${GREEN}up to date${NC}"
+  fi
+fi
+
 # --------------------------------------------------------------------- fmt
 if [[ "${RUN_FMT}" == "1" ]]; then
   section "rustfmt"
@@ -124,26 +155,54 @@ if [[ "${RUN_CLIPPY}" == "1" ]]; then
     clippy_rc=$?
   fi
 
-  errors="$(grep -cE '^error(\[|:)' "${clippy_log}")"
+  # Strip ANSI before counting: CI sets CARGO_TERM_COLOR=always, which forces color even when
+  # cargo's stderr is redirected to a file, so uncolored `^error`/`^warning` greps would miss
+  # every line and misreport a failing run as "clean".
+  sed -E $'s/\x1b\\[[0-9;]*m//g' "${clippy_log}" > "${clippy_log}.plain"
+  errors="$(grep -cE '^error(\[|:)' "${clippy_log}.plain")"
   # per-warning lines only (exclude the "generated N warnings" summary lines)
-  warns="$(grep -E '^warning: ' "${clippy_log}" | grep -vcE 'generated .* warning')"
+  warns="$(grep -E '^warning: ' "${clippy_log}.plain" | grep -vcE 'generated .* warning')"
 
   if [[ "${errors}" -gt 0 ]]; then
     echo -e "${RED}${errors} error(s), ${warns} warning(s)${NC}"
   elif [[ "${warns}" -gt 0 ]]; then
     echo -e "${YELLOW}${warns} warning(s), 0 errors${NC}  — top lints:"
-    grep -E '^warning: ' "${clippy_log}" | grep -vE 'generated .* warning' \
+    grep -E '^warning: ' "${clippy_log}.plain" | grep -vE 'generated .* warning' \
       | sed -E 's/^warning: //' | sort | uniq -c | sort -rn | head -12 \
       | sed 's/^/    /'
     echo -e "    ${BOLD}...${NC} (many are auto-fixable: $0 fix)"
+  elif [[ "${clippy_rc}" -ne 0 ]]; then
+    # Non-zero exit but the line heuristic saw nothing (unusual/colored output): never hide it.
+    echo -e "${RED}clippy failed (exit ${clippy_rc})${NC}"
   else
     echo -e "${GREEN}clean${NC}"
   fi
 
-  [[ "${DETAIL}" == "1" ]] && { echo; cat "${clippy_log}"; }
+  # On failure, always surface the diagnostics (not just under --detail) so CI shows the cause.
+  if [[ "${DETAIL}" == "1" || ( "${STRICT}" == "1" && "${clippy_rc}" -ne 0 ) ]]; then
+    echo; grep -E '^(error|warning)' "${clippy_log}.plain" | head -60
+  fi
   # In strict mode, clippy's own exit code (with -D warnings) decides pass/fail.
   [[ "${STRICT}" == "1" && "${clippy_rc}" -ne 0 ]] && fail=1
-  rm -f "${clippy_log}"
+  rm -f "${clippy_log}" "${clippy_log}.plain"
+fi
+
+# -------------------------------------------------------------------- docs
+if [[ "${RUN_DOCS}" == "1" ]]; then
+  section "rustdoc (published crates: ${DOC_PKGS[*]})"
+  docs_log="$(mktemp)"
+  # -D warnings turns any missing-doc or broken-doc-link into a build failure.
+  RUSTDOCFLAGS="-D warnings" cargo doc --no-deps "${DOC_PKGS[@]}" >"${docs_log}" 2>&1
+  docs_rc=$?
+  if [[ "${docs_rc}" -eq 0 ]]; then
+    echo -e "${GREEN}clean${NC}"
+  else
+    dcount="$(grep -cE '^(warning|error)' "${docs_log}")"
+    echo -e "${RED}${dcount} rustdoc issue(s)${NC}  (run: RUSTDOCFLAGS=\"-D warnings\" cargo doc --no-deps ${DOC_PKGS[*]})"
+    [[ "${DETAIL}" == "1" ]] && cat "${docs_log}"
+    [[ "${STRICT}" == "1" ]] && fail=1
+  fi
+  rm -f "${docs_log}"
 fi
 
 # ------------------------------------------------------------------ summary

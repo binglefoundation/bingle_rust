@@ -1,4 +1,4 @@
-use bingle_core::api::bingle_api::BingleError;
+use bingle_core::api::bingle_api::{BingleError, SendFailureKind};
 use bingle_local::api::{BingleApiLocalImpl, BingleLocalApi, LocalApiConfig};
 
 #[test]
@@ -32,7 +32,7 @@ fn test_add_message_and_update_status() {
     assert_eq!(msgs[0].progress, Some(1.0));
 
     // Update status
-    api.update_message_status(timestamp, 0.5, Some("Sending...".to_string()))
+    api.update_message_status(timestamp, 0.5, Some("Sending...".to_string()), None)
         .expect("update_message_status");
 
     let msgs = api.get_messages().expect("get_messages");
@@ -40,11 +40,47 @@ fn test_add_message_and_update_status() {
     assert_eq!(msgs[0].failure_reason, Some("Sending...".to_string()));
 
     // Update to success
-    api.update_message_status(timestamp, 1.0, None)
+    api.update_message_status(timestamp, 1.0, None, None)
         .expect("update_message_status");
 
     let msgs = api.get_messages().expect("get_messages");
     assert_eq!(msgs[0].progress, Some(1.0));
+    assert_eq!(msgs[0].failure_reason, None);
+}
+
+#[test]
+fn test_update_status_persists_typed_failure_kind() {
+    // The typed failure cause is stored alongside the reason and cleared on success (issue #99).
+    let mut api = BingleApiLocalImpl::new(LocalApiConfig::default());
+    let timestamp = 55i64;
+    api.add_message(
+        "alice".into(),
+        vec!["bob".into()],
+        timestamp,
+        "hi".into(),
+        None,
+    )
+    .expect("add_message");
+
+    api.update_message_status(
+        timestamp,
+        0.0,
+        Some("Recipient is not connected right now".to_string()),
+        Some(SendFailureKind::RecipientNotAdvertised),
+    )
+    .expect("update_message_status");
+
+    let msgs = api.get_messages().expect("get_messages");
+    assert_eq!(
+        msgs[0].failure_kind,
+        Some(SendFailureKind::RecipientNotAdvertised)
+    );
+
+    // A successful terminal update clears both the reason and the typed kind.
+    api.update_message_status(timestamp, 1.0, None, None)
+        .expect("update_message_status");
+    let msgs = api.get_messages().expect("get_messages");
+    assert_eq!(msgs[0].failure_kind, None);
     assert_eq!(msgs[0].failure_reason, None);
 }
 
@@ -61,7 +97,7 @@ fn test_get_pending_messages() {
     assert_eq!(api.get_pending_messages().unwrap().len(), 0);
 
     // Force one to be pending
-    api.update_message_status(1, 0.2, None).unwrap();
+    api.update_message_status(1, 0.2, None, None).unwrap();
 
     let pending = api.get_pending_messages().unwrap();
     assert_eq!(pending.len(), 1);

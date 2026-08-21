@@ -1,9 +1,9 @@
 use crate::setup_localnet;
 use crate::util::test_util;
+use algo_ops::AlgoOps;
 use bingle_core::api::bingle_api::{BingleApi, StartOptions};
 use bingle_core::api::bingle_api_impl::BingleApiImpl;
 use bingle_core::blockchain::algo_bingle::AlgoBingle;
-use bingle_core::blockchain::algo_ops::AlgoOps;
 use bingle_core::engine::BingleAccessUnsafeForTests;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
@@ -22,8 +22,9 @@ pub fn test_relay_start_fails_if_not_allowed_on_chain() {
     setup_localnet::ensure_localnet_accounts_funded(&cfg, &[creator_addr, relay_addr_str])
         .expect("Failed to fund localnet accounts");
 
-    let ops_creator = AlgoOps::new(Some(creator_pass.to_string()), None, Some(cfg.clone()));
-    let ops_admin = AlgoOps::new(
+    let ops_creator =
+        AlgoOps::new_for_algorand(Some(creator_pass.to_string()), None, Some(cfg.clone()));
+    let ops_admin = AlgoOps::new_for_algorand(
         Some(test_util::PASSPHRASE_APP_ADMIN.to_string()),
         None,
         Some(cfg.clone()),
@@ -31,7 +32,8 @@ pub fn test_relay_start_fails_if_not_allowed_on_chain() {
     let (app_id, _asset_id) =
         test_util::deploy_bingle_app_and_asset(&ops_creator, "BINGLE$", 1_000_000);
 
-    let ops_relay = AlgoOps::new(Some(relay_pass.to_string()), None, Some(cfg.clone()));
+    let ops_relay =
+        AlgoOps::new_for_algorand(Some(relay_pass.to_string()), None, Some(cfg.clone()));
     ops_relay.opt_in_app(app_id).expect("relay opt-in app");
 
     // We do NOT call set_allow_relay here.

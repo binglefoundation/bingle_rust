@@ -1,6 +1,6 @@
 [package]
 name = "bingle_local"
-version = "0.3.0"
+version = "3.0.1"
 edition = "2024"
 description = "Local API crate for storing messages and contacts for Bingle (placeholder)."
 license = "MIT OR Apache-2.0"
@@ -8,12 +8,17 @@ repository = "https://github.com/binglefoundation/bingle_rust"
 readme = "README.md"
 autotests = false
 
+# docs.rs build metadata; see docs/api-surface.md.
+[package.metadata.docs.rs]
+rustdoc-args = ["--cfg", "docsrs"]
+
 [lib]
 name = "bingle_local"
 path = "src/lib.rs"
 
 [dependencies]
-bingle_core = { path = "../bingle_core", version = "0.3.0" }
+bingle_core = { path = "../bingle_core", version = "3.0.1" }
+algo_ops = "0.6.0"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tracing = "0.1"

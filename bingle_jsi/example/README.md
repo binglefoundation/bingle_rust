@@ -1,19 +1,36 @@
 ### BingleJsiExample
 
-A minimal React Native app that demonstrates the `react-native-bingle-jsi`
-module by calling `initBingleJsi` and `version()`, logging the results to the
-console.
+A React Native app that acts as a **Detox command-dispatcher harness** for the
+`react-native-bingle-jsi` module (issue #109). It is the driver for the
+end-to-end (e2e) test suite tracked under #32.
 
 ---
 
 ### What It Does
 
-On launch the app:
+The app exposes a single command box instead of one screen per method. You type
+a JSON command `{ "method": "...", "args": [...] }`; a dispatch table calls the
+matching method on the `BingleJsi` proxy (plus `init` and the
+`failureKindIsRetryable` helper), awaits it, and renders the JSON result.
+Native callbacks (`onLog` / `onMessage` / `onListening`) append to an event
+feed. Every element carries a stable `testID` so Detox can drive the entire API
+surface with no per-method UI:
 
-1. Calls `initBingleJsi(config)` to create the native Bingle API
-2. Calls `BingleJsi.version()` to retrieve version info
-3. Logs both results to the console (`[BingleJsiExample] ...`)
-4. Displays the version string on screen (or an error message)
+| `testID` | Element |
+| --- | --- |
+| `app-ready` | shows `ready` once event listeners are registered |
+| `cmd-input` | JSON command box |
+| `cmd-run` | run button |
+| `cmd-status` | `idle` \| `running` \| `ok` \| `error` |
+| `cmd-output` | JSON result (or error message) |
+| `event-feed` | native callback log |
+
+You can also drive it by hand in a simulator — type a command and tap **Run**.
+
+> **React Native version:** the example is pinned to **RN 0.84.1** because Detox
+> supports RN 0.77.x–0.84.x, while production runs 0.85.2. The native module is a
+> classic bridge (`peerDependency react-native >=0.71`), so it links unchanged.
+> Bumping back to 0.85 once Detox supports it is tracked in **#115**.
 
 ---
 
@@ -49,8 +66,8 @@ bash bingle_jsi/scripts/build_ios.sh
 cd bingle_jsi/example
 npm install --legacy-peer-deps
 
-# 3. Generate the Xcode project (first time only)
-npx --yes @react-native-community/cli init BingleJsiExample --version 0.85.2 --directory /tmp/rn-init --skip-install --skip-git-init
+# 3. Generate the Xcode project (first time only). Version tracks the pin in package.json (0.84.1).
+npx --yes @react-native-community/cli init BingleJsiExample --version 0.84.1 --directory /tmp/rn-init --skip-install --skip-git-init
 cp -R /tmp/rn-init/ios/* ios/
 rm -rf /tmp/rn-init
 
@@ -76,14 +93,62 @@ the app.
 
 ---
 
+### End-to-end tests (Detox)
+
+The e2e suite drives the harness in an iOS simulator. Detox iOS needs **no**
+native project changes — it is configured entirely in `.detoxrc.js`. One-time
+tool install (newer Homebrew requires trusting the third-party tap):
+
+```bash
+brew tap wix/brew && brew trust wix/brew && brew install applesimutils
+```
+
+Then, from `bingle_jsi/example/` (after `npm install` and, in `ios/`, `pod install`):
+
+```bash
+# 1. Build the arm64 simulator xcframework (fast) — matches the ARCHS=arm64 Detox build
+BINGLE_IOS_SIM_ONLY=1 bash ../scripts/build_ios.sh
+
+# 2. Build the app in the Detox debug configuration
+npm run e2e:build:ios
+
+# 3. Start Metro in another terminal (Debug loads JS from the packager)
+npx react-native start
+
+# 4. Run the e2e suite against the simulator
+npm run e2e:test:ios
+```
+
+The smoke test (`e2e/smoke.test.ts`) launches the app, calls `version()` before
+init, then inits (which enables the bingle_local API via a state-file path) and
+round-trips a generated keypair — proving the full TypeScript → native → Rust
+path. Adding coverage for another method needs only a new `e2e/*.test.ts` using
+the `call({ method, args })` helper in `e2e/harness.ts`; no UI changes.
+Messaging (#111), typed failure causes (#112), and account lifecycle (#113)
+build on this.
+
+A few Detox specifics that the harness/tests depend on (see the comments in
+those files): Metro must be running for a Debug build; Detox synchronization is
+disabled because the P2P engine never goes idle (timing is driven by polling);
+value assertions use Node's `assert` (Detox overrides the global `expect`); and
+the command box is single-line (a multiline box truncates JSON under Detox's
+`replaceText`).
+
+---
+
 ### Project Structure
 
 ```
 example/
-├── App.tsx                  # Main app component (init + version + log)
+├── App.tsx                  # Detox command-dispatcher harness (issue #109)
 ├── index.js                 # React Native entry point
-├── package.json             # Dependencies (react-native 0.85, bingle_jsi)
+├── package.json             # Dependencies (react-native 0.84.1, detox, bingle_jsi)
 ├── app.json                 # App name/display name
+├── .detoxrc.js              # Detox config (iOS sim.debug configuration)
+├── e2e/
+│   ├── jest.config.js       # Jest runner config for Detox
+│   ├── harness.ts           # runCommand / call / expectStatus helpers
+│   └── *.test.ts            # Detox suites (smoke, messaging, failure_causes, lifecycle)
 ├── metro.config.js          # Metro bundler config (resolves parent module)
 ├── babel.config.js          # Babel config
 ├── tsconfig.json            # TypeScript config

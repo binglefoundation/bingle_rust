@@ -1,4 +1,4 @@
-use crate::algo_ops::AlgoChainConfig;
+use algo_ops::AlgoChainConfig;
 use serde::Deserialize;
 use std::fs;
 use std::net::{SocketAddr, ToSocketAddrs};
@@ -146,6 +146,12 @@ struct NodeFile {
     asset_id: Option<u64>,
 }
 
+/// Parse a Bingle node file, returning its network name, Algorand chain configuration, and the
+/// application and asset ids it declares (if any).
+///
+/// # Errors
+///
+/// Returns an error string if the file cannot be read or its JSON cannot be parsed.
 pub fn parse_node_file_with_ids(
     path: &str,
 ) -> Result<(Option<String>, AlgoChainConfig, Option<u64>, Option<u64>), String> {
@@ -173,6 +179,13 @@ pub fn parse_node_file_with_ids(
     ))
 }
 
+/// Resolve the effective application and asset ids from the node-file values and any
+/// command-line overrides, requiring exactly one source for each.
+///
+/// # Errors
+///
+/// Returns an error string if both a node-file value and a command-line override are given for the
+/// same id, or if neither supplies a required id.
 pub fn resolve_app_asset_ids(
     node_app_id: Option<u64>,
     node_asset_id: Option<u64>,

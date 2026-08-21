@@ -3,6 +3,11 @@ uniffi::setup_scaffolding!();
 pub mod api;
 pub mod module_version;
 
+// Android-only: exports a native method the Kotlin bridge calls at startup to initialize
+// rustls-platform-verifier with the JNI context, so HTTPS to Algorand works (issue #135).
+#[cfg(target_os = "android")]
+mod android_tls;
+
 use std::sync::Arc;
 
 use api::bingle_jsi_api::BingleJsiApi;

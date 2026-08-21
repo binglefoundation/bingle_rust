@@ -80,6 +80,7 @@ fn get_messages_returns_clone() {
         cipher_suite: None,
         progress: Some(1.0),
         failure_reason: None,
+        failure_kind: None,
     });
     // fetch again and ensure original store is unchanged
     let msgs2 = api.get_messages().unwrap();

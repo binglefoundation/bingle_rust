@@ -5,7 +5,7 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 
 use crate::util::reusable_mock_api::{InnerBingleApi, MockApiBoth, to_weak_api_both};
-use bingle_core::api::bingle_api::{BingleError, NetworkEndpoint};
+use bingle_core::api::bingle_api::{BingleError, NetworkEndpoint, SendFailureKind};
 use bingle_core::ddb::{AdvertRecord, DdbClient, DdbClientImpl, InetSocketAddress};
 
 const RELAY_ID: &str = "OO3BIFZDJPGMNXZ74NOVH5KZ5WBL3KCPLPELAF32P7HDCQGQIBID7PJC7A";
@@ -63,7 +63,7 @@ fn ddb_client_lookup_rejects_ipv6() {
     let signing_key = SigningKey::generate(&mut csprng);
     let public_key = signing_key.verifying_key();
     let pk_bytes: [u8; 32] = public_key.to_bytes();
-    let address = bingle_core::blockchain::algo_ops::byte_key_to_address(&pk_bytes).unwrap();
+    let address = algo_ops::byte_key_to_address(&pk_bytes).unwrap();
 
     let advert = AdvertRecord::new(
         address.clone(),
@@ -102,12 +102,19 @@ fn ddb_client_lookup_rejects_ipv6() {
         "DDB lookup should reject IPv6 addresses: {:?}",
         res
     );
-    if let Err(BingleError::Other(e)) = res {
+    // An unusable advert endpoint is now a typed MalformedAdvert cause (issue #99).
+    if let Err(BingleError::Send {
+        kind: SendFailureKind::MalformedAdvert,
+        detail,
+    }) = res
+    {
         assert!(
-            e.contains("IPv6") || e.contains("invalid host"),
+            detail.contains("IPv6") || detail.contains("invalid host"),
             "Error message should mention IPv6 or invalid host: {}",
-            e
+            detail
         );
+    } else {
+        panic!("Expected a MalformedAdvert send error, got {:?}", res);
     }
 }
 
@@ -118,7 +125,7 @@ fn ddb_client_lookup_accepts_ipv4() {
     let signing_key = SigningKey::generate(&mut csprng);
     let public_key = signing_key.verifying_key();
     let pk_bytes: [u8; 32] = public_key.to_bytes();
-    let address = bingle_core::blockchain::algo_ops::byte_key_to_address(&pk_bytes).unwrap();
+    let address = algo_ops::byte_key_to_address(&pk_bytes).unwrap();
 
     let advert = AdvertRecord::new(
         address.clone(),

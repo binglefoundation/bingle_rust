@@ -8,6 +8,7 @@ use std::time::{Duration, Instant};
 use bingle_cli::chat::parse_chat_args;
 use bingle_cli::chat_send::{MessageSender, SendOutcome, SendTarget, retry_pending, send_once};
 use bingle_cli::chat_state::ChatState;
+use bingle_core::api::bingle_api::{BingleError, SendFailureKind};
 use bingle_local::api::bingle_local_api::BingleLocalApi;
 use bingle_local::api::bingle_local_api_impl::{BingleApiLocalImpl, LocalApiConfig};
 use bingle_local::api::send_retry::RETRY_BACKOFF;
@@ -17,21 +18,50 @@ use tempfile::TempDir;
 const RETRIES_ON: bool = true;
 const RETRIES_OFF: bool = false;
 
+/// A cloneable description of one send outcome. `BingleError` is not `Clone`, so the mock stores
+/// these and builds a fresh `Result` per call (issue #99).
+#[derive(Clone)]
+enum MockResult {
+    /// Delivered (`Ok(true)`).
+    Delivered,
+    /// A typed transient send failure — kept pending and retried.
+    Transient(String),
+    /// A legacy untyped `Other` error, classified via the keyword fallback. Proves the classifier
+    /// still handles errors that did not come through `BingleError::Send`.
+    Other(String),
+    /// A legacy `Retryable` error — treated as transient by the classifier.
+    Retryable(String),
+}
+
+impl MockResult {
+    fn to_result(&self) -> Result<bool, BingleError> {
+        match self {
+            MockResult::Delivered => Ok(true),
+            MockResult::Transient(d) => Err(BingleError::Send {
+                kind: SendFailureKind::PeerUnreachable,
+                detail: d.clone(),
+            }),
+            MockResult::Other(d) => Err(BingleError::Other(d.clone())),
+            MockResult::Retryable(d) => Err(BingleError::Retryable(d.clone())),
+        }
+    }
+}
+
 /// A scripted `MessageSender`: pops the next result per call, falling back to `default` when the
 /// script is exhausted.
 struct MockSender {
-    results: Mutex<VecDeque<Result<bool, String>>>,
-    default: Result<bool, String>,
+    results: Mutex<VecDeque<MockResult>>,
+    default: MockResult,
 }
 
 impl MockSender {
-    fn scripted(seq: Vec<Result<bool, String>>) -> Self {
+    fn scripted(seq: Vec<MockResult>) -> Self {
         Self {
             results: Mutex::new(seq.into()),
-            default: Ok(true),
+            default: MockResult::Delivered,
         }
     }
-    fn always(result: Result<bool, String>) -> Self {
+    fn always(result: MockResult) -> Self {
         Self {
             results: Mutex::new(VecDeque::new()),
             default: result,
@@ -40,12 +70,13 @@ impl MockSender {
 }
 
 impl MessageSender for MockSender {
-    fn send_text(&self, _target: &SendTarget, _message: &Value) -> Result<bool, String> {
+    fn send_text(&self, _target: &SendTarget, _message: &Value) -> Result<bool, BingleError> {
         self.results
             .lock()
             .expect("mock lock")
             .pop_front()
             .unwrap_or_else(|| self.default.clone())
+            .to_result()
     }
 }
 
@@ -71,7 +102,7 @@ fn bob() -> SendTarget {
 #[cfg(not(target_os = "ios"))]
 pub fn send_once_delivered_marks_message_delivered() {
     let (mut state, _dir) = alice_state();
-    let sender = MockSender::always(Ok(true));
+    let sender = MockSender::always(MockResult::Delivered);
 
     assert_eq!(
         send_once(&sender, &mut state, &bob(), "hi", RETRIES_ON),
@@ -89,8 +120,8 @@ pub fn send_once_delivered_marks_message_delivered() {
 #[cfg(not(target_os = "ios"))]
 pub fn transient_failure_stays_pending_and_retrying() {
     let (mut state, _dir) = alice_state();
-    // Ok(false) ("Send returned false") is a transient failure.
-    let sender = MockSender::always(Ok(false));
+    // A typed transient (connectivity) failure keeps the message pending (issue #99).
+    let sender = MockSender::always(MockResult::Transient("peer offline".into()));
 
     match send_once(&sender, &mut state, &bob(), "hi", RETRIES_ON) {
         SendOutcome::Retrying(reason) => assert!(reason.contains("keep retrying"), "got: {reason}"),
@@ -106,7 +137,7 @@ pub fn transient_failure_stays_pending_and_retrying() {
 pub fn non_transient_failure_is_permanent() {
     let (mut state, _dir) = alice_state();
     // A non-connectivity error is a permanent failure — not retried.
-    let sender = MockSender::always(Err("recipient handle is invalid".into()));
+    let sender = MockSender::always(MockResult::Other("recipient handle is invalid".into()));
 
     match send_once(&sender, &mut state, &bob(), "hi", RETRIES_ON) {
         SendOutcome::Failed(reason) => assert!(reason.contains("Message failed to send")),
@@ -122,7 +153,7 @@ pub fn non_transient_failure_is_permanent() {
 pub fn no_retries_marks_even_transient_failure_permanent() {
     let (mut state, _dir) = alice_state();
     // Transient error, but --no-retries: must be permanent (nothing left pending).
-    let sender = MockSender::always(Err("Retryable: relay connect timeout".into()));
+    let sender = MockSender::always(MockResult::Retryable("relay connect timeout".into()));
 
     match send_once(&sender, &mut state, &bob(), "hi", RETRIES_OFF) {
         SendOutcome::Failed(_) => {}
@@ -137,7 +168,10 @@ pub fn no_retries_marks_even_transient_failure_permanent() {
 pub fn transient_send_then_retry_delivers() {
     let (mut state, _dir) = alice_state();
     // First attempt is a transient error; the background retry then succeeds.
-    let sender = MockSender::scripted(vec![Err("Retryable: temporarily offline".into()), Ok(true)]);
+    let sender = MockSender::scripted(vec![
+        MockResult::Transient("temporarily offline".into()),
+        MockResult::Delivered,
+    ]);
 
     assert!(matches!(
         send_once(&sender, &mut state, &bob(), "hello", RETRIES_ON),
@@ -165,7 +199,7 @@ pub fn transient_send_then_retry_delivers() {
 pub fn retry_keeps_transient_pending_forever_with_backoff() {
     let (mut state, _dir) = alice_state();
     let _ts = state.queue_outbound("bob", "hello").expect("queue");
-    let sender = MockSender::always(Err("Retryable: still offline".into()));
+    let sender = MockSender::always(MockResult::Retryable("still offline".into()));
     let mut retry_after = std::collections::HashMap::new();
     let t0 = Instant::now();
 
@@ -189,7 +223,7 @@ pub fn retry_keeps_transient_pending_forever_with_backoff() {
 pub fn retry_marks_non_transient_permanent() {
     let (mut state, _dir) = alice_state();
     let ts = state.queue_outbound("bob", "hello").expect("queue");
-    let sender = MockSender::always(Err("account not opted in".into()));
+    let sender = MockSender::always(MockResult::Other("account not opted in".into()));
     let mut retry_after = std::collections::HashMap::new();
 
     let outcome =

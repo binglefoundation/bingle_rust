@@ -10,14 +10,10 @@ pub mod algo_bingle_cache_localnet;
 pub mod algo_bingle_integration_localnet;
 #[path = "../integration/blockchain/algo_bingle_register_opt_in_app_localnet.rs"]
 pub mod algo_bingle_register_opt_in_app_localnet;
+#[path = "../integration/blockchain/algo_bingle_sell_flow_localnet.rs"]
+pub mod algo_bingle_sell_flow_localnet;
 #[path = "../integration/blockchain/algo_bingle_static_endpoint_integration.rs"]
 pub mod algo_bingle_static_endpoint_integration;
-#[path = "../integration/blockchain/algo_ops_integration_localnet.rs"]
-pub mod algo_ops_integration_localnet;
-#[path = "../integration/blockchain/asset_clawback_creator_localnet.rs"]
-pub mod asset_clawback_creator_localnet;
-#[path = "../integration/blockchain/asset_manager_creator_localnet.rs"]
-pub mod asset_manager_creator_localnet;
 #[path = "../integration/blockchain/unique_handle.rs"]
 pub mod unique_handle;
 // API integration tests that need localnet
@@ -29,8 +25,7 @@ pub mod send_message_to_id_integration;
 #[path = "../api/endpoint_identify_integration.rs"]
 pub mod endpoint_identify_integration;
 // Blockchain unit-ish tests gated by localnet
-#[path = "../blockchain/dapp_app_integration.rs"]
-pub mod dapp_app_integration;
+// (dapp_app_integration moved to the algo_ops crate)
 #[path = "../blockchain/algo_bingle/register_collision.rs"]
 pub mod register_collision;
 #[path = "../blockchain/algo_bingle/register_uniqueness.rs"]

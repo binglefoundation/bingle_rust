@@ -1,7 +1,7 @@
 use crate::util::relay_test_util::wait_for_relays_visible;
 use crate::util::test_util::init_test_logging;
 use crate::util::test_util::register_client_on_blockchain;
-use bingle_core::algo_ops::AlgoChainConfig;
+use algo_ops::AlgoChainConfig;
 use bingle_core::api::bingle_api::{BingleApi, StartOptions};
 use bingle_core::api::bingle_api_impl::BingleApiImpl;
 use bingle_core::blockchain::algo_bingle::AlgoBingle;
@@ -31,7 +31,7 @@ pub fn bingle_api_register_via_forced_stun() {
 
     fn register_relay_static_endpoint(
         handle: &str,
-        ops_relay: &bingle_core::blockchain::algo_ops::AlgoOps,
+        ops_relay: &algo_ops::AlgoOps,
         ab_creator: &AlgoBingle,
         relay_addr: SocketAddr,
         relay_account: &str,

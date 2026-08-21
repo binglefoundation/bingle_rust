@@ -45,9 +45,7 @@ impl BingleApi for MockBingleApi {
     fn get_app_id(&self) -> Option<u64> {
         None
     }
-    fn get_algo_provider_config(
-        &self,
-    ) -> Option<bingle_core::blockchain::algo_ops::AlgoChainConfig> {
+    fn get_algo_provider_config(&self) -> Option<algo_ops::AlgoChainConfig> {
         None
     }
     fn start(&self, _: &StartOptions) -> Result<(), BingleError> {
@@ -192,7 +190,9 @@ fn test_message_queue_with_mock_progress() {
                 None,
             )
             .unwrap();
-        guard.update_message_status(timestamp, 0.0, None).unwrap();
+        guard
+            .update_message_status(timestamp, 0.0, None, None)
+            .unwrap();
     }
 
     // 2. Start the JSI (starts background loop)
@@ -258,7 +258,9 @@ fn queued_message_gains_failure_reason_then_clears_on_success() {
                 None,
             )
             .unwrap();
-        guard.update_message_status(timestamp, 0.0, None).unwrap();
+        guard
+            .update_message_status(timestamp, 0.0, None, None)
+            .unwrap();
     }
 
     jsi.start().unwrap();
@@ -279,6 +281,20 @@ fn queued_message_gains_failure_reason_then_clears_on_success() {
                 "message must stay pending while it is still being retried"
             );
             assert_eq!(reason, "Recipient unreachable — will keep retrying");
+            // The typed failure cause is surfaced alongside the reason (issue #99): a transient
+            // connectivity failure maps to PeerUnreachable, and its retryability is derived via the
+            // helper rather than stored per message.
+            assert_eq!(
+                m.failure_kind,
+                Some(bingle_jsi::api::types::FailureKind::PeerUnreachable),
+                "transient send failure should surface a PeerUnreachable kind"
+            );
+            assert!(
+                bingle_jsi::api::types::failure_kind_is_retryable(
+                    bingle_jsi::api::types::FailureKind::PeerUnreachable
+                ),
+                "a transient failure must be derivable as retryable"
+            );
             saw_failure_reason = true;
             break;
         }
@@ -299,6 +315,10 @@ fn queued_message_gains_failure_reason_then_clears_on_success() {
             assert!(
                 m.failure_reason.is_none(),
                 "failure_reason must clear once delivery succeeds"
+            );
+            assert!(
+                m.failure_kind.is_none(),
+                "the typed failure cause must clear once delivery succeeds"
             );
             cleared = true;
             break;

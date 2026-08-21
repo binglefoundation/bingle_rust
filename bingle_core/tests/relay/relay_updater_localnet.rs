@@ -5,10 +5,10 @@ use std::time::Duration;
 
 use crate::util::relay_test_util::wait_for_relays_visible;
 use crate::util::test_util::init_test_logging;
-use bingle_core::algo_bingle::AlgoBingle;
-use bingle_core::algo_ops::AlgoOps;
+use algo_ops::AlgoOps;
 use bingle_core::api::bingle_api::{BingleApi, BingleApiBoth, StartOptions};
 use bingle_core::api::bingle_api_impl::BingleApiImpl;
+use bingle_core::blockchain::algo_bingle::AlgoBingle;
 use bingle_core::engine::{BingleAccessUnsafeForTests, RelayState};
 use bingle_core::relay::discovery::indexer_discover_closure;
 use bingle_core::relay::relay_finder::{RelayFinderTrait, RelayInfo};
@@ -271,7 +271,7 @@ fn run_scenario(
     my_id: String,
     api: Arc<BingleApiImpl>,
     app_id: u64,
-    cfg: bingle_core::algo_ops::AlgoChainConfig,
+    cfg: algo_ops::AlgoChainConfig,
     registered_roots: Vec<RelayInfo>,
     expect_selected: bool,
     min_expected_non_root_count: usize,
@@ -364,7 +364,7 @@ fn make_updater(
     my_id: String,
     api: Arc<BingleApiImpl>,
     app_id: u64,
-    cfg: bingle_core::algo_ops::AlgoChainConfig,
+    cfg: algo_ops::AlgoChainConfig,
 ) -> RelayUpdater {
     let api_both: Arc<dyn BingleApiBoth> = api;
     RelayUpdater::new_with_api(
@@ -378,7 +378,7 @@ fn relay_start_options(
     handle: &str,
     passphrase: String,
     static_ip: SocketAddr,
-    cfg: bingle_core::algo_ops::AlgoChainConfig,
+    cfg: algo_ops::AlgoChainConfig,
     app_id: u64,
 ) -> StartOptions {
     StartOptions {

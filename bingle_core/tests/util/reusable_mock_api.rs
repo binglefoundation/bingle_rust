@@ -17,9 +17,7 @@ pub trait InnerBingleApi {
     ) {
     }
 
-    fn get_algo_provider_config(
-        &self,
-    ) -> Option<bingle_core::blockchain::algo_ops::AlgoChainConfig> {
+    fn get_algo_provider_config(&self) -> Option<algo_ops::AlgoChainConfig> {
         None
     }
 
@@ -241,9 +239,7 @@ impl bingle_core::api::bingle_api::BingleApi for MockApiBoth {
         self.inner_bingle_api.set_on_listening(handler);
     }
 
-    fn get_algo_provider_config(
-        &self,
-    ) -> Option<bingle_core::blockchain::algo_ops::AlgoChainConfig> {
+    fn get_algo_provider_config(&self) -> Option<algo_ops::AlgoChainConfig> {
         self.inner_bingle_api.get_algo_provider_config()
     }
 

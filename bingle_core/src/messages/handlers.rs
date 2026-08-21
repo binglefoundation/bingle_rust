@@ -1,4 +1,5 @@
 use crate::api::bingle_api::{BingleApi, BingleApiBoth, BingleApiInternal, BingleError};
+use crate::blockchain::algo_bingle::RelayGate;
 use crate::ddb::DdbBackend;
 use crate::engine::RelayState;
 use crate::messages::types::*;
@@ -237,7 +238,7 @@ impl BingleApi for BothAsApi {
     fn get_app_id(&self) -> Option<u64> {
         self.inner.get_app_id()
     }
-    fn get_algo_provider_config(&self) -> Option<crate::blockchain::algo_ops::AlgoChainConfig> {
+    fn get_algo_provider_config(&self) -> Option<algo_ops::AlgoChainConfig> {
         self.inner.get_algo_provider_config()
     }
     fn start(&self, options: &crate::api::bingle_api::StartOptions) -> Result<(), BingleError> {
@@ -1005,7 +1006,7 @@ impl MessageHandler for DefaultPrintingHandler {
 
     fn on_ddb_upsert_resolve(
         &self,
-        _api: Arc<dyn BingleApiBoth>,
+        api: Arc<dyn BingleApiBoth>,
         from: &FromStruct,
         up: &DdbUpsertResolve,
     ) {
@@ -1028,16 +1029,29 @@ impl MessageHandler for DefaultPrintingHandler {
             );
             return;
         }
+        // Verify the record signature before taking the backend lock or doing any network I/O.
+        if !up.record.verify() {
+            tracing::warn!(
+                "[handlers::on_ddb_upsert_resolve] signature verification failed for record id={}",
+                up.record.id
+            );
+            return;
+        }
+        // A record that claims relay status must pass the on-chain allow_relay gate, matching the
+        // check enforced in Engine::ddb_upsert_record. Done before taking the backend lock so no
+        // blockchain network I/O is held under the mutex.
+        if up.record.am_relay.unwrap_or(false)
+            && crate::blockchain::algo_bingle::check_relay_allowed(
+                api.as_ref(),
+                &up.record.id,
+                "handlers::on_ddb_upsert_resolve",
+            ) == RelayGate::Rejected
+        {
+            return;
+        }
         // Upsert to backend
         if let Some(backend) = router.get_ddb_backend() {
             if let Ok(mut b) = backend.lock() {
-                if !up.record.verify() {
-                    tracing::warn!(
-                        "[handlers::on_ddb_upsert_resolve] signature verification failed for record id={}",
-                        up.record.id
-                    );
-                    return;
-                }
                 tracing::info!(
                     "[handlers::on_ddb_upsert_resolve] Upserting record: {:?}",
                     up.record
@@ -1060,7 +1074,7 @@ impl MessageHandler for DefaultPrintingHandler {
             if let Some(backend) = router.get_ddb_backend()
                 && let Ok(b) = backend.lock()
             {
-                _api.ripple_message(ripple_json, up.start_id.clone(), &*b);
+                api.ripple_message(ripple_json, up.start_id.clone(), &*b);
             }
 
             // Prepare response JSON and stash on router for Engine/DTLS layer to send.

@@ -1,0 +1,219 @@
+name: e2e-android
+
+# Android Detox end-to-end (e2e) on a Linux runner (issues #132/#137). Unlike macOS runners (no
+# Docker / no nested virt — see #110), ubuntu-latest has KVM (accelerated emulator) and native Docker
+# (algokit localnet), so the full suite runs hermetically here.
+#
+# All three suites (smoke, messaging, failure_causes) run against an in-CI localnet: the provisioner
+# runs in emulator mode (relays/STUN advertised at 10.0.2.2), the app reaches host services via the
+# emulator's qemu gateway 10.0.2.2, and a 10.0.2.2 loopback alias lets the in-process host echo peer
+# reach the same address. Everything is IP-based, so no internet/DNS/secrets are needed — which is
+# essential because the CI emulator has no outbound internet (so testnet is impossible in CI).
+#
+# Runs on pushes to staging and manual dispatch only. See CI-E2E.md.
+on:
+  push:
+    branches: [staging]
+  workflow_dispatch:
+
+# Latest-push-wins ("heap not queue").
+concurrency:
+  group: e2e-android-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  android-e2e:
+    name: android-e2e
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      CARGO_TERM_COLOR: always
+      # Android package id of the example app (matches example/android/app/build.gradle).
+      ANDROID_PKG: com.binglejsiexample
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install Rust toolchain (+ Android targets)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
+
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: '20'
+          # Cache the npm download cache (~/.npm) so "Install JS dependencies" doesn't refetch the
+          # tree every run (issue #150). Keyed on package.json because the lockfile is gitignored
+          # (.gitignore) and so is absent on a clean checkout; busts on a package.json change.
+          cache: npm
+          cache-dependency-path: bingle_jsi/example/package.json
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+
+      # The smoke suite's default init points at localnet (localhost:4001); Detox adb-reverses
+      # 4001/8980 to the runner host, so bring up algokit localnet there for the chain query to
+      # resolve. Linux runners have Docker natively (no Colima needed, unlike macOS — see #110).
+      - name: Start algokit localnet
+        run: |
+          pipx install algokit
+          algokit localnet start
+          for _ in $(seq 1 60); do
+            (nc -z localhost 4001 && nc -z localhost 8980) && break
+            sleep 2
+          done
+          nc -z localhost 4001 && nc -z localhost 8980 || { echo "localnet not reachable"; exit 1; }
+
+      # The provisioner deploys the BingleDapp; its compiled artifacts (TEAL + arc56) are gitignored
+      # build outputs (see dapp_projects/README.md), so build them here with puya. We invoke the puya
+      # compile directly rather than `python -m smart_contracts build` to skip typed-client generation
+      # (algokitgen-py): the Rust provisioner only reads the .approval.teal/.clear.teal/.arc56.json
+      # that compile emits. algokit is already installed (pipx) by the localnet step; poetry provides
+      # the algorand-python (algopy) stubs the compile imports.
+      - name: Build the dapp artifacts (puya)
+        working-directory: dapp_projects
+        run: |
+          pipx install poetry
+          poetry install
+          poetry run algokit --no-color compile python \
+            smart_contracts/bingle_dapp/contract.py \
+            --out-dir "$(pwd)/smart_contracts/artifacts/bingle_dapp" \
+            --output-source-map
+
+      - name: Install Android SDK packages (NDK, platform, cmake)
+        run: |
+          yes | sdkmanager "platforms;android-36" "build-tools;36.0.0" \
+            "ndk;27.1.12297006" "cmake;3.22.1" >/dev/null
+          echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/27.1.12297006" >> "$GITHUB_ENV"
+
+      # build_android.sh formats the uniffi-generated Kotlin with ktlint.
+      - name: Install ktlint
+        run: |
+          curl -sSLO https://github.com/pinterest/ktlint/releases/download/1.3.1/ktlint
+          chmod +x ktlint && sudo mv ktlint /usr/local/bin/
+
+      - name: Build the Android native library (jniLibs + Kotlin bindings)
+        # The CI emulator is x86_64, so build only that ABI (fast) rather than all three.
+        env:
+          BINGLE_ANDROID_ABIS: x86_64
+        run: bash bingle_jsi/scripts/build_android.sh
+
+      - name: Install JS dependencies
+        working-directory: bingle_jsi/example
+        run: npm install --legacy-peer-deps
+
+      # Cache the Gradle User Home (~/.gradle/caches + wrapper + configuration cache) so the APK
+      # build below doesn't redownload dependencies and re-run configuration every time. The
+      # example app's `detox build` invokes ./android/gradlew, so setup-gradle's job-wide
+      # instrumentation captures it. cache-read-only is forced false because this workflow only
+      # runs on staging pushes + manual dispatch, and we want staging runs to populate the cache
+      # (the action would otherwise make it read-only on any non-default branch). The cache busts
+      # automatically on Gradle wrapper / build-file changes — see CI-E2E.md.
+      - name: Cache Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-read-only: false
+
+      - name: Build the app + androidTest APKs (Detox)
+        working-directory: bingle_jsi/example
+        run: npm run e2e:build:android
+
+      # KVM permissions for a hardware-accelerated emulator.
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      # The in-process host echo peer reaches the relays/STUN advertised at 10.0.2.2 via this loopback
+      # alias; the emulator reaches the same address via its qemu gateway. (Linux: no sudo prompt.)
+      - name: Add 10.0.2.2 loopback alias
+        run: sudo ip addr add 10.0.2.2/32 dev lo
+
+      # Start the localnet provisioner in emulator mode on the runner host (background). It deploys
+      # the app+asset, brings up relays/STUN/echo peer, registers the fixtures, and writes the
+      # node-file/STUN list (advertising 10.0.2.2) + an env file with the derived creds that the
+      # emulator script sources. Backgrounded processes survive into the emulator step.
+      - name: Start localnet provisioner (emulator mode)
+        run: |
+          cargo build --locked -p bingle_test --features localnet --bin localnet_e2e_provisioner
+          rm -f /tmp/bingle_e2e_localnet.env
+          # nohup + setsid so the provisioner survives this step's shell into the emulator step.
+          BINGLE_E2E_EMULATOR_HOST=10.0.2.2 \
+            setsid nohup ./target/debug/localnet_e2e_provisioner >/tmp/bingle_e2e_provisioner.log 2>&1 &
+          echo "waiting for provisioner readiness ..."
+          for _ in $(seq 1 600); do
+            [[ -f /tmp/bingle_e2e_localnet.env ]] && break
+            sleep 1
+          done
+          [[ -f /tmp/bingle_e2e_localnet.env ]] || { echo "provisioner not ready:"; tail -n 60 /tmp/bingle_e2e_provisioner.log; exit 1; }
+          cat /tmp/bingle_e2e_localnet.env
+
+      # AVD snapshot caching (issue #149). Previously the emulator was created cold every run
+      # (`force-avd-creation: true` + `-no-snapshot`). Instead, cache the AVD + a warm boot
+      # snapshot: on a cache miss the "Create AVD and generate snapshot" step below builds the AVD
+      # and saves a boot snapshot; on a hit the run step boots from it. The key is api-level /
+      # target / arch — changing any of those invalidates the snapshot, so they're baked into the
+      # key; bump the `v<N>` prefix to force a rebuild. See CI-E2E.md.
+      - name: Cache the AVD + snapshot
+        uses: actions/cache@v6
+        id: avd-cache
+        with:
+          path: |
+            ~/.android/avd/*
+            ~/.android/adb*
+          key: avd-v1-api34-google_apis-x86_64
+
+      # Only runs on a cache miss: create the AVD and let the emulator save a boot snapshot on exit
+      # (no `-no-snapshot*` flag, so Quickboot writes the snapshot the run step then loads). Boots
+      # an emulator just to `echo`, so keep it minimal.
+      - name: Create AVD and generate snapshot
+        if: steps.avd-cache.outputs.cache-hit != 'true'
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          avd-name: detox_avd
+          force-avd-creation: false
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -netdelay none -netspeed full
+          disable-animations: false
+          script: echo "generated AVD snapshot for caching"
+
+      # `force-avd-creation: false` reuses the cached (or just-generated) AVD; `-no-snapshot-save`
+      # loads the boot snapshot but leaves the cached copy pristine so the key stays stable.
+      - name: Run Detox e2e on an emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        env:
+          BINGLE_E2E_AVD: detox_avd
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          avd-name: detox_avd
+          force-avd-creation: false
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot-save -netdelay none -netspeed full
+          disable-animations: true
+          script: bash bingle_jsi/example/scripts/ci_run_android_e2e.sh
+
+      - name: Upload Detox artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: detox-artifacts
+          path: bingle_jsi/example/artifacts
+          if-no-files-found: ignore

@@ -6,14 +6,14 @@ use std::time::{Duration, Instant};
 use crate::api::bingle_api::{BingleError, NetworkEndpoint, StartOptions, UserId};
 use crate::themes;
 
-use crate::blockchain::algo_bingle::AlgoBingle;
-use crate::blockchain::algo_ops::{AlgoChainConfig, AlgoOps};
+use crate::blockchain::algo_bingle::RelayGate;
 use crate::ddb::{AdvertRecord, DdbBackend, InetSocketAddress};
 use crate::distributed_mutex::DistributedMutex;
 use crate::dtls::{Dtls, DtlsOpenSsl, NetworkMux, UdpNetworkMux};
 use crate::messages::handlers::MessageHandler;
 use crate::messages::types::{Message, RelayMessage, RelayTriangleTest1};
 use crate::messages::{DefaultPrintingHandler, from_json_str};
+use algo_ops::{AlgoChainConfig, AlgoOps};
 
 mod relay_init_mutex;
 use crate::packet_transport::{DtlsReliablePacketTransport, PacketTransport};
@@ -407,7 +407,7 @@ impl Engine {
 
     pub(crate) fn get_signing_key(&self) -> Option<SigningKey> {
         let pass = self.opts().algo_passphrase.clone()?;
-        let ops = AlgoOps::new(
+        let ops = AlgoOps::new_for_algorand(
             Some(pass.clone()),
             None,
             self.opts().algo_provider_config.clone(),
@@ -2844,64 +2844,13 @@ impl Engine {
                     return;
                 }
             };
-            let app_id = match api.get_app_id() {
-                Some(id) => id,
-                None => {
-                    tracing::warn!(
-                        "[Engine::ddb_upsert_record] app_id not available; rejecting relay record id={}",
-                        record.id
-                    );
-                    return;
-                }
-            };
-            let config = match api.get_algo_provider_config() {
-                Some(cfg) => cfg,
-                None => {
-                    tracing::warn!(
-                        "[Engine::ddb_upsert_record] algo_provider_config not available; rejecting relay record id={}",
-                        record.id
-                    );
-                    return;
-                }
-            };
-            let cache = api.get_accounts_cache();
-
-            let ops = AlgoOps::new(None, Some(record.id.clone()), Some(config));
-            let algo_bingle = match cache {
-                Some(c) => AlgoBingle::new_with_cache(ops, app_id, 0, c),
-                None => AlgoBingle::new(ops, app_id, 0),
-            };
-
-            match algo_bingle.check_allow_relay(app_id, &record.id) {
-                Ok(Some(true)) => {
-                    tracing::info!(
-                        "[Engine::ddb_upsert_record] blockchain verified allow_relay for id={}",
-                        record.id
-                    );
-                }
-                Ok(Some(false)) => {
-                    tracing::warn!(
-                        "[Engine::ddb_upsert_record] blockchain check FAILED: allow_relay is false for id={}",
-                        record.id
-                    );
-                    return;
-                }
-                Ok(None) => {
-                    tracing::warn!(
-                        "[Engine::ddb_upsert_record] blockchain check FAILED: id={} not opted-in to app {}",
-                        record.id,
-                        app_id
-                    );
-                    return;
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        "[Engine::ddb_upsert_record] blockchain check ERROR for id={}: {}",
-                        record.id,
-                        e
-                    );
-                    return;
-                }
+            if crate::blockchain::algo_bingle::check_relay_allowed(
+                api.as_ref(),
+                &record.id,
+                "Engine::ddb_upsert_record",
+            ) == RelayGate::Rejected
+            {
+                return;
             }
         }
 

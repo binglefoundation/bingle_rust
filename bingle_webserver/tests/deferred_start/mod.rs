@@ -1,8 +1,8 @@
 use std::sync::{Arc, Mutex};
 
 use crate::common::{CapturingMockBingleApi, TrackingMockBingleApi};
-use bingle_core::api::bingle_api::{BingleError, StartOptions};
-use bingle_core::blockchain::algo_ops::AlgoOps;
+use algo_ops::AlgoOps;
+use bingle_core::api::bingle_api::{BingleError, SendFailureKind, StartOptions};
 use bingle_local::api::bingle_local_api::{
     BingleLocalApi, Contact, ContactSource, Keypair, KeypairStatus, Message,
 };
@@ -98,6 +98,7 @@ impl BingleLocalApi for ControllableLocalApi {
         _timestamp: i64,
         _progress: f32,
         _failure_reason: Option<String>,
+        _failure_kind: Option<SendFailureKind>,
     ) -> Result<(), BingleError> {
         Ok(())
     }

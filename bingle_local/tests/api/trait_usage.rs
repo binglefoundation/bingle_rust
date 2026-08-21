@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
-use bingle_core::api::bingle_api::BingleError;
-use bingle_core::blockchain::algo_ops::AlgoOps;
+use algo_ops::AlgoOps;
+use bingle_core::api::bingle_api::{BingleError, SendFailureKind};
 use bingle_local::api::{BingleLocalApi, Contact, ContactSource, Keypair, KeypairStatus, Message};
 
 #[derive(Default)]
@@ -49,7 +49,7 @@ impl BingleLocalApi for DummyLocal {
             .as_ref()
             .map(|k| k.passphrase.clone())
             .ok_or_else(|| BingleError::Other("no keypair".to_string()))?;
-        Ok(AlgoOps::new(Some(pass), None, None))
+        Ok(AlgoOps::new_for_algorand(Some(pass), None, None))
     }
 
     fn add_contact(
@@ -107,6 +107,7 @@ impl BingleLocalApi for DummyLocal {
             cipher_suite,
             progress: Some(1.0),
             failure_reason: None,
+            failure_kind: None,
         });
         Ok(())
     }
@@ -125,6 +126,7 @@ impl BingleLocalApi for DummyLocal {
             cipher_suite: None,
             progress: Some(0.0),
             failure_reason: None,
+            failure_kind: None,
         });
         Ok(())
     }
@@ -134,10 +136,12 @@ impl BingleLocalApi for DummyLocal {
         timestamp: i64,
         progress: f32,
         failure_reason: Option<String>,
+        failure_kind: Option<SendFailureKind>,
     ) -> Result<(), BingleError> {
         if let Some(m) = self.messages.iter_mut().find(|m| m.timestamp == timestamp) {
             m.progress = Some(progress);
             m.failure_reason = failure_reason;
+            m.failure_kind = failure_kind;
         }
         Ok(())
     }

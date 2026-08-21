@@ -1,4 +1,4 @@
-use bingle_core::algo_ops::AlgoChainConfig;
+use algo_ops::AlgoChainConfig;
 use bingle_core::blockchain::algo_bingle::AlgoBingle;
 use serial_test::serial;
 

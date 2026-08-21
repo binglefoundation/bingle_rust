@@ -1,4 +1,4 @@
-# bingle_local
+# bingle_local <img src="https://raw.githubusercontent.com/binglefoundation/bingle_rust/staging/docs/assets/bingle_logo.png" alt="Bingle logo" height="36" align="right" />
 
 Bingle is a decentralized, peer-to-peer messaging protocol that lets users communicate securely and privately
 — so your conversations stay yours, with nobody able to read or shut them down.
@@ -39,5 +39,8 @@ Building the crate requires the Rust stable toolchain (2024 edition, Rust 1.85 o
 ## For developers
 
 Full source, architecture, build instructions, and the developer guide live in the
-[`bingle_rust`](https://github.com/binglefoundation/bingle_rust) repository on GitHub. Generate the
-API docs locally with `cargo doc --open`.
+[`bingle_rust`](https://github.com/binglefoundation/bingle_rust) repository on GitHub.
+
+The hosted API reference is on [docs.rs/bingle_local](https://docs.rs/bingle_local) (built
+automatically from each crates.io release). Generate it locally for the current checkout with
+`cargo doc --open`.

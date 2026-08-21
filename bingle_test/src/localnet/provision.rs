@@ -24,7 +24,7 @@ pub fn start_client(
     passphrase: &str,
     stun_list: Vec<SocketAddr>,
     app_id: u64,
-    cfg: bingle_core::blockchain::algo_ops::AlgoChainConfig,
+    cfg: algo_ops::AlgoChainConfig,
 ) -> Arc<BingleApiImpl> {
     let opts = StartOptions {
         handle: handle.into(),
@@ -165,35 +165,68 @@ pub fn register_relays(
 pub fn setup_stun_servers(
     broken_nat: bool,
 ) -> (SimpleStunServer, SimpleStunServer, Vec<SocketAddr>) {
+    setup_stun_servers_advertised(broken_nat, IpAddr::V4(Ipv4Addr::LOCALHOST))
+}
+
+/// Like [`setup_stun_servers`] but advertises the servers at `advert_ip` (issue #137). For a
+/// non-loopback `advert_ip` (e.g. an Android emulator's `10.0.2.2` gateway) the servers bind all
+/// interfaces so both the emulator (via its qemu gateway → host loopback) and a host-side peer (via
+/// a matching loopback alias) can reach them; the returned list uses `advert_ip` (what clients dial).
+pub fn setup_stun_servers_advertised(
+    broken_nat: bool,
+    advert_ip: IpAddr,
+) -> (SimpleStunServer, SimpleStunServer, Vec<SocketAddr>) {
     let p1 = test_util::find_unused_loopback_port();
     let p2 = test_util::find_unused_loopback_port();
-    let a1 = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), p1);
-    let a2 = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), p2);
+    let bind_ip = if advert_ip.is_loopback() {
+        IpAddr::V4(Ipv4Addr::LOCALHOST)
+    } else {
+        IpAddr::V4(Ipv4Addr::UNSPECIFIED)
+    };
 
     let s1 = SimpleStunServer::start(SimpleStunStartOptions {
-        bind_addr: a1,
+        bind_addr: SocketAddr::new(bind_ip, p1),
         attach_to: None,
         broken_nat,
     })
     .expect("start s1");
     let s2 = SimpleStunServer::start(SimpleStunStartOptions {
-        bind_addr: a2,
+        bind_addr: SocketAddr::new(bind_ip, p2),
         attach_to: None,
         broken_nat,
     })
     .expect("start s2");
 
-    (s1, s2, vec![a1, a2])
+    (
+        s1,
+        s2,
+        vec![
+            SocketAddr::new(advert_ip, p1),
+            SocketAddr::new(advert_ip, p2),
+        ],
+    )
 }
 
 /// Write a `bingle_cli`-compatible `--node-file` JSON for localnet with the given app/asset ids, to
 /// `path`. The chat CLI reads algod/indexer endpoints, token and ids from this file.
 pub fn write_localnet_node_file(path: &std::path::Path, app_id: u64, asset_id: u64) {
+    write_localnet_node_file_host(path, app_id, asset_id, "http://localhost");
+}
+
+/// Like [`write_localnet_node_file`] but with a configurable algod/indexer host URL (issue #137).
+/// For an Android emulator, pass `http://10.0.2.2` (its alias for the host loopback where the
+/// Docker localnet is exposed), since the emulator's own `localhost` is the emulator, not the host.
+pub fn write_localnet_node_file_host(
+    path: &std::path::Path,
+    app_id: u64,
+    asset_id: u64,
+    host_url: &str,
+) {
     let node_file = serde_json::json!({
         "network": "localnet",
-        "client_api_url": "http://localhost",
+        "client_api_url": host_url,
         "client_api_port": 4001,
-        "indexer_api_url": "http://localhost",
+        "indexer_api_url": host_url,
         "indexer_api_port": 8980,
         "token": test_util::LOCALNET_TOKEN,
         "token_key": "X-Algo-API-Token",

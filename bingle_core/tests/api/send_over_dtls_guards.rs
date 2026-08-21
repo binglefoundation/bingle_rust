@@ -2,7 +2,7 @@ use bingle_core::engine::BingleAccessUnsafeForTests;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 
-use bingle_core::api::bingle_api::{BingleApi, NetworkEndpoint};
+use bingle_core::api::bingle_api::{BingleApi, BingleError, NetworkEndpoint, SendFailureKind};
 use bingle_core::api::bingle_api_impl::BingleApiImpl;
 use bingle_core::dtls::{Dtls, HandleMessage, HandlePeerCertificate, Result};
 #[path = "../test_util.rs"]
@@ -159,8 +159,9 @@ impl Dtls for MockDtls {
     fn forget_peers(&self) {}
 }
 
-/// send_message_to_network returns false when given an incomplete relay endpoint
-/// (missing channel) because send_over_dtls rejects such endpoints.
+/// An incomplete relay endpoint (missing channel) drives the relay Call path to allocate a channel;
+/// with no real relay that allocation fails, so send_message_to_network surfaces the typed
+/// RelayAllocationFailed cause and never reaches the DTLS send (issue #99).
 #[test]
 #[cfg(not(target_os = "ios"))]
 pub fn send_over_dtls_rejects_incomplete_relay_endpoint() {
@@ -172,15 +173,17 @@ pub fn send_over_dtls_rejects_incomplete_relay_endpoint() {
         None,
     );
     let uid = test_util::ADDRESS_SPEND.to_string();
-    let ok = api
-        .access_unsafe_for_tests(|a: &mut BingleApiImpl| {
-            a.send_message_to_network(&relay_nsk, &uid, serde_json::json!({"test": true}), None)
-        })
-        .unwrap();
-    assert!(
-        !ok,
-        "send_message_to_network should return false for incomplete relay endpoint"
-    );
+    let result = api.access_unsafe_for_tests(|a: &mut BingleApiImpl| {
+        a.send_message_to_network(&relay_nsk, &uid, serde_json::json!({"test": true}), None)
+    });
+    match result {
+        Err(BingleError::Send { kind, .. }) => assert_eq!(
+            kind,
+            SendFailureKind::RelayAllocationFailed,
+            "incomplete relay endpoint should fail relay allocation"
+        ),
+        other => panic!("expected a typed RelayAllocationFailed send error, got {other:?}"),
+    }
     assert_eq!(
         sent_vec.lock().unwrap().len(),
         0,

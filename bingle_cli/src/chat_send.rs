@@ -12,8 +12,9 @@
 use std::collections::HashMap;
 use std::time::Instant;
 
+use bingle_core::api::bingle_api::{BingleError, SendFailureKind};
 use bingle_local::api::send_retry::{
-    RETRY_BACKOFF, is_transient_send_failure, pending_failure_reason, select_sendable_message,
+    RETRY_BACKOFF, SendFailure, classify_send_error, select_sendable_message,
 };
 use serde_json::{Value, json};
 
@@ -38,9 +39,10 @@ impl SendTarget {
 
 /// Abstraction over the engine's send calls, so send/retry logic is testable without a live engine.
 /// `Ok(true)` = delivered, `Ok(false)` = not accepted, `Err` = a send error; the last two are both
-/// treated as failures (and classified transient vs permanent).
+/// treated as failures (and classified transient vs permanent). Returns the typed [`BingleError`]
+/// so the failure cause survives to the classifier (issue #99).
 pub trait MessageSender {
-    fn send_text(&self, target: &SendTarget, message: &Value) -> Result<bool, String>;
+    fn send_text(&self, target: &SendTarget, message: &Value) -> Result<bool, BingleError>;
 }
 
 /// Outcome of an attempt (from [`send_once`] or one [`retry_pending`] step).
@@ -63,38 +65,34 @@ pub struct RetryOutcome {
     pub outcome: SendOutcome,
 }
 
-/// The error string used when a send returns `Ok(false)`. Phrased so the shared classifier treats it
-/// as transient (the peer simply did not accept it this time).
-const SEND_RETURNED_FALSE: &str = "Send returned false";
+/// Classify a non-delivered send result into a typed [`SendFailure`] (issue #99). Should only be
+/// called for `Ok(false)`/`Err` results; a delivered `Ok(true)` has no failure, so it falls back to
+/// an `Unknown` cause defensively.
+fn failure_of(result: &Result<bool, BingleError>) -> SendFailure {
+    classify_send_error(result).unwrap_or_else(|| SendFailure {
+        kind: SendFailureKind::Unknown,
+        reason: "unknown send failure".to_string(),
+    })
+}
 
 /// Classify a failed send and persist the message accordingly, returning the outcome.
 ///
-/// A transient failure (per [`is_transient_send_failure`]) stays pending (`progress 0.0`) to be
+/// A retryable failure (per [`SendFailureKind::is_retryable`]) stays pending (`progress 0.0`) to be
 /// retried; a permanent one is marked terminal (`progress 1.0`). When `retries_enabled` is false
 /// (`--no-retries`) every failure is treated as permanent so nothing lingers pending.
 fn classify_and_persist(
     state: &mut ChatState,
     timestamp: i64,
-    err: &str,
+    failure: SendFailure,
     retries_enabled: bool,
 ) -> SendOutcome {
-    let transient = retries_enabled && is_transient_send_failure(err);
-    let reason = pending_failure_reason(err, transient);
+    let transient = retries_enabled && failure.kind.is_retryable();
     if transient {
-        let _ = state.mark_send_failed(timestamp, &reason, false);
-        SendOutcome::Retrying(reason)
+        let _ = state.mark_send_failed(timestamp, &failure.reason, Some(failure.kind), false);
+        SendOutcome::Retrying(failure.reason)
     } else {
-        let _ = state.mark_send_failed(timestamp, &reason, true);
-        SendOutcome::Failed(reason)
-    }
-}
-
-/// Extract the error string from a non-delivered send result (`Ok(false)` or `Err`).
-fn failure_reason(result: Result<bool, String>) -> String {
-    match result {
-        Ok(false) => SEND_RETURNED_FALSE.to_string(),
-        Err(e) => e,
-        Ok(true) => unreachable!("delivered results are handled before this"),
+        let _ = state.mark_send_failed(timestamp, &failure.reason, Some(failure.kind), true);
+        SendOutcome::Failed(failure.reason)
     }
 }
 
@@ -119,7 +117,7 @@ pub fn send_once(
         let _ = state.mark_delivered(ts);
         return SendOutcome::Delivered;
     }
-    classify_and_persist(state, ts, &failure_reason(result), retries_enabled)
+    classify_and_persist(state, ts, failure_of(&result), retries_enabled)
 }
 
 /// Re-attempt the oldest *eligible* pending outbound message (respecting per-message backoff), one
@@ -148,17 +146,17 @@ pub fn retry_pending(
         retry_after.remove(&msg.timestamp);
         SendOutcome::Delivered
     } else {
-        let err = failure_reason(result);
-        let transient = is_transient_send_failure(&err);
-        let reason = pending_failure_reason(&err, transient);
-        if transient {
-            let _ = state.mark_send_failed(msg.timestamp, &reason, false);
+        let failure = failure_of(&result);
+        if failure.kind.is_retryable() {
+            let _ =
+                state.mark_send_failed(msg.timestamp, &failure.reason, Some(failure.kind), false);
             retry_after.insert(msg.timestamp, now + RETRY_BACKOFF);
-            SendOutcome::Retrying(reason)
+            SendOutcome::Retrying(failure.reason)
         } else {
-            let _ = state.mark_send_failed(msg.timestamp, &reason, true);
+            let _ =
+                state.mark_send_failed(msg.timestamp, &failure.reason, Some(failure.kind), true);
             retry_after.remove(&msg.timestamp);
-            SendOutcome::Failed(reason)
+            SendOutcome::Failed(failure.reason)
         }
     };
     Some(RetryOutcome {
