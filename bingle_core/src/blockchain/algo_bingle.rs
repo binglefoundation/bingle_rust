@@ -597,11 +597,10 @@ impl AlgoBingle {
             .ops
             .app_global_bytes(new_app_id, "AncestorApps")?
             .unwrap_or_default();
-        let mut ids = Vec::with_capacity(raw.len() / 8);
-        for chunk in raw.chunks_exact(8) {
-            let mut b = [0u8; 8];
-            b.copy_from_slice(chunk);
-            ids.push(u64::from_be_bytes(b));
+        let (chunks, _rem) = raw.as_chunks::<8>();
+        let mut ids = Vec::with_capacity(chunks.len());
+        for b in chunks {
+            ids.push(u64::from_be_bytes(*b));
         }
         Ok(ids)
     }
