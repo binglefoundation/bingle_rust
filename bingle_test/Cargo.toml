@@ -27,7 +27,7 @@ ed25519-dalek = { version = "2", features = ["rand_core"] }
 
 # Depend on the main crate for real backend access to AlgoOps
 bingle_core = { path = "../bingle_core" }
-algo_ops = "0.4.0"
+algo_ops = { git = "https://github.com/richdrich/blockchain_ops_rust", rev = "bc862efe679b958622cd0f1f61beb2820a6957ba" }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 libc = "0.2"

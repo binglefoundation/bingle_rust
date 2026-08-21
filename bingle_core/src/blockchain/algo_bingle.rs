@@ -11,10 +11,10 @@ use algo_ops::{AlgoOps, AppArg, address_to_byte_key};
 
 use algonaut::{
     Algod,
-    core::{Address, AppId, AssetId, MicroAlgos, ToMsgPack},
+    core::{Address, AppId, AssetId, ToMsgPack},
     model::algod::SuggestedParams,
     transaction::{
-        Pay, TransferAsset,
+        TransferAsset,
         account::Account,
         builder::{CallApplication, ClawbackAsset, UpdateAsset},
         transaction::Transaction,
@@ -1537,42 +1537,19 @@ impl AlgoBingle {
         }
         // Ensure the caller (sender) is opted in to receive the asset from the app's inner tx
         let _ = self.opt_in_sender_to_asset(asset_id)?;
-        let client = self.ops.algod_client()?;
-        let params = self.params(&client)?;
-        let (account, sender) = self.sender_account()?;
-        let app_addr = self.app_address(app_id)?;
-        algo_log!("[buy_bingle] app_addr: {:#?}", app_addr);
+        let app_addr = self.app_address(app_id)?.to_string();
+        algo_log!("[buy_bingle] app_addr: {app_addr}");
 
-        // 1) Payment: sender -> app address for price. The app will verify this and perform
-        //    an inner tx moving 1 unit of the ASA from the creator-held reserve to the sender.
-        let tx_pay = Pay::new(sender, app_addr, MicroAlgos(price_microalgos))
-            .note(AlgoOps::unique_note())
-            .build(&params)
-            .map_err(|e| anyhow!("build pay: {e}"))?;
-        algo_log!("[buy_bingle] tx_pay: {:#?}", tx_pay);
-
-        // 2) App call: buy_bingle()void with foreign asset, built via AlgoOps helper
-        let tx_app =
-            self.ops
-                .build_call_app_tx(app_id, Some(asset_id), Some("buy_bingle()void"), &[])?;
-        algo_log!("[buy_bingle] tx_app: {:#?}", tx_app);
-
-        // Group, sign, and send
-        let mut txs = vec![tx_pay, tx_app];
-        Self::assign_group_id(&mut txs)?;
-
-        let s1 = account
-            .sign(txs.remove(0))
-            .map_err(|e| anyhow!("sign pay: {e}"))?
-            .to_msg_pack()
-            .map_err(|e| anyhow!("encode signed pay: {e}"))?;
-        let s2 = account
-            .sign(txs.remove(0))
-            .map_err(|e| anyhow!("sign app: {e}"))?
-            .to_msg_pack()
-            .map_err(|e| anyhow!("encode signed app: {e}"))?;
-
-        self.broadcast_group(&client, vec![s1, s2])
+        // Atomic group: payment (sender -> app for the price) + `buy_bingle()void` app-call with the
+        // ASA as a foreign asset. The app verifies the payment and, via an inner tx, moves 1 unit of
+        // the ASA from the creator-held reserve to the sender. Signed together and broadcast as one
+        // group.
+        self.ops
+            .transaction_group()
+            .payment(&app_addr, price_microalgos)
+            .call_app(app_id, Some("buy_bingle()void"), &[])
+            .foreign_asset(asset_id)
+            .sign_and_send()
     }
 
     /// Call sell_bingle. Requires:
@@ -1598,59 +1575,27 @@ impl AlgoBingle {
         // Ensure the app account is opted-in to the ASA so it can receive transfers
         self.ops
             .opt_in_app_to_asset(app_id, asset_id, "opt_in_to_bingle(uint64)void")?;
-        let client = self.ops.algod_client()?;
-        let params = self.params(&client)?;
-        let (account, sender) = self.sender_account()?;
-        let app_addr = self.app_address(app_id)?;
+        let app_addr = self.app_address(app_id)?.to_string();
+        let self_addr = self.ops.address_str()?;
 
         let payout = price_microalgos
             .checked_mul(amount)
             .ok_or_else(|| anyhow!("payout overflow"))?;
 
-        // 1) Asset xfer: sender -> app address of `amount`
-        let tx_ax = TransferAsset::new(sender, AssetId(asset_id), amount, app_addr)
-            .note(AlgoOps::unique_note())
-            .build(&params)
-            .map_err(|e| anyhow!("build axfer: {e}"))?;
-
-        // 2) Payout payment: sender -> sender for `payout` (satisfies on-chain payment check)
-        let tx_pay = Pay::new(sender, sender, MicroAlgos(payout))
-            .note(AlgoOps::unique_note())
-            .build(&params)
-            .map_err(|e| anyhow!("build pay: {e}"))?;
-
-        // 3) App call: sell_bingle(uint64)void
-        let mut app_args: Vec<Vec<u8>> = Vec::new();
-        app_args.push(AlgoOps::arc4_selector("sell_bingle(uint64)void").to_vec());
-        // ARC-4 uint64 as 8-byte big endian
-        app_args.push({ amount }.to_be_bytes().to_vec());
-        let tx_app = CallApplication::new(sender, AppId(app_id))
-            .app_arguments(app_args)
-            .foreign_assets(vec![AssetId(asset_id)])
-            .note(AlgoOps::unique_note())
-            .build(&params)
-            .map_err(|e| anyhow!("build app call: {e}"))?;
-
-        let mut txs = vec![tx_ax, tx_pay, tx_app];
-        Self::assign_group_id(&mut txs)?;
-
-        let s1 = account
-            .sign(txs.remove(0))
-            .map_err(|e| anyhow!("sign axfer: {e}"))?
-            .to_msg_pack()
-            .map_err(|e| anyhow!("encode signed axfer: {e}"))?;
-        let s2 = account
-            .sign(txs.remove(0))
-            .map_err(|e| anyhow!("sign pay: {e}"))?
-            .to_msg_pack()
-            .map_err(|e| anyhow!("encode signed pay: {e}"))?;
-        let s3 = account
-            .sign(txs.remove(0))
-            .map_err(|e| anyhow!("sign app: {e}"))?
-            .to_msg_pack()
-            .map_err(|e| anyhow!("encode signed app: {e}"))?;
-
-        self.broadcast_group(&client, vec![s1, s2, s3])
+        // Atomic group: asset transfer (sender -> app of `amount` units) + a self-payment of
+        // `payout` (satisfies the on-chain payment check) + `sell_bingle(uint64)void` app-call
+        // carrying `amount` as its ARC-4 uint64 argument, with the ASA as a foreign asset.
+        self.ops
+            .transaction_group()
+            .asset_transfer(asset_id, amount, &app_addr)
+            .payment(&self_addr, payout)
+            .call_app(
+                app_id,
+                Some("sell_bingle(uint64)void"),
+                &[AppArg::Uint(amount)],
+            )
+            .foreign_asset(asset_id)
+            .sign_and_send()
     }
 
     /// Register `handle` on-chain for the signing account, paying `price_units` of Bingle$.
@@ -1724,10 +1669,6 @@ impl AlgoBingle {
         handle: &str,
         price_units: u64,
     ) -> Result<String> {
-        let client = self.ops.algod_client()?;
-        let params = self.params(&client)?;
-        let (account, sender) = self.sender_account()?;
-
         // Ensure the app account is opted-in to the ASA so it can receive the registration fee
         self.ops
             .opt_in_app_to_asset(app_id, asset_id, "opt_in_to_bingle(uint64)void")?;
@@ -1736,51 +1677,29 @@ impl AlgoBingle {
         let _ = self.opt_in_sender_to_asset(asset_id)?;
         // Ensure the caller is opted-in to the application local state to avoid logic eval error
         self.ops.opt_in_app(app_id)?;
-        let app_addr = self.app_address(app_id)?;
+        let app_addr = self.app_address(app_id)?.to_string();
 
-        // 2) ASA fee: sender -> app address amount = price_units
-        let tx_ax = TransferAsset::new(sender, AssetId(asset_id), price_units, app_addr)
-            .note(AlgoOps::unique_note())
-            .build(&params)
-            .map_err(|e| anyhow!("build axfer: {e}"))?;
-        // Print the full asset transfer transaction (tx_ax) with all fields for visibility
-        algo_log!("tx_ax: {:#?}", tx_ax);
-
-        // 3) App call: register(string)void with handle arg
-        // ARC-4 string encoding: 2-byte big-endian length prefix + UTF-8 bytes
-        let mut app_args: Vec<Vec<u8>> = Vec::new();
-        app_args.push(AlgoOps::arc4_selector("register(string)void").to_vec());
+        // ARC-4 string encoding for the `handle` argument: 2-byte big-endian length prefix + UTF-8.
         let handle_bytes = handle.as_bytes();
-        let len = handle_bytes.len();
-        if len > u16::MAX as usize {
+        if handle_bytes.len() > u16::MAX as usize {
             bail!("handle too long");
         }
-        let mut arg = Vec::with_capacity(2 + len);
-        arg.extend_from_slice(&(len as u16).to_be_bytes());
-        arg.extend_from_slice(handle_bytes);
-        app_args.push(arg);
-        let tx_app = CallApplication::new(sender, AppId(app_id))
-            .app_arguments(app_args)
-            .foreign_assets(vec![AssetId(asset_id)])
-            .note(AlgoOps::unique_note())
-            .build(&params)
-            .map_err(|e| anyhow!("build app call: {e}"))?;
+        let mut handle_arg = Vec::with_capacity(2 + handle_bytes.len());
+        handle_arg.extend_from_slice(&(handle_bytes.len() as u16).to_be_bytes());
+        handle_arg.extend_from_slice(handle_bytes);
 
-        let mut txs = vec![tx_ax, tx_app];
-        Self::assign_group_id(&mut txs)?;
-
-        let s1 = account
-            .sign(txs.remove(0))
-            .map_err(|e| anyhow!("sign axfer: {e}"))?
-            .to_msg_pack()
-            .map_err(|e| anyhow!("encode signed axfer: {e}"))?;
-        let s2 = account
-            .sign(txs.remove(0))
-            .map_err(|e| anyhow!("sign app: {e}"))?
-            .to_msg_pack()
-            .map_err(|e| anyhow!("encode signed app: {e}"))?;
-
-        self.broadcast_group(&client, vec![s1, s2])
+        // Atomic group: ASA fee transfer (sender -> app, `price_units`) + `register(string)void`
+        // app-call carrying the handle as its ARC-4 string argument, with the ASA as a foreign asset.
+        self.ops
+            .transaction_group()
+            .asset_transfer(asset_id, price_units, &app_addr)
+            .call_app(
+                app_id,
+                Some("register(string)void"),
+                &[AppArg::Bytes(handle_arg)],
+            )
+            .foreign_asset(asset_id)
+            .sign_and_send()
     }
 
     /// Wait up to 15 seconds for indexer to catch up and verify that `expected_winner` is the owner of `handle`.

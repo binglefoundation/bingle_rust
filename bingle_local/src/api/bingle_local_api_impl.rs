@@ -623,7 +623,8 @@ impl BingleLocalApi for BingleApiLocalImpl {
             self.config.algo_config.app_id,
             self.config.algo_config.asset_id,
         );
-        let ops = AlgoOps::new(Some(pass), None, Some(self.config.algo_config.clone()));
+        let ops =
+            AlgoOps::new_for_algorand(Some(pass), None, Some(self.config.algo_config.clone()));
         let mut cache_guard = match self.algo_ops.lock() {
             Ok(g) => g,
             Err(e) => {

@@ -22,7 +22,7 @@ pub fn set_allow_and_register_endpoint_then_list_and_clear() {
     // Extra guard: ensure Indexer is reachable; otherwise skip to avoid false negatives when only algod is up.
     {
         use algo_ops::AlgoOps;
-        let tmp_ops = AlgoOps::new(
+        let tmp_ops = AlgoOps::new_for_algorand(
             None,
             Some(test_util::ADDRESS_SPEND.to_string()),
             Some(cfg.clone()),

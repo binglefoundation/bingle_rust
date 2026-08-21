@@ -26,7 +26,7 @@ impl BingleLocalApi for DummyLocal {
             .as_ref()
             .map(|k| k.passphrase.clone())
             .ok_or_else(|| "no keypair".to_string())?;
-        Ok(AlgoOps::new(Some(pass), None, None))
+        Ok(AlgoOps::new_for_algorand(Some(pass), None, None))
     }
 
     fn add_contact(&mut self, handle: String, id: String, _source: ContactSource) -> Result<(), String> {

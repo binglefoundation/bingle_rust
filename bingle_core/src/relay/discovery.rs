@@ -17,7 +17,7 @@ pub fn indexer_discover_closure(
     cfg: Option<AlgoChainConfig>,
     cache: Option<Arc<Mutex<AccountsCache>>>,
 ) -> Arc<dyn Fn() -> Vec<RelayInfo> + Send + Sync> {
-    let indexer = AlgoOps::new_indexer(cfg);
+    let indexer = AlgoOps::new_for_algorand(None, None, cfg);
     let algo_bingle_indexer = if let Some(c) = cache {
         AlgoBingle::new_with_cache(indexer, app_id, 0, c)
     } else {

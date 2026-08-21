@@ -53,10 +53,10 @@ pub fn testnet_user_reaches_endpoint_available() {
     let handle = env_var("TESTNET_USER").expect("TESTNET_USER env var must be set");
     let passphrase = env_var("TESTNET_PASSPHRASE").expect("TESTNET_PASSPHRASE env var must be set");
 
-    // Build ops: AlgoOps::new(provider_cfg, Some(passphrase), None)
+    // Build ops: AlgoOps::new_for_algorand(provider_cfg, Some(passphrase), None)
     // Discover constructor signature from existing tests: use AlgoOps::from config-like builder.
     // The struct provides a public constructor via AlgoOps { config, .. } pattern with helpers.
-    let ops = AlgoOps::new(Some(passphrase.clone()), None, Some(provider_cfg.clone()));
+    let ops = AlgoOps::new_for_algorand(Some(passphrase.clone()), None, Some(provider_cfg.clone()));
 
     let ab = AlgoBingle::new(ops.clone(), app_id, 0);
     let static_endpoints = ab
