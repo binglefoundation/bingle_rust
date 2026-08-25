@@ -9,8 +9,8 @@
 //! - authenticated encryption with associated data (AEAD): ChaCha20-Poly1305 (RFC 8439)
 //!
 //! [`seal`] draws a fresh ephemeral key per call (one HPKE epoch per message) and returns the
-//! encapsulated key alongside the ciphertext; [`open`] reverses it. There is no envelope framing or
-//! signature here — those are later store-and-forward stories (issue #199).
+//! encapsulated key alongside the ciphertext; [`unseal`] reverses it. There is no envelope framing
+//! or signature here — those are later store-and-forward stories (issue #199).
 //!
 //! Reusing the recipient's durable Ed25519 identity key (converted to X25519 in
 //! [`crate::crypto::key_convert`]) for key exchange is safe precisely because `DHKEM` runs the
@@ -55,9 +55,9 @@ pub enum SealError {
     Hpke(hpke::HpkeError),
 }
 
-/// Error returned by [`open`].
+/// Error returned by [`unseal`].
 #[derive(Debug, thiserror::Error)]
-pub enum OpenError {
+pub enum UnsealError {
     /// The recipient's X25519 secret bytes were rejected by the KEM.
     #[error("invalid recipient private key: {0}")]
     InvalidRecipientPrivate(hpke::HpkeError),
@@ -67,7 +67,7 @@ pub enum OpenError {
     /// Decryption failed: a wrong recipient key, tampered ciphertext, or mismatched associated
     /// data — all surface here as an authentication failure, and the three are indistinguishable
     /// by design.
-    #[error("HPKE open failed (wrong key, tampered ciphertext, or wrong associated data): {0}")]
+    #[error("HPKE unseal failed (wrong key, tampered ciphertext, or wrong associated data): {0}")]
     Hpke(hpke::HpkeError),
 }
 
@@ -76,7 +76,7 @@ pub enum OpenError {
 ///
 /// A fresh ephemeral keypair is drawn from the operating system RNG on every call, so sealing the
 /// same plaintext twice yields different outputs. Only the holder of the matching X25519 secret can
-/// [`open`] the result, and only with the identical `aad`.
+/// [`unseal`] the result, and only with the identical `aad`.
 ///
 /// # Errors
 ///
@@ -106,28 +106,28 @@ pub fn seal(
     Ok((enc, ciphertext))
 }
 
-/// Opens a ciphertext produced by [`seal`], returning the recovered plaintext.
+/// Unseals a ciphertext produced by [`seal`], returning the recovered plaintext.
 ///
 /// `recipient_priv` must be the X25519 secret matching the public key the message was sealed to,
 /// and `aad` must equal the associated data supplied at seal time; otherwise authentication fails.
 ///
 /// # Errors
 ///
-/// Returns [`OpenError::InvalidEncappedKey`] if `enc` is not a valid encapsulation, or
-/// [`OpenError::Hpke`] if authentication fails — a wrong key, a tampered `ciphertext`, or a
+/// Returns [`UnsealError::InvalidEncappedKey`] if `enc` is not a valid encapsulation, or
+/// [`UnsealError::Hpke`] if authentication fails — a wrong key, a tampered `ciphertext`, or a
 /// mismatched `aad` are indistinguishable and all reported here.
-pub fn open(
+pub fn unseal(
     recipient_priv: &X25519Secret,
     enc: &[u8; ENC_LEN],
     aad: &[u8],
     ciphertext: &[u8],
-) -> Result<Vec<u8>, OpenError> {
+) -> Result<Vec<u8>, UnsealError> {
     // Our own secret bytes are always a valid X25519 private key, so this conversion does not fail
     // in practice; it is still checked rather than unwrapped.
     let sk_recip = <Kem as KemTrait>::PrivateKey::from_bytes(&recipient_priv.to_bytes())
-        .map_err(OpenError::InvalidRecipientPrivate)?;
+        .map_err(UnsealError::InvalidRecipientPrivate)?;
     let encapped_key =
-        <Kem as KemTrait>::EncappedKey::from_bytes(enc).map_err(OpenError::InvalidEncappedKey)?;
+        <Kem as KemTrait>::EncappedKey::from_bytes(enc).map_err(UnsealError::InvalidEncappedKey)?;
 
     hpke::single_shot_open::<Aead, Kdf, Kem>(
         &OpModeR::Base,
@@ -137,5 +137,5 @@ pub fn open(
         ciphertext,
         aad,
     )
-    .map_err(OpenError::Hpke)
+    .map_err(UnsealError::Hpke)
 }
