@@ -49,6 +49,7 @@ openssl-sys = { version = "0.9.117" }
 # curve25519-dalek 4.x with ed25519-dalek 2 rather than pulling a second copy (v3 -> dalek 5).
 # `static_secrets` enables the reusable `StaticSecret` used for the converted identity key.
 x25519-dalek = { version = "2", features = ["static_secrets"] }
+hpke = { version = "0.12", default-features = false, features = ["x25519", "alloc"] }
 
 [features]
 # Exposes the unsafe test-only accessor `access_unsafe_for_tests`. Enabled automatically for this
