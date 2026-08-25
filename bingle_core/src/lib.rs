@@ -38,6 +38,11 @@ pub mod util;
 pub mod api;
 /// Algorand integration: [`algo_ops::AlgoOps`] and [`AlgoBingle`].
 pub mod blockchain;
+// Store-and-forward key-material helpers (Ed25519 ⇄ X25519). Internal to the workspace for now
+// (part of the store-and-forward feature, issue #199), reachable from the test tree and sibling
+// crates but not yet a supported external API — kept out of the published reference.
+#[doc(hidden)]
+pub mod crypto;
 #[doc(hidden)]
 pub mod ddb;
 #[doc(hidden)]
