@@ -10,6 +10,9 @@ mod local_impl_contacts;
 #[path = "api/local_impl_messages.rs"]
 mod local_impl_messages;
 
+#[path = "api/message_carry_fields.rs"]
+mod message_carry_fields;
+
 #[path = "api/local_impl_keypair_status.rs"]
 mod local_impl_keypair_status;
 #[path = "api/local_impl_persistence.rs"]

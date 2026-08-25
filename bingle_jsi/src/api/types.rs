@@ -157,6 +157,15 @@ pub struct Message {
     /// Typed failure cause (issue #99) for reliable processing. `None` while pending or delivered.
     /// Derive whether it is retryable with [`failure_kind_is_retryable`].
     pub failure_kind: Option<FailureKind>,
+    /// Sender-stamped send time (epoch milliseconds) from a Sidewinder store-and-forward envelope
+    /// (issue #204). `None` for a live message delivered over the Bingle DTLS session.
+    pub sent_time: Option<i64>,
+    /// Receiver's local clock (epoch milliseconds) when the message was fetched from the Sidewinder
+    /// Mailbox (issue #204). Locally stamped; not on either transport. `None` for live messages.
+    pub delivered_time: Option<i64>,
+    /// Base64-encoded Ed25519 sender signature retained from the store-and-forward envelope, for
+    /// later attachment to a content report (issue #94). `None` when no signed envelope was opened.
+    pub signature: Option<String>,
 }
 
 /// Keypair funding / registration status.

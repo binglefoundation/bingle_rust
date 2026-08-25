@@ -164,6 +164,28 @@ fn parse_keypair_status(status: &str) -> KeypairStatus {
     }
 }
 
+/// Map a stored [`bingle_local::api::Message`] to the FFI [`Message`] surfaced to JS.
+///
+/// Every field of the local record is carried across, including the store-and-forward fields
+/// (`sent_time`, `delivered_time`, `signature`) added in issue #204 — a dedicated test asserts none
+/// are dropped, so a future field addition that forgets the bridge fails CI.
+#[doc(hidden)]
+pub fn local_message_to_jsi(m: bingle_local::api::Message) -> Message {
+    Message {
+        sender_handle: m.sender_handle,
+        recipient_handles: m.recipient_handles,
+        timestamp: m.timestamp,
+        text: m.text,
+        cipher_suite: m.cipher_suite,
+        progress: m.progress,
+        failure_reason: m.failure_reason,
+        failure_kind: m.failure_kind.map(send_failure_kind_to_ffi),
+        sent_time: m.sent_time,
+        delivered_time: m.delivered_time,
+        signature: m.signature,
+    }
+}
+
 /// Map the core `SendFailureKind` to the FFI-exposed `FailureKind` (issue #99). Same pattern as the
 /// `KeypairStatus` mapping: the enum is defined at the FFI boundary and translated here.
 fn send_failure_kind_to_ffi(kind: SendFailureKind) -> FailureKind {
@@ -1222,19 +1244,7 @@ impl BingleJsiApi for BingleJsiApiImpl {
     fn get_messages(&self) -> Result<Vec<Message>, BingleJsiError> {
         let guard = local_api_guard(&self.local_api)?;
         let messages = guard.get_messages().map_err(bingle_error_to_jsi)?;
-        Ok(messages
-            .into_iter()
-            .map(|m| Message {
-                sender_handle: m.sender_handle,
-                recipient_handles: m.recipient_handles,
-                timestamp: m.timestamp,
-                text: m.text,
-                cipher_suite: m.cipher_suite,
-                progress: m.progress,
-                failure_reason: m.failure_reason,
-                failure_kind: m.failure_kind.map(send_failure_kind_to_ffi),
-            })
-            .collect())
+        Ok(messages.into_iter().map(local_message_to_jsi).collect())
     }
 
     fn queue_message(
@@ -1554,6 +1564,9 @@ mod tests {
             progress: Some(0.0),
             failure_reason: None,
             failure_kind: None,
+            sent_time: None,
+            delivered_time: None,
+            signature: None,
         }
     }
 

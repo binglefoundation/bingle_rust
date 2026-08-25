@@ -90,6 +90,15 @@ export interface Message {
   /** Typed cause of the last failure (issue #99); null while pending or delivered. Derive whether
    * it is retryable with `failureKindIsRetryable`. */
   failure_kind: FailureKind | null;
+  /** Sender-stamped send time (epoch millis) from a Sidewinder store-and-forward envelope (issue
+   * #204); null for a live message delivered over the Bingle DTLS session. */
+  sent_time: number | null;
+  /** Receiver's local clock (epoch millis) when the message was fetched from the Sidewinder Mailbox
+   * (issue #204). Locally stamped, not on either transport; null for live messages. */
+  delivered_time: number | null;
+  /** Base64 Ed25519 sender signature retained from the store-and-forward envelope, for later report
+   * attachment (issue #94); null when no signed envelope was opened. */
+  signature: string | null;
 }
 
 export interface KeypairStatusResponse {

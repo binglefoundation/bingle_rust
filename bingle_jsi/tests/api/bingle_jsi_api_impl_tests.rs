@@ -781,3 +781,38 @@ fn pending_failure_reason_is_human_readable() {
     let permanent = pending_failure_reason("recipient handle is invalid", false);
     assert!(permanent.contains("recipient handle is invalid"));
 }
+
+/// The FFI bridge must carry every stored-message field to JS, including the store-and-forward
+/// fields added in issue #204 (`sent_time`, `delivered_time`, `signature`). This test fails if a
+/// future change adds a field to the local message but forgets to map it in the bridge.
+#[test]
+fn bridge_carries_store_and_forward_fields_to_jsi() {
+    use bingle_jsi::api::bingle_jsi_api_impl::local_message_to_jsi;
+    use bingle_local::api::Message as LocalMessage;
+
+    let local = LocalMessage {
+        sender_handle: "alice".to_string(),
+        recipient_handles: vec!["bob".to_string()],
+        timestamp: 1_700_000_050_000,
+        text: "hi from the mailbox".to_string(),
+        cipher_suite: None,
+        progress: Some(1.0),
+        failure_reason: None,
+        failure_kind: None,
+        sent_time: Some(1_700_000_000_123),
+        delivered_time: Some(1_700_000_050_000),
+        signature: Some("AwMDAw==".to_string()),
+    };
+
+    let jsi = local_message_to_jsi(local);
+
+    // Store-and-forward fields survive the bridge to JS.
+    assert_eq!(jsi.sent_time, Some(1_700_000_000_123));
+    assert_eq!(jsi.delivered_time, Some(1_700_000_050_000));
+    assert_eq!(jsi.signature, Some("AwMDAw==".to_string()));
+    // The pre-existing fields are unaffected.
+    assert_eq!(jsi.sender_handle, "alice");
+    assert_eq!(jsi.recipient_handles, vec!["bob".to_string()]);
+    assert_eq!(jsi.timestamp, 1_700_000_050_000);
+    assert_eq!(jsi.text, "hi from the mailbox");
+}

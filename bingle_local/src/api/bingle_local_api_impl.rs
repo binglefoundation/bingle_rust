@@ -796,6 +796,9 @@ impl BingleLocalApi for BingleApiLocalImpl {
             progress: Some(1.0),
             failure_reason: None,
             failure_kind: None,
+            sent_time: None,
+            delivered_time: None,
+            signature: None,
         };
         let mut guard = match self.messages.lock() {
             Ok(g) => g,
@@ -850,6 +853,9 @@ impl BingleLocalApi for BingleApiLocalImpl {
             progress: Some(0.0),
             failure_reason: None,
             failure_kind: None,
+            sent_time: None,
+            delivered_time: None,
+            signature: None,
         };
 
         let mut guard = match self.messages.lock() {
