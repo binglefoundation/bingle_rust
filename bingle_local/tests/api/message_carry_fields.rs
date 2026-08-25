@@ -17,9 +17,9 @@ fn sample_opened() -> OpenedMessage {
 #[test]
 fn from_opened_carries_sent_time_delivered_and_signature() {
     let opened = sample_opened();
-    let delivered = 1_700_000_050_000;
+    let delivered_time = 1_700_000_050_000;
 
-    let msg = Message::from_opened(&opened, "alice".into(), vec!["bob".into()], delivered);
+    let msg = Message::from_opened(&opened, "alice".into(), vec!["bob".into()], delivered_time);
 
     assert_eq!(msg.sender_handle, "alice");
     assert_eq!(msg.recipient_handles, vec!["bob".to_string()]);
@@ -27,8 +27,8 @@ fn from_opened_carries_sent_time_delivered_and_signature() {
     // sender-stamped time carried from the envelope
     assert_eq!(msg.sent_time, Some(opened.sent_time));
     // locally stamped delivered clock, and arrival timestamp set to it
-    assert_eq!(msg.delivered, Some(delivered));
-    assert_eq!(msg.timestamp, delivered);
+    assert_eq!(msg.delivered_time, Some(delivered_time));
+    assert_eq!(msg.timestamp, delivered_time);
     // a received message is complete
     assert_eq!(msg.progress, Some(1.0));
     // retained signature is the base64 of the raw 64 envelope bytes
@@ -40,7 +40,7 @@ fn from_opened_carries_sent_time_delivered_and_signature() {
 
 #[test]
 fn old_message_files_without_new_fields_still_load() {
-    // A message serialized before #204: none of sent_time / delivered / signature present.
+    // A message serialized before #204: none of sent_time / delivered_time / signature present.
     let old_json = r#"{
         "sender_handle": "alice",
         "recipient_handles": ["bob"],
@@ -53,7 +53,7 @@ fn old_message_files_without_new_fields_still_load() {
 
     assert_eq!(msg.text, "old message");
     assert_eq!(msg.sent_time, None);
-    assert_eq!(msg.delivered, None);
+    assert_eq!(msg.delivered_time, None);
     assert_eq!(msg.signature, None);
 }
 
@@ -65,17 +65,17 @@ fn none_carry_fields_are_omitted_and_round_trip() {
     // A message without carry fields (e.g. a locally queued one) omits them from JSON.
     let mut plain = carried.clone();
     plain.sent_time = None;
-    plain.delivered = None;
+    plain.delivered_time = None;
     plain.signature = None;
     let plain_json = serde_json::to_string(&plain).expect("serialize");
     assert!(!plain_json.contains("sent_time"));
-    assert!(!plain_json.contains("delivered"));
+    assert!(!plain_json.contains("delivered_time"));
     assert!(!plain_json.contains("signature"));
 
     // A carried message serializes the fields and round-trips unchanged.
     let carried_json = serde_json::to_string(&carried).expect("serialize");
     assert!(carried_json.contains("sent_time"));
-    assert!(carried_json.contains("delivered"));
+    assert!(carried_json.contains("delivered_time"));
     assert!(carried_json.contains("signature"));
     let back: Message = serde_json::from_str(&carried_json).expect("round-trip");
     assert_eq!(back, carried);

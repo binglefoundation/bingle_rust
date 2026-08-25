@@ -109,7 +109,7 @@ impl BingleLocalApi for DummyLocal {
             failure_reason: None,
             failure_kind: None,
             sent_time: None,
-            delivered: None,
+            delivered_time: None,
             signature: None,
         });
         Ok(())
@@ -131,7 +131,7 @@ impl BingleLocalApi for DummyLocal {
             failure_reason: None,
             failure_kind: None,
             sent_time: None,
-            delivered: None,
+            delivered_time: None,
             signature: None,
         });
         Ok(())

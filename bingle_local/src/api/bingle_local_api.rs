@@ -35,7 +35,12 @@ pub struct Message {
     pub sender_handle: String,
     /// Handles of the recipients the message was addressed to.
     pub recipient_handles: Vec<String>,
-    /// Timestamp (e.g., epoch millis).
+    /// Arrival time (epoch milliseconds) recorded by this client when it stored the message.
+    ///
+    /// To be superseded by [`sent_time`](Message::sent_time) and
+    /// [`delivered_time`](Message::delivered_time); it stays the ordering key until the sent-time
+    /// UX lands (issue #69), so it is not yet marked `#[deprecated]` (the workspace gate denies
+    /// deprecation warnings, and `select_sendable_message` still reads it).
     pub timestamp: i64,
     /// The message body.
     pub text: String,
@@ -54,20 +59,22 @@ pub struct Message {
     /// this field existed still load.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub failure_kind: Option<SendFailureKind>,
-    /// Sender-stamped send time (epoch milliseconds), carried from a store-and-forward envelope
-    /// when the message was opened from one (issue #204). `None` for messages not delivered that
-    /// way. Consumed by sent-time ordering (issue #69). `serde(default)` so older message files
-    /// still load.
+    /// Sender-stamped send time (epoch milliseconds), carried inside the Sidewinder store-and-forward
+    /// envelope when the message was opened from one (issue #204). `None` for a live message
+    /// delivered over the Bingle DTLS session (that path carries no sender-stamped time). Consumed by
+    /// sent-time ordering (issue #69). `serde(default)` so older message files still load.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sent_time: Option<i64>,
     /// Receiver's local clock (epoch milliseconds) at the moment the message was fetched and opened
-    /// from the Mailbox — there is no wire field for it (issue #204). `None` for messages not
-    /// delivered via store-and-forward. `serde(default)` so older message files still load.
+    /// from the Sidewinder Mailbox (issue #204). This is stamped locally — it is not carried on
+    /// either transport (neither the live Bingle DTLS session nor the store-and-forward envelope).
+    /// `None` for messages not delivered via store-and-forward. `serde(default)` so older message
+    /// files still load.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub delivered: Option<i64>,
-    /// Base64-encoded Ed25519 sender signature retained from the envelope, for later attachment to
-    /// a content report (issue #94). `None` when no signed envelope was opened. `serde(default)` so
-    /// older message files still load.
+    pub delivered_time: Option<i64>,
+    /// Base64-encoded Ed25519 sender signature retained from the store-and-forward envelope, for
+    /// later attachment to a content report (issue #94). `None` when no signed envelope was opened.
+    /// `serde(default)` so older message files still load.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub signature: Option<String>,
 }
@@ -77,9 +84,9 @@ impl Message {
     ///
     /// Carries the sender-stamped [`sent_time`](Message::sent_time) and the retained
     /// [`signature`](Message::signature) (base64-encoded) from the envelope, and records
-    /// [`delivered`](Message::delivered) — the receiver's clock at fetch, which has no wire field,
-    /// so the caller passes it in. `timestamp` (arrival time) is set to `delivered`, and `progress`
-    /// to `1.0` (a received message is complete).
+    /// [`delivered_time`](Message::delivered_time) — the receiver's clock at fetch, which is not on
+    /// either transport, so the caller passes it in. The arrival `timestamp` is set to
+    /// `delivered_time`, and `progress` to `1.0` (a received message is complete).
     ///
     /// `sender_handle` and `recipient_handles` are resolved by the caller: the envelope carries the
     /// sender's Ed25519 identity, and mapping that to a registered handle is a chain lookup outside
@@ -89,19 +96,19 @@ impl Message {
         opened: &OpenedMessage,
         sender_handle: String,
         recipient_handles: Vec<String>,
-        delivered: i64,
+        delivered_time: i64,
     ) -> Message {
         Message {
             sender_handle,
             recipient_handles,
-            timestamp: delivered,
+            timestamp: delivered_time,
             text: opened.text.clone(),
             cipher_suite: None,
             progress: Some(1.0),
             failure_reason: None,
             failure_kind: None,
             sent_time: Some(opened.sent_time),
-            delivered: Some(delivered),
+            delivered_time: Some(delivered_time),
             signature: Some(general_purpose::STANDARD.encode(opened.signature)),
         }
     }

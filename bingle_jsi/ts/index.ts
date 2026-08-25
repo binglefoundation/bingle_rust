@@ -181,6 +181,10 @@ export const BingleJsi = BingleJsiNative as {
       // Typed failure cause (issue #99); absent while pending or delivered. Derive retryability
       // with `failureKindIsRetryable`.
       failure_kind?: FailureKind | null;
+      // Store-and-forward carry fields (issue #204); absent for live DTLS messages.
+      sent_time?: number | null;
+      delivered_time?: number | null;
+      signature?: string | null;
     }[]
   >;
   queueMessage(recipientHandles: string[], text: string): Promise<void>;

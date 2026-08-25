@@ -797,7 +797,7 @@ impl BingleLocalApi for BingleApiLocalImpl {
             failure_reason: None,
             failure_kind: None,
             sent_time: None,
-            delivered: None,
+            delivered_time: None,
             signature: None,
         };
         let mut guard = match self.messages.lock() {
@@ -854,7 +854,7 @@ impl BingleLocalApi for BingleApiLocalImpl {
             failure_reason: None,
             failure_kind: None,
             sent_time: None,
-            delivered: None,
+            delivered_time: None,
             signature: None,
         };
 
