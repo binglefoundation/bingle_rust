@@ -108,6 +108,9 @@ impl BingleLocalApi for DummyLocal {
             progress: Some(1.0),
             failure_reason: None,
             failure_kind: None,
+            sent_time: None,
+            delivered: None,
+            signature: None,
         });
         Ok(())
     }
@@ -127,6 +130,9 @@ impl BingleLocalApi for DummyLocal {
             progress: Some(0.0),
             failure_reason: None,
             failure_kind: None,
+            sent_time: None,
+            delivered: None,
+            signature: None,
         });
         Ok(())
     }

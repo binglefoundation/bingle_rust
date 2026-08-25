@@ -1,10 +1,12 @@
 //! The [`BingleLocalApi`] trait and the data types it stores: [`Contact`], [`Message`],
 //! [`Keypair`], [`KeypairStatus`], and [`ContactSource`].
 
+use base64::{Engine as _, engine::general_purpose};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 use bingle_core::api::bingle_api::{BingleError, SendFailureKind};
+use bingle_core::crypto::sealed_envelope::OpenedMessage;
 
 /// Enum describing how a contact was added to the local store.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -52,6 +54,57 @@ pub struct Message {
     /// this field existed still load.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub failure_kind: Option<SendFailureKind>,
+    /// Sender-stamped send time (epoch milliseconds), carried from a store-and-forward envelope
+    /// when the message was opened from one (issue #204). `None` for messages not delivered that
+    /// way. Consumed by sent-time ordering (issue #69). `serde(default)` so older message files
+    /// still load.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sent_time: Option<i64>,
+    /// Receiver's local clock (epoch milliseconds) at the moment the message was fetched and opened
+    /// from the Mailbox — there is no wire field for it (issue #204). `None` for messages not
+    /// delivered via store-and-forward. `serde(default)` so older message files still load.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub delivered: Option<i64>,
+    /// Base64-encoded Ed25519 sender signature retained from the envelope, for later attachment to
+    /// a content report (issue #94). `None` when no signed envelope was opened. `serde(default)` so
+    /// older message files still load.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signature: Option<String>,
+}
+
+impl Message {
+    /// Builds a received message record from an opened store-and-forward envelope (issue #204).
+    ///
+    /// Carries the sender-stamped [`sent_time`](Message::sent_time) and the retained
+    /// [`signature`](Message::signature) (base64-encoded) from the envelope, and records
+    /// [`delivered`](Message::delivered) — the receiver's clock at fetch, which has no wire field,
+    /// so the caller passes it in. `timestamp` (arrival time) is set to `delivered`, and `progress`
+    /// to `1.0` (a received message is complete).
+    ///
+    /// `sender_handle` and `recipient_handles` are resolved by the caller: the envelope carries the
+    /// sender's Ed25519 identity, and mapping that to a registered handle is a chain lookup outside
+    /// this pure conversion. Wiring this into the Mailbox read path is orchestration (issue #200).
+    #[doc(hidden)]
+    pub fn from_opened(
+        opened: &OpenedMessage,
+        sender_handle: String,
+        recipient_handles: Vec<String>,
+        delivered: i64,
+    ) -> Message {
+        Message {
+            sender_handle,
+            recipient_handles,
+            timestamp: delivered,
+            text: opened.text.clone(),
+            cipher_suite: None,
+            progress: Some(1.0),
+            failure_reason: None,
+            failure_kind: None,
+            sent_time: Some(opened.sent_time),
+            delivered: Some(delivered),
+            signature: Some(general_purpose::STANDARD.encode(opened.signature)),
+        }
+    }
 }
 
 /// Generated Algorand keypair details.

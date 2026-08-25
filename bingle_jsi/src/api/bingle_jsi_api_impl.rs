@@ -1554,6 +1554,9 @@ mod tests {
             progress: Some(0.0),
             failure_reason: None,
             failure_kind: None,
+            sent_time: None,
+            delivered: None,
+            signature: None,
         }
     }
 
