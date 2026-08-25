@@ -5,3 +5,6 @@ pub mod hpke_seal;
 
 #[path = "crypto/key_convert.rs"]
 pub mod key_convert;
+
+#[path = "crypto/sealed_envelope.rs"]
+pub mod sealed_envelope;
