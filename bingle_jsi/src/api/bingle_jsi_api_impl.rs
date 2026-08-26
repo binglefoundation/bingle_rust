@@ -1259,15 +1259,6 @@ impl BingleJsiApi for BingleJsiApiImpl {
         Ok(messages.into_iter().map(local_message_to_jsi).collect())
     }
 
-    fn poll_mailbox(&self) -> Result<Vec<Message>, BingleJsiError> {
-        let guard = local_api_guard(&self.local_api)?;
-        let read = guard.poll_mailbox().map_err(bingle_error_to_jsi)?;
-        drop(guard);
-        // Persist immediately so a just-read (and node-dropped) message survives a restart.
-        save_if_configured(&self.local_api, &self.local_file);
-        Ok(read.into_iter().map(local_message_to_jsi).collect())
-    }
-
     fn queue_message(
         &self,
         recipient_handles: Vec<String>,
@@ -1553,8 +1544,30 @@ impl BingleJsiApi for BingleJsiApiImpl {
         // blocking Listen round-trip, so we must not block the app's AppState callback (issue #50).
         tracing::info!("[BingleJsiApiImpl] foregrounding()");
         let api = self.api.clone();
+        let local_api = self.local_api.clone();
+        let local_file = self.local_file.clone();
         std::thread::spawn(move || {
             api.with_engine(&mut |e| e.on_foreground());
+            // Store-and-forward read-on-reconnect (#215): foregrounding is when we may have come back
+            // online, so drain the Mailbox here (the app forwards the lifecycle event; the poll logic
+            // is in Rust). Best-effort and off the bridge thread; a no-op unless receive is enabled.
+            if let Some(local) = &local_api {
+                let read = match local.lock() {
+                    Ok(guard) => guard.poll_mailbox().unwrap_or_default(),
+                    Err(e) => {
+                        tracing::error!("[foregrounding] local api lock poisoned: {e}");
+                        Vec::new()
+                    }
+                };
+                if !read.is_empty() {
+                    tracing::info!(
+                        "[foregrounding] read {} store-and-forward message(s) from the Mailbox",
+                        read.len()
+                    );
+                    // Persist the just-read (and node-dropped) messages so they survive a restart.
+                    save_if_configured(&local_api, &local_file);
+                }
+            }
         });
     }
 

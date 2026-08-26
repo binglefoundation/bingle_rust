@@ -190,12 +190,6 @@ impl BingleJsiApi for StubApi {
         })
     }
 
-    fn poll_mailbox(&self) -> Result<Vec<Message>, BingleJsiError> {
-        Err(BingleJsiError::NotImplemented {
-            reason: "poll_mailbox".to_string(),
-        })
-    }
-
     fn queue_message(
         &self,
         _recipient_handles: Vec<String>,

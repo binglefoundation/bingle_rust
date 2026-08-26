@@ -256,12 +256,6 @@ export interface BingleJsiApi {
     cipher_suite: string | null
   ): void;
   getMessages(): Message[];
-  /** Drain this user's Sidewinder Mailbox, decrypting and storing each held store-and-forward
-   * message, and return the batch read this poll (sorted by sent time). Empty when store-and-forward
-   * receive is off / no node is configured. The decrypt/store/sort logic is in Rust; call this when
-   * the app enters the foreground (it may have been offline) and once at start — no polling logic
-   * belongs in JS. Read messages also appear in getMessages(). (store-and-forward epic #200, #215) */
-  pollMailbox(): Message[];
   queueMessage(recipientHandles: string[], text: string): void;
   updateMessageStatus(
     timestamp: number,

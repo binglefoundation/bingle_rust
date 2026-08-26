@@ -187,26 +187,6 @@ export const BingleJsi = BingleJsiNative as {
       signature?: string | null;
     }[]
   >;
-  // Drain this user's Sidewinder Mailbox: decrypt + store held store-and-forward messages and return
-  // the batch read this poll (sorted by sent time). Empty when store-and-forward receive is off / no
-  // node is configured. The decrypt/store/sort logic is in Rust; call this when the app enters the
-  // foreground (it may have been offline) and once at start — no polling logic belongs in JS. Read
-  // messages also appear in getMessages(). (store-and-forward epic #200, story #215)
-  pollMailbox(): Promise<
-    {
-      sender_handle: string;
-      recipient_handles: string[];
-      timestamp: number;
-      text: string;
-      cipher_suite: string | null;
-      progress?: number;
-      failure_reason?: string | null;
-      failure_kind?: FailureKind | null;
-      sent_time?: number | null;
-      delivered_time?: number | null;
-      signature?: string | null;
-    }[]
-  >;
   queueMessage(recipientHandles: string[], text: string): Promise<void>;
   updateMessageStatus(timestamp: number, progress: number, failureReason: string | null): Promise<void>;
   keypairStatus(): Promise<{
