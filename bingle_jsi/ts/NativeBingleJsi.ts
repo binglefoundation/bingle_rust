@@ -148,6 +148,16 @@ export interface BingleJsiConfig {
    * Sidewinder #164). Required alongside `sidewinder_node_url`; null/omitted leaves store-and-forward
    * unconfigured. Optional: a client that does not use store-and-forward need not set it. */
   sidewinder_token?: string | null;
+  /** Send-side store-and-forward gate (epic #200): when true, a give-up on direct delivery posts the
+   * sealed message to the recipient's Sidewinder Mailbox (#214). null/omitted defaults to false (off).
+   * Independent of `store_and_forward_receive`; also needs the sidewinder_* fields configured.
+   * Optional: a client that does not use store-and-forward need not set it. */
+  store_and_forward_send?: boolean | null;
+  /** Receive-side store-and-forward gate (epic #200): when true, the client polls its own Sidewinder
+   * Mailbox on reconnect and on a cadence, reading messages forwarded to it (#215). null/omitted
+   * defaults to false (off). Independent of `store_and_forward_send`. Optional: a client that does not
+   * use store-and-forward need not set it. */
+  store_and_forward_receive?: boolean | null;
 }
 
 // ── Enums ────────────────────────────────────────────────────────────

@@ -374,6 +374,11 @@ impl BingleJsiApiImpl {
                 config.sidewinder_node_url.clone(),
                 config.sidewinder_token.clone(),
             ));
+            // Store-and-forward gates (#212): each side is independent and defaults off when unset.
+            cfg = cfg.with_store_and_forward(
+                config.store_and_forward_send,
+                config.store_and_forward_receive,
+            );
             let mut impl_api = BingleApiLocalImpl::new(cfg);
             if path.exists()
                 && let Err(e) = impl_api.load(path.to_string_lossy().as_ref())

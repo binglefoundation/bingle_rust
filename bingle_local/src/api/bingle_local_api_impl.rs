@@ -46,6 +46,17 @@ pub struct LocalApiConfig {
     /// deployment has no Sidewinder node configured, in which case store-and-forward is unavailable.
     /// Whether it is *used* when available is the separate on/off toggle (#212).
     pub sidewinder: Option<MailboxConfig>,
+    /// Send-side store-and-forward gate (epic #200, story #212): when `true`, a give-up on direct
+    /// delivery posts the sealed message to the recipient's Sidewinder Mailbox (#214); when `false`
+    /// (the default), give-up behaves exactly as today. Independent of the receive gate — a client
+    /// may forward without listening, or listen without forwarding. Also requires `sidewinder` to
+    /// be configured for the post to have anywhere to go.
+    pub store_and_forward_send: bool,
+    /// Receive-side store-and-forward gate (epic #200, story #212): when `true`, the client polls its
+    /// own Sidewinder Mailbox on reconnect and on a cadence, reading messages forwarded to it (#215);
+    /// when `false` (the default), no polling happens. Independent of the send gate. Also requires
+    /// `sidewinder` to be configured for there to be a Mailbox to poll.
+    pub store_and_forward_receive: bool,
 }
 
 /// The APNs environment assumed when a caller does not specify one: `"sandbox"`, matching a dev /
@@ -66,6 +77,10 @@ impl Default for LocalApiConfig {
             notify_gateway_url: None,
             notify_env: default_notify_env(),
             sidewinder: None,
+            // Store-and-forward defaults off: it is a new, unproven path (#214/#215), enabled per
+            // build/environment once proven. Each side is independent.
+            store_and_forward_send: false,
+            store_and_forward_receive: false,
         }
     }
 }
@@ -90,6 +105,8 @@ impl LocalApiConfig {
             notify_gateway_url,
             notify_env: default_notify_env(),
             sidewinder: None,
+            store_and_forward_send: false,
+            store_and_forward_receive: false,
         }
     }
 
@@ -98,6 +115,22 @@ impl LocalApiConfig {
     /// endpoint and token; left unset (`None`) when no Sidewinder node is configured.
     pub fn with_sidewinder(mut self, sidewinder: Option<MailboxConfig>) -> Self {
         self.sidewinder = sidewinder;
+        self
+    }
+
+    /// Set the store-and-forward send / receive gates (epic #200, story #212). Chained after
+    /// [`with_notify`](Self::with_notify) by a call site whose configuration supplies them; each
+    /// argument defaults to `false` (off) when the caller passes `None`, so an `init` or persisted
+    /// config without the fields keeps store-and-forward disabled. The two sides are independent —
+    /// see [`store_and_forward_send`](Self::store_and_forward_send) /
+    /// [`store_and_forward_receive`](Self::store_and_forward_receive).
+    pub fn with_store_and_forward(
+        mut self,
+        store_and_forward_send: Option<bool>,
+        store_and_forward_receive: Option<bool>,
+    ) -> Self {
+        self.store_and_forward_send = store_and_forward_send.unwrap_or(false);
+        self.store_and_forward_receive = store_and_forward_receive.unwrap_or(false);
         self
     }
 }
@@ -235,6 +268,20 @@ impl BingleApiLocalImpl {
         };
         let algo = self.get_algo_ops()?;
         crate::api::sidewinder::Mailbox::new(algo, config)
+    }
+
+    /// Whether the send-side store-and-forward gate is on (epic #200, story #212): the post-on-fail
+    /// path (#214) reads this and, when `false`, behaves exactly as today. Exposed so the gate is
+    /// observable by that path and by tests.
+    pub fn store_and_forward_send(&self) -> bool {
+        self.config.store_and_forward_send
+    }
+
+    /// Whether the receive-side store-and-forward gate is on (epic #200, story #212): the
+    /// read-on-reconnect path (#215) reads this and, when `false`, does no polling. Exposed so the
+    /// gate is observable by that path and by tests.
+    pub fn store_and_forward_receive(&self) -> bool {
+        self.config.store_and_forward_receive
     }
 
     /// Override the `/register` sender (bingle_notify #i). Intended for tests, which inject a
