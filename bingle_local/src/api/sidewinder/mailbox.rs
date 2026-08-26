@@ -82,6 +82,31 @@ impl MailboxConfig {
     }
 }
 
+/// Whether store-and-forward posting should run for a send that failed direct delivery: the send
+/// gate is on ([`store_and_forward_send`](crate::api::bingle_local_api_impl::LocalApiConfig::store_and_forward_send))
+/// *and* a Sidewinder node is configured. Pure, so the post-on-delivery-fail gate (#214) is
+/// unit-testable without a node.
+pub fn should_forward_send(send_gate: bool, sidewinder_configured: bool) -> bool {
+    send_gate && sidewinder_configured
+}
+
+/// The recipients of a message (identified by its `timestamp`) that have not yet been posted to a
+/// Mailbox, given the set of `(timestamp, handle)` pairs already forwarded. This is the
+/// per-recipient idempotency filter for post-on-delivery-fail (#214): a recipient already posted is
+/// skipped, so a retry or restart re-posts only recipients whose post has not yet succeeded. Pure,
+/// so the once-per-recipient guarantee is unit-tested without a node.
+pub fn pending_forward_recipients(
+    timestamp: i64,
+    recipient_handles: &[String],
+    forwarded: &std::collections::HashSet<(i64, String)>,
+) -> Vec<String> {
+    recipient_handles
+        .iter()
+        .filter(|handle| !forwarded.contains(&(timestamp, (*handle).clone())))
+        .cloned()
+        .collect()
+}
+
 /// A client for one recipient-addressable Sidewinder Mailbox, bound to an enrolled parent-chain
 /// account (the [`AlgoOps`] handle signs every transaction it submits).
 pub struct Mailbox {

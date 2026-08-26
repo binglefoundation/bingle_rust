@@ -46,6 +46,13 @@ path = "tests/api.rs"
 name = "sidewinder_mailbox_e2e"
 path = "tests/sidewinder_mailbox_e2e.rs"
 
+[[test]]
+# Post-on-delivery-fail end to end (store-and-forward epic #200, story #214). Needs a Sidewinder
+# node plus enrolled/registered accounts; skips cleanly when unconfigured — see the test's module
+# docs. Kept out of the `unit` target so the fast suite needs no infrastructure.
+name = "post_on_delivery_fail_e2e"
+path = "tests/post_on_delivery_fail_e2e.rs"
+
 [dev-dependencies]
 tempfile = "3"
 bingle_test = { path = "../bingle_test" }
