@@ -21,7 +21,7 @@ crate-type = ["rlib"]
 
 [dependencies]
 # Core deps kept iOS-friendly; heavy platform-specific deps remain gated below.
-blockchain_ops = "0.6.0"
+blockchain_ops = "0.7.1"
 algo_ops = "0.7.1"
 algonaut = "0.8.0"
 anyhow = "1"

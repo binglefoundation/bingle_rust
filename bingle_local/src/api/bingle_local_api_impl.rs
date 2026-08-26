@@ -6,6 +6,7 @@ use crate::api::notify::{
     AlertPoster, HttpAlertPoster, HttpRegisterPoster, RegisterPoster, build_register_request,
     encode_apns_token, post_giveup_alerts,
 };
+use crate::api::sidewinder::MailboxConfig;
 use crate::api::{
     BingleLocalApi, ChainRegistrationOps, Contact, ContactSource, Keypair, KeypairStatus, Message,
     REQUIRED_ALGO, run_registration,
@@ -40,6 +41,11 @@ pub struct LocalApiConfig {
     /// APNs environment a `/register` token is registered under: `"sandbox"` or `"production"`.
     /// Defaults to [`default_notify_env`] (sandbox); a production build overrides it.
     pub notify_env: String,
+    /// Sidewinder Mailbox connection for store-and-forward (epic #200): the node endpoint, bearer
+    /// token, and operation-type bindings the offline path posts to and reads from. `None` when the
+    /// deployment has no Sidewinder node configured, in which case store-and-forward is unavailable.
+    /// Whether it is *used* when available is the separate on/off toggle (#212).
+    pub sidewinder: Option<MailboxConfig>,
 }
 
 /// The APNs environment assumed when a caller does not specify one: `"sandbox"`, matching a dev /
@@ -59,6 +65,7 @@ impl Default for LocalApiConfig {
             notify_on_giveup: true,
             notify_gateway_url: None,
             notify_env: default_notify_env(),
+            sidewinder: None,
         }
     }
 }
@@ -82,7 +89,16 @@ impl LocalApiConfig {
             notify_on_giveup: notify_on_giveup.unwrap_or(true),
             notify_gateway_url,
             notify_env: default_notify_env(),
+            sidewinder: None,
         }
+    }
+
+    /// Attach a Sidewinder Mailbox connection (store-and-forward, epic #200). Chained after
+    /// [`with_notify`](Self::with_notify) by a call site whose configuration supplies a node
+    /// endpoint and token; left unset (`None`) when no Sidewinder node is configured.
+    pub fn with_sidewinder(mut self, sidewinder: Option<MailboxConfig>) -> Self {
+        self.sidewinder = sidewinder;
+        self
     }
 }
 
@@ -201,6 +217,24 @@ impl BingleApiLocalImpl {
             register_poster: Arc::new(HttpRegisterPoster::new()),
             nudged_messages: Mutex::new(HashSet::new()),
         }
+    }
+
+    /// Build a Sidewinder [`Mailbox`](crate::api::sidewinder::Mailbox) client for the current
+    /// keypair (store-and-forward, epic #200). The Mailbox signs its transactions with the same
+    /// enrolled account as [`get_algo_ops`](BingleLocalApi::get_algo_ops).
+    ///
+    /// Returns `Err` when no Sidewinder node is configured (`config.sidewinder` is `None`), when no
+    /// keypair is available, or when the endpoint/token is invalid — a surfaced error, never a
+    /// panic. The post-on-fail (#214) and read-on-reconnect (#215) stories call this to reach the
+    /// Mailbox.
+    pub fn get_mailbox(&self) -> Result<crate::api::sidewinder::Mailbox, BingleError> {
+        let Some(config) = self.config.sidewinder.clone() else {
+            return Err(BingleError::Other(
+                "no sidewinder node configured for store-and-forward".to_string(),
+            ));
+        };
+        let algo = self.get_algo_ops()?;
+        crate::api::sidewinder::Mailbox::new(algo, config)
     }
 
     /// Override the `/register` sender (bingle_notify #i). Intended for tests, which inject a

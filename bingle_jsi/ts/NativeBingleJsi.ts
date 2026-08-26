@@ -139,6 +139,14 @@ export interface BingleJsiConfig {
    * "production" (TestFlight/App Store). Used as the `env` when registering the device token via
    * /register (bingle_notify #i). null defaults to "sandbox". */
   notify_env: string | null;
+  /** Base URL of the Sidewinder node for store-and-forward (epic #200), e.g. `http://host:9101`.
+   * When set together with `sidewinder_token` (and local mode), the offline path can post to and
+   * read from the recipient Mailbox; null leaves store-and-forward unconfigured. */
+  sidewinder_node_url: string | null;
+  /** Bearer token for the Sidewinder node's client endpoints (the v0.0.2 fixed shared token,
+   * Sidewinder #164). Required alongside `sidewinder_node_url`; null leaves store-and-forward
+   * unconfigured. */
+  sidewinder_token: string | null;
 }
 
 // ── Enums ────────────────────────────────────────────────────────────
