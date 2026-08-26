@@ -189,8 +189,9 @@ export const BingleJsi = BingleJsiNative as {
   >;
   // Drain this user's Sidewinder Mailbox: decrypt + store held store-and-forward messages and return
   // the batch read this poll (sorted by sent time). Empty when store-and-forward receive is off / no
-  // node is configured. Call on start and on a cadence; read messages also appear in getMessages().
-  // (store-and-forward epic #200, story #215)
+  // node is configured. The decrypt/store/sort logic is in Rust; call this when the app enters the
+  // foreground (it may have been offline) and once at start — no polling logic belongs in JS. Read
+  // messages also appear in getMessages(). (store-and-forward epic #200, story #215)
   pollMailbox(): Promise<
     {
       sender_handle: string;

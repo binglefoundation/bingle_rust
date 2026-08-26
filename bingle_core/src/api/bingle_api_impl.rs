@@ -1591,35 +1591,31 @@ impl BingleApiImpl {
             }
         };
 
-        // Build AlgoOps with provided config
+        // Build an AlgoBingle over the provided config and resolve address -> handle through the
+        // shared reader (asset id is irrelevant to a local-state read, so 0).
         let ops =
             AlgoOps::new_for_algorand(self.opts().algo_passphrase.clone(), None, Some(config));
+        let bgl = crate::blockchain::algo_bingle::AlgoBingle::new(ops, app_id, 0);
         // Bound the blockchain query: this runs on the DTLS receive path (sender-auth
         // check), so an unreachable node must not stall inbound message processing. A
         // timeout resolves to None (same as unreachable) — the sender retries and the
         // handle cache covers repeat senders (bingle_rust #48).
         let uid = user_id.clone();
         let lookup = run_bounded(HANDLE_LOOKUP_TIMEOUT, "handle_lookup_by_id", move || {
-            ops.local_state_for_account(app_id, &uid)
+            bgl.handle_for_address(app_id, &uid)
         });
         match lookup {
-            Some(Ok(Some(entries))) => {
-                if let Some((_k, h)) = entries.into_iter().find(|(k, _)| k == "Handle") {
-                    // Update cache and return
-                    if let Ok(mut cache) = self.handle_cache.lock() {
-                        cache.insert(h.clone(), user_id.clone(), Instant::now());
-                    }
-                    return Some(h);
+            Some(Ok(Some(handle))) => {
+                // Update cache and return.
+                if let Ok(mut cache) = self.handle_cache.lock() {
+                    cache.insert(handle.clone(), user_id.clone(), Instant::now());
                 }
-                tracing::info!(
-                    "[BingleApiImpl::handle_lookup_by_id] no Handle key in local state for {}",
-                    user_id
-                );
-                None
+                Some(handle)
             }
             Some(Ok(None)) => {
                 tracing::info!(
-                    "[BingleApiImpl::handle_lookup_by_id] user not opted in or no local state for {}",
+                    "[BingleApiImpl::handle_lookup_by_id] no handle registered for {} (not opted in, \
+                     or no Handle key)",
                     user_id
                 );
                 None

@@ -10,7 +10,7 @@ use crate::api::sidewinder;
 use algo_ops::AlgoOps;
 use bingle_core::api::bingle_api::BingleError;
 use bingle_core::blockchain::algo_bingle::AlgoBingle;
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 impl BingleApiLocalImpl {
@@ -219,7 +219,7 @@ impl BingleApiLocalImpl {
     /// Gated on the receive toggle and a configured Sidewinder node. `FIFO_REMOVE_HEAD` (`pop`)
     /// reads-and-drops the head in one operation, so a delivered message is not re-read on the next
     /// poll (at-most-once). Each message is opened with this account's private key
-    /// (`sealed_envelope::open_with_private_key`), recorded on the local message store via
+    /// (`sealed_envelope::unseal_with_private_key`), recorded on the local message store via
     /// [`Message::from_opened`] with `delivered_time` stamped now, and the returned batch is sorted by
     /// sender-stamped sent time (#69). Persist-before-drop is at-most-once: `pop` drops on the node
     /// first, so a crash before the next `save` loses that one message (acceptable for v0.0.3).
@@ -270,7 +270,11 @@ impl BingleApiLocalImpl {
         // Our own handle is the recipient of everything in our Mailbox.
         let own_handle = self.sender_handle().ok();
 
-        let mut read = Vec::new();
+        // Accumulate into a structure kept ordered by sender-stamped sent time (#69). The key pairs
+        // the sent time (falling back to the local delivered/arrival time) with a read-sequence
+        // number, so messages with equal sent times keep their read order and none are dropped.
+        let mut read: BTreeMap<(i64, u64), Message> = BTreeMap::new();
+        let mut sequence: u64 = 0;
         loop {
             let bytes = match mailbox.pop() {
                 Ok(Some(b)) => b,
@@ -284,7 +288,7 @@ impl BingleApiLocalImpl {
                     break;
                 }
             };
-            let opened = match bingle_core::crypto::sealed_envelope::open_with_private_key(
+            let opened = match bingle_core::crypto::sealed_envelope::unseal_with_private_key(
                 private_key,
                 &bytes,
             ) {
@@ -325,13 +329,13 @@ impl BingleApiLocalImpl {
                     "[poll_mailbox] Failed to lock messages; the message is not stored"
                 );
             }
-            read.push(message);
+            let sort_time = message.sent_time.unwrap_or(message.timestamp);
+            read.insert((sort_time, sequence), message);
+            sequence += 1;
         }
 
-        // Surface the batch sorted by sender-stamped sent time (#69), falling back to the local
-        // delivered/arrival time when a message carries no sent time.
-        read.sort_by_key(|m| m.sent_time.unwrap_or(m.timestamp));
-        Ok(read)
+        // The batch is already ordered by sent time by the map's key.
+        Ok(read.into_values().collect())
     }
 }
 

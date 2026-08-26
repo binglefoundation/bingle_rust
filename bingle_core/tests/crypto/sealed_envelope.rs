@@ -30,7 +30,7 @@ fn seal_open_round_trips() {
     let bytes = sealed_envelope::seal(recipient_pub(), &sender_key(), SENT_TIME, TEXT)
         .expect("seal succeeds");
 
-    let opened = sealed_envelope::open(&recipient_key(), &bytes).expect("open succeeds");
+    let opened = sealed_envelope::unseal(&recipient_key(), &bytes).expect("open succeeds");
 
     assert_eq!(opened.text, TEXT);
     assert_eq!(opened.sent_time, SENT_TIME);
@@ -55,7 +55,7 @@ fn seal_from_private_key_matches_seal_and_round_trips() {
     )
     .expect("seal_from_private_key succeeds");
 
-    let opened = sealed_envelope::open(&recipient_key(), &bytes).expect("open succeeds");
+    let opened = sealed_envelope::unseal(&recipient_key(), &bytes).expect("open succeeds");
     assert_eq!(opened.text, TEXT);
     assert_eq!(opened.sent_time, SENT_TIME);
     // The private key derives the same identity as SigningKey::from_bytes(key) — i.e. the sender key.
@@ -68,7 +68,7 @@ fn seal_from_private_key_matches_seal_and_round_trips() {
 }
 
 #[test]
-fn open_with_private_key_round_trips() {
+fn unseal_with_private_key_round_trips() {
     // `open_with_private_key` (the private-key convenience used by bingle_local's read-on-reconnect,
     // #215) builds the recipient signing key from the raw 32-byte account private key. It must open
     // an envelope sealed to that account exactly as `open` with the equivalent SigningKey does.
@@ -76,17 +76,17 @@ fn open_with_private_key_round_trips() {
     let bytes = sealed_envelope::seal(recipient_pub(), &sender_key(), SENT_TIME, TEXT)
         .expect("seal succeeds");
 
-    let opened = sealed_envelope::open_with_private_key(recipient_private_key, &bytes)
-        .expect("open_with_private_key succeeds");
+    let opened = sealed_envelope::unseal_with_private_key(recipient_private_key, &bytes)
+        .expect("unseal_with_private_key succeeds");
     assert_eq!(opened.text, TEXT);
     assert_eq!(opened.sent_time, SENT_TIME);
     assert_eq!(opened.sender_id, sender_key().verifying_key().to_bytes());
 }
 
 #[test]
-fn open_with_wrong_private_key_rejected() {
+fn unseal_with_wrong_private_key_rejected() {
     let bytes = sealed_envelope::seal(recipient_pub(), &sender_key(), SENT_TIME, TEXT).unwrap();
-    let err = sealed_envelope::open_with_private_key([0x33u8; 32], &bytes).unwrap_err();
+    let err = sealed_envelope::unseal_with_private_key([0x33u8; 32], &bytes).unwrap_err();
     assert!(matches!(err, EnvelopeOpenError::Unseal(_)));
 }
 
@@ -96,10 +96,10 @@ fn each_seal_differs() {
     let b = sealed_envelope::seal(recipient_pub(), &sender_key(), SENT_TIME, TEXT).unwrap();
     // Fresh HPKE ephemeral + random message_id per call, so the bytes and the ids both differ.
     assert_ne!(a, b);
-    let ida = sealed_envelope::open(&recipient_key(), &a)
+    let ida = sealed_envelope::unseal(&recipient_key(), &a)
         .unwrap()
         .message_id;
-    let idb = sealed_envelope::open(&recipient_key(), &b)
+    let idb = sealed_envelope::unseal(&recipient_key(), &b)
         .unwrap()
         .message_id;
     assert_ne!(ida, idb);
@@ -109,7 +109,7 @@ fn each_seal_differs() {
 fn wrong_recipient_key_rejected() {
     let bytes = sealed_envelope::seal(recipient_pub(), &sender_key(), SENT_TIME, TEXT).unwrap();
     let other = SigningKey::from_bytes(&[0x33u8; 32]);
-    let err = sealed_envelope::open(&other, &bytes).unwrap_err();
+    let err = sealed_envelope::unseal(&other, &bytes).unwrap_err();
     assert!(matches!(err, EnvelopeOpenError::Unseal(_)));
 }
 
@@ -119,7 +119,7 @@ fn tampered_ciphertext_rejected() {
     // Flip a byte inside the ciphertext (past the version | suite | enc header).
     let last = bytes.len() - 1;
     bytes[last] ^= 0x01;
-    let err = sealed_envelope::open(&recipient_key(), &bytes).unwrap_err();
+    let err = sealed_envelope::unseal(&recipient_key(), &bytes).unwrap_err();
     assert!(matches!(err, EnvelopeOpenError::Unseal(_)));
 }
 
@@ -140,7 +140,7 @@ fn tampered_sent_time_rejected() {
     let bytes = SealedEnvelope::seal(recipient_pub(), &tampered)
         .unwrap()
         .to_bytes();
-    let err = sealed_envelope::open(&recipient_key(), &bytes).unwrap_err();
+    let err = sealed_envelope::unseal(&recipient_key(), &bytes).unwrap_err();
     assert!(matches!(err, EnvelopeOpenError::BadSignature));
 }
 
@@ -158,7 +158,7 @@ fn bad_inner_signature_rejected() {
     let bytes = SealedEnvelope::seal(recipient_pub(), &inner)
         .unwrap()
         .to_bytes();
-    let err = sealed_envelope::open(&recipient_key(), &bytes).unwrap_err();
+    let err = sealed_envelope::unseal(&recipient_key(), &bytes).unwrap_err();
     assert!(matches!(err, EnvelopeOpenError::BadSignature));
 }
 
@@ -166,7 +166,7 @@ fn bad_inner_signature_rejected() {
 fn unknown_version_rejected() {
     let mut bytes = sealed_envelope::seal(recipient_pub(), &sender_key(), SENT_TIME, TEXT).unwrap();
     bytes[0] = 0xFF; // version byte
-    let err = sealed_envelope::open(&recipient_key(), &bytes).unwrap_err();
+    let err = sealed_envelope::unseal(&recipient_key(), &bytes).unwrap_err();
     assert!(matches!(err, EnvelopeOpenError::UnknownVersion(0xFF)));
 }
 
@@ -175,7 +175,7 @@ fn unknown_suite_rejected() {
     let mut bytes = sealed_envelope::seal(recipient_pub(), &sender_key(), SENT_TIME, TEXT).unwrap();
     bytes[1] = 0x99; // suite_id high byte
     bytes[2] = 0x99; // suite_id low byte
-    let err = sealed_envelope::open(&recipient_key(), &bytes).unwrap_err();
+    let err = sealed_envelope::unseal(&recipient_key(), &bytes).unwrap_err();
     assert!(matches!(err, EnvelopeOpenError::UnknownSuite(0x9999)));
 }
 
