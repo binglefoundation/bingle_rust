@@ -149,3 +149,54 @@ fn gate_off_attempts_no_post_on_delivery_failure() {
         "with the send gate off, a delivery failure posts nothing"
     );
 }
+
+#[test]
+fn a_fully_forwarded_message_stops_retrying_direct_delivery() {
+    // Once a message is in every recipient's Mailbox, direct Bingle delivery must stop retrying: the
+    // message is marked complete and its transient failure cleared, so it leaves the pending set.
+    // Simulate the "already forwarded" state with the seam so no live node is needed.
+    let config = LocalApiConfig {
+        sidewinder: Some(MailboxConfig::new("http://localhost:9", "tok")),
+        store_and_forward_send: true,
+        ..LocalApiConfig::default()
+    };
+    let mut api = BingleApiLocalImpl::new(config);
+    api.import_keypair(TEST_MNEMONIC.to_string())
+        .expect("import test keypair");
+    let ts = 5150;
+    api.add_message(
+        "me".to_string(),
+        vec!["alice".to_string()],
+        ts,
+        "already in the mailbox".to_string(),
+        None,
+    )
+    .expect("add message");
+    api.mark_forwarded_for_tests(ts, "alice");
+
+    // A failed retry: the message is fully forwarded, so it is completed rather than kept pending.
+    api.update_message_status(
+        ts,
+        0.5,
+        Some("Recipient unreachable — will keep retrying".to_string()),
+        None,
+    )
+    .expect("update status");
+
+    let pending = api.get_pending_messages().expect("pending");
+    assert!(
+        !pending.iter().any(|m| m.timestamp == ts),
+        "a fully-forwarded message is no longer pending (direct retries stop)"
+    );
+    let stored = api
+        .get_messages()
+        .expect("messages")
+        .into_iter()
+        .find(|m| m.timestamp == ts)
+        .expect("message present");
+    assert_eq!(stored.progress, Some(1.0), "marked complete");
+    assert!(
+        stored.failure_reason.is_none(),
+        "the transient failure is cleared once handed off to store-and-forward"
+    );
+}

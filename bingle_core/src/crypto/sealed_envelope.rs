@@ -347,25 +347,26 @@ pub fn seal(
     Ok(SealedEnvelope::seal(recipient_ed25519_pub, &inner)?.to_bytes())
 }
 
-/// Seals `text` for `recipient_ed25519_pub` using the sender's 32-byte Ed25519 secret `sender_seed`
-/// (as returned by `algo_ops::AlgoOps::seed_from_passphrase`), and returns the wire bytes of the
-/// [`SealedEnvelope`].
+/// Seals `text` for `recipient_ed25519_pub` using the sender's 32-byte Ed25519 private key
+/// `sender_private_key` (the account secret, as returned by
+/// `algo_ops::AlgoOps::seed_from_passphrase`), and returns the wire bytes of the [`SealedEnvelope`].
 ///
-/// A convenience over [`seal`] for callers that hold the raw account seed rather than an
-/// [`SigningKey`] — it builds the signing key from the seed so the caller (e.g. `bingle_local`'s
-/// store-and-forward post, issue #214) need not depend on `ed25519_dalek`. The seed's derived public
-/// key is the account's Algorand address, matching how `address_from_passphrase` derives it.
+/// A convenience over [`seal`] for callers that hold the raw account private key rather than a
+/// [`SigningKey`] — it builds the signing key from the private key so the caller (e.g.
+/// `bingle_local`'s store-and-forward post, issue #214) need not depend on `ed25519_dalek`. The
+/// private key's derived public key is the account's Algorand address, matching how
+/// `address_from_passphrase` derives it.
 ///
 /// # Errors
 ///
 /// Returns [`EnvelopeSealError`] if the recipient key is invalid or the HPKE seal fails.
-pub fn seal_from_seed(
-    sender_seed: [u8; ID_LEN],
+pub fn seal_from_private_key(
+    sender_private_key: [u8; ID_LEN],
     recipient_ed25519_pub: [u8; ID_LEN],
     sent_time: i64,
     text: &str,
 ) -> Result<Vec<u8>, EnvelopeSealError> {
-    let signing_key = SigningKey::from_bytes(&sender_seed);
+    let signing_key = SigningKey::from_bytes(&sender_private_key);
     seal(recipient_ed25519_pub, &signing_key, sent_time, text)
 }
 
