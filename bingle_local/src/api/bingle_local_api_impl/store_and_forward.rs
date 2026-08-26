@@ -10,8 +10,8 @@ use crate::api::sidewinder;
 use algo_ops::AlgoOps;
 use bingle_core::api::bingle_api::BingleError;
 use bingle_core::blockchain::algo_bingle::AlgoBingle;
+use bingle_core::util::time::now_millis;
 use std::collections::{BTreeMap, HashSet};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 impl BingleApiLocalImpl {
     /// Build a Sidewinder [`Mailbox`](crate::api::sidewinder::Mailbox) client for the current
@@ -337,12 +337,4 @@ impl BingleApiLocalImpl {
         // The batch is already ordered by sent time by the map's key.
         Ok(read.into_values().collect())
     }
-}
-
-/// The current wall-clock time in epoch milliseconds, or 0 if the clock is before the Unix epoch.
-fn now_millis() -> i64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_millis() as i64)
-        .unwrap_or(0)
 }

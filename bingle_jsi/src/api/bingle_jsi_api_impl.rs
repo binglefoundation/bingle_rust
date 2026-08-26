@@ -54,8 +54,9 @@ pub struct BingleJsiApiImpl {
     /// Period of the store-and-forward backstop Mailbox poll while foregrounded (epic #200, #215).
     mailbox_poll_interval: std::time::Duration,
     /// Stop flag of the running backstop poller — `Some` while it is active. `foregrounding` starts
-    /// the poller, `backgrounding` sets the flag so it exits.
-    mailbox_poller: Arc<Mutex<Option<Arc<AtomicBool>>>>,
+    /// the poller, `backgrounding` sets the flag so it exits. The inner `Arc` shares the flag with the
+    /// spawned poller thread; the field itself needs no `Arc` (the whole impl is already `Arc`-shared).
+    mailbox_poller: Mutex<Option<Arc<AtomicBool>>>,
 }
 
 /// Default period of the store-and-forward backstop Mailbox poll when the JSI config does not set
@@ -506,7 +507,7 @@ impl BingleJsiApiImpl {
             started: started.clone(),
             opts: opts_mutex,
             mailbox_poll_interval,
-            mailbox_poller: Arc::new(Mutex::new(None)),
+            mailbox_poller: Mutex::new(None),
         });
 
         // Output INFO with version information as early as possible
@@ -1004,7 +1005,7 @@ impl BingleJsiApiImpl {
             started,
             opts,
             mailbox_poll_interval: std::time::Duration::from_secs(DEFAULT_MAILBOX_POLL_SECS),
-            mailbox_poller: Arc::new(Mutex::new(None)),
+            mailbox_poller: Mutex::new(None),
         })
     }
 
