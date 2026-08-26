@@ -25,7 +25,7 @@
 //! canonical field set `{ sender_id, recipient_id, text, sent_time }` (see
 //! [`canonical_signed_message`]). This is the #94-aligned non-repudiation artifact: one signature
 //! serves live, stored, and reported messages. `sender_id` *is* the sender's Ed25519 public key, so
-//! [`open`] resolves and verifies it without a chain lookup.
+//! [`unseal`] resolves and verifies it without a chain lookup.
 //!
 //! # Scope
 //!
@@ -39,7 +39,7 @@ use rand_core::{OsRng, RngCore};
 use crate::crypto::hpke_seal::{self, ENC_LEN};
 use crate::crypto::key_convert::{ed25519_pub_to_x25519, ed25519_secret_to_x25519};
 
-/// Current envelope framing version. [`open`] rejects any other value.
+/// Current envelope framing version. [`unseal`] rejects any other value.
 pub const ENVELOPE_VERSION: u8 = 1;
 
 /// Cipher-suite identifier for HPKE base mode over `DHKEM(X25519, HKDF-SHA256)`, HKDF-SHA256, and
@@ -241,7 +241,7 @@ impl SealedEnvelope {
     }
 
     /// Decrypts the envelope with `recipient_ed25519_key`, returning the inner payload *without*
-    /// verifying its signature (callers use [`InnerPayload::verify`], as [`open`] does).
+    /// verifying its signature (callers use [`InnerPayload::verify`], as [`unseal`] does).
     ///
     /// # Errors
     ///
@@ -277,7 +277,7 @@ impl SealedEnvelope {
     }
 
     /// Parses an envelope from its wire bytes. Structural only: version and suite id are checked at
-    /// [`SealedEnvelope::unseal`] / [`open`] time.
+    /// [`SealedEnvelope::unseal`] / [`unseal`] time.
     ///
     /// # Errors
     ///
@@ -305,7 +305,7 @@ impl SealedEnvelope {
     }
 }
 
-/// A message recovered and verified by [`open`].
+/// A message recovered and verified by [`unseal`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OpenedMessage {
     /// Verified sender identity (their Ed25519 public key / Algorand address bytes).
@@ -370,14 +370,14 @@ pub fn seal_from_private_key(
     seal(recipient_ed25519_pub, &signing_key, sent_time, text)
 }
 
-/// Opens the wire bytes of a [`SealedEnvelope`] with `recipient_ed25519_key`, verifying the sender's
-/// signature, and returns the recovered [`OpenedMessage`].
+/// Unseals the wire bytes of a [`SealedEnvelope`] with `recipient_ed25519_key`, verifying the
+/// sender's signature, and returns the recovered [`OpenedMessage`]. The inverse of [`seal`].
 ///
 /// # Errors
 ///
 /// Returns [`EnvelopeOpenError`] on malformed framing, an unknown version or suite, a wrong
 /// recipient key, tampered ciphertext / framing, malformed inner bytes, or a bad inner signature.
-pub fn open(
+pub fn unseal(
     recipient_ed25519_key: &SigningKey,
     bytes: &[u8],
 ) -> Result<OpenedMessage, EnvelopeOpenError> {
@@ -392,6 +392,26 @@ pub fn open(
         text: inner.text,
         signature: inner.signature,
     })
+}
+
+/// Unseals the wire bytes of a [`SealedEnvelope`] with the recipient's 32-byte Ed25519 private key
+/// `recipient_private_key` (the account secret, as returned by
+/// `algo_ops::AlgoOps::seed_from_passphrase`), verifying the sender's signature, and returns the
+/// recovered [`OpenedMessage`].
+///
+/// A convenience over [`unseal`] for callers that hold the raw account private key rather than a
+/// [`SigningKey`], so the caller (e.g. `bingle_local`'s read-on-reconnect, issue #215) need not
+/// depend on `ed25519_dalek`. The counterpart to [`seal_from_private_key`].
+///
+/// # Errors
+///
+/// Returns [`EnvelopeOpenError`] on the same conditions as [`unseal`].
+pub fn unseal_with_private_key(
+    recipient_private_key: [u8; ID_LEN],
+    bytes: &[u8],
+) -> Result<OpenedMessage, EnvelopeOpenError> {
+    let signing_key = SigningKey::from_bytes(&recipient_private_key);
+    unseal(&signing_key, bytes)
 }
 
 /// Associated data bound into the AEAD: the clear framing header `version | suite_id(BE)`, so the

@@ -158,6 +158,10 @@ export interface BingleJsiConfig {
    * defaults to false (off). Independent of `store_and_forward_send`. Optional: a client that does not
    * use store-and-forward need not set it. */
   store_and_forward_receive?: boolean | null;
+  /** Period, in seconds, of the store-and-forward backstop Mailbox poll while foregrounded (epic
+   * #200, #215): started on foregrounding, stopped on backgrounding. null/omitted defaults to 120
+   * (2 minutes, a testing cadence); production builds set a longer period (e.g. 600). Optional. */
+  store_and_forward_poll_interval_secs?: number | null;
 }
 
 // ── Enums ────────────────────────────────────────────────────────────

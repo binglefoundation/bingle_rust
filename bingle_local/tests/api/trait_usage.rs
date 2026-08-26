@@ -165,6 +165,11 @@ impl BingleLocalApi for DummyLocal {
         Ok(self.messages.clone())
     }
 
+    fn poll_mailbox(&self) -> Result<Vec<Message>, BingleError> {
+        // This dummy does no store-and-forward reading.
+        Ok(Vec::new())
+    }
+
     fn save(&self, _path: &str) -> Result<(), BingleError> {
         Ok(())
     }
