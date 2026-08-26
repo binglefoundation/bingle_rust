@@ -6,6 +6,9 @@
 //! read-on-reconnect wiring are their own stories (#214 / #215).
 
 pub mod mailbox;
-pub use mailbox::{MAILBOX_POP_TYPE, MAILBOX_POST_TYPE, Mailbox, MailboxConfig};
+pub use mailbox::{
+    MAILBOX_POP_TYPE, MAILBOX_POST_TYPE, Mailbox, MailboxConfig, pending_forward_recipients,
+    should_forward_send,
+};
 #[doc(hidden)]
 pub use mailbox::{build_pop_request, build_post_request};

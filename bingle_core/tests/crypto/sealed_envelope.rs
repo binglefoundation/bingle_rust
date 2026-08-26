@@ -41,6 +41,33 @@ fn seal_open_round_trips() {
 }
 
 #[test]
+fn seal_from_private_key_matches_seal_and_round_trips() {
+    // `seal_from_private_key` (the private-key convenience used by bingle_local's store-and-forward
+    // post, #214) builds the signing key from the raw 32-byte account private key. Sealing from the
+    // private key and from the equivalent SigningKey must produce interchangeable envelopes: opening
+    // the private-key-sealed bytes recovers the same sender identity the SigningKey has.
+    let sender_private_key = [0x11u8; 32];
+    let bytes = sealed_envelope::seal_from_private_key(
+        sender_private_key,
+        recipient_pub(),
+        SENT_TIME,
+        TEXT,
+    )
+    .expect("seal_from_private_key succeeds");
+
+    let opened = sealed_envelope::open(&recipient_key(), &bytes).expect("open succeeds");
+    assert_eq!(opened.text, TEXT);
+    assert_eq!(opened.sent_time, SENT_TIME);
+    // The private key derives the same identity as SigningKey::from_bytes(key) — i.e. the sender key.
+    assert_eq!(
+        opened.sender_id,
+        SigningKey::from_bytes(&sender_private_key)
+            .verifying_key()
+            .to_bytes()
+    );
+}
+
+#[test]
 fn each_seal_differs() {
     let a = sealed_envelope::seal(recipient_pub(), &sender_key(), SENT_TIME, TEXT).unwrap();
     let b = sealed_envelope::seal(recipient_pub(), &sender_key(), SENT_TIME, TEXT).unwrap();

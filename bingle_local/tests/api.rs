@@ -42,5 +42,8 @@ mod sidewinder_mailbox;
 #[path = "api/store_and_forward_toggles.rs"]
 mod store_and_forward_toggles;
 
+#[path = "api/post_on_delivery_fail.rs"]
+mod post_on_delivery_fail;
+
 #[path = "module_version.rs"]
 mod module_version;
