@@ -26,6 +26,7 @@ use bingle_core::engine::BingleAccess;
 use bingle_core::util::config_utils::{
     parse_node_file_with_ids, parse_stun_file, parse_stun_list, resolve_app_asset_ids,
 };
+use bingle_local::api::MailboxConfig;
 use bingle_local::api::bingle_local_api::BingleLocalApi;
 use bingle_local::api::bingle_local_api_impl::{BingleApiLocalImpl, LocalApiConfig};
 // Shared outbound-send retry policy (issue #82). Re-exported so existing
@@ -367,6 +368,12 @@ impl BingleJsiApiImpl {
             if let Some(env) = config.notify_env.clone() {
                 cfg.notify_env = env;
             }
+            // Store-and-forward (epic #200): configure the Sidewinder Mailbox when both the node URL
+            // and bearer token are supplied. Either one alone leaves store-and-forward unconfigured.
+            cfg = cfg.with_sidewinder(MailboxConfig::from_parts(
+                config.sidewinder_node_url.clone(),
+                config.sidewinder_token.clone(),
+            ));
             let mut impl_api = BingleApiLocalImpl::new(cfg);
             if path.exists()
                 && let Err(e) = impl_api.load(path.to_string_lossy().as_ref())

@@ -252,4 +252,13 @@ pub struct BingleJsiConfig {
     /// `"production"` (TestFlight/App Store). Used as the `env` when the app registers its device
     /// token via `/register`. `null` defaults to `"sandbox"`.
     pub notify_env: Option<String>,
+    /// Base URL of the Sidewinder node for store-and-forward (epic #200), for example
+    /// `http://host:9101`. When set together with `sidewinder_token` (and local mode is enabled), the
+    /// offline path can post to and read from the recipient Mailbox. `null` leaves store-and-forward
+    /// unconfigured.
+    pub sidewinder_node_url: Option<String>,
+    /// Bearer token for the Sidewinder node's client endpoints (the v0.0.2 fixed shared token,
+    /// Sidewinder #164). Required alongside `sidewinder_node_url`; `null` leaves store-and-forward
+    /// unconfigured.
+    pub sidewinder_token: Option<String>,
 }

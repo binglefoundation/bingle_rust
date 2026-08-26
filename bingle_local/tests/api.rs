@@ -36,5 +36,8 @@ mod send_retry_classify;
 #[path = "api/register.rs"]
 mod register;
 
+#[path = "api/sidewinder_mailbox.rs"]
+mod sidewinder_mailbox;
+
 #[path = "module_version.rs"]
 mod module_version;

@@ -56,6 +56,8 @@ fn config_with_handle(handle: &str) -> BingleJsiConfig {
         notify_gateway_url: None,
         notify_on_giveup: None,
         notify_env: None,
+        sidewinder_node_url: None,
+        sidewinder_token: None,
     }
 }
 
@@ -78,6 +80,8 @@ fn config_with_local(path: &str) -> BingleJsiConfig {
         notify_gateway_url: None,
         notify_on_giveup: None,
         notify_env: None,
+        sidewinder_node_url: None,
+        sidewinder_token: None,
     }
 }
 
@@ -100,6 +104,8 @@ fn empty_config() -> BingleJsiConfig {
         notify_gateway_url: None,
         notify_on_giveup: None,
         notify_env: None,
+        sidewinder_node_url: None,
+        sidewinder_token: None,
     }
 }
 
@@ -572,6 +578,8 @@ fn init_with_optional_fields() {
         notify_gateway_url: None,
         notify_on_giveup: None,
         notify_env: None,
+        sidewinder_node_url: None,
+        sidewinder_token: None,
     };
     let api = BingleJsiApiImpl::init(config);
     assert!(

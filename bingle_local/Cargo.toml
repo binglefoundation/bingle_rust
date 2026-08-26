@@ -18,7 +18,13 @@ path = "src/lib.rs"
 
 [dependencies]
 bingle_core = { path = "../bingle_core", version = "0.3.1" }
-algo_ops = "0.6.0"
+algo_ops = "0.7.1"
+# Sidewinder sidechain node client: the store-and-forward Mailbox (FIFO) ops the offline path posts
+# to and reads from (store-and-forward epic #200, story #213). Built on the same algo_ops handle.
+sidewinder_ops = "0.7.1"
+# The sidewinder_ops client surfaces errors as `anyhow::Error`; we downcast them to classify
+# unreachable/not-found causes when mapping to BingleError.
+anyhow = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tracing = "0.1"
@@ -32,6 +38,13 @@ reqwest = { version = "0.11", features = ["json", "blocking"] }
 # Unit tests: all bingle_local tests are local unit-style tests.
 name = "unit"
 path = "tests/api.rs"
+
+[[test]]
+# Sidewinder Mailbox round-trip (store-and-forward epic #200, story #213). Needs a running
+# Sidewinder node; skips cleanly (passes without running) when the node env is unset — see the
+# test's module docs. Kept out of the `unit` target so the fast suite needs no infrastructure.
+name = "sidewinder_mailbox_e2e"
+path = "tests/sidewinder_mailbox_e2e.rs"
 
 [dev-dependencies]
 tempfile = "3"
