@@ -48,14 +48,14 @@ dependencies = [
 
 [[package]]
 name = "algo_ops"
-version = "0.6.0"
+version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e6903c89fba8d4b28353e205f4db8d8e9931072b2dfd8bd2cb31bb778d1c13ef"
+checksum = "1a46f933d29c677f14334c817193563b1ae4aa6bcea698ec70eaa507692daf67"
 dependencies = [
  "algonaut",
  "anyhow",
  "base64 0.21.7",
- "blockchain_ops",
+ "blockchain_ops 0.7.1",
  "data-encoding",
  "ed25519-dalek",
  "rand_core 0.6.4",
@@ -554,7 +554,7 @@ dependencies = [
  "base64 0.21.7",
  "bingle_core",
  "bingle_test",
- "blockchain_ops",
+ "blockchain_ops 0.6.0",
  "chrono",
  "ctrlc",
  "data-encoding",
@@ -612,6 +612,7 @@ dependencies = [
  "reqwest 0.11.27",
  "serde",
  "serde_json",
+ "sidewinder_ops",
  "tempfile",
  "tracing",
  "tracing-subscriber",
@@ -703,6 +704,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7a7b78c1b0f1ba5be95e68e02265a37c05a5031d100ba0a3751565cc905e1abf"
 dependencies = [
  "anyhow",
+]
+
+[[package]]
+name = "blockchain_ops"
+version = "0.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9af6cd69715e6991d2b147ef18704adaec68fdc7a88971a6f50c4c8334680b83"
+dependencies = [
+ "anyhow",
+ "serde",
 ]
 
 [[package]]
@@ -3415,6 +3426,25 @@ name = "shlex"
 version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
+
+[[package]]
+name = "sidewinder_ops"
+version = "0.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8fd84efea5a172c7a276e77dfd3bc78a5c56c112f9a583527c12a21070f67210"
+dependencies = [
+ "algo_ops",
+ "anyhow",
+ "base64 0.22.1",
+ "reqwest 0.13.4",
+ "rmp-serde",
+ "serde",
+ "serde_bytes",
+ "serde_json",
+ "sha2 0.10.9",
+ "tokio",
+ "tracing",
+]
 
 [[package]]
 name = "signal-hook-registry"
