@@ -270,4 +270,10 @@ pub struct BingleJsiConfig {
     /// Sidewinder Mailbox on reconnect and on a cadence, reading messages forwarded to it (#215).
     /// `null` defaults to `false` (off). Independent of `store_and_forward_send`.
     pub store_and_forward_receive: Option<bool>,
+    /// Period, in seconds, of the store-and-forward backstop poll (epic #200, #215): while the app is
+    /// foregrounded, the Mailbox is drained on this cycle in case a real-time delivery was missed. The
+    /// poll starts on `foregrounding()` and stops on `backgrounding()`. `null` defaults to
+    /// [`DEFAULT_MAILBOX_POLL_SECS`](crate::api::bingle_jsi_api_impl::DEFAULT_MAILBOX_POLL_SECS)
+    /// (2 minutes, a testing cadence); production builds set a longer period (e.g. 600).
+    pub store_and_forward_poll_interval_secs: Option<u64>,
 }

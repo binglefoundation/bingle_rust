@@ -244,10 +244,11 @@ pub trait BingleLocalApi: Send + Sync {
     /// story #215). A no-op returning an empty vector when the receive toggle is off or no Sidewinder
     /// node is configured. `FIFO_REMOVE_HEAD` reads-and-drops, so a delivered message is not re-read.
     ///
-    /// The decrypt/store/sort logic all lives here (in Rust); the caller only decides *when* to check
-    /// — invoke this when the app enters the foreground (the lifecycle signal that it may have been
-    /// offline) and once at start. The read messages also appear in
-    /// [`get_messages`](Self::get_messages).
+    /// The decrypt/store/sort logic all lives here (in Rust); the caller only decides *when* to check.
+    /// The `bingle_jsi` client drives it from the app foreground lifecycle: an immediate poll on
+    /// `foregrounding()` (it may have been offline) and then a backstop poll on a configurable cycle
+    /// while foregrounded, stopped on `backgrounding()`. Real-time delivery normally beats the poll;
+    /// it is a safety net. The read messages also appear in [`get_messages`](Self::get_messages).
     fn poll_mailbox(&self) -> Result<Vec<Message>, BingleError>;
 
     /// Save all local state to a JSON file at the given path.

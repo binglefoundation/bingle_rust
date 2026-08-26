@@ -51,7 +51,18 @@ pub struct BingleJsiApiImpl {
     processing_thread: Arc<Mutex<Option<JoinHandle<()>>>>,
     started: Arc<Mutex<bool>>,
     opts: Arc<Mutex<StartOptions>>,
+    /// Period of the store-and-forward backstop Mailbox poll while foregrounded (epic #200, #215).
+    mailbox_poll_interval: std::time::Duration,
+    /// Stop flag of the running backstop poller — `Some` while it is active. `foregrounding` starts
+    /// the poller, `backgrounding` sets the flag so it exits.
+    mailbox_poller: Arc<Mutex<Option<Arc<AtomicBool>>>>,
 }
+
+/// Default period of the store-and-forward backstop Mailbox poll when the JSI config does not set
+/// one: 2 minutes, a testing cadence. Production builds set a longer period (e.g. 600) via
+/// `BingleJsiConfig::store_and_forward_poll_interval_secs`. The poll is only a backstop — a
+/// foregrounded app normally receives messages in real time.
+pub const DEFAULT_MAILBOX_POLL_SECS: u64 = 120;
 
 /// Convert a JSI NetworkSourceKey to the internal NetworkEndpoint type.
 fn nsk_to_endpoint(nsk: &NetworkSourceKey) -> NetworkEndpoint {
@@ -151,6 +162,83 @@ fn save_if_configured(
         && let Ok(guard) = local_arc.lock()
     {
         let _ = guard.save(path.to_string_lossy().as_ref());
+    }
+}
+
+/// Sleep for `total`, waking early (within the step granularity) once `stop` is set, so a
+/// backgrounding request stops the backstop poller promptly rather than after a full cycle.
+fn interruptible_sleep(total: std::time::Duration, stop: &AtomicBool) {
+    let step = std::time::Duration::from_millis(500);
+    let mut slept = std::time::Duration::ZERO;
+    while slept < total {
+        if stop.load(Ordering::Relaxed) {
+            return;
+        }
+        let nap = step.min(total - slept);
+        std::thread::sleep(nap);
+        slept += nap;
+    }
+}
+
+impl BingleJsiApiImpl {
+    /// Start the store-and-forward backstop Mailbox poll (epic #200, #215): a foreground-only thread
+    /// that drains the Mailbox immediately and then every [`mailbox_poll_interval`](Self) until
+    /// [`stop_mailbox_poller`](Self::stop_mailbox_poller) is called. Idempotent — a second call while
+    /// a poller is already running is a no-op. A no-op with no local API. Best-effort: `poll_mailbox`
+    /// itself is gated on the receive toggle and a configured node, so a poller with those off just
+    /// reads nothing each cycle.
+    fn start_mailbox_poller(&self) {
+        let Some(local) = self.local_api.clone() else {
+            return;
+        };
+        let mut guard = match self.mailbox_poller.lock() {
+            Ok(g) => g,
+            Err(e) => {
+                tracing::error!("[mailbox poller] poller lock poisoned: {e}");
+                return;
+            }
+        };
+        if guard.is_some() {
+            return; // already running
+        }
+        let stop = Arc::new(AtomicBool::new(false));
+        *guard = Some(stop.clone());
+        drop(guard);
+
+        let interval = self.mailbox_poll_interval;
+        let local_file = self.local_file.clone();
+        std::thread::spawn(move || {
+            tracing::info!("[mailbox poller] started (every {:?})", interval);
+            while !stop.load(Ordering::Relaxed) {
+                let read = match local.lock() {
+                    Ok(g) => g.poll_mailbox().unwrap_or_default(),
+                    Err(e) => {
+                        tracing::error!("[mailbox poller] local api lock poisoned: {e}");
+                        Vec::new()
+                    }
+                };
+                if !read.is_empty() {
+                    tracing::info!(
+                        "[mailbox poller] read {} store-and-forward message(s)",
+                        read.len()
+                    );
+                    // Persist the just-read (and node-dropped) messages so they survive a restart.
+                    save_if_configured(&Some(local.clone()), &local_file);
+                }
+                interruptible_sleep(interval, &stop);
+            }
+            tracing::debug!("[mailbox poller] stopped");
+        });
+    }
+
+    /// Stop the backstop Mailbox poller if one is running (called on `backgrounding`). Signals the
+    /// poller thread to exit at its next wake; a no-op when none is running.
+    fn stop_mailbox_poller(&self) {
+        if let Ok(mut guard) = self.mailbox_poller.lock()
+            && let Some(stop) = guard.take()
+        {
+            stop.store(true, Ordering::Relaxed);
+        }
     }
 }
 
@@ -399,6 +487,11 @@ impl BingleJsiApiImpl {
         let started = Arc::new(Mutex::new(false));
         let opts_mutex = Arc::new(Mutex::new(opts.clone()));
 
+        let mailbox_poll_interval = std::time::Duration::from_secs(
+            config
+                .store_and_forward_poll_interval_secs
+                .unwrap_or(DEFAULT_MAILBOX_POLL_SECS),
+        );
         let api_instance = Arc::new(Self {
             api: api.clone(),
             messages: messages.clone(),
@@ -412,6 +505,8 @@ impl BingleJsiApiImpl {
             processing_thread: processing_thread.clone(),
             started: started.clone(),
             opts: opts_mutex,
+            mailbox_poll_interval,
+            mailbox_poller: Arc::new(Mutex::new(None)),
         });
 
         // Output INFO with version information as early as possible
@@ -861,6 +956,21 @@ impl BingleJsiApiImpl {
         self.local_api.clone()
     }
 
+    /// Test seam: the resolved backstop-poll period in seconds (#215).
+    #[doc(hidden)]
+    pub fn mailbox_poll_interval_secs_for_tests(&self) -> u64 {
+        self.mailbox_poll_interval.as_secs()
+    }
+
+    /// Test seam: whether the backstop Mailbox poller is currently running (#215).
+    #[doc(hidden)]
+    pub fn mailbox_poller_running_for_tests(&self) -> bool {
+        self.mailbox_poller
+            .lock()
+            .map(|g| g.is_some())
+            .unwrap_or(false)
+    }
+
     pub fn init_for_tests(
         api: Arc<dyn BingleApiBoth>,
         local_api: Option<Arc<Mutex<Box<dyn BingleLocalApi>>>>,
@@ -893,6 +1003,8 @@ impl BingleJsiApiImpl {
             processing_thread: Arc::new(Mutex::new(None)),
             started,
             opts,
+            mailbox_poll_interval: std::time::Duration::from_secs(DEFAULT_MAILBOX_POLL_SECS),
+            mailbox_poller: Arc::new(Mutex::new(None)),
         })
     }
 
@@ -1544,36 +1656,18 @@ impl BingleJsiApi for BingleJsiApiImpl {
         // blocking Listen round-trip, so we must not block the app's AppState callback (issue #50).
         tracing::info!("[BingleJsiApiImpl] foregrounding()");
         let api = self.api.clone();
-        let local_api = self.local_api.clone();
-        let local_file = self.local_file.clone();
         std::thread::spawn(move || {
             api.with_engine(&mut |e| e.on_foreground());
-            // Store-and-forward read-on-reconnect (#215): foregrounding is when we may have come back
-            // online, so drain the Mailbox here (the app forwards the lifecycle event; the poll logic
-            // is in Rust). Best-effort and off the bridge thread; a no-op unless receive is enabled.
-            if let Some(local) = &local_api {
-                let read = match local.lock() {
-                    Ok(guard) => guard.poll_mailbox().unwrap_or_default(),
-                    Err(e) => {
-                        tracing::error!("[foregrounding] local api lock poisoned: {e}");
-                        Vec::new()
-                    }
-                };
-                if !read.is_empty() {
-                    tracing::info!(
-                        "[foregrounding] read {} store-and-forward message(s) from the Mailbox",
-                        read.len()
-                    );
-                    // Persist the just-read (and node-dropped) messages so they survive a restart.
-                    save_if_configured(&local_api, &local_file);
-                }
-            }
         });
+        // Start the store-and-forward backstop Mailbox poll (#215): it polls immediately (we may have
+        // been offline) and then on the configured cycle until `backgrounding` stops it.
+        self.start_mailbox_poller();
     }
 
     fn backgrounding(&self) {
         // Pause the keep-alive off the bridge thread (stopping it joins a worker) (issue #50).
         tracing::info!("[BingleJsiApiImpl] backgrounding()");
+        self.stop_mailbox_poller();
         let api = self.api.clone();
         std::thread::spawn(move || {
             api.with_engine(&mut |e| e.on_background());

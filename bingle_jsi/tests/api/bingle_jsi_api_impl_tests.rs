@@ -60,6 +60,7 @@ fn config_with_handle(handle: &str) -> BingleJsiConfig {
         sidewinder_token: None,
         store_and_forward_send: None,
         store_and_forward_receive: None,
+        store_and_forward_poll_interval_secs: None,
     }
 }
 
@@ -86,6 +87,7 @@ fn config_with_local(path: &str) -> BingleJsiConfig {
         sidewinder_token: None,
         store_and_forward_send: None,
         store_and_forward_receive: None,
+        store_and_forward_poll_interval_secs: None,
     }
 }
 
@@ -112,6 +114,7 @@ fn empty_config() -> BingleJsiConfig {
         sidewinder_token: None,
         store_and_forward_send: None,
         store_and_forward_receive: None,
+        store_and_forward_poll_interval_secs: None,
     }
 }
 
@@ -588,6 +591,7 @@ fn init_with_optional_fields() {
         sidewinder_token: None,
         store_and_forward_send: None,
         store_and_forward_receive: None,
+        store_and_forward_poll_interval_secs: None,
     };
     let api = BingleJsiApiImpl::init(config);
     assert!(
@@ -831,4 +835,60 @@ fn bridge_carries_store_and_forward_fields_to_jsi() {
     assert_eq!(jsi.recipient_handles, vec!["bob".to_string()]);
     assert_eq!(jsi.timestamp, 1_700_000_050_000);
     assert_eq!(jsi.text, "hi from the mailbox");
+}
+
+// ── store-and-forward backstop poller (issue #215) ──────────────────
+
+/// The backstop-poll period comes from the JSI config, defaulting to 2 minutes.
+#[test]
+fn backstop_poll_interval_defaults_and_overrides() {
+    let tmp = project_tmp_file_path("bingle-jsi-poll-interval-default", ".json");
+    let api = BingleJsiApiImpl::init(config_with_local(&tmp.to_string_lossy()))
+        .expect("init should succeed");
+    assert_eq!(
+        api.mailbox_poll_interval_secs_for_tests(),
+        120,
+        "unset interval defaults to 2 minutes"
+    );
+    let _ = std::fs::remove_file(&tmp);
+
+    let tmp2 = project_tmp_file_path("bingle-jsi-poll-interval-override", ".json");
+    let mut cfg = config_with_local(&tmp2.to_string_lossy());
+    cfg.store_and_forward_poll_interval_secs = Some(600);
+    let api2 = BingleJsiApiImpl::init(cfg).expect("init should succeed");
+    assert_eq!(
+        api2.mailbox_poll_interval_secs_for_tests(),
+        600,
+        "a configured interval is used"
+    );
+    let _ = std::fs::remove_file(&tmp2);
+}
+
+/// Foregrounding starts the backstop poller; backgrounding stops it; foregrounding is idempotent.
+#[test]
+fn foregrounding_starts_and_backgrounding_stops_the_backstop_poller() {
+    let tmp = project_tmp_file_path("bingle-jsi-poller-lifecycle", ".json");
+    let api = BingleJsiApiImpl::init(config_with_local(&tmp.to_string_lossy()))
+        .expect("init should succeed");
+
+    assert!(
+        !api.mailbox_poller_running_for_tests(),
+        "no poller runs before foregrounding"
+    );
+    api.foregrounding();
+    assert!(
+        api.mailbox_poller_running_for_tests(),
+        "foregrounding starts the backstop poller"
+    );
+    // Idempotent: a second foregrounding does not start a second poller.
+    api.foregrounding();
+    assert!(api.mailbox_poller_running_for_tests());
+
+    api.backgrounding();
+    assert!(
+        !api.mailbox_poller_running_for_tests(),
+        "backgrounding stops the poller"
+    );
+
+    let _ = std::fs::remove_file(&tmp);
 }
