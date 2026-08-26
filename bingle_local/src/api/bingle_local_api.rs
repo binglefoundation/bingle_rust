@@ -239,6 +239,14 @@ pub trait BingleLocalApi: Send + Sync {
     /// Get the list of stored messages.
     fn get_messages(&self) -> Result<Vec<Message>, BingleError>;
 
+    /// Drain this user's Sidewinder Mailbox, decrypting and storing each held store-and-forward
+    /// message, and return the batch read this poll sorted by sent time (store-and-forward epic #200,
+    /// story #215). A no-op returning an empty vector when the receive toggle is off or no Sidewinder
+    /// node is configured. `FIFO_REMOVE_HEAD` reads-and-drops, so a delivered message is not re-read.
+    /// The caller drives this on start and on a cadence; the read messages also appear in
+    /// [`get_messages`](Self::get_messages).
+    fn poll_mailbox(&self) -> Result<Vec<Message>, BingleError>;
+
     /// Save all local state to a JSON file at the given path.
     fn save(&self, path: &str) -> Result<(), BingleError>;
 

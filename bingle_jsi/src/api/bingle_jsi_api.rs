@@ -173,6 +173,13 @@ pub trait BingleJsiApi: Send + Sync {
     /// Get the list of stored messages.
     fn get_messages(&self) -> Result<Vec<Message>, BingleJsiError>;
 
+    /// Drain this user's Sidewinder Mailbox, decrypting and storing each held store-and-forward
+    /// message, and return the batch read this poll sorted by sent time (store-and-forward epic #200,
+    /// story #215). A no-op returning an empty list when store-and-forward receive is off or no node
+    /// is configured. The client calls this on start and on a cadence; read messages also appear in
+    /// [`get_messages`](Self::get_messages). Persists local state afterward when a state file is set.
+    fn poll_mailbox(&self) -> Result<Vec<Message>, BingleJsiError>;
+
     /// Queue a message to be sent by the background processor.
     fn queue_message(
         &self,

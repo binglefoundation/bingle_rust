@@ -53,6 +53,13 @@ path = "tests/sidewinder_mailbox_e2e.rs"
 name = "post_on_delivery_fail_e2e"
 path = "tests/post_on_delivery_fail_e2e.rs"
 
+[[test]]
+# Read-on-reconnect end to end (store-and-forward epic #200, story #215). Needs a Sidewinder node;
+# skips cleanly when unconfigured — see the test's module docs. Kept out of the `unit` target so the
+# fast suite needs no infrastructure.
+name = "read_on_reconnect_e2e"
+path = "tests/read_on_reconnect_e2e.rs"
+
 [dev-dependencies]
 tempfile = "3"
 bingle_test = { path = "../bingle_test" }

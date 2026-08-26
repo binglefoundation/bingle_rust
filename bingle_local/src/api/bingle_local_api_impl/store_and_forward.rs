@@ -5,12 +5,13 @@
 //! state (the keypair, config, and the persisted posted-set).
 
 use super::BingleApiLocalImpl;
-use crate::api::bingle_local_api::BingleLocalApi;
+use crate::api::bingle_local_api::{BingleLocalApi, Message};
 use crate::api::sidewinder;
 use algo_ops::AlgoOps;
 use bingle_core::api::bingle_api::BingleError;
 use bingle_core::blockchain::algo_bingle::AlgoBingle;
 use std::collections::HashSet;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 impl BingleApiLocalImpl {
     /// Build a Sidewinder [`Mailbox`](crate::api::sidewinder::Mailbox) client for the current
@@ -210,4 +211,134 @@ impl BingleApiLocalImpl {
             Err(_) => false,
         }
     }
+
+    /// Drain this user's Sidewinder Mailbox, decrypting and storing each held message
+    /// (store-and-forward read-on-reconnect, epic #200 story #215). The
+    /// [`poll_mailbox`](BingleLocalApi::poll_mailbox) trait method delegates here.
+    ///
+    /// Gated on the receive toggle and a configured Sidewinder node. `FIFO_REMOVE_HEAD` (`pop`)
+    /// reads-and-drops the head in one operation, so a delivered message is not re-read on the next
+    /// poll (at-most-once). Each message is opened with this account's private key
+    /// (`sealed_envelope::open_with_private_key`), recorded on the local message store via
+    /// [`Message::from_opened`] with `delivered_time` stamped now, and the returned batch is sorted by
+    /// sender-stamped sent time (#69). Persist-before-drop is at-most-once: `pop` drops on the node
+    /// first, so a crash before the next `save` loses that one message (acceptable for v0.0.3).
+    ///
+    /// Best-effort: the node being unreachable, a keypair being absent, or a message that fails to
+    /// decrypt stops / skips without error. Returns the messages read this poll (possibly empty).
+    pub(crate) fn poll_mailbox_inner(&self) -> Result<Vec<Message>, BingleError> {
+        if !self.config.store_and_forward_receive || self.config.sidewinder.is_none() {
+            return Ok(Vec::new());
+        }
+
+        // This account's Ed25519 private key opens envelopes sealed to it; without a keypair we
+        // cannot read.
+        let passphrase = match self.keypair.lock() {
+            Ok(g) => g.as_ref().map(|k| k.passphrase.clone()),
+            Err(e) => {
+                tracing::error!("[poll_mailbox] Failed to lock keypair: {}", e);
+                return Ok(Vec::new());
+            }
+        };
+        let Some(passphrase) = passphrase else {
+            tracing::warn!("[poll_mailbox] no keypair; skipping store-and-forward read");
+            return Ok(Vec::new());
+        };
+        let private_key = match AlgoOps::seed_from_passphrase(&passphrase) {
+            Ok(k) => k,
+            Err(e) => {
+                tracing::warn!("[poll_mailbox] cannot derive opening key ({e}); skipping");
+                return Ok(Vec::new());
+            }
+        };
+
+        let ops = match self.get_algo_ops() {
+            Ok(o) => o,
+            Err(e) => {
+                tracing::warn!("[poll_mailbox] no keypair to read ({e}); skipping");
+                return Ok(Vec::new());
+            }
+        };
+        let bgl = AlgoBingle::new(ops, self.config.app_id, self.config.asset_id);
+        let mailbox = match self.get_mailbox() {
+            Ok(m) => m,
+            Err(e) => {
+                tracing::warn!("[poll_mailbox] no mailbox configured ({e}); skipping");
+                return Ok(Vec::new());
+            }
+        };
+        // Our own handle is the recipient of everything in our Mailbox.
+        let own_handle = self.sender_handle().ok();
+
+        let mut read = Vec::new();
+        loop {
+            let bytes = match mailbox.pop() {
+                Ok(Some(b)) => b,
+                Ok(None) => break, // the Mailbox is drained
+                Err(BingleError::Retryable(reason)) => {
+                    tracing::warn!("[poll_mailbox] node not reachable/ready: {reason}; stopping");
+                    break;
+                }
+                Err(e) => {
+                    tracing::warn!("[poll_mailbox] pop failed ({e}); stopping");
+                    break;
+                }
+            };
+            let opened = match bingle_core::crypto::sealed_envelope::open_with_private_key(
+                private_key,
+                &bytes,
+            ) {
+                Ok(o) => o,
+                Err(e) => {
+                    // The message is already dropped from the node; we cannot recover it. Log and
+                    // move on rather than aborting the drain.
+                    tracing::warn!(
+                        "[poll_mailbox] failed to open a mailbox message ({e}); dropping"
+                    );
+                    continue;
+                }
+            };
+
+            // Attribute the message to the sender's handle, resolved from the authenticated sender
+            // address; fall back to the address string when the handle cannot be resolved.
+            let sender_address = algo_ops::byte_key_to_address(&opened.sender_id).ok();
+            let sender_handle = sender_address
+                .as_deref()
+                .and_then(|addr| {
+                    bgl.handle_for_address(self.config.app_id, addr)
+                        .ok()
+                        .flatten()
+                })
+                .or_else(|| sender_address.clone())
+                .unwrap_or_else(|| "unknown".to_string());
+            let recipient_handles = own_handle.clone().map(|h| vec![h]).unwrap_or_default();
+            let delivered_time = now_millis();
+            let message =
+                Message::from_opened(&opened, sender_handle, recipient_handles, delivered_time);
+
+            // Persist-before-drop (at-most-once): record it locally now; the pop already removed it
+            // from the node. The message store is written to disk on the caller's next `save`.
+            if let Ok(mut guard) = self.messages.lock() {
+                guard.push(message.clone());
+            } else {
+                tracing::error!(
+                    "[poll_mailbox] Failed to lock messages; the message is not stored"
+                );
+            }
+            read.push(message);
+        }
+
+        // Surface the batch sorted by sender-stamped sent time (#69), falling back to the local
+        // delivered/arrival time when a message carries no sent time.
+        read.sort_by_key(|m| m.sent_time.unwrap_or(m.timestamp));
+        Ok(read)
+    }
+}
+
+/// The current wall-clock time in epoch milliseconds, or 0 if the clock is before the Unix epoch.
+fn now_millis() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
 }

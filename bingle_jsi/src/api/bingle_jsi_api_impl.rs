@@ -1259,6 +1259,15 @@ impl BingleJsiApi for BingleJsiApiImpl {
         Ok(messages.into_iter().map(local_message_to_jsi).collect())
     }
 
+    fn poll_mailbox(&self) -> Result<Vec<Message>, BingleJsiError> {
+        let guard = local_api_guard(&self.local_api)?;
+        let read = guard.poll_mailbox().map_err(bingle_error_to_jsi)?;
+        drop(guard);
+        // Persist immediately so a just-read (and node-dropped) message survives a restart.
+        save_if_configured(&self.local_api, &self.local_file);
+        Ok(read.into_iter().map(local_message_to_jsi).collect())
+    }
+
     fn queue_message(
         &self,
         recipient_handles: Vec<String>,

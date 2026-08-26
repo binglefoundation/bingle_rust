@@ -394,6 +394,26 @@ pub fn open(
     })
 }
 
+/// Opens the wire bytes of a [`SealedEnvelope`] with the recipient's 32-byte Ed25519 private key
+/// `recipient_private_key` (the account secret, as returned by
+/// `algo_ops::AlgoOps::seed_from_passphrase`), verifying the sender's signature, and returns the
+/// recovered [`OpenedMessage`].
+///
+/// A convenience over [`open`] for callers that hold the raw account private key rather than a
+/// [`SigningKey`], so the caller (e.g. `bingle_local`'s read-on-reconnect, issue #215) need not
+/// depend on `ed25519_dalek`.
+///
+/// # Errors
+///
+/// Returns [`EnvelopeOpenError`] on the same conditions as [`open`].
+pub fn open_with_private_key(
+    recipient_private_key: [u8; ID_LEN],
+    bytes: &[u8],
+) -> Result<OpenedMessage, EnvelopeOpenError> {
+    let signing_key = SigningKey::from_bytes(&recipient_private_key);
+    open(&signing_key, bytes)
+}
+
 /// Associated data bound into the AEAD: the clear framing header `version | suite_id(BE)`, so the
 /// two cannot be swapped without breaking authentication.
 fn associated_data(version: u8, suite_id: u16) -> [u8; 3] {

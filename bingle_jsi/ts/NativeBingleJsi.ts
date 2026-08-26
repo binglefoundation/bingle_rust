@@ -256,6 +256,11 @@ export interface BingleJsiApi {
     cipher_suite: string | null
   ): void;
   getMessages(): Message[];
+  /** Drain this user's Sidewinder Mailbox, decrypting and storing each held store-and-forward
+   * message, and return the batch read this poll (sorted by sent time). Empty when store-and-forward
+   * receive is off / no node is configured. Call on start and on a cadence; read messages also
+   * appear in getMessages(). (store-and-forward epic #200, story #215) */
+  pollMailbox(): Message[];
   queueMessage(recipientHandles: string[], text: string): void;
   updateMessageStatus(
     timestamp: number,

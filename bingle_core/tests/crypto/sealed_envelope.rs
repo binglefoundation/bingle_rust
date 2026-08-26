@@ -68,6 +68,29 @@ fn seal_from_private_key_matches_seal_and_round_trips() {
 }
 
 #[test]
+fn open_with_private_key_round_trips() {
+    // `open_with_private_key` (the private-key convenience used by bingle_local's read-on-reconnect,
+    // #215) builds the recipient signing key from the raw 32-byte account private key. It must open
+    // an envelope sealed to that account exactly as `open` with the equivalent SigningKey does.
+    let recipient_private_key = [0x22u8; 32]; // matches recipient_key() / recipient_pub()
+    let bytes = sealed_envelope::seal(recipient_pub(), &sender_key(), SENT_TIME, TEXT)
+        .expect("seal succeeds");
+
+    let opened = sealed_envelope::open_with_private_key(recipient_private_key, &bytes)
+        .expect("open_with_private_key succeeds");
+    assert_eq!(opened.text, TEXT);
+    assert_eq!(opened.sent_time, SENT_TIME);
+    assert_eq!(opened.sender_id, sender_key().verifying_key().to_bytes());
+}
+
+#[test]
+fn open_with_wrong_private_key_rejected() {
+    let bytes = sealed_envelope::seal(recipient_pub(), &sender_key(), SENT_TIME, TEXT).unwrap();
+    let err = sealed_envelope::open_with_private_key([0x33u8; 32], &bytes).unwrap_err();
+    assert!(matches!(err, EnvelopeOpenError::Unseal(_)));
+}
+
+#[test]
 fn each_seal_differs() {
     let a = sealed_envelope::seal(recipient_pub(), &sender_key(), SENT_TIME, TEXT).unwrap();
     let b = sealed_envelope::seal(recipient_pub(), &sender_key(), SENT_TIME, TEXT).unwrap();

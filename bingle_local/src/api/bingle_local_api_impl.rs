@@ -1046,6 +1046,11 @@ impl BingleLocalApi for BingleApiLocalImpl {
         Ok(guard.clone())
     }
 
+    fn poll_mailbox(&self) -> Result<Vec<Message>, BingleError> {
+        // The read-on-reconnect logic lives in the `store_and_forward` child module (#215).
+        self.poll_mailbox_inner()
+    }
+
     fn save(&self, path: &str) -> Result<(), BingleError> {
         tracing::info!("[BingleLocalApi] Saving state to: {}", path);
         // Build serializable snapshot
