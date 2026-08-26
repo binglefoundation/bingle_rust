@@ -39,5 +39,8 @@ mod register;
 #[path = "api/sidewinder_mailbox.rs"]
 mod sidewinder_mailbox;
 
+#[path = "api/store_and_forward_toggles.rs"]
+mod store_and_forward_toggles;
+
 #[path = "module_version.rs"]
 mod module_version;

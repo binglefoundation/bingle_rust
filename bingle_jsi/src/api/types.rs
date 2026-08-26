@@ -261,4 +261,13 @@ pub struct BingleJsiConfig {
     /// Sidewinder #164). Required alongside `sidewinder_node_url`; `null` leaves store-and-forward
     /// unconfigured.
     pub sidewinder_token: Option<String>,
+    /// Send-side store-and-forward gate (epic #200): when `true`, a give-up on direct delivery posts
+    /// the sealed message to the recipient's Sidewinder Mailbox (#214). `null` defaults to `false`
+    /// (off). Independent of `store_and_forward_receive`; also needs `sidewinder_node_url` /
+    /// `sidewinder_token` configured to have somewhere to post.
+    pub store_and_forward_send: Option<bool>,
+    /// Receive-side store-and-forward gate (epic #200): when `true`, the client polls its own
+    /// Sidewinder Mailbox on reconnect and on a cadence, reading messages forwarded to it (#215).
+    /// `null` defaults to `false` (off). Independent of `store_and_forward_send`.
+    pub store_and_forward_receive: Option<bool>,
 }
