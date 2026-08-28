@@ -1,17 +1,17 @@
 //! Store-and-forward end-to-end against a real Sidewinder node on LocalNet (epic #200, story #216).
 //!
-//! This target is gated behind the `sidewinder-e2e` cargo feature and is **not** part of any normal
-//! suite or CI. It stands up a one-node Sidewinder Mailbox network on algokit LocalNet via
-//! `scripts/e2e-bingle-localnet.sh` (which drives the installed `sw-node` binary), then drives the
-//! store-and-forward path against it. Per the LocalNet-suite policy it **fails, not skips**, when the
-//! prerequisites are missing.
+//! A case in the `integration` suite, gated behind the `sidewinder_localnet` cargo feature so it is
+//! **not** compiled or run by the normal suites/CI. It stands up a one-node Sidewinder Mailbox network
+//! on algokit LocalNet via `scripts/e2e-bingle-localnet.sh` (which drives the installed `sw-node`
+//! binary), then drives the store-and-forward path against it. Per the LocalNet-suite policy it
+//! **fails, not skips**, when the prerequisites are missing.
 //!
 //! Prerequisites (see the script header):
 //!   - `sw-node` on PATH (`cargo install --path sw-node` in the sidewinder repo),
 //!   - algokit LocalNet up (`algokit localnet start`), and `curl`.
 //!
-//! Run it explicitly:
-//!   `cargo test -p bingle_cli --features sidewinder-e2e --test store_and_forward_e2e -- --nocapture`
+//! Run it explicitly (single-threaded — the node binds fixed ports):
+//!   `cargo test -p bingle_cli --features sidewinder_localnet --test integration -- --test-threads 1`
 //!
 //! Stage A (this file) proves the harness + node: a message posted to a recipient's Mailbox is popped
 //! back through the [`Mailbox`] client. Stage B (the full two-`bingle_local` offline-send → reconnect
