@@ -17,8 +17,10 @@
 //! back through the [`Mailbox`] client. Stage B (the full two-`bingle_local` offline-send → reconnect
 //! flow with handle registration and the epic invariants) builds on this same harness.
 
-use algo_ops::AlgoOps;
+use algo_ops::{AlgoChainConfig, AlgoOps};
 use bingle_local::api::sidewinder::{Mailbox, MailboxConfig};
+use bingle_local::api::{BingleApiLocalImpl, BingleLocalApi, LocalApiConfig};
+use bingle_test::localnet::test_util;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -150,6 +152,7 @@ fn payload_matches(popped: &[u8], message: &[u8]) -> bool {
 
 /// Stage A: a message posted to the receiver's Mailbox is popped back — the harness stands up a real
 /// node and the [`Mailbox`] client round-trips a message through it.
+#[serial_test::serial(sidewinder_e2e)]
 #[test]
 fn mailbox_round_trips_against_a_real_localnet_node() {
     let cluster = Cluster::up();
@@ -186,5 +189,161 @@ fn mailbox_round_trips_against_a_real_localnet_node() {
     assert!(
         drained.is_none(),
         "the message is dropped from the sidechain and not re-read"
+    );
+}
+
+/// Build a bingle_local config for LocalNet + this cluster: the localnet algod (with the deployed
+/// app/asset ids) and the cluster's Sidewinder Mailbox, with `send`/`receive` set as given.
+fn local_config(
+    api_url: &str,
+    token: &str,
+    app_id: u64,
+    asset_id: u64,
+    send: bool,
+    receive: bool,
+) -> LocalApiConfig {
+    let algo_config = AlgoChainConfig {
+        app_id: Some(app_id),
+        asset_id: Some(asset_id),
+        ..test_util::localnet_config()
+    };
+    LocalApiConfig {
+        algo_config,
+        app_id,
+        asset_id,
+        sidewinder: Some(MailboxConfig::new(api_url.to_string(), token.to_string())),
+        store_and_forward_send: send,
+        store_and_forward_receive: receive,
+        ..LocalApiConfig::default()
+    }
+}
+
+/// Drive a failed direct delivery for message `timestamp` twice, as the retry loop would; the second
+/// failure must not double-post (idempotency).
+fn fail_delivery_twice(sender: &mut BingleApiLocalImpl, timestamp: i64) {
+    let reason = || Some("Recipient unreachable — will keep retrying".to_string());
+    sender
+        .update_message_status(timestamp, 0.5, reason(), None)
+        .expect("first failure");
+    sender
+        .update_message_status(timestamp, 0.5, reason(), None)
+        .expect("second failure (retry) — must not double-post");
+}
+
+/// Stage B: the full store-and-forward path across two `bingle_local` instances against a real node.
+/// An offline send gives up and is posted to the recipient's Mailbox; the recipient reconnects,
+/// polls, reads, decrypts, and the messages land on its store sorted by sent time and gone from the
+/// sidechain — asserting the epic invariants (no double-post, no re-read, sorted by sent time).
+#[serial_test::serial(sidewinder_e2e)]
+#[test]
+fn offline_send_survives_and_is_read_on_reconnect() {
+    let cluster = Cluster::up();
+    let e = &cluster.endpoints;
+    let cfg = test_util::localnet_config();
+
+    // Deploy the Bingle app + asset, and register a handle for the sender and the receiver so the
+    // sender's give-up post can resolve the recipient handle → address (and the reader can attribute
+    // the sender). The two accounts are the cluster's enrolled Mailbox callers.
+    let sender_ops = test_util::ops_from_mnemonic(
+        // address is derived from the mnemonic; a placeholder label is fine here.
+        &AlgoOps::address_from_passphrase(&e.sender_mnemonic).expect("sender address"),
+        &e.sender_mnemonic,
+        cfg.clone(),
+    );
+    let (app_id, asset_id) =
+        test_util::deploy_bingle_app_and_asset(&sender_ops, "Bingle$", 1_000_000);
+
+    let sender_address = AlgoOps::address_from_passphrase(&e.sender_mnemonic).expect("sender addr");
+    test_util::register_client_on_blockchain(
+        &sender_address,
+        &e.sender_mnemonic,
+        "sf-sender",
+        app_id,
+        asset_id,
+        &sender_ops,
+        cfg.clone(),
+    );
+    test_util::register_client_on_blockchain(
+        &e.receiver_address,
+        &e.receiver_mnemonic,
+        "sf-receiver",
+        app_id,
+        asset_id,
+        &sender_ops,
+        cfg.clone(),
+    );
+
+    // ── sender: two offline sends give up and are posted to the receiver's Mailbox ──────────────
+    let mut sender = BingleApiLocalImpl::new(local_config(
+        &e.api_url, &e.token, app_id, asset_id, true, false,
+    ));
+    sender
+        .import_keypair(e.sender_mnemonic.clone())
+        .expect("import sender keypair");
+
+    // The earlier-sent message is added second and posted first, so a correct read must reorder by
+    // sent time, not by Mailbox (FIFO) arrival order.
+    let earlier_ts = 1_726_600_000_000;
+    let later_ts = 1_726_600_005_000;
+    sender
+        .add_message(
+            "sf-sender".to_string(),
+            vec!["sf-receiver".to_string()],
+            earlier_ts,
+            "first, by sent time".to_string(),
+            None,
+        )
+        .expect("add earlier message");
+    sender
+        .add_message(
+            "sf-sender".to_string(),
+            vec!["sf-receiver".to_string()],
+            later_ts,
+            "second, by sent time".to_string(),
+            None,
+        )
+        .expect("add later message");
+
+    fail_delivery_twice(&mut sender, later_ts);
+    fail_delivery_twice(&mut sender, earlier_ts);
+
+    // ── receiver: reconnect, poll, read, decrypt ─────────────────────────────────────────────────
+    let mut receiver = BingleApiLocalImpl::new(local_config(
+        &e.api_url, &e.token, app_id, asset_id, false, true,
+    ));
+    receiver
+        .import_keypair(e.receiver_mnemonic.clone())
+        .expect("import receiver keypair");
+
+    let read = receiver.poll_mailbox().expect("poll");
+
+    // No double-post: exactly two messages despite each delivery failing twice.
+    assert_eq!(
+        read.len(),
+        2,
+        "exactly the two posted messages are read (no double-post)"
+    );
+    // Sorted by sent time: the earlier-sent message comes first, though it was posted second.
+    assert_eq!(read[0].text, "first, by sent time");
+    assert_eq!(read[1].text, "second, by sent time");
+    assert_eq!(read[0].sent_time, Some(earlier_ts));
+    assert_eq!(read[1].sent_time, Some(later_ts));
+    assert!(read[0].sent_time < read[1].sent_time);
+    // The sender is attributed by its registered handle (reverse-resolved from the signed address).
+    assert_eq!(read[0].sender_handle, "sf-sender");
+    assert!(read.iter().all(|m| m.delivered_time.is_some()));
+
+    // The decrypted messages are on the receiver's local store.
+    let stored = receiver.get_messages().expect("messages");
+    assert!(
+        stored.iter().any(|m| m.text == "first, by sent time")
+            && stored.iter().any(|m| m.text == "second, by sent time")
+    );
+
+    // No re-read: the delivered messages are gone from the sidechain, so a second poll is empty.
+    let again = receiver.poll_mailbox().expect("second poll");
+    assert!(
+        again.is_empty(),
+        "delivered messages are dropped from the sidechain and not re-read"
     );
 }
