@@ -16,8 +16,8 @@
 #   - curl                    (to probe the node's health endpoint)
 #
 # Usage:
-#   e2e-bingle-localnet.sh [up]    # generate/reuse accounts, start the node, print access details
-#   e2e-bingle-localnet.sh down    # stop the node and remove the work dir
+#   e2e_sidewinder_localnet.sh [up]    # generate/reuse accounts, start the node, print access details
+#   e2e_sidewinder_localnet.sh down    # stop the node and remove the work dir
 set -eu
 
 WORK=${WORK:-./tmp/bingle-e2e}
@@ -33,7 +33,7 @@ ALGOD_TOKEN=${ALGOD_TOKEN:-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 # optional: an application config file to use instead of the built-in Mailbox registry.
 APP_CONFIG=${APP_CONFIG:-}
 
-die() { echo "e2e-bingle-localnet: $1" >&2; exit 1; }
+die() { echo "e2e_sidewinder_localnet: $1" >&2; exit 1; }
 
 # write the built-in Mailbox application config (post / pop / drain over the FIFO primitive) — carried
 # here so the harness needs no repo files.

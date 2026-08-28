@@ -2,7 +2,7 @@
 //!
 //! A case in the `integration` suite, gated behind the `sidewinder_localnet` cargo feature so it is
 //! **not** compiled or run by the normal suites/CI. It stands up a one-node Sidewinder Mailbox network
-//! on algokit LocalNet via `scripts/e2e-bingle-localnet.sh` (which drives the installed `sw-node`
+//! on algokit LocalNet via `scripts/e2e_sidewinder_localnet.sh` (which drives the installed `sw-node`
 //! binary), then drives the store-and-forward path against it. Per the LocalNet-suite policy it
 //! **fails, not skips**, when the prerequisites are missing.
 //!
@@ -24,7 +24,7 @@ use bingle_test::localnet::test_util;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-/// Access details printed by `e2e-bingle-localnet.sh up`.
+/// Access details printed by `e2e_sidewinder_localnet.sh up`.
 struct Endpoints {
     api_url: String,
     token: String,
@@ -45,7 +45,7 @@ impl Cluster {
     /// a prerequisite is missing.
     fn up() -> Cluster {
         let script =
-            Path::new(env!("CARGO_MANIFEST_DIR")).join("../scripts/e2e-bingle-localnet.sh");
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../scripts/e2e_sidewinder_localnet.sh");
         assert!(
             script.exists(),
             "harness script not found at {} — it is vendored from the sidewinder repo",
@@ -58,12 +58,12 @@ impl Cluster {
             .arg("up")
             .env("WORK", &work)
             .output()
-            .expect("run e2e-bingle-localnet.sh up");
+            .expect("run e2e_sidewinder_localnet.sh up");
         let stdout = String::from_utf8_lossy(&output.stdout);
         let stderr = String::from_utf8_lossy(&output.stderr);
         assert!(
             output.status.success(),
-            "e2e-bingle-localnet.sh up failed (is sw-node installed and algokit localnet running?).\n\
+            "e2e_sidewinder_localnet.sh up failed (is sw-node installed and algokit localnet running?).\n\
              --- stdout ---\n{stdout}\n--- stderr ---\n{stderr}"
         );
         let endpoints = parse_endpoints(&stdout)
