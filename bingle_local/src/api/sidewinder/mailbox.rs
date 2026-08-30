@@ -29,10 +29,11 @@ pub const MAILBOX_POST_TYPE: u32 = 1;
 /// The transaction type the tier-1 Mailbox configuration binds `pop` (`FIFO.remove_head`) to.
 pub const MAILBOX_POP_TYPE: u32 = 2;
 
-/// How long to wait for a submitted transaction to reach the `final` stage before giving up.
-/// Anchoring to the parent chain dominates this, so it is generous — matching the `sidewinder_ops`
-/// end-to-end harness.
-const FINALITY_TIMEOUT: Duration = Duration::from_secs(120);
+/// Default time to wait for a submitted transaction to reach the `final` stage before giving up.
+/// Anchoring to the parent chain dominates this. LocalNet finalises in a round or two; a network
+/// whose anchor batching is slower (e.g. TestNet's `v0_0_3` profile, K=64 rounds ≈ minutes) should
+/// raise it via [`MailboxConfig::finality_timeout`].
+pub const DEFAULT_FINALITY_TIMEOUT: Duration = Duration::from_secs(120);
 /// The long-poll window handed to each `watch` call while polling for finality.
 const WATCH_WAIT_SECS: u64 = 5;
 /// Pause between `watch` retries when the read node does not yet know a just-submitted transaction
@@ -55,18 +56,23 @@ pub struct MailboxConfig {
     pub post_type: u32,
     /// Transaction type bound to the Mailbox `pop` operation (`FIFO.remove_head`).
     pub pop_type: u32,
+    /// How long to wait for a submitted transaction to reach `final` before giving up. Defaults to
+    /// [`DEFAULT_FINALITY_TIMEOUT`]; raise it for a network whose anchor batching is slower than
+    /// LocalNet (e.g. TestNet).
+    pub finality_timeout: Duration,
 }
 
 impl MailboxConfig {
     /// Build a config from a node URL and bearer token, using the default tier-1 Mailbox operation
-    /// types ([`MAILBOX_POST_TYPE`] / [`MAILBOX_POP_TYPE`]). Use the struct literal to override the
-    /// types when a node binds them elsewhere.
+    /// types ([`MAILBOX_POST_TYPE`] / [`MAILBOX_POP_TYPE`]) and [`DEFAULT_FINALITY_TIMEOUT`]. Set the
+    /// fields on the returned value to override the types or the finality timeout.
     pub fn new(base_url: impl Into<String>, token: impl Into<String>) -> Self {
         Self {
             base_url: base_url.into(),
             token: token.into(),
             post_type: MAILBOX_POST_TYPE,
             pop_type: MAILBOX_POP_TYPE,
+            finality_timeout: DEFAULT_FINALITY_TIMEOUT,
         }
     }
 
@@ -113,6 +119,7 @@ pub struct Mailbox {
     client: SidewinderClient,
     post_type: u32,
     pop_type: u32,
+    finality_timeout: Duration,
 }
 
 impl Mailbox {
@@ -139,6 +146,7 @@ impl Mailbox {
             client,
             post_type: config.post_type,
             pop_type: config.pop_type,
+            finality_timeout: config.finality_timeout,
         })
     }
 
@@ -192,7 +200,7 @@ impl Mailbox {
         operation: &str,
         txid: &str,
     ) -> Result<PendingTransaction, BingleError> {
-        let deadline = Instant::now() + FINALITY_TIMEOUT;
+        let deadline = Instant::now() + self.finality_timeout;
         loop {
             match self.client.watch(txid, false, WATCH_WAIT_SECS) {
                 Ok(pending) if pending.stage == Stage::Final => {
@@ -219,7 +227,8 @@ impl Mailbox {
             }
             if Instant::now() >= deadline {
                 return Err(BingleError::Retryable(format!(
-                    "sidewinder {operation} transaction {txid} did not finalise within {FINALITY_TIMEOUT:?}"
+                    "sidewinder {operation} transaction {txid} did not finalise within {:?}",
+                    self.finality_timeout
                 )));
             }
         }

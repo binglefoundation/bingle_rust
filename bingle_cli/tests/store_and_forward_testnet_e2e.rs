@@ -31,9 +31,41 @@ use bingle_core::util::config_utils::parse_node_file_with_ids;
 use bingle_local::api::sidewinder::MailboxConfig;
 use bingle_local::api::{BingleApiLocalImpl, BingleLocalApi, LocalApiConfig};
 use bingle_test::localnet::test_util;
+use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 const SENDER_HANDLE: &str = "tn-sf-sender";
 const RECEIVER_HANDLE: &str = "tn-sf-receiver";
+
+/// TestNet anchors to the parent chain on a batch cadence (the `v0_0_3` profile, K=64 rounds ≈
+/// minutes), far slower than LocalNet — so wait generously for each transaction to finalise.
+const TESTNET_FINALITY: Duration = Duration::from_secs(300);
+
+/// The cluster Mailbox connection for this run, with the TestNet finality timeout applied.
+fn mailbox_config(cfg: &TestnetConfig) -> MailboxConfig {
+    let mut mc = MailboxConfig::new(cfg.api_url.clone(), cfg.token.clone());
+    mc.finality_timeout = TESTNET_FINALITY;
+    mc
+}
+
+/// The workspace root (`bingle_cli`'s parent). `cargo test` runs with the crate dir as the working
+/// directory, so the `tmp/…` fallbacks and any relative node-file path are resolved against this.
+fn repo_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("workspace root (bingle_cli parent)")
+        .to_path_buf()
+}
+
+/// Resolve a possibly-relative path against the workspace root; leave absolute paths as given.
+fn resolve_repo_path(p: &str) -> String {
+    let path = Path::new(p);
+    if path.is_absolute() {
+        p.to_string()
+    } else {
+        repo_root().join(path).to_string_lossy().into_owned()
+    }
+}
 
 /// The resolved TestNet configuration.
 struct TestnetConfig {
@@ -72,11 +104,17 @@ fn env_required(key: &str) -> String {
 fn load_config() -> TestnetConfig {
     let api_url = env_required("SIDEWINDER_TESTNET_URL");
     let token_file = std::env::var("SIDEWINDER_TESTNET_TOKEN_FILE")
-        .unwrap_or_else(|_| "tmp/testnet_token.txt".into());
+        .map(|p| resolve_repo_path(&p))
+        .unwrap_or_else(|_| {
+            repo_root()
+                .join("tmp/testnet_token.txt")
+                .to_string_lossy()
+                .into_owned()
+        });
     let token = env_or_file("SIDEWINDER_TESTNET_TOKEN", &token_file)
         .unwrap_or_else(|| panic!("set SIDEWINDER_TESTNET_TOKEN or provide {token_file}"));
 
-    let node_file = env_required("SIDEWINDER_TESTNET_NODE_FILE");
+    let node_file = resolve_repo_path(&env_required("SIDEWINDER_TESTNET_NODE_FILE"));
     let (_network, mut algo_config, app_id, asset_id) = parse_node_file_with_ids(&node_file)
         .unwrap_or_else(|e| panic!("bad SIDEWINDER_TESTNET_NODE_FILE '{node_file}': {e}"));
     let app_id = app_id.expect("the TestNet node file must carry an app_id");
@@ -84,14 +122,16 @@ fn load_config() -> TestnetConfig {
     algo_config.app_id = Some(app_id);
     algo_config.asset_id = Some(asset_id);
 
+    let sender_default = repo_root().join("tmp/tn_sender.mnemonic");
     let sender_mnemonic = env_or_file(
         "SIDEWINDER_TESTNET_SENDER_MNEMONIC",
-        "tmp/tn_sender.mnemonic",
+        &sender_default.to_string_lossy(),
     )
     .expect("set SIDEWINDER_TESTNET_SENDER_MNEMONIC or provide tmp/tn_sender.mnemonic");
+    let receiver_default = repo_root().join("tmp/tn_receiver.mnemonic");
     let receiver_mnemonic = env_or_file(
         "SIDEWINDER_TESTNET_RECEIVER_MNEMONIC",
-        "tmp/tn_receiver.mnemonic",
+        &receiver_default.to_string_lossy(),
     )
     .expect("set SIDEWINDER_TESTNET_RECEIVER_MNEMONIC or provide tmp/tn_receiver.mnemonic");
 
@@ -133,7 +173,7 @@ fn local_config(cfg: &TestnetConfig, send: bool, receive: bool) -> LocalApiConfi
         algo_config: cfg.algo_config.clone(),
         app_id: cfg.app_id,
         asset_id: cfg.asset_id,
-        sidewinder: Some(MailboxConfig::new(cfg.api_url.clone(), cfg.token.clone())),
+        sidewinder: Some(mailbox_config(cfg)),
         store_and_forward_send: send,
         store_and_forward_receive: receive,
         ..LocalApiConfig::default()
@@ -158,7 +198,7 @@ fn drain_receiver(cfg: &TestnetConfig) {
     use bingle_local::api::sidewinder::Mailbox;
     let mailbox = Mailbox::new(
         AlgoOps::new_for_algorand(Some(cfg.receiver_mnemonic.clone()), None, None),
-        MailboxConfig::new(cfg.api_url.clone(), cfg.token.clone()),
+        mailbox_config(cfg),
     )
     .expect("receiver mailbox");
     while mailbox.pop().expect("drain pop").is_some() {}
