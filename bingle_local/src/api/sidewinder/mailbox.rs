@@ -201,23 +201,29 @@ impl Mailbox {
         txid: &str,
     ) -> Result<PendingTransaction, BingleError> {
         let deadline = Instant::now() + self.finality_timeout;
+        // The most recent `stage` seen, so a timeout reports how far the transaction actually got
+        // (e.g. stuck at `Pending` vs. reaching `Verified` but never anchored).
+        let mut last_stage: Option<String> = None;
         loop {
             match self.client.watch(txid, false, WATCH_WAIT_SECS) {
-                Ok(pending) if pending.stage == Stage::Final => {
-                    if let Some(error) = pending.error {
+                Ok(pending) => {
+                    last_stage = Some(format!("{:?}", pending.stage));
+                    tracing::debug!("[mailbox {operation}] {txid} stage={:?}", pending.stage);
+                    if pending.stage == Stage::Final {
+                        if let Some(error) = pending.error {
+                            return Err(BingleError::Other(format!(
+                                "sidewinder {operation} transaction {txid} finalised with error: {error:?}"
+                            )));
+                        }
+                        return Ok(pending);
+                    }
+                    if pending.stage == Stage::Failed {
                         return Err(BingleError::Other(format!(
-                            "sidewinder {operation} transaction {txid} finalised with error: {error:?}"
+                            "sidewinder {operation} transaction {txid} failed: {:?}",
+                            pending.error
                         )));
                     }
-                    return Ok(pending);
                 }
-                Ok(pending) if pending.stage == Stage::Failed => {
-                    return Err(BingleError::Other(format!(
-                        "sidewinder {operation} transaction {txid} failed: {:?}",
-                        pending.error
-                    )));
-                }
-                Ok(_) => {}
                 Err(e) => {
                     if !is_not_found(&e) {
                         return Err(map_error(operation, e));
@@ -227,8 +233,10 @@ impl Mailbox {
             }
             if Instant::now() >= deadline {
                 return Err(BingleError::Retryable(format!(
-                    "sidewinder {operation} transaction {txid} did not finalise within {:?}",
-                    self.finality_timeout
+                    "sidewinder {operation} transaction {txid} did not finalise within {:?} \
+                     (last stage: {})",
+                    self.finality_timeout,
+                    last_stage.as_deref().unwrap_or("unknown")
                 )));
             }
         }

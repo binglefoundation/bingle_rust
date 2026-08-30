@@ -42,9 +42,14 @@ const RECEIVER_HANDLE: &str = "tn-sf-receiver";
 const TESTNET_FINALITY: Duration = Duration::from_secs(300);
 
 /// The cluster Mailbox connection for this run, with the TestNet finality timeout applied.
+/// `SIDEWINDER_TESTNET_FINALITY_SECS` overrides the wait (handy for a quick stage probe).
 fn mailbox_config(cfg: &TestnetConfig) -> MailboxConfig {
     let mut mc = MailboxConfig::new(cfg.api_url.clone(), cfg.token.clone());
-    mc.finality_timeout = TESTNET_FINALITY;
+    mc.finality_timeout = std::env::var("SIDEWINDER_TESTNET_FINALITY_SECS")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .map(Duration::from_secs)
+        .unwrap_or(TESTNET_FINALITY);
     mc
 }
 
