@@ -213,6 +213,9 @@ fn drain_receiver(cfg: &TestnetConfig) {
 #[serial_test::serial(sidewinder_e2e)]
 #[test]
 fn offline_send_survives_and_is_read_on_reconnect_on_testnet() {
+    // Surface the submitted transaction ids (info) and their stage transitions (debug) with
+    // `--nocapture`; RUST_LOG overrides. Handy for tracking a txn on the node while it finalises.
+    test_util::init_test_logging_with_filter("info,bingle_local::api::sidewinder=debug");
     let cfg = load_config();
 
     // One-time-ish: make sure both accounts have their handles on-chain, then start from an empty box.

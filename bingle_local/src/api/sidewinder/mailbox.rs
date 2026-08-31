@@ -178,8 +178,8 @@ impl Mailbox {
     }
 
     /// Submit `request`, then poll it to the `final` stage, returning the finalised transaction.
-    /// A transaction that reaches `failed`, or does not finalise within [`FINALITY_TIMEOUT`], is a
-    /// surfaced error.
+    /// A transaction that reaches `failed`, or does not finalise within the configured finality
+    /// timeout, is a surfaced error.
     fn submit_and_finalize(
         &self,
         operation: &str,
@@ -189,6 +189,8 @@ impl Mailbox {
             .client
             .submit_transaction(&request)
             .map_err(|e| map_error(operation, e))?;
+        // Log the transaction id at submit so it can be tracked on the node while it finalises.
+        tracing::info!("[mailbox {operation}] submitted tx {txid}");
         self.poll_to_final(operation, &txid)
     }
 
