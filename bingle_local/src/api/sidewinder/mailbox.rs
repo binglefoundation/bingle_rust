@@ -220,6 +220,7 @@ impl Mailbox {
                         return Ok(pending);
                     }
                     if pending.stage == Stage::Failed {
+                        tracing::warn!("[mailbox {operation}] {txid} FAILED: {:?}", pending.error);
                         return Err(BingleError::Other(format!(
                             "sidewinder {operation} transaction {txid} failed: {:?}",
                             pending.error
