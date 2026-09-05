@@ -690,6 +690,25 @@ impl AlgoBingle {
         Ok(kvs.map(|entries| entries.iter().any(|(k, v)| k == "allow_relay" && v == "1")))
     }
 
+    /// Resolve an account `address` to the handle it has registered on-chain, by reading the
+    /// `"Handle"` key of its local state for `app_id`. Returns `Ok(None)` when the account is not
+    /// opted in or has no handle registered.
+    ///
+    /// The inverse of [`handle_lookup`](Self::handle_lookup) (handle → address); used to attribute a
+    /// store-and-forward message to its sender's handle from the authenticated sender address (#215).
+    pub fn handle_for_address(&self, app_id: u64, address: &str) -> Result<Option<String>> {
+        if app_id == 0 {
+            bail!("app_id must be > 0");
+        }
+        let kvs = self.ops.local_state_for_account(app_id, address)?;
+        Ok(kvs.and_then(|entries| {
+            entries
+                .into_iter()
+                .find(|(k, _)| k == "Handle")
+                .map(|(_, v)| v)
+        }))
+    }
+
     /// Call register_endpoint(string)void for the caller.
     /// Passing an empty string clears the local state key.
     /// Returns the submitted transaction id on success.

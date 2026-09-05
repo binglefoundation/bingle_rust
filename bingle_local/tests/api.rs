@@ -10,6 +10,9 @@ mod local_impl_contacts;
 #[path = "api/local_impl_messages.rs"]
 mod local_impl_messages;
 
+#[path = "api/message_carry_fields.rs"]
+mod message_carry_fields;
+
 #[path = "api/local_impl_keypair_status.rs"]
 mod local_impl_keypair_status;
 #[path = "api/local_impl_persistence.rs"]
@@ -32,6 +35,18 @@ mod send_retry_classify;
 
 #[path = "api/register.rs"]
 mod register;
+
+#[path = "api/sidewinder_mailbox.rs"]
+mod sidewinder_mailbox;
+
+#[path = "api/store_and_forward_toggles.rs"]
+mod store_and_forward_toggles;
+
+#[path = "api/post_on_delivery_fail.rs"]
+mod post_on_delivery_fail;
+
+#[path = "api/read_on_reconnect.rs"]
+mod read_on_reconnect;
 
 #[path = "module_version.rs"]
 mod module_version;

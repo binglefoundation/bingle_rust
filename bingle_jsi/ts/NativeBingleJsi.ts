@@ -90,6 +90,15 @@ export interface Message {
   /** Typed cause of the last failure (issue #99); null while pending or delivered. Derive whether
    * it is retryable with `failureKindIsRetryable`. */
   failure_kind: FailureKind | null;
+  /** Sender-stamped send time (epoch millis) from a Sidewinder store-and-forward envelope (issue
+   * #204); null for a live message delivered over the Bingle DTLS session. */
+  sent_time: number | null;
+  /** Receiver's local clock (epoch millis) when the message was fetched from the Sidewinder Mailbox
+   * (issue #204). Locally stamped, not on either transport; null for live messages. */
+  delivered_time: number | null;
+  /** Base64 Ed25519 sender signature retained from the store-and-forward envelope, for later report
+   * attachment (issue #94); null when no signed envelope was opened. */
+  signature: string | null;
 }
 
 export interface KeypairStatusResponse {
@@ -130,6 +139,29 @@ export interface BingleJsiConfig {
    * "production" (TestFlight/App Store). Used as the `env` when registering the device token via
    * /register (bingle_notify #i). null defaults to "sandbox". */
   notify_env: string | null;
+  /** Base URL of the Sidewinder node for store-and-forward (epic #200), e.g. `http://host:9101`.
+   * When set together with `sidewinder_token` (and local mode), the offline path can post to and
+   * read from the recipient Mailbox; null/omitted leaves store-and-forward unconfigured. Optional:
+   * a client that does not use store-and-forward need not set it. */
+  sidewinder_node_url?: string | null;
+  /** Bearer token for the Sidewinder node's client endpoints (the v0.0.2 fixed shared token,
+   * Sidewinder #164). Required alongside `sidewinder_node_url`; null/omitted leaves store-and-forward
+   * unconfigured. Optional: a client that does not use store-and-forward need not set it. */
+  sidewinder_token?: string | null;
+  /** Send-side store-and-forward gate (epic #200): when true, a give-up on direct delivery posts the
+   * sealed message to the recipient's Sidewinder Mailbox (#214). null/omitted defaults to false (off).
+   * Independent of `store_and_forward_receive`; also needs the sidewinder_* fields configured.
+   * Optional: a client that does not use store-and-forward need not set it. */
+  store_and_forward_send?: boolean | null;
+  /** Receive-side store-and-forward gate (epic #200): when true, the client polls its own Sidewinder
+   * Mailbox on reconnect and on a cadence, reading messages forwarded to it (#215). null/omitted
+   * defaults to false (off). Independent of `store_and_forward_send`. Optional: a client that does not
+   * use store-and-forward need not set it. */
+  store_and_forward_receive?: boolean | null;
+  /** Period, in seconds, of the store-and-forward backstop Mailbox poll while foregrounded (epic
+   * #200, #215): started on foregrounding, stopped on backgrounding. null/omitted defaults to 120
+   * (2 minutes, a testing cadence); production builds set a longer period (e.g. 600). Optional. */
+  store_and_forward_poll_interval_secs?: number | null;
 }
 
 // ── Enums ────────────────────────────────────────────────────────────

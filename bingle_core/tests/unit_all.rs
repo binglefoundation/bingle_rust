@@ -3,6 +3,7 @@
 // This is a subset of `all` — the same local tests, without integration or flaky tests.
 pub mod api;
 pub mod blockchain;
+pub mod crypto;
 pub mod dtls;
 pub mod engine;
 #[path = "messages.rs"]

@@ -157,6 +157,15 @@ pub struct Message {
     /// Typed failure cause (issue #99) for reliable processing. `None` while pending or delivered.
     /// Derive whether it is retryable with [`failure_kind_is_retryable`].
     pub failure_kind: Option<FailureKind>,
+    /// Sender-stamped send time (epoch milliseconds) from a Sidewinder store-and-forward envelope
+    /// (issue #204). `None` for a live message delivered over the Bingle DTLS session.
+    pub sent_time: Option<i64>,
+    /// Receiver's local clock (epoch milliseconds) when the message was fetched from the Sidewinder
+    /// Mailbox (issue #204). Locally stamped; not on either transport. `None` for live messages.
+    pub delivered_time: Option<i64>,
+    /// Base64-encoded Ed25519 sender signature retained from the store-and-forward envelope, for
+    /// later attachment to a content report (issue #94). `None` when no signed envelope was opened.
+    pub signature: Option<String>,
 }
 
 /// Keypair funding / registration status.
@@ -243,4 +252,28 @@ pub struct BingleJsiConfig {
     /// `"production"` (TestFlight/App Store). Used as the `env` when the app registers its device
     /// token via `/register`. `null` defaults to `"sandbox"`.
     pub notify_env: Option<String>,
+    /// Base URL of the Sidewinder node for store-and-forward (epic #200), for example
+    /// `http://host:9101`. When set together with `sidewinder_token` (and local mode is enabled), the
+    /// offline path can post to and read from the recipient Mailbox. `null` leaves store-and-forward
+    /// unconfigured.
+    pub sidewinder_node_url: Option<String>,
+    /// Bearer token for the Sidewinder node's client endpoints (the v0.0.2 fixed shared token,
+    /// Sidewinder #164). Required alongside `sidewinder_node_url`; `null` leaves store-and-forward
+    /// unconfigured.
+    pub sidewinder_token: Option<String>,
+    /// Send-side store-and-forward gate (epic #200): when `true`, a give-up on direct delivery posts
+    /// the sealed message to the recipient's Sidewinder Mailbox (#214). `null` defaults to `false`
+    /// (off). Independent of `store_and_forward_receive`; also needs `sidewinder_node_url` /
+    /// `sidewinder_token` configured to have somewhere to post.
+    pub store_and_forward_send: Option<bool>,
+    /// Receive-side store-and-forward gate (epic #200): when `true`, the client polls its own
+    /// Sidewinder Mailbox on reconnect and on a cadence, reading messages forwarded to it (#215).
+    /// `null` defaults to `false` (off). Independent of `store_and_forward_send`.
+    pub store_and_forward_receive: Option<bool>,
+    /// Period, in seconds, of the store-and-forward backstop poll (epic #200, #215): while the app is
+    /// foregrounded, the Mailbox is drained on this cycle in case a real-time delivery was missed. The
+    /// poll starts on `foregrounding()` and stops on `backgrounding()`. `null` defaults to
+    /// [`DEFAULT_MAILBOX_POLL_SECS`](crate::api::bingle_jsi_api_impl::DEFAULT_MAILBOX_POLL_SECS)
+    /// (2 minutes, a testing cadence); production builds set a longer period (e.g. 600).
+    pub store_and_forward_poll_interval_secs: Option<u64>,
 }

@@ -56,6 +56,11 @@ fn config_with_handle(handle: &str) -> BingleJsiConfig {
         notify_gateway_url: None,
         notify_on_giveup: None,
         notify_env: None,
+        sidewinder_node_url: None,
+        sidewinder_token: None,
+        store_and_forward_send: None,
+        store_and_forward_receive: None,
+        store_and_forward_poll_interval_secs: None,
     }
 }
 
@@ -78,6 +83,11 @@ fn config_with_local(path: &str) -> BingleJsiConfig {
         notify_gateway_url: None,
         notify_on_giveup: None,
         notify_env: None,
+        sidewinder_node_url: None,
+        sidewinder_token: None,
+        store_and_forward_send: None,
+        store_and_forward_receive: None,
+        store_and_forward_poll_interval_secs: None,
     }
 }
 
@@ -100,6 +110,11 @@ fn empty_config() -> BingleJsiConfig {
         notify_gateway_url: None,
         notify_on_giveup: None,
         notify_env: None,
+        sidewinder_node_url: None,
+        sidewinder_token: None,
+        store_and_forward_send: None,
+        store_and_forward_receive: None,
+        store_and_forward_poll_interval_secs: None,
     }
 }
 
@@ -572,6 +587,11 @@ fn init_with_optional_fields() {
         notify_gateway_url: None,
         notify_on_giveup: None,
         notify_env: None,
+        sidewinder_node_url: None,
+        sidewinder_token: None,
+        store_and_forward_send: None,
+        store_and_forward_receive: None,
+        store_and_forward_poll_interval_secs: None,
     };
     let api = BingleJsiApiImpl::init(config);
     assert!(
@@ -780,4 +800,95 @@ fn pending_failure_reason_is_human_readable() {
     // A permanent failure surfaces the underlying error so it is actionable.
     let permanent = pending_failure_reason("recipient handle is invalid", false);
     assert!(permanent.contains("recipient handle is invalid"));
+}
+
+/// The FFI bridge must carry every stored-message field to JS, including the store-and-forward
+/// fields added in issue #204 (`sent_time`, `delivered_time`, `signature`). This test fails if a
+/// future change adds a field to the local message but forgets to map it in the bridge.
+#[test]
+fn bridge_carries_store_and_forward_fields_to_jsi() {
+    use bingle_jsi::api::bingle_jsi_api_impl::local_message_to_jsi;
+    use bingle_local::api::Message as LocalMessage;
+
+    let local = LocalMessage {
+        sender_handle: "alice".to_string(),
+        recipient_handles: vec!["bob".to_string()],
+        timestamp: 1_700_000_050_000,
+        text: "hi from the mailbox".to_string(),
+        cipher_suite: None,
+        progress: Some(1.0),
+        failure_reason: None,
+        failure_kind: None,
+        sent_time: Some(1_700_000_000_123),
+        delivered_time: Some(1_700_000_050_000),
+        signature: Some("AwMDAw==".to_string()),
+    };
+
+    let jsi = local_message_to_jsi(local);
+
+    // Store-and-forward fields survive the bridge to JS.
+    assert_eq!(jsi.sent_time, Some(1_700_000_000_123));
+    assert_eq!(jsi.delivered_time, Some(1_700_000_050_000));
+    assert_eq!(jsi.signature, Some("AwMDAw==".to_string()));
+    // The pre-existing fields are unaffected.
+    assert_eq!(jsi.sender_handle, "alice");
+    assert_eq!(jsi.recipient_handles, vec!["bob".to_string()]);
+    assert_eq!(jsi.timestamp, 1_700_000_050_000);
+    assert_eq!(jsi.text, "hi from the mailbox");
+}
+
+// ── store-and-forward backstop poller (issue #215) ──────────────────
+
+/// The backstop-poll period comes from the JSI config, defaulting to 2 minutes.
+#[test]
+fn backstop_poll_interval_defaults_and_overrides() {
+    let tmp = project_tmp_file_path("bingle-jsi-poll-interval-default", ".json");
+    let api = BingleJsiApiImpl::init(config_with_local(&tmp.to_string_lossy()))
+        .expect("init should succeed");
+    assert_eq!(
+        api.mailbox_poll_interval_secs_for_tests(),
+        120,
+        "unset interval defaults to 2 minutes"
+    );
+    let _ = std::fs::remove_file(&tmp);
+
+    let tmp2 = project_tmp_file_path("bingle-jsi-poll-interval-override", ".json");
+    let mut cfg = config_with_local(&tmp2.to_string_lossy());
+    cfg.store_and_forward_poll_interval_secs = Some(600);
+    let api2 = BingleJsiApiImpl::init(cfg).expect("init should succeed");
+    assert_eq!(
+        api2.mailbox_poll_interval_secs_for_tests(),
+        600,
+        "a configured interval is used"
+    );
+    let _ = std::fs::remove_file(&tmp2);
+}
+
+/// Foregrounding starts the backstop poller; backgrounding stops it; foregrounding is idempotent.
+#[test]
+fn foregrounding_starts_and_backgrounding_stops_the_backstop_poller() {
+    let tmp = project_tmp_file_path("bingle-jsi-poller-lifecycle", ".json");
+    let api = BingleJsiApiImpl::init(config_with_local(&tmp.to_string_lossy()))
+        .expect("init should succeed");
+
+    assert!(
+        !api.mailbox_poller_running_for_tests(),
+        "no poller runs before foregrounding"
+    );
+    api.foregrounding();
+    assert!(
+        api.mailbox_poller_running_for_tests(),
+        "foregrounding starts the backstop poller"
+    );
+    // Idempotent: a second foregrounding does not start a second poller.
+    api.foregrounding();
+    assert!(api.mailbox_poller_running_for_tests());
+
+    api.backgrounding();
+    assert!(
+        !api.mailbox_poller_running_for_tests(),
+        "backgrounding stops the poller"
+    );
+
+    let _ = std::fs::remove_file(&tmp);
 }

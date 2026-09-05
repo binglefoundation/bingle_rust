@@ -17,5 +17,7 @@ pub mod cli_utils;
 pub mod config_utils;
 #[doc(hidden)]
 pub mod net_det;
+/// Wall-clock helpers ([`time::now_millis`]).
+pub mod time;
 /// Build and version metadata, [`version::VersionInfo`].
 pub mod version;

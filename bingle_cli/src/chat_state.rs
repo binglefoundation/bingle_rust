@@ -16,6 +16,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use bingle_core::api::bingle_api::{BingleError, SendFailureKind, StartOptions};
 use bingle_core::blockchain::algo_bingle::AlgoBingle;
+use bingle_local::api::MailboxConfig;
 use bingle_local::api::bingle_local_api::{BingleLocalApi, ContactSource, Message, REQUIRED_ALGO};
 use bingle_local::api::bingle_local_api_impl::{BingleApiLocalImpl, LocalApiConfig};
 
@@ -70,13 +71,19 @@ impl ChatState {
         // Configure the local store with whatever chain ids the CLI/node-file resolved; 0 means
         // "unset" for BingleLocal, matching how the webserver builds its config.
         let algo_config = opts.algo_provider_config.clone().unwrap_or_default();
+        // Store-and-forward (epic #200): configure the Sidewinder Mailbox from the environment
+        // (`SIDEWINDER_NODE_URL` + `SIDEWINDER_TOKEN`); unset leaves store-and-forward unconfigured.
         let cfg = LocalApiConfig::with_notify(
             algo_config,
             opts.app_id.unwrap_or(0),
             opts.asset_id.unwrap_or(0),
             None,
             None,
-        );
+        )
+        .with_sidewinder(MailboxConfig::from_parts(
+            std::env::var("SIDEWINDER_NODE_URL").ok(),
+            std::env::var("SIDEWINDER_TOKEN").ok(),
+        ));
         let mut local = BingleApiLocalImpl::new(cfg);
 
         let state_file = args.state_file.clone();

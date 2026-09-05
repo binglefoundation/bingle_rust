@@ -6,6 +6,7 @@ use crate::api::notify::{
     AlertPoster, HttpAlertPoster, HttpRegisterPoster, RegisterPoster, build_register_request,
     encode_apns_token, post_giveup_alerts,
 };
+use crate::api::sidewinder::MailboxConfig;
 use crate::api::{
     BingleLocalApi, ChainRegistrationOps, Contact, ContactSource, Keypair, KeypairStatus, Message,
     REQUIRED_ALGO, run_registration,
@@ -17,6 +18,10 @@ use bingle_core::blockchain::algo_bingle::AlgoBingle;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
+
+// Store-and-forward posting (the Mailbox accessor, gate accessors, and the post-on-delivery-fail
+// hook, epic #200 / #214). A child module so it still reads this implementation's private state.
+mod store_and_forward;
 
 /// Configuration for the local API implementation.
 /// Includes the blockchain provider configuration and required ids.
@@ -40,6 +45,22 @@ pub struct LocalApiConfig {
     /// APNs environment a `/register` token is registered under: `"sandbox"` or `"production"`.
     /// Defaults to [`default_notify_env`] (sandbox); a production build overrides it.
     pub notify_env: String,
+    /// Sidewinder Mailbox connection for store-and-forward (epic #200): the node endpoint, bearer
+    /// token, and operation-type bindings the offline path posts to and reads from. `None` when the
+    /// deployment has no Sidewinder node configured, in which case store-and-forward is unavailable.
+    /// Whether it is *used* when available is the separate on/off toggle (#212).
+    pub sidewinder: Option<MailboxConfig>,
+    /// Send-side store-and-forward gate (epic #200, story #212): when `true`, a give-up on direct
+    /// delivery posts the sealed message to the recipient's Sidewinder Mailbox (#214); when `false`
+    /// (the default), give-up behaves exactly as today. Independent of the receive gate — a client
+    /// may forward without listening, or listen without forwarding. Also requires `sidewinder` to
+    /// be configured for the post to have anywhere to go.
+    pub store_and_forward_send: bool,
+    /// Receive-side store-and-forward gate (epic #200, story #212): when `true`, the client polls its
+    /// own Sidewinder Mailbox on reconnect and on a cadence, reading messages forwarded to it (#215);
+    /// when `false` (the default), no polling happens. Independent of the send gate. Also requires
+    /// `sidewinder` to be configured for there to be a Mailbox to poll.
+    pub store_and_forward_receive: bool,
 }
 
 /// The APNs environment assumed when a caller does not specify one: `"sandbox"`, matching a dev /
@@ -59,6 +80,11 @@ impl Default for LocalApiConfig {
             notify_on_giveup: true,
             notify_gateway_url: None,
             notify_env: default_notify_env(),
+            sidewinder: None,
+            // Store-and-forward defaults off: it is a new, unproven path (#214/#215), enabled per
+            // build/environment once proven. Each side is independent.
+            store_and_forward_send: false,
+            store_and_forward_receive: false,
         }
     }
 }
@@ -82,7 +108,34 @@ impl LocalApiConfig {
             notify_on_giveup: notify_on_giveup.unwrap_or(true),
             notify_gateway_url,
             notify_env: default_notify_env(),
+            sidewinder: None,
+            store_and_forward_send: false,
+            store_and_forward_receive: false,
         }
+    }
+
+    /// Attach a Sidewinder Mailbox connection (store-and-forward, epic #200). Chained after
+    /// [`with_notify`](Self::with_notify) by a call site whose configuration supplies a node
+    /// endpoint and token; left unset (`None`) when no Sidewinder node is configured.
+    pub fn with_sidewinder(mut self, sidewinder: Option<MailboxConfig>) -> Self {
+        self.sidewinder = sidewinder;
+        self
+    }
+
+    /// Set the store-and-forward send / receive gates (epic #200, story #212). Chained after
+    /// [`with_notify`](Self::with_notify) by a call site whose configuration supplies them; each
+    /// argument defaults to `false` (off) when the caller passes `None`, so an `init` or persisted
+    /// config without the fields keeps store-and-forward disabled. The two sides are independent —
+    /// see [`store_and_forward_send`](Self::store_and_forward_send) /
+    /// [`store_and_forward_receive`](Self::store_and_forward_receive).
+    pub fn with_store_and_forward(
+        mut self,
+        store_and_forward_send: Option<bool>,
+        store_and_forward_receive: Option<bool>,
+    ) -> Self {
+        self.store_and_forward_send = store_and_forward_send.unwrap_or(false);
+        self.store_and_forward_receive = store_and_forward_receive.unwrap_or(false);
+        self
     }
 }
 
@@ -175,6 +228,13 @@ pub struct BingleApiLocalImpl {
     // #11/#17). In-memory only: a restart may re-nudge a still-pending message, which is acceptable
     // (it only re-wakes an offline recipient so the pending retries can land).
     nudged_messages: Mutex<HashSet<i64>>,
+    // (message timestamp, recipient handle) pairs already posted to the recipient's Sidewinder
+    // Mailbox, so store-and-forward posts each message to each recipient at most once even though
+    // update_message_status fires on every retry (store-and-forward epic #200, story #214). Keyed
+    // per recipient so a multi-recipient message whose post to one recipient failed retries only the
+    // failed recipient without double-posting the others. Persisted (see save/load) so a restart does
+    // not re-post an already-forwarded message.
+    forwarded_messages: Mutex<HashSet<(i64, String)>>,
 }
 
 /// How long a `network_available` probe result is reused before re-probing.
@@ -200,6 +260,7 @@ impl BingleApiLocalImpl {
             alert_poster: Arc::new(HttpAlertPoster::new()),
             register_poster: Arc::new(HttpRegisterPoster::new()),
             nudged_messages: Mutex::new(HashSet::new()),
+            forwarded_messages: Mutex::new(HashSet::new()),
         }
     }
 
@@ -796,6 +857,9 @@ impl BingleLocalApi for BingleApiLocalImpl {
             progress: Some(1.0),
             failure_reason: None,
             failure_kind: None,
+            sent_time: None,
+            delivered_time: None,
+            signature: None,
         };
         let mut guard = match self.messages.lock() {
             Ok(g) => g,
@@ -850,6 +914,9 @@ impl BingleLocalApi for BingleApiLocalImpl {
             progress: Some(0.0),
             failure_reason: None,
             failure_kind: None,
+            sent_time: None,
+            delivered_time: None,
+            signature: None,
         };
 
         let mut guard = match self.messages.lock() {
@@ -896,7 +963,11 @@ impl BingleLocalApi for BingleApiLocalImpl {
                     msg.failure_kind = failure_kind;
                 }
                 if msg.failure_reason.is_some() {
-                    Some((msg.timestamp, msg.recipient_handles.clone()))
+                    Some((
+                        msg.timestamp,
+                        msg.recipient_handles.clone(),
+                        msg.text.clone(),
+                    ))
                 } else {
                     None
                 }
@@ -910,7 +981,7 @@ impl BingleLocalApi for BingleApiLocalImpl {
         // Release the messages lock before nudging: notify_giveup takes other locks (keypair /
         // algo_ops) and hands off to the poster, which must not run under the messages lock.
         drop(guard);
-        if let Some((ts, recipients)) = failed_recipients {
+        if let Some((ts, recipients, text)) = failed_recipients {
             // Nudge at most once per message: HashSet::insert returns true only the first time this
             // timestamp is seen, so repeated retries of the same unreachable message don't re-nudge.
             let first_nudge = match self.nudged_messages.lock() {
@@ -925,6 +996,23 @@ impl BingleLocalApi for BingleApiLocalImpl {
             };
             if first_nudge {
                 self.notify_giveup(&recipients);
+            }
+            // Store-and-forward post-on-delivery-fail (#214): post the sealed message to each
+            // recipient's Sidewinder Mailbox so it survives until they reconnect. Runs on each failed
+            // retry but is idempotent per recipient, so it posts once per recipient and retries only
+            // recipients whose post has not yet succeeded. Gated + best-effort; never affects delivery.
+            let fully_forwarded = self.forward_message_to_mailbox(ts, &recipients, &text);
+            if fully_forwarded {
+                // The message is now safely in every recipient's Mailbox, so stop retrying direct
+                // Bingle delivery: mark it complete and clear the transient failure. The recipient
+                // reads it from the Mailbox on reconnect (#215).
+                if let Ok(mut guard) = self.messages.lock() {
+                    if let Some(m) = guard.iter_mut().find(|m| m.timestamp == ts) {
+                        m.progress = Some(1.0);
+                        m.failure_reason = None;
+                        m.failure_kind = None;
+                    }
+                }
             }
         }
         Ok(())
@@ -958,6 +1046,11 @@ impl BingleLocalApi for BingleApiLocalImpl {
         Ok(guard.clone())
     }
 
+    fn poll_mailbox(&self) -> Result<Vec<Message>, BingleError> {
+        // The read-on-reconnect logic lives in the `store_and_forward` child module (#215).
+        self.poll_mailbox_inner()
+    }
+
     fn save(&self, path: &str) -> Result<(), BingleError> {
         tracing::info!("[BingleLocalApi] Saving state to: {}", path);
         // Build serializable snapshot
@@ -967,6 +1060,11 @@ impl BingleLocalApi for BingleApiLocalImpl {
             handle: String,
             source: ContactSource,
             is_blocked: bool,
+        }
+        #[derive(Debug, Clone, Serialize, Deserialize)]
+        struct ForwardedEntry {
+            timestamp: i64,
+            handle: String,
         }
         #[derive(Debug, Clone, Serialize, Deserialize)]
         struct LocalState {
@@ -982,6 +1080,10 @@ impl BingleLocalApi for BingleApiLocalImpl {
             // an upgrading user migrates instead of falsely reading as ACTIVE on the new app).
             #[serde(default)]
             own_handle_app_id: Option<u64>,
+            // (message timestamp, recipient handle) pairs already posted to a Sidewinder Mailbox, so
+            // store-and-forward does not re-post after a restart (store-and-forward epic #200, #214).
+            #[serde(default)]
+            forwarded_messages: Vec<ForwardedEntry>,
         }
 
         // Snapshot under locks (avoid holding multiple locks longer than needed)
@@ -1028,6 +1130,18 @@ impl BingleLocalApi for BingleApiLocalImpl {
 
         let own_handle = self.own_handle.lock().ok().and_then(|g| g.clone());
         let own_handle_app_id = self.own_handle_app_id.lock().ok().and_then(|g| *g);
+        let forwarded_messages: Vec<ForwardedEntry> = self
+            .forwarded_messages
+            .lock()
+            .map(|g| {
+                g.iter()
+                    .map(|(timestamp, handle)| ForwardedEntry {
+                        timestamp: *timestamp,
+                        handle: handle.clone(),
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
 
         let state = LocalState {
             keypair,
@@ -1035,6 +1149,7 @@ impl BingleLocalApi for BingleApiLocalImpl {
             messages,
             own_handle,
             own_handle_app_id,
+            forwarded_messages,
         };
 
         // Ensure parent directory exists
@@ -1080,6 +1195,11 @@ impl BingleLocalApi for BingleApiLocalImpl {
             is_blocked: bool,
         }
         #[derive(Debug, Clone, Serialize, Deserialize)]
+        struct ForwardedEntry {
+            timestamp: i64,
+            handle: String,
+        }
+        #[derive(Debug, Clone, Serialize, Deserialize)]
         struct LocalState {
             #[serde(default)]
             keypair: Option<Keypair>,
@@ -1091,6 +1211,8 @@ impl BingleLocalApi for BingleApiLocalImpl {
             own_handle: Option<String>,
             #[serde(default)]
             own_handle_app_id: Option<u64>,
+            #[serde(default)]
+            forwarded_messages: Vec<ForwardedEntry>,
         }
 
         let file = match std::fs::File::open(path) {
@@ -1147,6 +1269,15 @@ impl BingleLocalApi for BingleApiLocalImpl {
         }
         if let Ok(mut oha) = self.own_handle_app_id.lock() {
             *oha = state.own_handle_app_id;
+        }
+        // Restore the store-and-forward posted-set so a restart does not re-post an already-forwarded
+        // message to the recipient's Mailbox (store-and-forward epic #200, story #214).
+        if let Ok(mut fwd) = self.forwarded_messages.lock() {
+            *fwd = state
+                .forwarded_messages
+                .into_iter()
+                .map(|e| (e.timestamp, e.handle))
+                .collect();
         }
         if let Ok(mut ls) = self.last_status.lock() {
             *ls = None;

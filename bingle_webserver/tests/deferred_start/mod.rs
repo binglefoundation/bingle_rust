@@ -108,6 +108,9 @@ impl BingleLocalApi for ControllableLocalApi {
     fn get_messages(&self) -> Result<Vec<Message>, BingleError> {
         Ok(Vec::new())
     }
+    fn poll_mailbox(&self) -> Result<Vec<Message>, BingleError> {
+        Ok(Vec::new())
+    }
     fn save(&self, _path: &str) -> Result<(), BingleError> {
         Ok(())
     }

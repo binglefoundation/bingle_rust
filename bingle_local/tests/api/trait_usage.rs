@@ -108,6 +108,9 @@ impl BingleLocalApi for DummyLocal {
             progress: Some(1.0),
             failure_reason: None,
             failure_kind: None,
+            sent_time: None,
+            delivered_time: None,
+            signature: None,
         });
         Ok(())
     }
@@ -127,6 +130,9 @@ impl BingleLocalApi for DummyLocal {
             progress: Some(0.0),
             failure_reason: None,
             failure_kind: None,
+            sent_time: None,
+            delivered_time: None,
+            signature: None,
         });
         Ok(())
     }
@@ -157,6 +163,11 @@ impl BingleLocalApi for DummyLocal {
 
     fn get_messages(&self) -> Result<Vec<Message>, BingleError> {
         Ok(self.messages.clone())
+    }
+
+    fn poll_mailbox(&self) -> Result<Vec<Message>, BingleError> {
+        // This dummy does no store-and-forward reading.
+        Ok(Vec::new())
     }
 
     fn save(&self, _path: &str) -> Result<(), BingleError> {

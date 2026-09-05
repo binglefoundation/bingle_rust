@@ -11,7 +11,7 @@
 //! - [`api::bingle_api::BingleApi`] — the messaging engine trait, implemented by
 //!   [`api::bingle_api_impl::BingleApiImpl`]; configure a start with
 //!   [`api::bingle_api::StartOptions`].
-//! - [`AlgoOps`] — generic Algorand operation helpers.
+//! - [`algo_ops::AlgoOps`] — generic Algorand operation helpers.
 //! - [`AlgoBingle`] — Bingle's application and asset operations, such as handle registration and
 //!   lookup.
 //!
@@ -36,8 +36,13 @@
 pub mod util;
 /// The Bingle messaging engine API.
 pub mod api;
-/// Algorand integration: [`AlgoOps`] and [`AlgoBingle`].
+/// Algorand integration: [`algo_ops::AlgoOps`] and [`AlgoBingle`].
 pub mod blockchain;
+// Store-and-forward key-material helpers (Ed25519 ⇄ X25519). Internal to the workspace for now
+// (part of the store-and-forward feature, issue #199), reachable from the test tree and sibling
+// crates but not yet a supported external API — kept out of the published reference.
+#[doc(hidden)]
+pub mod crypto;
 #[doc(hidden)]
 pub mod ddb;
 #[doc(hidden)]
@@ -90,7 +95,7 @@ pub mod turn;
 #[cfg(not(feature = "test-hooks"))]
 pub(crate) mod turn;
 
-// Export the primary types so external users can import them directly from the crate root.
-// (The canonical module paths are `blockchain::algo_ops` / `blockchain::algo_bingle`.)
+// Export the primary type so external users can import it directly from the crate root.
+// (The canonical module path is `blockchain::algo_bingle`. `AlgoOps` now lives in the
+// standalone `algo_ops` crate — import it from there directly.)
 pub use crate::blockchain::algo_bingle::AlgoBingle;
-pub use algo_ops::AlgoOps;

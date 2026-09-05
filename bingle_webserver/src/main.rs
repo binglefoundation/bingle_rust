@@ -3,6 +3,7 @@ use bingle_core::api::bingle_api_impl::BingleApiImpl;
 use bingle_core::engine::BingleAccess;
 use bingle_core::util::cli_utils::parse_start_options_from_args;
 use bingle_core::util::logging::{BingleFormatter, HandleLayer, LogMode};
+use bingle_local::api::MailboxConfig;
 use bingle_local::api::bingle_local_api::BingleLocalApi;
 use bingle_local::api::bingle_local_api_impl::{BingleApiLocalImpl, LocalApiConfig};
 use bingle_webserver::{AppState, start_server};
@@ -131,13 +132,19 @@ async fn main() -> anyhow::Result<()> {
     if let Some(path) = &local_file {
         // Give-up nudge (bingle_notify #11/#17): a `--notify-gateway-url` activates the nudge;
         // `--notify-on-giveup false` disables it even when a URL is set.
+        // Store-and-forward (epic #200): configure the Sidewinder Mailbox from the environment
+        // (`SIDEWINDER_NODE_URL` + `SIDEWINDER_TOKEN`); unset leaves store-and-forward unconfigured.
         let cfg = LocalApiConfig::with_notify(
             opts.algo_provider_config.clone().unwrap_or_default(),
             opts.app_id.unwrap_or(0),
             opts.asset_id.unwrap_or(0),
             notify_on_giveup,
             notify_gateway_url.clone(),
-        );
+        )
+        .with_sidewinder(MailboxConfig::from_parts(
+            std::env::var("SIDEWINDER_NODE_URL").ok(),
+            std::env::var("SIDEWINDER_TOKEN").ok(),
+        ));
         let mut impl_api = BingleApiLocalImpl::new(cfg);
         if path.exists()
             && let Err(e) = impl_api.load(path.to_string_lossy().as_ref())
