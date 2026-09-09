@@ -34,17 +34,19 @@ class BingleDapp(ARC4Contract):
         # Local state for registration
         self.handle = LocalState(String, key="Handle")
         self.handle_time = LocalState(UInt64, key="HandleTime")
-        # Local state: the packed allow-flag bitfield (see the module-level BIT_* constants). Reuses
-        # the historical `allow_static` uint slot; once an account is migrated (bit 63 set) this one
-        # value holds all four allow flags, so num_uints does not grow for the two new flags.
-        self.allow_static = LocalState(UInt64, key="allow_static")
+        # Local state: the packed allow-flag bitfield (see the module-level BIT_* constants). Keeps the
+        # historical `allow_static` on-chain key (existing accounts hold data under it) but the variable
+        # is named for what the value now is; once an account is migrated (bit 63 set) this one value
+        # holds all four allow flags, so num_uints does not grow for the two new flags.
+        self.config_bitfield = LocalState(UInt64, key="allow_static")
         # Local state value: caller's registered static endpoint (if any)
         self.static_endpoint = LocalState(String, key="static_endpoint")
         self.static_endpoint_x = LocalState(String, key="static_endpoint_x")
-        # Legacy local state: the pre-bitfield allow_relay scalar. Kept declared so the local uint
-        # schema count is unchanged (an in-place UpdateApplication cannot alter the schema); no longer
-        # written — it is only read to fold an un-migrated account's relay grant into the packed field.
-        self.allow_relay = LocalState(UInt64, key="allow_relay")
+        # Legacy local state: the pre-bitfield allow_relay scalar (on-chain key unchanged). Kept
+        # declared so the local uint schema count is unchanged (an in-place UpdateApplication cannot
+        # alter the schema); read to fold an un-migrated account's relay grant into the packed field,
+        # and still written by migrate_local when copying an un-migrated account from an ancestor app.
+        self.legacy_allow_relay = LocalState(UInt64, key="allow_relay")
         # Accepted-ancestor lineage: a packed list of 8-byte big-endian app ids of every
         # creator-blessed source app that migrate_local will copy from. Prevents privilege
         # forging by only honouring ancestors the creator has explicitly blessed via
@@ -131,8 +133,8 @@ class BingleDapp(ARC4Contract):
         un-migrated (sentinel-aware). Test permission bits against the BIT_* masks; the MIGRATED bit
         may be set. Returns just the sentinel (no permission bits) for an account with no allow state.
         """
-        static_raw, has_static = self.allow_static.maybe(account)
-        relay_raw, has_relay = self.allow_relay.maybe(account)
+        static_raw, has_static = self.config_bitfield.maybe(account)
+        relay_raw, has_relay = self.legacy_allow_relay.maybe(account)
         return self._fold_allow(static_raw, has_static, relay_raw, has_relay)
 
     @subroutine
@@ -143,12 +145,14 @@ class BingleDapp(ARC4Contract):
         set_allow_* method shares them.
         """
         assert Txn.sender == self.app_admin.value
-        packed = self._packed_allow_bits(target)
+        # `_packed_allow_bits` folds an un-migrated account to the packed form; OR in the sentinel
+        # explicitly so it is evident here that *every* write stores a migrated (bit-63-set) value.
+        packed = self._packed_allow_bits(target) | UInt64(BIT_MIGRATED)
         if allow != UInt64(0):
             packed = packed | mask
         else:
             packed = packed & ~mask
-        self.allow_static[target] = packed
+        self.config_bitfield[target] = packed
 
     @subroutine
     def _clear_endpoint(self, account: Account) -> None:
@@ -530,11 +534,11 @@ class BingleDapp(ARC4Contract):
         The handle_time is preserved from the old app but bumped past last_handle_time
         if needed to avoid duplicate timestamps.
 
-        allow flags: the admin-granted allow_static / allow_relay from the old app are folded into
-        this contract's packed allow bitfield (with the MIGRATED sentinel set). If the old app already
-        stored the packed encoding (it ran this contract version), it is copied verbatim so its
-        allow_sw_node / allow_sw_client bits carry over too.
-        static_endpoint / static_endpoint_x: only copied when the resulting allow_static bit is set.
+        allow flags: the old app's allow state is copied verbatim — the ancestor stores either the
+        legacy scalars (existing apps) or the packed bitfield (a future app on this contract), and the
+        sentinel-aware reader decodes whichever; the account converts to the packed form on its next
+        set_allow_* write. So no fold is needed here.
+        static_endpoint / static_endpoint_x: only copied when the account is static-allowed.
         """
         lineage = self.ancestor_apps.get(default=Bytes())
         assert self._lineage_contains(lineage, old_app.id)
@@ -553,22 +557,23 @@ class BingleDapp(ARC4Contract):
                     self.handle_time[sender] = handle_time
                     self.last_handle_time.value = handle_time
 
+        # Copy the allow state verbatim (legacy scalars or packed value); the sentinel-aware reader
+        # decodes either form and the account converts to packed on its next set_allow_* write.
         old_allow_static, has_allow_static = op.AppLocal.get_ex_uint64(sender, old_app, b"allow_static")
+        if has_allow_static:
+            self.config_bitfield[sender] = old_allow_static
         old_allow_relay, has_allow_relay = op.AppLocal.get_ex_uint64(sender, old_app, b"allow_relay")
-        if has_allow_static or has_allow_relay:
-            # Fold the ancestor's allow state into this contract's packed field (verbatim if the
-            # ancestor already stored the packed encoding, else legacy scalars folded + sentinel).
-            packed = self._fold_allow(
-                old_allow_static, has_allow_static, old_allow_relay, has_allow_relay
-            )
-            self.allow_static[sender] = packed
-            if (packed & UInt64(BIT_STATIC)) != UInt64(0):
-                old_endpoint, has_endpoint = op.AppLocal.get_ex_bytes(sender, old_app, b"static_endpoint")
-                if has_endpoint:
-                    self.static_endpoint[sender] = String.from_bytes(old_endpoint)
-                old_endpoint_x, has_endpoint_x = op.AppLocal.get_ex_bytes(sender, old_app, b"static_endpoint_x")
-                if has_endpoint_x:
-                    self.static_endpoint_x[sender] = String.from_bytes(old_endpoint_x)
+        if has_allow_relay:
+            self.legacy_allow_relay[sender] = old_allow_relay
+        # Copy the static endpoint only when the migrated account is static-allowed (sentinel-aware, so
+        # it holds whether the ancestor used the legacy scalar or the packed bit).
+        if (self._packed_allow_bits(sender) & UInt64(BIT_STATIC)) != UInt64(0):
+            old_endpoint, has_endpoint = op.AppLocal.get_ex_bytes(sender, old_app, b"static_endpoint")
+            if has_endpoint:
+                self.static_endpoint[sender] = String.from_bytes(old_endpoint)
+            old_endpoint_x, has_endpoint_x = op.AppLocal.get_ex_bytes(sender, old_app, b"static_endpoint_x")
+            if has_endpoint_x:
+                self.static_endpoint_x[sender] = String.from_bytes(old_endpoint_x)
 
     @abimethod()
     def register_endpoint(self, endpoint: String) -> None:

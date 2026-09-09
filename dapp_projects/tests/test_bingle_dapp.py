@@ -334,12 +334,14 @@ def test_migrate_local_copies_allow_static_and_endpoint(ctx: AlgopyTestContext) 
     old_app = ctx.any.application()
     contract.set_predecessor_app(old_app)
     user = ctx.any.account()
-    # Old app holds the legacy scalar encoding; migrate folds it into the packed field + sentinel.
+    # Old app holds the legacy scalar; migrate copies it verbatim (the reader folds it, and the
+    # account converts to packed on its next set_allow_* write — no migrate-time fold).
     ctx.ledger.set_local_state(old_app, user, b"allow_static", 1)
     ctx.ledger.set_local_state(old_app, user, b"static_endpoint", b"https://example.com/ep")
     with ctx.txn.create_group(active_txn_overrides={"sender": user}):
         contract.migrate_local(old_app)
-    assert contract.allow_static[user] == UInt64(BIT_MIGRATED | BIT_STATIC)
+    assert contract.config_bitfield[user] == UInt64(1)
+    # Static-allowed (bit 0), so the endpoint is copied.
     assert contract.static_endpoint[user] == String("https://example.com/ep")
 
 
@@ -352,8 +354,8 @@ def test_migrate_local_does_not_copy_endpoint_when_allow_static_zero(ctx: Algopy
     ctx.ledger.set_local_state(old_app, user, b"static_endpoint", b"https://example.com/ep")
     with ctx.txn.create_group(active_txn_overrides={"sender": user}):
         contract.migrate_local(old_app)
-    # Migrated (sentinel set) but the static bit is clear, so the endpoint is not copied.
-    assert contract.allow_static[user] == UInt64(BIT_MIGRATED)
+    assert contract.config_bitfield[user] == UInt64(0)
+    # Not static-allowed, so the endpoint is not copied.
     _, exists = contract.static_endpoint.maybe(user)
     assert not exists
 
@@ -366,22 +368,8 @@ def test_migrate_local_copies_allow_relay(ctx: AlgopyTestContext) -> None:
     ctx.ledger.set_local_state(old_app, user, b"allow_relay", 1)
     with ctx.txn.create_group(active_txn_overrides={"sender": user}):
         contract.migrate_local(old_app)
-    # Legacy relay grant folds into the packed field's relay bit (no separate allow_relay write).
-    assert contract.allow_static[user] == UInt64(BIT_MIGRATED | BIT_RELAY)
-
-
-def test_migrate_local_copies_packed_field_verbatim(ctx: AlgopyTestContext) -> None:
-    contract, _, _ = _deploy(ctx)
-    old_app = ctx.any.application()
-    contract.set_predecessor_app(old_app)
-    user = ctx.any.account()
-    # Old app already ran this contract version: its allow_static slot holds the packed bitfield
-    # (with sw bits). migrate must carry those over verbatim, not re-fold them.
-    packed = BIT_MIGRATED | BIT_STATIC | BIT_SW_NODE | BIT_SW_CLIENT
-    ctx.ledger.set_local_state(old_app, user, b"allow_static", packed)
-    with ctx.txn.create_group(active_txn_overrides={"sender": user}):
-        contract.migrate_local(old_app)
-    assert contract.allow_static[user] == UInt64(packed)
+    # The legacy relay scalar is copied verbatim into the legacy slot; the reader folds it to bit 1.
+    assert contract.legacy_allow_relay[user] == UInt64(1)
 
 
 def test_set_allow_static_sets_bit_and_migrates(ctx: AlgopyTestContext) -> None:
@@ -389,7 +377,7 @@ def test_set_allow_static_sets_bit_and_migrates(ctx: AlgopyTestContext) -> None:
     user = ctx.any.account()
     with ctx.txn.create_group(active_txn_overrides={"sender": admin}):
         contract.set_allow_static(user, UInt64(1))
-    assert contract.allow_static[user] == UInt64(BIT_MIGRATED | BIT_STATIC)
+    assert contract.config_bitfield[user] == UInt64(BIT_MIGRATED | BIT_STATIC)
 
 
 def test_set_allow_relay_sets_bit(ctx: AlgopyTestContext) -> None:
@@ -397,7 +385,7 @@ def test_set_allow_relay_sets_bit(ctx: AlgopyTestContext) -> None:
     user = ctx.any.account()
     with ctx.txn.create_group(active_txn_overrides={"sender": admin}):
         contract.set_allow_relay(user, UInt64(1))
-    assert contract.allow_static[user] == UInt64(BIT_MIGRATED | BIT_RELAY)
+    assert contract.config_bitfield[user] == UInt64(BIT_MIGRATED | BIT_RELAY)
 
 
 def test_set_allow_sw_node_sets_bit(ctx: AlgopyTestContext) -> None:
@@ -405,7 +393,7 @@ def test_set_allow_sw_node_sets_bit(ctx: AlgopyTestContext) -> None:
     user = ctx.any.account()
     with ctx.txn.create_group(active_txn_overrides={"sender": admin}):
         contract.set_allow_sw_node(user, UInt64(1))
-    assert contract.allow_static[user] == UInt64(BIT_MIGRATED | BIT_SW_NODE)
+    assert contract.config_bitfield[user] == UInt64(BIT_MIGRATED | BIT_SW_NODE)
 
 
 def test_set_allow_sw_client_sets_bit(ctx: AlgopyTestContext) -> None:
@@ -413,7 +401,7 @@ def test_set_allow_sw_client_sets_bit(ctx: AlgopyTestContext) -> None:
     user = ctx.any.account()
     with ctx.txn.create_group(active_txn_overrides={"sender": admin}):
         contract.set_allow_sw_client(user, UInt64(1))
-    assert contract.allow_static[user] == UInt64(BIT_MIGRATED | BIT_SW_CLIENT)
+    assert contract.config_bitfield[user] == UInt64(BIT_MIGRATED | BIT_SW_CLIENT)
 
 
 def test_set_allow_preserves_other_bits(ctx: AlgopyTestContext) -> None:
@@ -424,7 +412,7 @@ def test_set_allow_preserves_other_bits(ctx: AlgopyTestContext) -> None:
     with ctx.txn.create_group(active_txn_overrides={"sender": admin}):
         contract.set_allow_sw_node(user, UInt64(1))
     # Second setter leaves the static bit intact.
-    assert contract.allow_static[user] == UInt64(BIT_MIGRATED | BIT_STATIC | BIT_SW_NODE)
+    assert contract.config_bitfield[user] == UInt64(BIT_MIGRATED | BIT_STATIC | BIT_SW_NODE)
 
 
 def test_set_allow_clear_bit_keeps_others(ctx: AlgopyTestContext) -> None:
@@ -437,7 +425,7 @@ def test_set_allow_clear_bit_keeps_others(ctx: AlgopyTestContext) -> None:
     with ctx.txn.create_group(active_txn_overrides={"sender": admin}):
         contract.set_allow_relay(user, UInt64(0))
     # Clearing relay leaves static set and the sentinel intact.
-    assert contract.allow_static[user] == UInt64(BIT_MIGRATED | BIT_STATIC)
+    assert contract.config_bitfield[user] == UInt64(BIT_MIGRATED | BIT_STATIC)
 
 
 def test_set_allow_folds_legacy_scalars_on_first_write(ctx: AlgopyTestContext) -> None:
@@ -449,7 +437,7 @@ def test_set_allow_folds_legacy_scalars_on_first_write(ctx: AlgopyTestContext) -
     # First write migrates: folds both legacy grants into the packed field and adds the new bit.
     with ctx.txn.create_group(active_txn_overrides={"sender": admin}):
         contract.set_allow_sw_client(user, UInt64(1))
-    assert contract.allow_static[user] == UInt64(
+    assert contract.config_bitfield[user] == UInt64(
         BIT_MIGRATED | BIT_STATIC | BIT_RELAY | BIT_SW_CLIENT
     )
 
@@ -472,7 +460,7 @@ def test_set_allow_static_clear_deletes_endpoint(ctx: AlgopyTestContext) -> None
         contract.register_endpoint(String("1.2.3.4:5678"))
     with ctx.txn.create_group(active_txn_overrides={"sender": admin}):
         contract.set_allow_static(user, UInt64(0))
-    assert contract.allow_static[user] == UInt64(BIT_MIGRATED)
+    assert contract.config_bitfield[user] == UInt64(BIT_MIGRATED)
     _, exists = contract.static_endpoint.maybe(user)
     assert not exists
 
