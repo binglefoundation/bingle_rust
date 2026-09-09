@@ -1,9 +1,16 @@
 import algosdk.logic
 import pytest
-from algopy import OnCompleteAction, UInt64, op
+from algopy import OnCompleteAction, String, UInt64, op
 from algopy_testing import AlgopyTestContext, algopy_testing_context
 
-from smart_contracts.bingle_dapp.contract import BingleDapp
+from smart_contracts.bingle_dapp.contract import (
+    BIT_MIGRATED,
+    BIT_RELAY,
+    BIT_STATIC,
+    BIT_SW_CLIENT,
+    BIT_SW_NODE,
+    BingleDapp,
+)
 
 MIN_BALANCE = 100_000
 # migrate_reserve keeps one min_txn_fee back per potential inner txn so the app stays at min balance.
@@ -323,21 +330,20 @@ def test_migrate_local_skips_handle_if_already_registered(ctx: AlgopyTestContext
 
 
 def test_migrate_local_copies_allow_static_and_endpoint(ctx: AlgopyTestContext) -> None:
-    from algopy import Application, String
     contract, _, _ = _deploy(ctx)
     old_app = ctx.any.application()
     contract.set_predecessor_app(old_app)
     user = ctx.any.account()
+    # Old app holds the legacy scalar encoding; migrate folds it into the packed field + sentinel.
     ctx.ledger.set_local_state(old_app, user, b"allow_static", 1)
     ctx.ledger.set_local_state(old_app, user, b"static_endpoint", b"https://example.com/ep")
     with ctx.txn.create_group(active_txn_overrides={"sender": user}):
         contract.migrate_local(old_app)
-    assert contract.allow_static[user] == UInt64(1)
+    assert contract.allow_static[user] == UInt64(BIT_MIGRATED | BIT_STATIC)
     assert contract.static_endpoint[user] == String("https://example.com/ep")
 
 
 def test_migrate_local_does_not_copy_endpoint_when_allow_static_zero(ctx: AlgopyTestContext) -> None:
-    from algopy import Application
     contract, _, _ = _deploy(ctx)
     old_app = ctx.any.application()
     contract.set_predecessor_app(old_app)
@@ -346,13 +352,13 @@ def test_migrate_local_does_not_copy_endpoint_when_allow_static_zero(ctx: Algopy
     ctx.ledger.set_local_state(old_app, user, b"static_endpoint", b"https://example.com/ep")
     with ctx.txn.create_group(active_txn_overrides={"sender": user}):
         contract.migrate_local(old_app)
-    assert contract.allow_static[user] == UInt64(0)
+    # Migrated (sentinel set) but the static bit is clear, so the endpoint is not copied.
+    assert contract.allow_static[user] == UInt64(BIT_MIGRATED)
     _, exists = contract.static_endpoint.maybe(user)
     assert not exists
 
 
 def test_migrate_local_copies_allow_relay(ctx: AlgopyTestContext) -> None:
-    from algopy import Application
     contract, _, _ = _deploy(ctx)
     old_app = ctx.any.application()
     contract.set_predecessor_app(old_app)
@@ -360,7 +366,146 @@ def test_migrate_local_copies_allow_relay(ctx: AlgopyTestContext) -> None:
     ctx.ledger.set_local_state(old_app, user, b"allow_relay", 1)
     with ctx.txn.create_group(active_txn_overrides={"sender": user}):
         contract.migrate_local(old_app)
-    assert contract.allow_relay[user] == UInt64(1)
+    # Legacy relay grant folds into the packed field's relay bit (no separate allow_relay write).
+    assert contract.allow_static[user] == UInt64(BIT_MIGRATED | BIT_RELAY)
+
+
+def test_migrate_local_copies_packed_field_verbatim(ctx: AlgopyTestContext) -> None:
+    contract, _, _ = _deploy(ctx)
+    old_app = ctx.any.application()
+    contract.set_predecessor_app(old_app)
+    user = ctx.any.account()
+    # Old app already ran this contract version: its allow_static slot holds the packed bitfield
+    # (with sw bits). migrate must carry those over verbatim, not re-fold them.
+    packed = BIT_MIGRATED | BIT_STATIC | BIT_SW_NODE | BIT_SW_CLIENT
+    ctx.ledger.set_local_state(old_app, user, b"allow_static", packed)
+    with ctx.txn.create_group(active_txn_overrides={"sender": user}):
+        contract.migrate_local(old_app)
+    assert contract.allow_static[user] == UInt64(packed)
+
+
+def test_set_allow_static_sets_bit_and_migrates(ctx: AlgopyTestContext) -> None:
+    contract, admin, _ = _deploy(ctx)
+    user = ctx.any.account()
+    with ctx.txn.create_group(active_txn_overrides={"sender": admin}):
+        contract.set_allow_static(user, UInt64(1))
+    assert contract.allow_static[user] == UInt64(BIT_MIGRATED | BIT_STATIC)
+
+
+def test_set_allow_relay_sets_bit(ctx: AlgopyTestContext) -> None:
+    contract, admin, _ = _deploy(ctx)
+    user = ctx.any.account()
+    with ctx.txn.create_group(active_txn_overrides={"sender": admin}):
+        contract.set_allow_relay(user, UInt64(1))
+    assert contract.allow_static[user] == UInt64(BIT_MIGRATED | BIT_RELAY)
+
+
+def test_set_allow_sw_node_sets_bit(ctx: AlgopyTestContext) -> None:
+    contract, admin, _ = _deploy(ctx)
+    user = ctx.any.account()
+    with ctx.txn.create_group(active_txn_overrides={"sender": admin}):
+        contract.set_allow_sw_node(user, UInt64(1))
+    assert contract.allow_static[user] == UInt64(BIT_MIGRATED | BIT_SW_NODE)
+
+
+def test_set_allow_sw_client_sets_bit(ctx: AlgopyTestContext) -> None:
+    contract, admin, _ = _deploy(ctx)
+    user = ctx.any.account()
+    with ctx.txn.create_group(active_txn_overrides={"sender": admin}):
+        contract.set_allow_sw_client(user, UInt64(1))
+    assert contract.allow_static[user] == UInt64(BIT_MIGRATED | BIT_SW_CLIENT)
+
+
+def test_set_allow_preserves_other_bits(ctx: AlgopyTestContext) -> None:
+    contract, admin, _ = _deploy(ctx)
+    user = ctx.any.account()
+    with ctx.txn.create_group(active_txn_overrides={"sender": admin}):
+        contract.set_allow_static(user, UInt64(1))
+    with ctx.txn.create_group(active_txn_overrides={"sender": admin}):
+        contract.set_allow_sw_node(user, UInt64(1))
+    # Second setter leaves the static bit intact.
+    assert contract.allow_static[user] == UInt64(BIT_MIGRATED | BIT_STATIC | BIT_SW_NODE)
+
+
+def test_set_allow_clear_bit_keeps_others(ctx: AlgopyTestContext) -> None:
+    contract, admin, _ = _deploy(ctx)
+    user = ctx.any.account()
+    with ctx.txn.create_group(active_txn_overrides={"sender": admin}):
+        contract.set_allow_static(user, UInt64(1))
+    with ctx.txn.create_group(active_txn_overrides={"sender": admin}):
+        contract.set_allow_relay(user, UInt64(1))
+    with ctx.txn.create_group(active_txn_overrides={"sender": admin}):
+        contract.set_allow_relay(user, UInt64(0))
+    # Clearing relay leaves static set and the sentinel intact.
+    assert contract.allow_static[user] == UInt64(BIT_MIGRATED | BIT_STATIC)
+
+
+def test_set_allow_folds_legacy_scalars_on_first_write(ctx: AlgopyTestContext) -> None:
+    contract, admin, _ = _deploy(ctx)
+    user = ctx.any.account()
+    # An un-migrated account holding the legacy separate scalars in this app.
+    ctx.ledger.set_local_state(contract, user, b"allow_static", 1)
+    ctx.ledger.set_local_state(contract, user, b"allow_relay", 1)
+    # First write migrates: folds both legacy grants into the packed field and adds the new bit.
+    with ctx.txn.create_group(active_txn_overrides={"sender": admin}):
+        contract.set_allow_sw_client(user, UInt64(1))
+    assert contract.allow_static[user] == UInt64(
+        BIT_MIGRATED | BIT_STATIC | BIT_RELAY | BIT_SW_CLIENT
+    )
+
+
+def test_set_allow_by_non_admin_fails(ctx: AlgopyTestContext) -> None:
+    contract, _, _ = _deploy(ctx)
+    user = ctx.any.account()
+    non_admin = ctx.any.account()
+    with pytest.raises(Exception):
+        with ctx.txn.create_group(active_txn_overrides={"sender": non_admin}):
+            contract.set_allow_sw_node(user, UInt64(1))
+
+
+def test_set_allow_static_clear_deletes_endpoint(ctx: AlgopyTestContext) -> None:
+    contract, admin, _ = _deploy(ctx)
+    user = ctx.any.account()
+    with ctx.txn.create_group(active_txn_overrides={"sender": admin}):
+        contract.set_allow_static(user, UInt64(1))
+    with ctx.txn.create_group(active_txn_overrides={"sender": user}):
+        contract.register_endpoint(String("1.2.3.4:5678"))
+    with ctx.txn.create_group(active_txn_overrides={"sender": admin}):
+        contract.set_allow_static(user, UInt64(0))
+    assert contract.allow_static[user] == UInt64(BIT_MIGRATED)
+    _, exists = contract.static_endpoint.maybe(user)
+    assert not exists
+
+
+def test_register_endpoint_allowed_via_legacy_scalar(ctx: AlgopyTestContext) -> None:
+    contract, _, _ = _deploy(ctx)
+    user = ctx.any.account()
+    # Un-migrated legacy allow_static scalar (sentinel clear) must still authorise the caller.
+    ctx.ledger.set_local_state(contract, user, b"allow_static", 1)
+    with ctx.txn.create_group(active_txn_overrides={"sender": user}):
+        contract.register_endpoint(String("1.2.3.4:5678"))
+    assert contract.static_endpoint[user] == String("1.2.3.4:5678")
+
+
+def test_register_endpoint_allowed_via_packed_bit(ctx: AlgopyTestContext) -> None:
+    contract, admin, _ = _deploy(ctx)
+    user = ctx.any.account()
+    with ctx.txn.create_group(active_txn_overrides={"sender": admin}):
+        contract.set_allow_static(user, UInt64(1))
+    with ctx.txn.create_group(active_txn_overrides={"sender": user}):
+        contract.register_endpoint(String("1.2.3.4:5678"))
+    assert contract.static_endpoint[user] == String("1.2.3.4:5678")
+
+
+def test_register_endpoint_denied_without_static_bit(ctx: AlgopyTestContext) -> None:
+    contract, admin, _ = _deploy(ctx)
+    user = ctx.any.account()
+    # Granting only relay leaves the static bit clear, so register_endpoint must be rejected.
+    with ctx.txn.create_group(active_txn_overrides={"sender": admin}):
+        contract.set_allow_relay(user, UInt64(1))
+    with pytest.raises(Exception):
+        with ctx.txn.create_group(active_txn_overrides={"sender": user}):
+            contract.register_endpoint(String("1.2.3.4:5678"))
 
 
 def test_set_successor_app_by_creator(ctx: AlgopyTestContext) -> None:

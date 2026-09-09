@@ -13,6 +13,28 @@ use algo_ops::{AccountScanCache, AlgoOps, AppArg, ScannedAccount, address_to_byt
 // `QueryMode` from there so callers keep using `bingle_core::blockchain::algo_bingle::QueryMode`.
 pub use algo_ops::QueryMode;
 
+/// Bit positions in the packed per-account "allow" permission field, held in the account's
+/// `allow_static` local-state uint on the Bingle DApp (issue #232). A set bit grants the permission.
+///
+/// These mirror the on-chain contract's `BIT_*` constants (`dapp_projects/.../contract.py`) and are
+/// the shared decode contract for both the bingle_core readers here and the Sidewinder membership
+/// reader; keep the two in sync. Bit 63 is a migration sentinel, not a permission (see
+/// [`BIT_MIGRATED`](allow_flags::BIT_MIGRATED)).
+pub mod allow_flags {
+    /// Permitted to register a static endpoint.
+    pub const BIT_STATIC: u64 = 1 << 0;
+    /// Permitted to relay.
+    pub const BIT_RELAY: u64 = 1 << 1;
+    /// Permitted as a Sidewinder cluster node.
+    pub const BIT_SW_NODE: u64 = 1 << 2;
+    /// Permitted as a Sidewinder API client.
+    pub const BIT_SW_CLIENT: u64 = 1 << 3;
+    // Bits 4..62 are reserved for future flags.
+    /// Migration sentinel (bit 63): when set the value is the packed bitfield; when clear the account
+    /// still holds the pre-bitfield legacy `allow_static` / `allow_relay` scalar encoding.
+    pub const BIT_MIGRATED: u64 = 1 << 63;
+}
+
 use algonaut::{
     Algod,
     core::{Address, AppId, AssetId, ToMsgPack},
@@ -320,6 +342,35 @@ impl AlgoBingle {
         kvs
     }
 
+    /// Shared implementation of the admin-only `set_allow_*(address,uint64)void` setters: calls
+    /// `sig` with the target as the ARC-4 `address` argument and `allow` as 0/1, passing the target
+    /// in the app call's foreign-accounts array (via [`AlgoOps::call_app_with_accounts`]) so the
+    /// contract can write that account's local state. Returns the submitted transaction id.
+    fn set_allow_flag(
+        &self,
+        app_id: u64,
+        target_address: &str,
+        sig: &str,
+        allow: bool,
+    ) -> Result<String> {
+        if app_id == 0 {
+            bail!("app_id must be > 0");
+        }
+        let pk = address_to_byte_key(target_address)
+            .map_err(|e| anyhow!("invalid target address: {e}"))?;
+        let (txid, _logs) = self.ops.call_app_with_accounts(
+            app_id,
+            None,
+            Some(sig),
+            &[
+                AppArg::Bytes(pk.to_vec()),
+                AppArg::Uint(if allow { 1 } else { 0 }),
+            ],
+            &[target_address],
+        )?;
+        Ok(txid)
+    }
+
     /// Grant or revoke permission for a specific address to register a static endpoint.
     ///
     /// Calls set_allow_static on-chain for the provided target address. The caller must be the
@@ -331,22 +382,12 @@ impl AlgoBingle {
         target_address: &str,
         allow: bool,
     ) -> Result<String> {
-        if app_id == 0 {
-            bail!("app_id must be > 0");
-        }
-        // Use AlgoOps::call_app and pass target address as an ARC-4 address argument
-        let pk = address_to_byte_key(target_address)
-            .map_err(|e| anyhow!("invalid target address: {e}"))?;
-        let (txid, _logs) = self.ops.call_app(
+        self.set_allow_flag(
             app_id,
-            None,
-            Some("set_allow_static(address,uint64)void"),
-            &[
-                AppArg::Bytes(pk.to_vec()),
-                AppArg::Uint(if allow { 1 } else { 0 }),
-            ],
-        )?;
-        Ok(txid)
+            target_address,
+            "set_allow_static(address,uint64)void",
+            allow,
+        )
     }
 
     /// Grant or revoke permission for a specific address to relay.
@@ -360,22 +401,50 @@ impl AlgoBingle {
         target_address: &str,
         allow: bool,
     ) -> Result<String> {
-        if app_id == 0 {
-            bail!("app_id must be > 0");
-        }
-        // Use AlgoOps::call_app and pass target address as an ARC-4 address argument
-        let pk = address_to_byte_key(target_address)
-            .map_err(|e| anyhow!("invalid target address: {e}"))?;
-        let (txid, _logs) = self.ops.call_app(
+        self.set_allow_flag(
             app_id,
-            None,
-            Some("set_allow_relay(address,uint64)void"),
-            &[
-                AppArg::Bytes(pk.to_vec()),
-                AppArg::Uint(if allow { 1 } else { 0 }),
-            ],
-        )?;
-        Ok(txid)
+            target_address,
+            "set_allow_relay(address,uint64)void",
+            allow,
+        )
+    }
+
+    /// Grant or revoke permission for a specific address to act as a Sidewinder cluster node.
+    ///
+    /// Calls set_allow_sw_node on-chain for the provided target address. The caller must be the
+    /// app admin (enforced by the contract). The target address must be opted-in to the app.
+    /// Returns the submitted transaction id on success.
+    pub fn set_allow_sw_node(
+        &self,
+        app_id: u64,
+        target_address: &str,
+        allow: bool,
+    ) -> Result<String> {
+        self.set_allow_flag(
+            app_id,
+            target_address,
+            "set_allow_sw_node(address,uint64)void",
+            allow,
+        )
+    }
+
+    /// Grant or revoke permission for a specific address to act as a Sidewinder API client.
+    ///
+    /// Calls set_allow_sw_client on-chain for the provided target address. The caller must be the
+    /// app admin (enforced by the contract). The target address must be opted-in to the app.
+    /// Returns the submitted transaction id on success.
+    pub fn set_allow_sw_client(
+        &self,
+        app_id: u64,
+        target_address: &str,
+        allow: bool,
+    ) -> Result<String> {
+        self.set_allow_flag(
+            app_id,
+            target_address,
+            "set_allow_sw_client(address,uint64)void",
+            allow,
+        )
     }
 
     /// Withdraw Algo from the app account to the given address.
@@ -657,16 +726,84 @@ impl AlgoBingle {
         Ok(Some(txid))
     }
 
-    /// Check if a specific address is allowed to relay on-chain.
+    /// Decode an account's effective allow bitfield from its decoded local-state key/values,
+    /// transparently handling both encodings (issue #232). Mirrors the on-chain `_effective_allow_bits`:
+    /// if the packed `allow_static` value has the [`allow_flags::BIT_MIGRATED`] sentinel it is returned
+    /// as-is; otherwise the account is un-migrated, so the legacy separate `allow_static` / `allow_relay`
+    /// scalars are folded into bits 0/1 (the Sidewinder bits read 0, as they did not exist then).
     ///
-    /// This queries the local state of the account for the provided app_id.
-    /// Returns Ok(Some(true)) if allowed, Ok(Some(false)) if not allowed, Ok(None) if not opted-in, or Err if other error.
-    pub fn check_allow_relay(&self, app_id: u64, address: &str) -> Result<Option<bool>> {
+    /// The returned value is a bitfield to test against the [`allow_flags`] masks. Pure (no network),
+    /// so it is unit-testable against hand-built local-state key/values.
+    pub fn effective_allow_bits(entries: &[(String, String)]) -> u64 {
+        let find_uint = |key: &str| -> Option<u64> {
+            entries
+                .iter()
+                .find(|(k, _)| k == key)
+                .and_then(|(_, v)| v.parse::<u64>().ok())
+        };
+        let raw = find_uint("allow_static");
+        if let Some(r) = raw
+            && r & allow_flags::BIT_MIGRATED != 0
+        {
+            return r;
+        }
+        let mut bits = 0u64;
+        if let Some(r) = raw
+            && r != 0
+        {
+            bits |= allow_flags::BIT_STATIC;
+        }
+        if let Some(r) = find_uint("allow_relay")
+            && r != 0
+        {
+            bits |= allow_flags::BIT_RELAY;
+        }
+        bits
+    }
+
+    /// Read a single allow bit for an account, sentinel-aware (see [`Self::effective_allow_bits`]).
+    /// Returns `Ok(Some(bool))` when the account is opted in (its local state is present), `Ok(None)`
+    /// when it is not opted in, or `Err` on a query error.
+    fn check_allow_bit(&self, app_id: u64, address: &str, bit: u64) -> Result<Option<bool>> {
         if app_id == 0 {
             bail!("app_id must be > 0");
         }
         let kvs = self.ops.local_state_for_account(app_id, address)?;
-        Ok(kvs.map(|entries| entries.iter().any(|(k, v)| k == "allow_relay" && v == "1")))
+        Ok(kvs.map(|entries| Self::effective_allow_bits(&entries) & bit != 0))
+    }
+
+    /// Check if a specific address is allowed to register a static endpoint on-chain.
+    ///
+    /// Sentinel-aware (packed bitfield or legacy scalar). Returns `Ok(Some(true))` if allowed,
+    /// `Ok(Some(false))` if not, `Ok(None)` if not opted-in, or `Err` on other error.
+    pub fn check_allow_static(&self, app_id: u64, address: &str) -> Result<Option<bool>> {
+        self.check_allow_bit(app_id, address, allow_flags::BIT_STATIC)
+    }
+
+    /// Check if a specific address is allowed to relay on-chain.
+    ///
+    /// Sentinel-aware (packed bitfield or legacy scalar). Returns `Ok(Some(true))` if allowed,
+    /// `Ok(Some(false))` if not, `Ok(None)` if not opted-in, or `Err` on other error.
+    pub fn check_allow_relay(&self, app_id: u64, address: &str) -> Result<Option<bool>> {
+        self.check_allow_bit(app_id, address, allow_flags::BIT_RELAY)
+    }
+
+    /// Check if a specific address is permitted as a Sidewinder cluster node on-chain.
+    ///
+    /// Sentinel-aware (packed bitfield or legacy scalar; always false for un-migrated accounts, which
+    /// predate this flag). Returns `Ok(Some(true))` if allowed, `Ok(Some(false))` if not, `Ok(None)`
+    /// if not opted-in, or `Err` on other error.
+    pub fn check_allow_sw_node(&self, app_id: u64, address: &str) -> Result<Option<bool>> {
+        self.check_allow_bit(app_id, address, allow_flags::BIT_SW_NODE)
+    }
+
+    /// Check if a specific address is permitted as a Sidewinder API client on-chain.
+    ///
+    /// Sentinel-aware (packed bitfield or legacy scalar; always false for un-migrated accounts, which
+    /// predate this flag). Returns `Ok(Some(true))` if allowed, `Ok(Some(false))` if not, `Ok(None)`
+    /// if not opted-in, or `Err` on other error.
+    pub fn check_allow_sw_client(&self, app_id: u64, address: &str) -> Result<Option<bool>> {
+        self.check_allow_bit(app_id, address, allow_flags::BIT_SW_CLIENT)
     }
 
     /// Resolve an account `address` to the handle it has registered on-chain, by reading the

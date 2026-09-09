@@ -3,6 +3,27 @@ from algopy import ARC4Contract, Application, String, UInt64, Global, Txn, Globa
 from algopy.arc4 import abimethod, baremethod
 
 
+# --- Allow-flag bitfield -----------------------------------------------------------------------
+# The per-account "allow" permissions are packed into a single UInt64 local-state value, stored
+# under the existing `allow_static` key. Each flag is one bit. Bit 63 (the most significant bit) is
+# a MIGRATED sentinel that distinguishes this packed encoding from the pre-bitfield legacy encoding
+# (two separate allow_static / allow_relay uint slots holding 0/1): set => the value is the packed
+# bitfield; clear => the account still holds the legacy scalar. Migration is lazy and per-account —
+# the first set_allow_* write folds the legacy scalars into bits 0/1 and sets bit 63 (see
+# `_set_allow_bit`); readers fold on the fly (see `_packed_allow_bits`) — so no bulk migration
+# pass is needed and no previously granted flag is lost.
+#
+# These bit positions are the on-chain contract consumed off-chain by the bingle_core readers and
+# the Sidewinder membership reader (issue #232); keep them in sync with
+# `bingle_core::blockchain::algo_bingle` allow-flag constants.
+BIT_STATIC = 1 << 0     # permitted to register a static endpoint
+BIT_RELAY = 1 << 1      # permitted to relay
+BIT_SW_NODE = 1 << 2    # permitted as a Sidewinder cluster node
+BIT_SW_CLIENT = 1 << 3  # permitted as a Sidewinder API client
+# bits 4..62 are reserved for future flags.
+BIT_MIGRATED = 1 << 63  # sentinel: set => packed bitfield; clear => legacy allow_static/relay scalar
+
+
 class BingleDapp(ARC4Contract):
     # Global state: price of 1 Bingle$ in microAlgos
     def __init__(self) -> None:
@@ -13,12 +34,16 @@ class BingleDapp(ARC4Contract):
         # Local state for registration
         self.handle = LocalState(String, key="Handle")
         self.handle_time = LocalState(UInt64, key="HandleTime")
-        # Local state flag: whether caller is allowed to set a static endpoint (1 == true)
+        # Local state: the packed allow-flag bitfield (see the module-level BIT_* constants). Reuses
+        # the historical `allow_static` uint slot; once an account is migrated (bit 63 set) this one
+        # value holds all four allow flags, so num_uints does not grow for the two new flags.
         self.allow_static = LocalState(UInt64, key="allow_static")
         # Local state value: caller's registered static endpoint (if any)
         self.static_endpoint = LocalState(String, key="static_endpoint")
         self.static_endpoint_x = LocalState(String, key="static_endpoint_x")
-        # Local state flag: whether caller is allowed to relay (1 == true)
+        # Legacy local state: the pre-bitfield allow_relay scalar. Kept declared so the local uint
+        # schema count is unchanged (an in-place UpdateApplication cannot alter the schema); no longer
+        # written — it is only read to fold an un-migrated account's relay grant into the packed field.
         self.allow_relay = LocalState(UInt64, key="allow_relay")
         # Accepted-ancestor lineage: a packed list of 8-byte big-endian app ids of every
         # creator-blessed source app that migrate_local will copy from. Prevents privilege
@@ -78,6 +103,62 @@ class BingleDapp(ARC4Contract):
     def _is_superseded(self) -> bool:
         """True if this app has been marked superseded via set_successor_app."""
         return self.successor_app.get(default=Bytes()).length != UInt64(0)
+
+    @subroutine
+    def _fold_allow(
+        self, static_raw: UInt64, has_static: bool, relay_raw: UInt64, has_relay: bool
+    ) -> UInt64:
+        """Fold an (allow_static, allow_relay) pair into the packed bitfield.
+
+        If `static_raw` already carries the MIGRATED sentinel it is the packed value and returned
+        as-is (its relay / sw bits are already present). Otherwise the two legacy scalars are folded
+        into bits 0/1 and the sentinel is set (allow_sw_node / allow_sw_client did not exist
+        pre-migration, so they read 0). Shared by the on-account read/write path and migrate_local, so
+        the fold arithmetic exists once.
+        """
+        if has_static and (static_raw & UInt64(BIT_MIGRATED)) != UInt64(0):
+            return static_raw
+        packed = UInt64(BIT_MIGRATED)
+        if has_static and static_raw != UInt64(0):
+            packed = packed | UInt64(BIT_STATIC)
+        if has_relay and relay_raw != UInt64(0):
+            packed = packed | UInt64(BIT_RELAY)
+        return packed
+
+    @subroutine
+    def _packed_allow_bits(self, account: Account) -> UInt64:
+        """An account's allow bitfield in packed form, folding the legacy encoding if the account is
+        un-migrated (sentinel-aware). Test permission bits against the BIT_* masks; the MIGRATED bit
+        may be set. Returns just the sentinel (no permission bits) for an account with no allow state.
+        """
+        static_raw, has_static = self.allow_static.maybe(account)
+        relay_raw, has_relay = self.allow_relay.maybe(account)
+        return self._fold_allow(static_raw, has_static, relay_raw, has_relay)
+
+    @subroutine
+    def _set_allow_bit(self, target: Account, mask: UInt64, allow: UInt64) -> None:
+        """Admin-only: set (`allow != 0`) or clear one allow bit for `target`, migrating the account's
+        encoding on first write (via `_packed_allow_bits`, so no previously granted flag is lost), then
+        write the packed value. The admin check and the 0/1 normalisation live here so every
+        set_allow_* method shares them.
+        """
+        assert Txn.sender == self.app_admin.value
+        packed = self._packed_allow_bits(target)
+        if allow != UInt64(0):
+            packed = packed | mask
+        else:
+            packed = packed & ~mask
+        self.allow_static[target] = packed
+
+    @subroutine
+    def _clear_endpoint(self, account: Account) -> None:
+        """Delete both static-endpoint local-state keys for `account`, if present."""
+        _cur, exists = self.static_endpoint.maybe(account)
+        if exists:
+            del self.static_endpoint[account]
+        _cur_x, exists_x = self.static_endpoint_x.maybe(account)
+        if exists_x:
+            del self.static_endpoint_x[account]
 
     @baremethod(allow_actions=["UpdateApplication"])
     def update_application(self) -> None:
@@ -277,40 +358,49 @@ class BingleDapp(ARC4Contract):
     def set_allow_static(self, target_address: Account, allow: UInt64) -> None:
         """Enable or disable permission for a target address to register a static endpoint.
 
-        The target address must be supplied as an argument and also appear in Txn.Accounts[0].
-        Only the application creator may call this method. The target account must be opted-in
-        to the application.
+        The target address must be supplied as an argument and also appear in the transaction's
+        foreign accounts array. Only the application admin may call this method. The target account
+        must be opted-in to the application. Sets/clears the allow_static bit in the packed allow
+        field (migrating the account's encoding on first write). Admin-only (enforced in
+        `_set_allow_bit`).
         """
-        assert Txn.sender == self.app_admin.value
-        # Optional consistency check: the provided address must match Txn.accounts[0]
-        # (Not when we pass the creator in accounts)
-        # assert target_address == Txn.accounts(0)
-        # Normalize to 0/1
-        val = UInt64(1) if allow != UInt64(0) else UInt64(0)
-        # Target from foreign accounts (first account)
-        self.allow_static[target_address] = val
-        # If disabling permission, also clear any existing static_endpoint for the target
-        if val == UInt64(0):
-            _cur, exists = self.static_endpoint.maybe(target_address)
-            if exists:
-                del self.static_endpoint[target_address]
-            _cur_x, exists_x = self.static_endpoint_x.maybe(target_address)
-            if exists_x:
-                del self.static_endpoint_x[target_address]
+        self._set_allow_bit(target_address, UInt64(BIT_STATIC), allow)
+        # The static bit now equals `allow`; if it was cleared, also clear any existing static_endpoint.
+        if allow == UInt64(0):
+            self._clear_endpoint(target_address)
 
     @abimethod()
     def set_allow_relay(self, target_address: Account, allow: UInt64) -> None:
         """Enable or disable permission for a target address to relay.
 
-        The target address must be supplied as an argument.
-        Only the application creator may call this method. The target account must be opted-in
-        to the application.
+        The target address must be supplied as an argument and appear in the transaction's foreign
+        accounts array. Only the application admin may call this method. The target account must be
+        opted-in to the application. Sets/clears the allow_relay bit in the packed allow field.
+        Admin-only (enforced in `_set_allow_bit`).
         """
-        assert Txn.sender == self.app_admin.value
-        # Normalize to 0/1
-        val = UInt64(1) if allow != UInt64(0) else UInt64(0)
-        # Target from foreign accounts
-        self.allow_relay[target_address] = val
+        self._set_allow_bit(target_address, UInt64(BIT_RELAY), allow)
+
+    @abimethod()
+    def set_allow_sw_node(self, target_address: Account, allow: UInt64) -> None:
+        """Enable or disable permission for a target address to act as a Sidewinder cluster node.
+
+        The target address must be supplied as an argument and appear in the transaction's foreign
+        accounts array. Only the application admin may call this method. The target account must be
+        opted-in to the application. Sets/clears the allow_sw_node bit in the packed allow field.
+        Admin-only (enforced in `_set_allow_bit`).
+        """
+        self._set_allow_bit(target_address, UInt64(BIT_SW_NODE), allow)
+
+    @abimethod()
+    def set_allow_sw_client(self, target_address: Account, allow: UInt64) -> None:
+        """Enable or disable permission for a target address to act as a Sidewinder API client.
+
+        The target address must be supplied as an argument and appear in the transaction's foreign
+        accounts array. Only the application admin may call this method. The target account must be
+        opted-in to the application. Sets/clears the allow_sw_client bit in the packed allow field.
+        Admin-only (enforced in `_set_allow_bit`).
+        """
+        self._set_allow_bit(target_address, UInt64(BIT_SW_CLIENT), allow)
 
     @abimethod()
     def set_predecessor_app(self, predecessor: Application) -> None:
@@ -440,8 +530,11 @@ class BingleDapp(ARC4Contract):
         The handle_time is preserved from the old app but bumped past last_handle_time
         if needed to avoid duplicate timestamps.
 
-        allow_static, allow_relay: copied as-is (they were admin-granted on the old app).
-        static_endpoint / static_endpoint_x: only copied when allow_static == 1.
+        allow flags: the admin-granted allow_static / allow_relay from the old app are folded into
+        this contract's packed allow bitfield (with the MIGRATED sentinel set). If the old app already
+        stored the packed encoding (it ran this contract version), it is copied verbatim so its
+        allow_sw_node / allow_sw_client bits carry over too.
+        static_endpoint / static_endpoint_x: only copied when the resulting allow_static bit is set.
         """
         lineage = self.ancestor_apps.get(default=Bytes())
         assert self._lineage_contains(lineage, old_app.id)
@@ -461,9 +554,15 @@ class BingleDapp(ARC4Contract):
                     self.last_handle_time.value = handle_time
 
         old_allow_static, has_allow_static = op.AppLocal.get_ex_uint64(sender, old_app, b"allow_static")
-        if has_allow_static:
-            self.allow_static[sender] = old_allow_static
-            if old_allow_static == UInt64(1):
+        old_allow_relay, has_allow_relay = op.AppLocal.get_ex_uint64(sender, old_app, b"allow_relay")
+        if has_allow_static or has_allow_relay:
+            # Fold the ancestor's allow state into this contract's packed field (verbatim if the
+            # ancestor already stored the packed encoding, else legacy scalars folded + sentinel).
+            packed = self._fold_allow(
+                old_allow_static, has_allow_static, old_allow_relay, has_allow_relay
+            )
+            self.allow_static[sender] = packed
+            if (packed & UInt64(BIT_STATIC)) != UInt64(0):
                 old_endpoint, has_endpoint = op.AppLocal.get_ex_bytes(sender, old_app, b"static_endpoint")
                 if has_endpoint:
                     self.static_endpoint[sender] = String.from_bytes(old_endpoint)
@@ -471,25 +570,21 @@ class BingleDapp(ARC4Contract):
                 if has_endpoint_x:
                     self.static_endpoint_x[sender] = String.from_bytes(old_endpoint_x)
 
-        old_allow_relay, has_allow_relay = op.AppLocal.get_ex_uint64(sender, old_app, b"allow_relay")
-        if has_allow_relay:
-            self.allow_relay[sender] = old_allow_relay
-
     @abimethod()
     def register_endpoint(self, endpoint: String) -> None:
         """Register or clear a caller's static endpoint.
 
         Requirements:
-        - Caller must have local state key "allow_static" set to true (1).
+        - Caller must have the allow_static bit set (packed field, or the legacy allow_static scalar
+          for an un-migrated account — decoded uniformly via `_effective_allow_bits`).
         - If `endpoint` is non-empty, store it under "static_endpoint" and
           "static_endpoint_x" (if needed) in local state.
         - If `endpoint` is empty (""), delete both local state keys.
         """
         # Reject once superseded: force the client to upgrade to the successor app.
         assert not self._is_superseded()
-        # Ensure the caller is allowed to set a static endpoint
-        allow_val, allow_exists = self.allow_static.maybe(Txn.sender)
-        assert allow_exists and allow_val == UInt64(1)
+        # Ensure the caller is allowed to set a static endpoint (sentinel-aware decode)
+        assert (self._packed_allow_bits(Txn.sender) & UInt64(BIT_STATIC)) != UInt64(0)
 
         # Non-empty endpoint => set; empty => delete
         if endpoint != String():
@@ -503,9 +598,4 @@ class BingleDapp(ARC4Contract):
                 if exists_x:
                     del self.static_endpoint_x[Txn.sender]
         else:
-            _cur, exists = self.static_endpoint.maybe(Txn.sender)
-            if exists:
-                del self.static_endpoint[Txn.sender]
-            _cur_x, exists_x = self.static_endpoint_x.maybe(Txn.sender)
-            if exists_x:
-                del self.static_endpoint_x[Txn.sender]
+            self._clear_endpoint(Txn.sender)

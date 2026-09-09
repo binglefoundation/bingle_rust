@@ -286,11 +286,11 @@ pub fn init_test_logging_with_filter(filter_str: &str) {
 ///    algod `/v2/teal/compile` endpoint, returning AVM bytecode for each program.
 ///
 /// 2. **ApplicationCreate** — submits a `CreateApplication` transaction signed by the creator.
-///    Declares the following state schema:
-///    - Global: 2 ints (`BinglePrice`, `LastHandleTime`)
-///    - Local:  3 ints (`handle_time`, `allow_static`, `allow_relay`),
-///              3 byteslices (`Handle`, `static_endpoint`, `static_endpoint_x`)
-///    Returns the assigned `app_id`.
+///    Declares the state schema carried in `BingleDapp.arc56.json` (counts include reserved spare
+///    slots for in-place upgrades): Global 6 ints / 8 byteslices, Local 5 ints / 5 byteslices. The
+///    in-use local keys are `HandleTime` + the packed `allow_static` allow-flag bitfield (issue #232;
+///    the `allow_relay` uint slot is retained but no longer written) as ints, and `Handle`,
+///    `static_endpoint`, `static_endpoint_x` as byteslices. Returns the assigned `app_id`.
 ///
 /// 3. **`set_bingle_price(uint64)void`** — ApplicationCall (NoOp) by the **creator**.
 ///    Dapp: asserts `Txn.sender == Global.creator_address`, writes `price` to global state
