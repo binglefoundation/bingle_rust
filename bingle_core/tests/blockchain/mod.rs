@@ -44,5 +44,8 @@ pub mod algo_bingle_unit;
 #[path = "static_endpoint_guard.rs"]
 pub mod static_endpoint_guard;
 
+#[path = "sidewinder_endpoint_test.rs"]
+pub mod sidewinder_endpoint_test;
+
 #[path = "blockchain_ops_trait.rs"]
 pub mod blockchain_ops_trait;

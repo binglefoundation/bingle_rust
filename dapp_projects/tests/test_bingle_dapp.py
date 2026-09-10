@@ -549,6 +549,112 @@ def test_register_endpoint_fails_when_superseded(ctx: AlgopyTestContext) -> None
             contract.register_endpoint(String("1.2.3.4:5678"))
 
 
+def test_register_sidewinder_endpoint_allowed_via_sw_node_bit(ctx: AlgopyTestContext) -> None:
+    from algopy import Bytes
+    from algopy.arc4 import DynamicBytes
+
+    contract, admin, _ = _deploy(ctx)
+    user = ctx.any.account()
+    # The stored value is the opaque base64-wrapped record; the contract keeps it verbatim.
+    record = b"AQ23AAABE4g="
+    with ctx.txn.create_group(active_txn_overrides={"sender": admin}):
+        contract.set_allow_sw_node(user, UInt64(1))
+    with ctx.txn.create_group(active_txn_overrides={"sender": user}):
+        contract.register_sidewinder_endpoint(DynamicBytes(record))
+    assert contract.sidewinder_endpoint[user] == Bytes(record)
+
+
+def test_register_sidewinder_endpoint_denied_without_sw_node_bit(ctx: AlgopyTestContext) -> None:
+    from algopy.arc4 import DynamicBytes
+
+    contract, admin, _ = _deploy(ctx)
+    user = ctx.any.account()
+    # Granting only sw_client leaves the sw_node bit clear, so publishing must be rejected.
+    with ctx.txn.create_group(active_txn_overrides={"sender": admin}):
+        contract.set_allow_sw_client(user, UInt64(1))
+    with pytest.raises(Exception):
+        with ctx.txn.create_group(active_txn_overrides={"sender": user}):
+            contract.register_sidewinder_endpoint(DynamicBytes(b"AQ23AAABE4g="))
+
+
+def test_register_sidewinder_endpoint_empty_clears_key(ctx: AlgopyTestContext) -> None:
+    from algopy.arc4 import DynamicBytes
+
+    contract, admin, _ = _deploy(ctx)
+    user = ctx.any.account()
+    with ctx.txn.create_group(active_txn_overrides={"sender": admin}):
+        contract.set_allow_sw_node(user, UInt64(1))
+    with ctx.txn.create_group(active_txn_overrides={"sender": user}):
+        contract.register_sidewinder_endpoint(DynamicBytes(b"AQ23AAABE4g="))
+    with ctx.txn.create_group(active_txn_overrides={"sender": user}):
+        contract.register_sidewinder_endpoint(DynamicBytes(b""))
+    _, exists = contract.sidewinder_endpoint.maybe(user)
+    assert not exists
+
+
+def test_set_allow_sw_node_clear_deletes_sidewinder_endpoint(ctx: AlgopyTestContext) -> None:
+    from algopy.arc4 import DynamicBytes
+
+    contract, admin, _ = _deploy(ctx)
+    user = ctx.any.account()
+    with ctx.txn.create_group(active_txn_overrides={"sender": admin}):
+        contract.set_allow_sw_node(user, UInt64(1))
+    with ctx.txn.create_group(active_txn_overrides={"sender": user}):
+        contract.register_sidewinder_endpoint(DynamicBytes(b"AQ23AAABE4g="))
+    # Revoking the node permission also clears the published endpoint (mirrors set_allow_static).
+    with ctx.txn.create_group(active_txn_overrides={"sender": admin}):
+        contract.set_allow_sw_node(user, UInt64(0))
+    assert contract.config_bitfield[user] == UInt64(BIT_MIGRATED)
+    _, exists = contract.sidewinder_endpoint.maybe(user)
+    assert not exists
+
+
+def test_register_sidewinder_endpoint_fails_when_superseded(ctx: AlgopyTestContext) -> None:
+    from algopy.arc4 import DynamicBytes
+
+    contract, admin, _ = _deploy(ctx)
+    user = ctx.any.account()
+    with ctx.txn.create_group(active_txn_overrides={"sender": admin}):
+        contract.set_allow_sw_node(user, UInt64(1))
+    contract.set_successor_app(ctx.any.application())
+    with ctx.txn.create_group(active_txn_overrides={"sender": user}):
+        with pytest.raises(AssertionError):
+            contract.register_sidewinder_endpoint(DynamicBytes(b"AQ23AAABE4g="))
+
+
+def test_migrate_local_copies_sidewinder_endpoint_when_sw_node_allowed(
+    ctx: AlgopyTestContext,
+) -> None:
+    from algopy import Application, Bytes
+
+    contract, _, _ = _deploy(ctx)
+    old_app = ctx.any.application()
+    contract.set_predecessor_app(old_app)
+    user = ctx.any.account()
+    # A packed ancestor value with the sw_node bit set, plus a published endpoint under rsvd_l_b1.
+    ctx.ledger.set_local_state(
+        old_app, user, b"allow_static", BIT_MIGRATED | BIT_SW_NODE
+    )
+    ctx.ledger.set_local_state(old_app, user, b"rsvd_l_b1", b"AQ23AAABE4g=")
+    with ctx.txn.create_group(active_txn_overrides={"sender": user}):
+        contract.migrate_local(old_app)
+    assert contract.sidewinder_endpoint[user] == Bytes(b"AQ23AAABE4g=")
+
+
+def test_migrate_local_skips_sidewinder_endpoint_without_sw_node(ctx: AlgopyTestContext) -> None:
+    contract, _, _ = _deploy(ctx)
+    old_app = ctx.any.application()
+    contract.set_predecessor_app(old_app)
+    user = ctx.any.account()
+    # sw_node bit clear (only static allowed), so the endpoint must not be copied.
+    ctx.ledger.set_local_state(old_app, user, b"allow_static", BIT_MIGRATED | BIT_STATIC)
+    ctx.ledger.set_local_state(old_app, user, b"rsvd_l_b1", b"AQ23AAABE4g=")
+    with ctx.txn.create_group(active_txn_overrides={"sender": user}):
+        contract.migrate_local(old_app)
+    _, exists = contract.sidewinder_endpoint.maybe(user)
+    assert not exists
+
+
 def test_withdraw_still_works_when_superseded(ctx: AlgopyTestContext) -> None:
     # Admin/creator winddown paths stay callable after the app is superseded so the old
     # app can be drained; only the user-facing state-changing methods are hard-blocked.

@@ -6,3 +6,8 @@
 /// Bingle's Algorand application and asset operations,
 /// [`AlgoBingle`](crate::blockchain::algo_bingle::AlgoBingle).
 pub mod algo_bingle;
+
+/// The shared Sidewinder node-endpoint record codec
+/// ([`SidewinderEndpointRecord`](crate::blockchain::sidewinder_endpoint::SidewinderEndpointRecord)),
+/// byte-compatible with Sidewinder `sw-membership`'s `EndpointRecord` (issue #237).
+pub mod sidewinder_endpoint;
