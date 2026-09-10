@@ -1,6 +1,6 @@
 # pyright: reportMissingModuleSource=false
 from algopy import ARC4Contract, Application, String, UInt64, Global, Txn, GlobalState, gtxn, urange, LocalState, itxn, Account, Bytes, op, subroutine
-from algopy.arc4 import abimethod, baremethod
+from algopy.arc4 import abimethod, baremethod, DynamicBytes
 
 
 # --- Allow-flag bitfield -----------------------------------------------------------------------
@@ -72,6 +72,8 @@ class BingleDapp(ARC4Contract):
         # source of truth for the reserved capacity. See the schema in BingleDapp.arc56.json.
         #
         # Reserved: 8 global slots (4 uint + 4 byte-slice), 4 local slots (2 uint + 2 byte-slice).
+        # One reserved local byte-slice (`rsvd_l_b1`) has since been repurposed as
+        # `sidewinder_endpoint` below, so 3 reserved local slots (2 uint + 1 byte-slice) remain.
         self.reserved_global_int_0 = GlobalState(UInt64, key="rsvd_g_i0")
         self.reserved_global_int_1 = GlobalState(UInt64, key="rsvd_g_i1")
         self.reserved_global_int_2 = GlobalState(UInt64, key="rsvd_g_i2")
@@ -83,7 +85,13 @@ class BingleDapp(ARC4Contract):
         self.reserved_local_int_0 = LocalState(UInt64, key="rsvd_l_i0")
         self.reserved_local_int_1 = LocalState(UInt64, key="rsvd_l_i1")
         self.reserved_local_bytes_0 = LocalState(Bytes, key="rsvd_l_b0")
-        self.reserved_local_bytes_1 = LocalState(Bytes, key="rsvd_l_b1")
+
+        # Local state value: the caller's published Sidewinder node endpoint record (see
+        # register_sidewinder_endpoint). Repurposes the reserved `rsvd_l_b1` byte-slice — same key and
+        # type, so the compiled schema is unchanged (issue #237). The value is the base64-wrapped
+        # compact endpoint blob whose layout is the shared codec with Sidewinder #372
+        # (sw-membership's EndpointRecord); the contract stores it opaquely.
+        self.sidewinder_endpoint = LocalState(Bytes, key="rsvd_l_b1")
 
     @abimethod(create="require")
     def create(self, app_admin: Account, app_withdrawer: Account) -> None:
@@ -163,6 +171,13 @@ class BingleDapp(ARC4Contract):
         _cur_x, exists_x = self.static_endpoint_x.maybe(account)
         if exists_x:
             del self.static_endpoint_x[account]
+
+    @subroutine
+    def _clear_sidewinder_endpoint(self, account: Account) -> None:
+        """Delete the Sidewinder-endpoint local-state key (`rsvd_l_b1`) for `account`, if present."""
+        _cur, exists = self.sidewinder_endpoint.maybe(account)
+        if exists:
+            del self.sidewinder_endpoint[account]
 
     @baremethod(allow_actions=["UpdateApplication"])
     def update_application(self) -> None:
@@ -394,6 +409,10 @@ class BingleDapp(ARC4Contract):
         Admin-only (enforced in `_set_allow_bit`).
         """
         self._set_allow_bit(target_address, UInt64(BIT_SW_NODE), allow)
+        # The sw_node bit now equals `allow`; if it was cleared, also clear any published Sidewinder
+        # endpoint (mirrors set_allow_static clearing the static endpoint on revoke).
+        if allow == UInt64(0):
+            self._clear_sidewinder_endpoint(target_address)
 
     @abimethod()
     def set_allow_sw_client(self, target_address: Account, allow: UInt64) -> None:
@@ -446,7 +465,7 @@ class BingleDapp(ARC4Contract):
 
         Creator-only. Records `successor`'s id as the SuccessorApp global (8-byte big-endian).
         Once set, the user-facing state-changing methods (register, buy_bingle, sell_bingle,
-        register_endpoint) hard-reject, and clients read this pointer on start to prompt the
+        register_endpoint, register_sidewinder_endpoint) hard-reject, and clients read this pointer on start to prompt the
         user to update. Admin/creator methods, withdraw, and the migrate_* methods stay
         callable so the old app can still be wound down and users migrated. Re-pointable.
         `successor` must be included in the transaction's foreign apps array.
@@ -574,6 +593,13 @@ class BingleDapp(ARC4Contract):
             old_endpoint_x, has_endpoint_x = op.AppLocal.get_ex_bytes(sender, old_app, b"static_endpoint_x")
             if has_endpoint_x:
                 self.static_endpoint_x[sender] = String.from_bytes(old_endpoint_x)
+        # Copy the published Sidewinder endpoint only when the migrated account is a permitted node
+        # (sentinel-aware), mirroring the static-endpoint copy above. Older ancestors never wrote this
+        # reserved slot, so has_sw_endpoint is false there and nothing is copied.
+        if (self._packed_allow_bits(sender) & UInt64(BIT_SW_NODE)) != UInt64(0):
+            old_sw_endpoint, has_sw_endpoint = op.AppLocal.get_ex_bytes(sender, old_app, b"rsvd_l_b1")
+            if has_sw_endpoint:
+                self.sidewinder_endpoint[sender] = old_sw_endpoint
 
     @abimethod()
     def register_endpoint(self, endpoint: String) -> None:
@@ -604,3 +630,33 @@ class BingleDapp(ARC4Contract):
                     del self.static_endpoint_x[Txn.sender]
         else:
             self._clear_endpoint(Txn.sender)
+
+    @abimethod()
+    def register_sidewinder_endpoint(self, endpoint_record: DynamicBytes) -> None:
+        """Publish or clear the caller's own Sidewinder node endpoint record.
+
+        `endpoint_record` is an opaque byte-slice: the base64-wrapped compact endpoint blob whose
+        layout is the shared codec with Sidewinder #372 (sw-membership's EndpointRecord). The contract
+        stores it verbatim — the base64 wrapping and the binary layout are the binding's / codec's
+        concern, not the contract's. Only the sender's own record is written (a node cannot publish
+        another node's endpoint), into the `rsvd_l_b1` local byte-slice (repurposed reserved slot, so no
+        schema change). This is a separate endpoint from the relay static_endpoint — a different
+        protocol/port — hence its own key and method (issue #237).
+
+        Requirements:
+        - Caller must have the allow_sw_node bit set (a permitted Sidewinder cluster node; sentinel-aware
+          decode of the packed allow field). An account that is not a permitted node cannot publish.
+        - If `endpoint_record` is non-empty, store it under `rsvd_l_b1` in local state.
+        - If `endpoint_record` is empty, delete the key (rotation / clean shutdown).
+        """
+        # Reject once superseded: force the node to upgrade to the successor app.
+        assert not self._is_superseded()
+        # Ensure the caller is a permitted Sidewinder cluster node (sentinel-aware decode).
+        assert (self._packed_allow_bits(Txn.sender) & UInt64(BIT_SW_NODE)) != UInt64(0)
+
+        # Non-empty record => store verbatim; empty => delete.
+        record = endpoint_record.native
+        if record.length != UInt64(0):
+            self.sidewinder_endpoint[Txn.sender] = record
+        else:
+            self._clear_sidewinder_endpoint(Txn.sender)

@@ -5,6 +5,7 @@ use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 
 use crate::api::bingle_api::BingleApiBoth;
+use crate::blockchain::sidewinder_endpoint::SidewinderEndpointRecord;
 use algo_ops::error::AlgoError;
 use algo_ops::{AccountScanCache, AlgoOps, AppArg, ScannedAccount, address_to_byte_key};
 
@@ -905,6 +906,104 @@ impl AlgoBingle {
     /// registration never happened or failed); `current_record` is the record currently
     /// on-chain (None if absent).
     pub fn should_clear_static_endpoint(
+        registered_record: Option<&str>,
+        current_record: Option<&str>,
+    ) -> bool {
+        match (registered_record, current_record) {
+            (Some(ours), Some(current)) => ours == current,
+            _ => false,
+        }
+    }
+
+    /// Call `register_sidewinder_endpoint(byte[])void` to publish (or clear) the caller's own
+    /// Sidewinder node endpoint record into its `rsvd_l_b1` local state (issue #237).
+    ///
+    /// `ipv4` / `ipv6` are the two independent socket addresses the node advertises; only the matching
+    /// family of each is used (see [`SidewinderEndpointRecord::from_socket_addrs`]). The record is
+    /// encoded per the shared layout and base64-wrapped for storage (matching Sidewinder
+    /// `sw-membership`'s `EndpointRecord::encode`). An all-`None` call sends an empty byte-slice, which
+    /// clears the on-chain key (rotation / clean shutdown).
+    ///
+    /// The write is gated on-chain to the caller's `allow_sw_node` bit — an account that is not a
+    /// permitted node has the call rejected. Returns the submitted transaction id on success.
+    pub fn register_sidewinder_endpoint(
+        &self,
+        app_id: u64,
+        ipv4: Option<std::net::SocketAddr>,
+        ipv6: Option<std::net::SocketAddr>,
+    ) -> Result<String> {
+        if app_id == 0 {
+            bail!("app_id must be > 0");
+        }
+        // All-None => empty byte-slice => clear the key; otherwise the base64-wrapped record.
+        let payload = SidewinderEndpointRecord::from_socket_addrs(ipv4, ipv6)
+            .map(|record| record.encode())
+            .unwrap_or_default();
+        let client = self.ops.algod_client()?;
+        let params = self.params(&client)?;
+        let (account, sender) = self.sender_account()?;
+        let mut app_args: Vec<Vec<u8>> = Vec::new();
+        app_args.push(AlgoOps::arc4_selector("register_sidewinder_endpoint(byte[])void").to_vec());
+        // ARC-4 `byte[]` (like `string`): a 2-byte big-endian length prefix followed by the bytes.
+        let payload_bytes = payload.as_bytes();
+        if payload_bytes.len() > u16::MAX as usize {
+            bail!("sidewinder endpoint record too long");
+        }
+        let mut arg = Vec::with_capacity(2 + payload_bytes.len());
+        arg.extend_from_slice(&(payload_bytes.len() as u16).to_be_bytes());
+        arg.extend_from_slice(payload_bytes);
+        app_args.push(arg);
+        let tx = CallApplication::new(sender, AppId(app_id))
+            .app_arguments(app_args)
+            .note(AlgoOps::unique_note())
+            .build(&params)
+            .map_err(|e| anyhow!("build app call: {e}"))?;
+        algo_log!("register_sidewinder_endpoint tx: {:?}", tx);
+        let signed = account
+            .sign(tx)
+            .map_err(|e| anyhow!("sign app call: {e}"))?
+            .to_msg_pack()
+            .map_err(|e| anyhow!("encode signed app call: {e}"))?;
+        self.broadcast_group(&client, vec![signed])
+    }
+
+    /// Read the Sidewinder endpoint record currently published on-chain by `address` (issue #237).
+    ///
+    /// Reads the `rsvd_l_b1` local-state byte-slice (whose value is the base64-wrapped record) and
+    /// decodes it via [`SidewinderEndpointRecord::decode`]. Returns `Ok(None)` if the account is not
+    /// opted in, the key is absent/empty, or the stored value does not decode to a valid record.
+    pub fn get_sidewinder_endpoint(
+        &self,
+        app_id: u64,
+        address: &str,
+    ) -> Result<Option<SidewinderEndpointRecord>> {
+        if app_id == 0 {
+            bail!("app_id must be > 0");
+        }
+        let kvs = match self.ops.local_state_for_account(app_id, address)? {
+            Some(entries) => entries,
+            None => return Ok(None),
+        };
+        let value = kvs
+            .iter()
+            .find(|(k, _)| k == "rsvd_l_b1")
+            .map(|(_, v)| v.as_str())
+            .unwrap_or("");
+        if value.is_empty() {
+            return Ok(None);
+        }
+        Ok(SidewinderEndpointRecord::decode(value))
+    }
+
+    /// Decide whether shutdown should clear the on-chain Sidewinder endpoint record.
+    ///
+    /// The Sidewinder counterpart of [`should_clear_static_endpoint`](Self::should_clear_static_endpoint):
+    /// guards the same redeploy race — only clear when the base64 record this process published at
+    /// startup is still the one on-chain, so a replacement task's newer record is never clobbered.
+    ///
+    /// `registered_record` is the base64 record this process wrote at startup (None if registration
+    /// never happened or failed); `current_record` is the record currently on-chain (None if absent).
+    pub fn should_clear_sidewinder_endpoint(
         registered_record: Option<&str>,
         current_record: Option<&str>,
     ) -> bool {

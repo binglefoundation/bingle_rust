@@ -32,6 +32,8 @@ pub mod deploy_app_and_asset_localnet;
 pub mod handle_lookup_partial;
 #[path = "integration/blockchain/migrate_local_localnet.rs"]
 pub mod migrate_local_localnet;
+#[path = "integration/blockchain/sidewinder_endpoint_localnet.rs"]
+pub mod sidewinder_endpoint_localnet;
 #[path = "integration/blockchain/unique_handle.rs"]
 pub mod unique_handle;
 
