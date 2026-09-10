@@ -38,6 +38,13 @@ pub const ADDRESS_RECEIVE: &str = "OO3BIFZDJPGMNXZ74NOVH5KZ5WBL3KCPLPELAF32P7HDC
 #[allow(dead_code)]
 pub const PASSPHRASE_RECEIVE: &str = "earth idle country misery matrix wolf tired cabin craft roof quantum comfort answer praise second scout title napkin crop trial industry glue kid absorb midnight";
 
+// A second general-purpose client account. Tests use this address under local names (e.g. ADDRESS_B,
+// CLIENT_RESTRICTED_ADDR); declared here so the shared deploy helper funds it with the signing set.
+#[allow(dead_code)]
+pub const ADDRESS_CLIENT_B: &str = "P577OS2FPV7COU3Y43PCTS2IIZ5HAXHBZRHINAATVA5ECCEYKFSEVIYTHE";
+#[allow(dead_code)]
+pub const PASSPHRASE_CLIENT_B: &str = "lift all minute first hair appear panel unfold pony property also dinosaur start robot board erupt tent pink essence stem protect ugly orphan absent dust";
+
 // Granular dapp lifecycle accounts (shared with blockchain_users.rs in integration_blockchain)
 #[allow(dead_code)]
 pub const ADDRESS_APP_CREATOR: &str = "L4IOKR5LM7Q7UIYB5Y735HV3H4JPKWKHTONM5Z6WHLE6RQWHRGRUVPRGKE";
@@ -361,6 +368,26 @@ pub fn deploy_bingle_app(ops: &AlgoOps) -> u64 {
     app_id
 }
 
+/// The full set of accounts any localnet test may sign transactions from: the granular dapp role
+/// accounts plus the general-purpose client accounts (SPEND / RECEIVE / 10MIL / CLIENT_B). Funded
+/// up-front by [`deploy_bingle_app_and_asset`] so tests do not depend on each other's funding order.
+#[allow(dead_code)]
+pub fn standard_signing_addresses() -> [&'static str; 11] {
+    [
+        ADDRESS_APP_CREATOR,
+        ADDRESS_APP_ADMIN,
+        ADDRESS_APP_WITHDRAWER,
+        ADDRESS_ASSET_CREATOR,
+        ADDRESS_ASSET_RESERVE,
+        ADDRESS_ASSET_MANAGER,
+        ADDRESS_ASSET_FREEZE,
+        ADDRESS_SPEND,
+        ADDRESS_RECEIVE,
+        ADDRESS_10MIL,
+        ADDRESS_CLIENT_B,
+    ]
+}
+
 /// Deploy the BingleDapp smart contract and create the corresponding Bingle$ ASA using the
 /// canonical set of granular role accounts (APP_CREATOR, APP_ADMIN, APP_WITHDRAWER,
 /// ASSET_CREATOR, ASSET_RESERVE). The `ops` parameter provides the chain configuration only;
@@ -374,19 +401,11 @@ pub fn deploy_bingle_app_and_asset(
     total_units: u64,
 ) -> (u64, u64) {
     let cfg = ops.config.clone();
-    super::setup_localnet::ensure_localnet_accounts_funded(
-        &cfg,
-        &[
-            ADDRESS_APP_CREATOR,
-            ADDRESS_APP_ADMIN,
-            ADDRESS_APP_WITHDRAWER,
-            ADDRESS_ASSET_CREATOR,
-            ADDRESS_ASSET_RESERVE,
-            ADDRESS_ASSET_MANAGER,
-            ADDRESS_ASSET_FREEZE,
-        ],
-    )
-    .expect("ensure standard accounts funded");
+    // Fund the full standard signing set (role accounts + general-purpose clients) so tests that
+    // deploy through this helper are order-independent and never spend from an unfunded account
+    // (issue #235).
+    super::setup_localnet::ensure_localnet_accounts_funded(&cfg, &standard_signing_addresses())
+        .expect("ensure standard accounts funded");
     let creator_ops = ops_from_mnemonic(ADDRESS_APP_CREATOR, PASSPHRASE_APP_CREATOR, cfg.clone());
     let accounts = make_standard_accounts(&cfg);
     let teal_dir = bingle_dapp_artifacts_dir();
