@@ -3,11 +3,38 @@ use sha2::{Digest, Sha512_256};
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::api::bingle_api::BingleApiBoth;
+use crate::blockchain::sidewinder_endpoint::SidewinderEndpointRecord;
 use algo_ops::error::AlgoError;
-use algo_ops::{AlgoOps, AppArg, address_to_byte_key};
+use algo_ops::{AccountScanCache, AlgoOps, AppArg, ScannedAccount, address_to_byte_key};
+
+// The incremental opted-in-account scan (paging, cache, min-round watermark) now lives in `algo_ops`
+// (`AlgoOps::fetch_opted_in_accounts_cached` over its generic `AccountScanCache`). Re-export
+// `QueryMode` from there so callers keep using `bingle_core::blockchain::algo_bingle::QueryMode`.
+pub use algo_ops::QueryMode;
+
+/// Bit positions in the packed per-account "allow" permission field, held in the account's
+/// `allow_static` local-state uint on the Bingle DApp (issue #232). A set bit grants the permission.
+///
+/// These mirror the on-chain contract's `BIT_*` constants (`dapp_projects/.../contract.py`) and are
+/// the shared decode contract for both the bingle_core readers here and the Sidewinder membership
+/// reader; keep the two in sync. Bit 63 is a migration sentinel, not a permission (see
+/// [`BIT_MIGRATED`](allow_flags::BIT_MIGRATED)).
+pub mod allow_flags {
+    /// Permitted to register a static endpoint.
+    pub const BIT_STATIC: u64 = 1 << 0;
+    /// Permitted to relay.
+    pub const BIT_RELAY: u64 = 1 << 1;
+    /// Permitted as a Sidewinder cluster node.
+    pub const BIT_SW_NODE: u64 = 1 << 2;
+    /// Permitted as a Sidewinder API client.
+    pub const BIT_SW_CLIENT: u64 = 1 << 3;
+    // Bits 4..62 are reserved for future flags.
+    /// Migration sentinel (bit 63): when set the value is the packed bitfield; when clear the account
+    /// still holds the pre-bitfield legacy `allow_static` / `allow_relay` scalar encoding.
+    pub const BIT_MIGRATED: u64 = 1 << 63;
+}
 
 use algonaut::{
     Algod,
@@ -65,39 +92,14 @@ pub const ACCOUNT_ASSET_MANAGER: &str = "ASSET_MANAGER";
 /// Account key for the asset freeze role in [`AlgoBingle::deploy_app_and_asset`].
 pub const ACCOUNT_ASSET_FREEZE: &str = "ASSET_FREEZE";
 
-const INDEXER_PAGE_SIZE: u64 = 100;
-
-fn indexer_excludes() -> Option<Vec<String>> {
-    Some(vec![
-        "assets".to_string(),
-        "created-apps".to_string(),
-        "created-assets".to_string(),
-    ])
-}
-
-/// Cached set of indexer-derived accounts opted in to a Bingle app, so handle and endpoint
-/// lookups can reuse a prior scan instead of paging the indexer from scratch each time.
-#[derive(Debug, Default, Clone)]
-pub struct AccountsCache {
-    /// The last round number that was fully processed.
-    pub last_round: u64,
-    /// The time when the cache was last updated (Unix timestamp in seconds).
-    pub last_updated: u64,
-    /// Map of account address to the full account object.
-    pub accounts: HashMap<String, algonaut::model::indexer::Account>,
-}
-
-/// How an indexer account query interacts with the [`AccountsCache`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum QueryMode {
-    /// Incrementally update the cache from the last processed round, or do a full scan if no
-    /// cache exists yet.
-    Refresh, // Incremental if cache exists, else Full
-    /// Serve results from the cache only, without contacting the network.
-    CacheOnly, // Use cache without network
-    /// Discard the cache and rebuild it with a full account scan.
-    ForceFull, // Force a full scan
-}
+/// Cached set of indexer-derived accounts opted in to a Bingle app, so handle and endpoint lookups
+/// can reuse a prior scan instead of paging the indexer from scratch each time.
+///
+/// Aliased to `algo_ops`'s generic [`AccountScanCache`] (which owns the paging, freshness, and
+/// min-round watermark logic) holding each opted-in account as a decoded [`ScannedAccount`]
+/// (address + the account's local state for the app). The caller decodes its own field — a handle,
+/// an endpoint — from [`ScannedAccount::local_state`]; the cache itself is schema-agnostic.
+pub type AccountsCache = AccountScanCache<ScannedAccount>;
 
 // Algorand minimum-balance and fee schedule, in microalgos (see the developer docs on
 // minimum balance). Used by the registration cost model; the app opt-in cost also depends on
@@ -341,6 +343,35 @@ impl AlgoBingle {
         kvs
     }
 
+    /// Shared implementation of the admin-only `set_allow_*(address,uint64)void` setters: calls
+    /// `sig` with the target as the ARC-4 `address` argument and `allow` as 0/1, passing the target
+    /// in the app call's foreign-accounts array (via [`AlgoOps::call_app_with_accounts`]) so the
+    /// contract can write that account's local state. Returns the submitted transaction id.
+    fn set_allow_flag(
+        &self,
+        app_id: u64,
+        target_address: &str,
+        sig: &str,
+        allow: bool,
+    ) -> Result<String> {
+        if app_id == 0 {
+            bail!("app_id must be > 0");
+        }
+        let pk = address_to_byte_key(target_address)
+            .map_err(|e| anyhow!("invalid target address: {e}"))?;
+        let (txid, _logs) = self.ops.call_app_with_accounts(
+            app_id,
+            None,
+            Some(sig),
+            &[
+                AppArg::Bytes(pk.to_vec()),
+                AppArg::Uint(if allow { 1 } else { 0 }),
+            ],
+            &[target_address],
+        )?;
+        Ok(txid)
+    }
+
     /// Grant or revoke permission for a specific address to register a static endpoint.
     ///
     /// Calls set_allow_static on-chain for the provided target address. The caller must be the
@@ -352,22 +383,12 @@ impl AlgoBingle {
         target_address: &str,
         allow: bool,
     ) -> Result<String> {
-        if app_id == 0 {
-            bail!("app_id must be > 0");
-        }
-        // Use AlgoOps::call_app and pass target address as an ARC-4 address argument
-        let pk = address_to_byte_key(target_address)
-            .map_err(|e| anyhow!("invalid target address: {e}"))?;
-        let (txid, _logs) = self.ops.call_app(
+        self.set_allow_flag(
             app_id,
-            None,
-            Some("set_allow_static(address,uint64)void"),
-            &[
-                AppArg::Bytes(pk.to_vec()),
-                AppArg::Uint(if allow { 1 } else { 0 }),
-            ],
-        )?;
-        Ok(txid)
+            target_address,
+            "set_allow_static(address,uint64)void",
+            allow,
+        )
     }
 
     /// Grant or revoke permission for a specific address to relay.
@@ -381,22 +402,50 @@ impl AlgoBingle {
         target_address: &str,
         allow: bool,
     ) -> Result<String> {
-        if app_id == 0 {
-            bail!("app_id must be > 0");
-        }
-        // Use AlgoOps::call_app and pass target address as an ARC-4 address argument
-        let pk = address_to_byte_key(target_address)
-            .map_err(|e| anyhow!("invalid target address: {e}"))?;
-        let (txid, _logs) = self.ops.call_app(
+        self.set_allow_flag(
             app_id,
-            None,
-            Some("set_allow_relay(address,uint64)void"),
-            &[
-                AppArg::Bytes(pk.to_vec()),
-                AppArg::Uint(if allow { 1 } else { 0 }),
-            ],
-        )?;
-        Ok(txid)
+            target_address,
+            "set_allow_relay(address,uint64)void",
+            allow,
+        )
+    }
+
+    /// Grant or revoke permission for a specific address to act as a Sidewinder cluster node.
+    ///
+    /// Calls set_allow_sw_node on-chain for the provided target address. The caller must be the
+    /// app admin (enforced by the contract). The target address must be opted-in to the app.
+    /// Returns the submitted transaction id on success.
+    pub fn set_allow_sw_node(
+        &self,
+        app_id: u64,
+        target_address: &str,
+        allow: bool,
+    ) -> Result<String> {
+        self.set_allow_flag(
+            app_id,
+            target_address,
+            "set_allow_sw_node(address,uint64)void",
+            allow,
+        )
+    }
+
+    /// Grant or revoke permission for a specific address to act as a Sidewinder API client.
+    ///
+    /// Calls set_allow_sw_client on-chain for the provided target address. The caller must be the
+    /// app admin (enforced by the contract). The target address must be opted-in to the app.
+    /// Returns the submitted transaction id on success.
+    pub fn set_allow_sw_client(
+        &self,
+        app_id: u64,
+        target_address: &str,
+        allow: bool,
+    ) -> Result<String> {
+        self.set_allow_flag(
+            app_id,
+            target_address,
+            "set_allow_sw_client(address,uint64)void",
+            allow,
+        )
     }
 
     /// Withdraw Algo from the app account to the given address.
@@ -678,16 +727,84 @@ impl AlgoBingle {
         Ok(Some(txid))
     }
 
-    /// Check if a specific address is allowed to relay on-chain.
+    /// Decode an account's effective allow bitfield from its decoded local-state key/values,
+    /// transparently handling both encodings (issue #232). Mirrors the on-chain `_effective_allow_bits`:
+    /// if the packed `allow_static` value has the [`allow_flags::BIT_MIGRATED`] sentinel it is returned
+    /// as-is; otherwise the account is un-migrated, so the legacy separate `allow_static` / `allow_relay`
+    /// scalars are folded into bits 0/1 (the Sidewinder bits read 0, as they did not exist then).
     ///
-    /// This queries the local state of the account for the provided app_id.
-    /// Returns Ok(Some(true)) if allowed, Ok(Some(false)) if not allowed, Ok(None) if not opted-in, or Err if other error.
-    pub fn check_allow_relay(&self, app_id: u64, address: &str) -> Result<Option<bool>> {
+    /// The returned value is a bitfield to test against the [`allow_flags`] masks. Pure (no network),
+    /// so it is unit-testable against hand-built local-state key/values.
+    pub fn effective_allow_bits(entries: &[(String, String)]) -> u64 {
+        let find_uint = |key: &str| -> Option<u64> {
+            entries
+                .iter()
+                .find(|(k, _)| k == key)
+                .and_then(|(_, v)| v.parse::<u64>().ok())
+        };
+        let raw = find_uint("allow_static");
+        if let Some(r) = raw
+            && r & allow_flags::BIT_MIGRATED != 0
+        {
+            return r;
+        }
+        let mut bits = 0u64;
+        if let Some(r) = raw
+            && r != 0
+        {
+            bits |= allow_flags::BIT_STATIC;
+        }
+        if let Some(r) = find_uint("allow_relay")
+            && r != 0
+        {
+            bits |= allow_flags::BIT_RELAY;
+        }
+        bits
+    }
+
+    /// Read a single allow bit for an account, sentinel-aware (see [`Self::effective_allow_bits`]).
+    /// Returns `Ok(Some(bool))` when the account is opted in (its local state is present), `Ok(None)`
+    /// when it is not opted in, or `Err` on a query error.
+    fn check_allow_bit(&self, app_id: u64, address: &str, bit: u64) -> Result<Option<bool>> {
         if app_id == 0 {
             bail!("app_id must be > 0");
         }
         let kvs = self.ops.local_state_for_account(app_id, address)?;
-        Ok(kvs.map(|entries| entries.iter().any(|(k, v)| k == "allow_relay" && v == "1")))
+        Ok(kvs.map(|entries| Self::effective_allow_bits(&entries) & bit != 0))
+    }
+
+    /// Check if a specific address is allowed to register a static endpoint on-chain.
+    ///
+    /// Sentinel-aware (packed bitfield or legacy scalar). Returns `Ok(Some(true))` if allowed,
+    /// `Ok(Some(false))` if not, `Ok(None)` if not opted-in, or `Err` on other error.
+    pub fn check_allow_static(&self, app_id: u64, address: &str) -> Result<Option<bool>> {
+        self.check_allow_bit(app_id, address, allow_flags::BIT_STATIC)
+    }
+
+    /// Check if a specific address is allowed to relay on-chain.
+    ///
+    /// Sentinel-aware (packed bitfield or legacy scalar). Returns `Ok(Some(true))` if allowed,
+    /// `Ok(Some(false))` if not, `Ok(None)` if not opted-in, or `Err` on other error.
+    pub fn check_allow_relay(&self, app_id: u64, address: &str) -> Result<Option<bool>> {
+        self.check_allow_bit(app_id, address, allow_flags::BIT_RELAY)
+    }
+
+    /// Check if a specific address is permitted as a Sidewinder cluster node on-chain.
+    ///
+    /// Sentinel-aware (packed bitfield or legacy scalar; always false for un-migrated accounts, which
+    /// predate this flag). Returns `Ok(Some(true))` if allowed, `Ok(Some(false))` if not, `Ok(None)`
+    /// if not opted-in, or `Err` on other error.
+    pub fn check_allow_sw_node(&self, app_id: u64, address: &str) -> Result<Option<bool>> {
+        self.check_allow_bit(app_id, address, allow_flags::BIT_SW_NODE)
+    }
+
+    /// Check if a specific address is permitted as a Sidewinder API client on-chain.
+    ///
+    /// Sentinel-aware (packed bitfield or legacy scalar; always false for un-migrated accounts, which
+    /// predate this flag). Returns `Ok(Some(true))` if allowed, `Ok(Some(false))` if not, `Ok(None)`
+    /// if not opted-in, or `Err` on other error.
+    pub fn check_allow_sw_client(&self, app_id: u64, address: &str) -> Result<Option<bool>> {
+        self.check_allow_bit(app_id, address, allow_flags::BIT_SW_CLIENT)
     }
 
     /// Resolve an account `address` to the handle it has registered on-chain, by reading the
@@ -798,6 +915,104 @@ impl AlgoBingle {
         }
     }
 
+    /// Call `register_sidewinder_endpoint(byte[])void` to publish (or clear) the caller's own
+    /// Sidewinder node endpoint record into its `rsvd_l_b1` local state (issue #237).
+    ///
+    /// `ipv4` / `ipv6` are the two independent socket addresses the node advertises; only the matching
+    /// family of each is used (see [`SidewinderEndpointRecord::from_socket_addrs`]). The record is
+    /// encoded per the shared layout and base64-wrapped for storage (matching Sidewinder
+    /// `sw-membership`'s `EndpointRecord::encode`). An all-`None` call sends an empty byte-slice, which
+    /// clears the on-chain key (rotation / clean shutdown).
+    ///
+    /// The write is gated on-chain to the caller's `allow_sw_node` bit — an account that is not a
+    /// permitted node has the call rejected. Returns the submitted transaction id on success.
+    pub fn register_sidewinder_endpoint(
+        &self,
+        app_id: u64,
+        ipv4: Option<std::net::SocketAddr>,
+        ipv6: Option<std::net::SocketAddr>,
+    ) -> Result<String> {
+        if app_id == 0 {
+            bail!("app_id must be > 0");
+        }
+        // All-None => empty byte-slice => clear the key; otherwise the base64-wrapped record.
+        let payload = SidewinderEndpointRecord::from_socket_addrs(ipv4, ipv6)
+            .map(|record| record.encode())
+            .unwrap_or_default();
+        let client = self.ops.algod_client()?;
+        let params = self.params(&client)?;
+        let (account, sender) = self.sender_account()?;
+        let mut app_args: Vec<Vec<u8>> = Vec::new();
+        app_args.push(AlgoOps::arc4_selector("register_sidewinder_endpoint(byte[])void").to_vec());
+        // ARC-4 `byte[]` (like `string`): a 2-byte big-endian length prefix followed by the bytes.
+        let payload_bytes = payload.as_bytes();
+        if payload_bytes.len() > u16::MAX as usize {
+            bail!("sidewinder endpoint record too long");
+        }
+        let mut arg = Vec::with_capacity(2 + payload_bytes.len());
+        arg.extend_from_slice(&(payload_bytes.len() as u16).to_be_bytes());
+        arg.extend_from_slice(payload_bytes);
+        app_args.push(arg);
+        let tx = CallApplication::new(sender, AppId(app_id))
+            .app_arguments(app_args)
+            .note(AlgoOps::unique_note())
+            .build(&params)
+            .map_err(|e| anyhow!("build app call: {e}"))?;
+        algo_log!("register_sidewinder_endpoint tx: {:?}", tx);
+        let signed = account
+            .sign(tx)
+            .map_err(|e| anyhow!("sign app call: {e}"))?
+            .to_msg_pack()
+            .map_err(|e| anyhow!("encode signed app call: {e}"))?;
+        self.broadcast_group(&client, vec![signed])
+    }
+
+    /// Read the Sidewinder endpoint record currently published on-chain by `address` (issue #237).
+    ///
+    /// Reads the `rsvd_l_b1` local-state byte-slice (whose value is the base64-wrapped record) and
+    /// decodes it via [`SidewinderEndpointRecord::decode`]. Returns `Ok(None)` if the account is not
+    /// opted in, the key is absent/empty, or the stored value does not decode to a valid record.
+    pub fn get_sidewinder_endpoint(
+        &self,
+        app_id: u64,
+        address: &str,
+    ) -> Result<Option<SidewinderEndpointRecord>> {
+        if app_id == 0 {
+            bail!("app_id must be > 0");
+        }
+        let kvs = match self.ops.local_state_for_account(app_id, address)? {
+            Some(entries) => entries,
+            None => return Ok(None),
+        };
+        let value = kvs
+            .iter()
+            .find(|(k, _)| k == "rsvd_l_b1")
+            .map(|(_, v)| v.as_str())
+            .unwrap_or("");
+        if value.is_empty() {
+            return Ok(None);
+        }
+        Ok(SidewinderEndpointRecord::decode(value))
+    }
+
+    /// Decide whether shutdown should clear the on-chain Sidewinder endpoint record.
+    ///
+    /// The Sidewinder counterpart of [`should_clear_static_endpoint`](Self::should_clear_static_endpoint):
+    /// guards the same redeploy race — only clear when the base64 record this process published at
+    /// startup is still the one on-chain, so a replacement task's newer record is never clobbered.
+    ///
+    /// `registered_record` is the base64 record this process wrote at startup (None if registration
+    /// never happened or failed); `current_record` is the record currently on-chain (None if absent).
+    pub fn should_clear_sidewinder_endpoint(
+        registered_record: Option<&str>,
+        current_record: Option<&str>,
+    ) -> bool {
+        match (registered_record, current_record) {
+            (Some(ours), Some(current)) => ours == current,
+            _ => false,
+        }
+    }
+
     /// Parse a RelayIP string into a SocketAddr. Accepts forms like "host:port" or "ip:port".
     /// Returns None if parsing fails.
     pub fn parse_relay_ip(ip: &str) -> Option<std::net::SocketAddr> {
@@ -858,28 +1073,33 @@ impl AlgoBingle {
             self.ops.config
         );
         let mut results: Vec<(String, String)> = Vec::new();
-        let indexer_query_result = self.indexer_query_opted_in_accounts_sync(app_id, QueryMode::Refresh, Some(30), |acct| {
-            let addr = acct.get("address").and_then(|x| x.as_str()).unwrap_or("").to_string();
-            tracing::debug!("[AlgoBingle::list_static_endpoints_via_indexer_sync] processing account: address: {:?}", addr);
-            if let Some(als) = acct.get("apps-local-state").or_else(|| acct.get("apps_local_state")).and_then(|x| x.as_array()) {
-                for st in als {
-                    let id = st.get("id").and_then(|x| x.as_u64());
-                    // tracing::debug!("[AlgoBingle::list_static_endpoints_via_indexer_sync] processing app-local-state: id: {:?}", id);
-                    if id == Some(app_id) {
-                        let keyvals = st.get("key-value").or_else(|| st.get("key_value")).and_then(|x| x.as_array()).cloned().unwrap_or_default();
-                        let kvs = Self::decode_state_entries(&keyvals);
-                        tracing::debug!("[AlgoBingle::list_static_endpoints_via_indexer_sync] processing decoded: kvs: {:?}", kvs);
-                        let ep = kvs.iter().find(|(k, _)| k == "static_endpoint").map(|(_, v)| v.as_str()).unwrap_or("");
-                        let ep_x = kvs.iter().find(|(k, _)| k == "static_endpoint_x").map(|(_, v)| v.as_str()).unwrap_or("");
-                        let full_val = format!("{}{}", ep, ep_x);
-                        if !full_val.is_empty() {
-                            results.push((addr.clone(), full_val));
-                        }
-                    }
+        let indexer_query_result = self.indexer_query_opted_in_accounts_sync(
+            app_id,
+            QueryMode::Refresh,
+            Some(30),
+            |acct| {
+                tracing::debug!(
+                    "[AlgoBingle::list_static_endpoints_via_indexer_sync] processing account: address: {:?} local_state: {:?}",
+                    acct.address,
+                    acct.local_state
+                );
+                // `local_state` is already the app's decoded key/values (algo_ops scopes the scan to
+                // `app_id`), so the endpoint is a split byte-slice: `static_endpoint` plus overflow in
+                // `static_endpoint_x`.
+                let field = |key: &str| {
+                    acct.local_state
+                        .iter()
+                        .find(|(k, _)| k == key)
+                        .map(|(_, v)| v.as_str())
+                        .unwrap_or("")
+                };
+                let full_val = format!("{}{}", field("static_endpoint"), field("static_endpoint_x"));
+                if !full_val.is_empty() {
+                    results.push((acct.address.clone(), full_val));
                 }
-            }
-            Ok(())
-        });
+                Ok(())
+            },
+        );
 
         if let Err(e) = indexer_query_result {
             // A host-unreachable failure (no connection / HTTP send error) is an expected transient
@@ -905,39 +1125,21 @@ impl AlgoBingle {
         }
     }
 
-    fn is_opted_in(acct: &algonaut::model::indexer::Account, app_id: u64) -> bool {
-        if acct.deleted.unwrap_or(false) {
-            return false;
-        }
-        if let Some(states) = &acct.apps_local_state {
-            states
-                .iter()
-                .any(|s| s.id == app_id && !s.deleted.unwrap_or(false))
-        } else {
-            false
-        }
-    }
-
-    fn collect_addresses(
-        txn: &algonaut::model::indexer::Transaction,
-        addresses: &mut HashSet<String>,
-    ) {
-        addresses.insert(txn.sender.clone());
-        if let Some(app_txn) = &txn.application_transaction
-            && let Some(accounts) = &app_txn.accounts
-        {
-            for addr in accounts {
-                addresses.insert(addr.clone());
-            }
-        }
-        if let Some(inner_txns) = &txn.inner_txns {
-            for inner in inner_txns {
-                Self::collect_addresses(inner, addresses);
-            }
-        }
-    }
-
-    /// Helper to query all accounts opted into the given app_id via the algonaut Indexer.
+    /// Query the accounts opted in to `app_id` via the indexer, invoking `f` once per opted-in
+    /// account (in cache order).
+    ///
+    /// A thin adapter over [`AlgoOps::fetch_opted_in_accounts_cached`]: the incremental paging, the
+    /// account cache, and the min-round watermark all live in `algo_ops` (over its
+    /// [`AccountScanCache`]). The only Bingle-specific part is the per-account decode `f` performs
+    /// against the already-decoded [`ScannedAccount::local_state`] — the endpoint or handle field.
+    ///
+    /// When this instance carries a shared [`cache`](Self::cache) the scan is cached/incremental per
+    /// `mode` and `cache_lifetime_secs`; without one, an ephemeral cache backs a single scan so the
+    /// callback still sees every currently opted-in account.
+    ///
+    /// # Errors
+    ///
+    /// Errors if `app_id` is 0, if the indexer query fails, or if `f` returns an error.
     pub fn indexer_query_opted_in_accounts_sync<F>(
         &self,
         app_id: u64,
@@ -946,7 +1148,7 @@ impl AlgoBingle {
         mut f: F,
     ) -> Result<()>
     where
-        F: FnMut(&serde_json::Value) -> Result<()>,
+        F: FnMut(&ScannedAccount) -> Result<()>,
     {
         algo_log!(
             "[AlgoBingle][indexer_query_opted_in_accounts_sync] app_id={} mode={:?} cache_lifetime={:?}",
@@ -954,214 +1156,33 @@ impl AlgoBingle {
             mode,
             cache_lifetime_secs
         );
-        if app_id == 0 {
-            bail!("app_id must be > 0");
+
+        // Refresh the caller's shared cache when present, else a throwaway one for a single scan.
+        let ephemeral;
+        let cache: &Mutex<AccountsCache> = match &self.cache {
+            Some(shared) => shared.as_ref(),
+            None => {
+                ephemeral = Mutex::new(AccountsCache::new());
+                &ephemeral
+            }
+        };
+
+        // Cache each opted-in account as its decoded `ScannedAccount`; the caller decodes its own
+        // field (endpoint, handle) from `local_state`, so the cache stays schema-agnostic.
+        self.ops.fetch_opted_in_accounts_cached(
+            app_id,
+            cache,
+            mode,
+            cache_lifetime_secs,
+            |acct| Some(acct.clone()),
+        )?;
+
+        let cache = cache
+            .lock()
+            .map_err(|_| anyhow!("account scan cache mutex poisoned"))?;
+        for (_addr, acct) in &cache.entries {
+            f(acct)?;
         }
-
-        if let Some(cache_lock) = &self.cache {
-            let mut cache = cache_lock.lock().unwrap();
-
-            let now = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_secs();
-
-            let mut effective_mode = mode;
-            if mode == QueryMode::Refresh
-                && let Some(lifetime) = cache_lifetime_secs
-                && now < cache.last_updated + lifetime
-            {
-                algo_log!(
-                    "[AlgoBingle][indexer_query_opted_in_accounts_sync] Refresh: cache is fresh ({} < {} + {}), falling back to CacheOnly",
-                    now,
-                    cache.last_updated,
-                    lifetime
-                );
-                effective_mode = QueryMode::CacheOnly;
-            }
-
-            match effective_mode {
-                QueryMode::CacheOnly => {
-                    algo_log!(
-                        "[AlgoBingle][indexer_query_opted_in_accounts_sync] CacheOnly: using {} cached accounts",
-                        cache.accounts.len()
-                    );
-                }
-                QueryMode::ForceFull | QueryMode::Refresh => {
-                    let indexer = self.ops.indexer_client()?;
-                    if effective_mode == QueryMode::ForceFull || cache.last_round == 0 {
-                        algo_log!(
-                            "[AlgoBingle][indexer_query_opted_in_accounts_sync] {:?}: performing full scan",
-                            effective_mode
-                        );
-                        cache.accounts.clear();
-                        let mut next: Option<String> = None;
-                        let mut current_round;
-                        loop {
-                            let next_ref = next.as_deref();
-                            let response = self
-                                .ops
-                                .algod_call(|| {
-                                    indexer.search_for_accounts(
-                                        None,
-                                        Some(INDEXER_PAGE_SIZE),
-                                        next_ref,
-                                        None,
-                                        None,
-                                        indexer_excludes(),
-                                        None,
-                                        None,
-                                        None,
-                                        Some(AppId(app_id)),
-                                    )
-                                })
-                                .map_err(|e| anyhow!("incremental indexer request failed: {e}"))?;
-
-                            current_round = response.current_round;
-                            for acct in response.accounts {
-                                cache.accounts.insert(acct.address.clone(), acct);
-                            }
-                            next = response.next_token;
-                            if next.is_none() {
-                                break;
-                            }
-                        }
-                        cache.last_round = current_round;
-                    } else {
-                        algo_log!(
-                            "[AlgoBingle][indexer_query_opted_in_accounts_sync] Refresh: incremental since round {}",
-                            cache.last_round
-                        );
-                        let mut next: Option<String> = None;
-                        let mut addresses_to_refresh = HashSet::new();
-                        let min_round = cache.last_round + 1;
-                        let mut current_round;
-
-                        loop {
-                            let next_ref = next.as_deref();
-                            let response = self
-                                .ops
-                                .algod_call(|| {
-                                    indexer.search_for_transactions(
-                                        Some(INDEXER_PAGE_SIZE),
-                                        next_ref,
-                                        None,
-                                        None,
-                                        None,
-                                        None,
-                                        None,
-                                        Some(min_round),
-                                        None,
-                                        None,
-                                        None,
-                                        None,
-                                        None,
-                                        None,
-                                        None,
-                                        None,
-                                        None,
-                                        None,
-                                        Some(AppId(app_id)),
-                                    )
-                                })
-                                .map_err(|e| {
-                                    anyhow!("indexer search_for_transactions failed: {e}")
-                                })?;
-
-                            current_round = response.current_round;
-                            for txn in response.transactions {
-                                Self::collect_addresses(&txn, &mut addresses_to_refresh);
-                            }
-                            next = response.next_token;
-                            if next.is_none() {
-                                break;
-                            }
-                        }
-
-                        algo_log!(
-                            "[AlgoBingle] Refresh: found {} unique addresses to check",
-                            addresses_to_refresh.len()
-                        );
-                        for addr in addresses_to_refresh {
-                            let address = Address::from_str(&addr)
-                                .map_err(|e| anyhow!("invalid address {addr}: {e}"))?;
-                            let acct_response = self
-                                .ops
-                                .algod_call(|| {
-                                    indexer.lookup_account_by_id(
-                                        &address,
-                                        None,
-                                        None,
-                                        indexer_excludes(),
-                                    )
-                                })
-                                .map_err(|e| {
-                                    anyhow!("indexer lookup_account_by_id failed for {addr}: {e}")
-                                })?;
-                            let acct = *acct_response.account;
-                            if Self::is_opted_in(&acct, app_id) {
-                                cache.accounts.insert(addr, acct);
-                            } else {
-                                cache.accounts.remove(&addr);
-                            }
-                        }
-                        cache.last_round = current_round;
-                    }
-                    cache.last_updated = now;
-                    algo_log!(
-                        "[AlgoBingle][indexer_query_opted_in_accounts_sync] done updating cache. size={} last_round={}. Iterating over accounts.",
-                        cache.accounts.len(),
-                        cache.last_round
-                    );
-                }
-            }
-
-            for acct in cache.accounts.values() {
-                let v = serde_json::to_value(acct)
-                    .map_err(|e| anyhow!("failed to serialize account from cache: {e}"))?;
-                f(&v)?;
-            }
-            return Ok(());
-        }
-
-        // Legacy behavior without cache
-        algo_log!(
-            "[AlgoBingle][indexer_query_opted_in_accounts_sync] no cache available, performing full scan"
-        );
-        let indexer = self.ops.indexer_client()?;
-        let mut next: Option<String> = None;
-        loop {
-            let next_ref = next.as_deref();
-            let response = self
-                .ops
-                .algod_call(|| {
-                    indexer.search_for_accounts(
-                        None,
-                        Some(INDEXER_PAGE_SIZE),
-                        next_ref,
-                        None,
-                        None,
-                        indexer_excludes(),
-                        None,
-                        None,
-                        None,
-                        Some(AppId(app_id)),
-                    )
-                })
-                .map_err(|e| anyhow!("full indexer request failed: {e}"))?;
-
-            for acct in response.accounts {
-                let v = serde_json::to_value(&acct)
-                    .map_err(|e| anyhow!("failed to serialize account: {e}"))?;
-                f(&v)?;
-            }
-            next = response.next_token;
-            if next.is_none() {
-                break;
-            }
-        }
-
-        algo_log!("[AlgoBingle][indexer_query_opted_in_accounts_sync] done");
         Ok(())
     }
 
@@ -1212,7 +1233,7 @@ impl AlgoBingle {
     fn handle_lookup_sync(&self, app_id: u64, handle: &str) -> Result<Option<String>> {
         let mut matches: Vec<(String, u64)> = Vec::new();
         self.indexer_query_opted_in_accounts_sync(app_id, QueryMode::Refresh, Some(30), |acct| {
-            Self::extract_handle_match(acct, app_id, handle, &mut matches);
+            Self::extract_handle_match(acct, handle, &mut matches);
             Ok(())
         })?;
         algo_log!(
@@ -1257,7 +1278,7 @@ impl AlgoBingle {
     ) -> Result<Option<(String, String)>> {
         let mut matches: Vec<(String, String, u64)> = Vec::new();
         self.indexer_query_opted_in_accounts_sync(app_id, QueryMode::Refresh, Some(30), |acct| {
-            Self::handle_prefix_match(acct, app_id, prefix, &mut matches);
+            Self::handle_prefix_match(acct, prefix, &mut matches);
             Ok(())
         })?;
         algo_log!(
@@ -1277,52 +1298,33 @@ impl AlgoBingle {
             .collect()
     }
 
-    /// Extracted logic to find a handle match in an account's local state and append to matches list.
+    /// Find a handle match in an opted-in account's decoded local state, appending
+    /// `(address, handle_time)` to `matches` on an exact (normalised) match.
+    ///
+    /// `acct.local_state` is already the account's decoded key/values for the scanned app (algo_ops
+    /// scopes the scan to a single `app_id`), so this only selects the `Handle` / `HandleTime`
+    /// fields — no per-app filtering or base64 decode here.
     pub fn extract_handle_match(
-        acct: &serde_json::Value,
-        app_id: u64,
+        acct: &ScannedAccount,
         handle: &str,
         matches: &mut Vec<(String, u64)>,
     ) {
-        let addr = acct
-            .get("address")
-            .and_then(|x| x.as_str())
-            .unwrap_or("")
-            .to_string();
         let normalised_handle = Self::normalize_handle(handle);
-        // Find local state for this app id
-        if let Some(als) = acct
-            .get("apps-local-state")
-            .or_else(|| acct.get("apps_local_state"))
-            .and_then(|x| x.as_array())
+        algo_log!(
+            "[extract_handle_match] address={} local_state={:?}",
+            acct.address,
+            acct.local_state
+        );
+        if let Some((_, h)) = acct.local_state.iter().find(|(k, _)| k == "Handle")
+            && Self::normalize_handle(h) == normalised_handle
         {
-            for st in als {
-                let id = st.get("id").and_then(|x| x.as_u64());
-                if id == Some(app_id) {
-                    let keyvals = st
-                        .get("key-value")
-                        .or_else(|| st.get("key_value"))
-                        .and_then(|x| x.as_array())
-                        .cloned()
-                        .unwrap_or_default();
-                    let kvs = Self::decode_state_entries(&keyvals);
-                    algo_log!(
-                        "[extract_handle_match] address={} decoded_state={:?}",
-                        addr,
-                        kvs
-                    );
-                    if let Some((_, h)) = kvs.iter().find(|(k, _)| k == "Handle")
-                        && Self::normalize_handle(h) == normalised_handle
-                    {
-                        let time = kvs
-                            .iter()
-                            .find(|(k, _)| k == "HandleTime")
-                            .and_then(|(_, v)| v.parse::<u64>().ok())
-                            .unwrap_or(0);
-                        matches.push((addr.clone(), time));
-                    }
-                }
-            }
+            let time = acct
+                .local_state
+                .iter()
+                .find(|(k, _)| k == "HandleTime")
+                .and_then(|(_, v)| v.parse::<u64>().ok())
+                .unwrap_or(0);
+            matches.push((acct.address.clone(), time));
         }
     }
 
@@ -1343,15 +1345,18 @@ impl AlgoBingle {
         }
     }
 
-    /// Extracted logic to find a handle prefix match in an account's local state.
+    /// Find a handle prefix match in an opted-in account's decoded local state.
     ///
-    /// The `prefix` is normalised and compared against the start of the account's
-    /// normalised handle. On a match, appends `(address, canonical_handle, handle_time)`
-    /// to `matches`, where `canonical_handle` is the handle as written in local state.
-    /// An empty (post-normalisation) prefix never matches.
+    /// The `prefix` is normalised and compared against the start of the account's normalised handle.
+    /// On a match, appends `(address, canonical_handle, handle_time)` to `matches`, where
+    /// `canonical_handle` is the handle as written in local state. An empty (post-normalisation)
+    /// prefix never matches.
+    ///
+    /// `acct.local_state` is already the account's decoded key/values for the scanned app (algo_ops
+    /// scopes the scan to a single `app_id`), so this only selects the `Handle` / `HandleTime`
+    /// fields — no per-app filtering or base64 decode here.
     pub fn handle_prefix_match(
-        acct: &serde_json::Value,
-        app_id: u64,
+        acct: &ScannedAccount,
         prefix: &str,
         matches: &mut Vec<(String, String, u64)>,
     ) {
@@ -1359,39 +1364,16 @@ impl AlgoBingle {
         if normalised_prefix.is_empty() {
             return;
         }
-        let addr = acct
-            .get("address")
-            .and_then(|x| x.as_str())
-            .unwrap_or("")
-            .to_string();
-        // Find local state for this app id
-        if let Some(als) = acct
-            .get("apps-local-state")
-            .or_else(|| acct.get("apps_local_state"))
-            .and_then(|x| x.as_array())
+        if let Some((_, h)) = acct.local_state.iter().find(|(k, _)| k == "Handle")
+            && Self::normalize_handle(h).starts_with(&normalised_prefix)
         {
-            for st in als {
-                let id = st.get("id").and_then(|x| x.as_u64());
-                if id == Some(app_id) {
-                    let keyvals = st
-                        .get("key-value")
-                        .or_else(|| st.get("key_value"))
-                        .and_then(|x| x.as_array())
-                        .cloned()
-                        .unwrap_or_default();
-                    let kvs = Self::decode_state_entries(&keyvals);
-                    if let Some((_, h)) = kvs.iter().find(|(k, _)| k == "Handle")
-                        && Self::normalize_handle(h).starts_with(&normalised_prefix)
-                    {
-                        let time = kvs
-                            .iter()
-                            .find(|(k, _)| k == "HandleTime")
-                            .and_then(|(_, v)| v.parse::<u64>().ok())
-                            .unwrap_or(0);
-                        matches.push((addr.clone(), h.clone(), time));
-                    }
-                }
-            }
+            let time = acct
+                .local_state
+                .iter()
+                .find(|(k, _)| k == "HandleTime")
+                .and_then(|(_, v)| v.parse::<u64>().ok())
+                .unwrap_or(0);
+            matches.push((acct.address.clone(), h.clone(), time));
         }
     }
 
@@ -1647,6 +1629,11 @@ impl AlgoBingle {
         handle: &str,
         price_units: u64,
     ) -> Result<String> {
+        // POINTER (issue #239): auto-grant Sidewinder store-and-forward. If registration should also make
+        // the caller a permitted Sidewinder client (self-service enrolment), the grant happens in the DApp
+        // `register` method (dapp_projects/smart_contracts/bingle_dapp/contract.py), not here — this
+        // binding just submits the call. Today client membership is admin-enabled by default
+        // (`set_allow_sw_client`); change the policy only under issue #239.
         if app_id == 0 {
             bail!("app_id must be > 0");
         }

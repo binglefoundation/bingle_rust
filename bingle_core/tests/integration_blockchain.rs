@@ -22,6 +22,8 @@ pub mod algo_bingle_register_opt_in_app_localnet;
 pub mod algo_bingle_sell_flow_localnet;
 #[path = "integration/blockchain/algo_bingle_static_endpoint_integration.rs"]
 pub mod algo_bingle_static_endpoint_integration;
+#[path = "integration/blockchain/allow_flags_localnet.rs"]
+pub mod allow_flags_localnet;
 #[path = "integration/blockchain/block_old_app_localnet.rs"]
 pub mod block_old_app_localnet;
 #[path = "integration/blockchain/deploy_app_and_asset_localnet.rs"]
@@ -30,6 +32,8 @@ pub mod deploy_app_and_asset_localnet;
 pub mod handle_lookup_partial;
 #[path = "integration/blockchain/migrate_local_localnet.rs"]
 pub mod migrate_local_localnet;
+#[path = "integration/blockchain/sidewinder_endpoint_localnet.rs"]
+pub mod sidewinder_endpoint_localnet;
 #[path = "integration/blockchain/unique_handle.rs"]
 pub mod unique_handle;
 

@@ -32,6 +32,9 @@ pub mod set_allow_relay_test;
 #[path = "algo_bingle/check_allow_relay_test.rs"]
 pub mod check_allow_relay_test;
 
+#[path = "algo_bingle/allow_flags_test.rs"]
+pub mod allow_flags_test;
+
 #[path = "algo_bingle/required_funding.rs"]
 pub mod required_funding;
 
@@ -40,6 +43,9 @@ pub mod algo_bingle_unit;
 
 #[path = "static_endpoint_guard.rs"]
 pub mod static_endpoint_guard;
+
+#[path = "sidewinder_endpoint_test.rs"]
+pub mod sidewinder_endpoint_test;
 
 #[path = "blockchain_ops_trait.rs"]
 pub mod blockchain_ops_trait;
