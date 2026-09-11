@@ -1629,6 +1629,11 @@ impl AlgoBingle {
         handle: &str,
         price_units: u64,
     ) -> Result<String> {
+        // POINTER (issue #239): auto-grant Sidewinder store-and-forward. If registration should also make
+        // the caller a permitted Sidewinder client (self-service enrolment), the grant happens in the DApp
+        // `register` method (dapp_projects/smart_contracts/bingle_dapp/contract.py), not here — this
+        // binding just submits the call. Today client membership is admin-enabled by default
+        // (`set_allow_sw_client`); change the policy only under issue #239.
         if app_id == 0 {
             bail!("app_id must be > 0");
         }

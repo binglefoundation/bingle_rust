@@ -373,6 +373,13 @@ class BingleDapp(ARC4Contract):
             self.handle[Txn.sender] = handle
             self.handle_time[Txn.sender] = handle_time
 
+        # POINTER (issue #239): auto-grant Sidewinder store-and-forward. To make every registered Bingle
+        # user a permitted Sidewinder client without an admin call, set the sender's allow_sw_client bit
+        # HERE — a self-grant for Txn.sender, distinct from the admin-gated `_set_allow_bit` (which stays
+        # admin-only, and is unchanged for the node bit). Deliberately NOT done today: client membership
+        # defaults off (fail-closed) and is admin-enabled via `set_allow_sw_client`. Change the enrolment
+        # policy only under issue #239 — see it for the trust-model and back-compat decisions.
+
     @abimethod()
     def set_allow_static(self, target_address: Account, allow: UInt64) -> None:
         """Enable or disable permission for a target address to register a static endpoint.
