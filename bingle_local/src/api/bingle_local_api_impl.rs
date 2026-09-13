@@ -45,10 +45,12 @@ pub struct LocalApiConfig {
     /// APNs environment a `/register` token is registered under: `"sandbox"` or `"production"`.
     /// Defaults to [`default_notify_env`] (sandbox); a production build overrides it.
     pub notify_env: String,
-    /// Sidewinder Mailbox connection for store-and-forward (epic #200): the node endpoint, bearer
-    /// token, and operation-type bindings the offline path posts to and reads from. `None` when the
-    /// deployment has no Sidewinder node configured, in which case store-and-forward is unavailable.
-    /// Whether it is *used* when available is the separate on/off toggle (#212).
+    /// Sidewinder Mailbox connection for store-and-forward (epic #200): how to reach the node (either
+    /// a bearer-token endpoint override or on-chain discovery + mutual TLS from the Bingle app id,
+    /// story #244) plus the operation-type bindings the offline path posts to and reads from. `None`
+    /// when the deployment configured neither a node URL/token nor a Bingle app id, in which case
+    /// store-and-forward is unavailable. Whether it is *used* when available is the separate on/off
+    /// toggle (#212).
     pub sidewinder: Option<MailboxConfig>,
     /// Send-side store-and-forward gate (epic #200, story #212): when `true`, a give-up on direct
     /// delivery posts the sealed message to the recipient's Sidewinder Mailbox (#214); when `false`
@@ -136,6 +138,31 @@ impl LocalApiConfig {
         self.store_and_forward_send = store_and_forward_send.unwrap_or(false);
         self.store_and_forward_receive = store_and_forward_receive.unwrap_or(false);
         self
+    }
+
+    /// Validate that store-and-forward is reachable: if either gate is on, a Mailbox must be
+    /// configured ([`sidewinder`](Self::sidewinder) is `Some`). Returns a human-facing error naming
+    /// the inputs a caller can set so a gated-on-but-unconfigured deployment fails loudly at startup
+    /// rather than silently no-opping (story #244, deliverable 5). Pure, so the check is unit-testable
+    /// and shared by the CLI, webserver, and JSI call sites; each surfaces the error the way its
+    /// runtime expects (exit, log, ...).
+    ///
+    /// "A Mailbox is configured" now means either the `SIDEWINDER_NODE_URL` + `SIDEWINDER_TOKEN`
+    /// bearer override **or** the Bingle DApp app id (which drives on-chain discovery + mutual TLS) —
+    /// see [`MailboxConfig::select`](crate::api::sidewinder::MailboxConfig::select). This supersedes
+    /// the CLI-only, env-var-only wording of #241, which should defer to this check on rebase.
+    pub fn validate_store_and_forward(&self) -> Result<(), String> {
+        if (self.store_and_forward_send || self.store_and_forward_receive)
+            && self.sidewinder.is_none()
+        {
+            return Err(
+                "store-and-forward is enabled but no Sidewinder Mailbox is configured: set the \
+                 Bingle app id (for on-chain discovery + mutual TLS) or SIDEWINDER_NODE_URL + \
+                 SIDEWINDER_TOKEN (bearer override), or disable store-and-forward"
+                    .to_string(),
+            );
+        }
+        Ok(())
     }
 }
 

@@ -10,6 +10,8 @@
 //!
 //! Configure it from the environment:
 //!
+//! The bearer round-trip (`post_then_pop_round_trips_a_message`):
+//!
 //! | Variable | Required | Meaning |
 //! |---|---|---|
 //! | `SIDEWINDER_NODE_URL` | yes | Base URL of a Sidewinder node, e.g. `http://localhost:9101`. |
@@ -17,6 +19,14 @@
 //! | `SIDEWINDER_ACCOUNT_MNEMONIC` | yes | 25-word Algorand mnemonic for an enrolled caller; its key signs the transactions. |
 //! | `SIDEWINDER_POST_TYPE` | no | Transaction type bound to Mailbox `post`. Defaults to the tier-1 binding (1). |
 //! | `SIDEWINDER_POP_TYPE` | no | Transaction type bound to Mailbox `pop`. Defaults to the tier-1 binding (2). |
+//!
+//! The discovery + mutual-TLS round-trip (`discovery_mtls_post_then_pop_round_trips_a_message`, story
+//! #244) needs no node URL or token — it resolves the endpoint on-chain and pins the node identity:
+//!
+//! | Variable | Required | Meaning |
+//! |---|---|---|
+//! | `SIDEWINDER_DISCOVERY_APP_ID` | yes | Bingle DApp application id whose opted-in cluster nodes publish endpoints. |
+//! | `SIDEWINDER_ACCOUNT_MNEMONIC` | yes | 25-word Algorand mnemonic for an enrolled caller; its key signs and is the mutual-TLS identity. |
 //!
 //! Run it with, for example:
 //!
@@ -77,7 +87,7 @@ fn post_then_pop_round_trips_a_message() {
     if let Some(t) = env.pop_type {
         config.pop_type = t;
     }
-    let mailbox = Mailbox::new(algo, config).expect("configured mailbox");
+    let mut mailbox = Mailbox::new(algo, config).expect("configured mailbox");
 
     // Post to our own mailbox (a caller pops its own queue), then read it back. A distinctive
     // payload so a pop of some other queued message would be caught.
@@ -101,6 +111,68 @@ fn post_then_pop_round_trips_a_message() {
     );
 
     // The queue is now drained: a second pop returns nothing.
+    let drained = mailbox.pop().expect("second pop succeeds");
+    assert!(
+        drained.is_none(),
+        "the mailbox is empty after the message is read"
+    );
+}
+
+/// Discovery + identity-pinned mutual TLS round-trip (story #244): resolve the node endpoint on-chain
+/// from the Bingle DApp app id and connect over mutual TLS (no bearer token), then post to our own
+/// Mailbox and read it back.
+///
+/// Skips cleanly unless `SIDEWINDER_DISCOVERY_APP_ID` and `SIDEWINDER_ACCOUNT_MNEMONIC` are set (and
+/// the account is enrolled/opted-in, with the process able to reach the app's chain — an algod/indexer
+/// the default `AlgoOps` config points at). A discovery scan or mutual-TLS connect that cannot reach a
+/// node surfaces as [`BingleError::Retryable`] and is treated as a clean skip, matching the bearer test.
+#[test]
+fn discovery_mtls_post_then_pop_round_trips_a_message() {
+    let (Some(app_id), Some(mnemonic)) = (
+        non_empty("SIDEWINDER_DISCOVERY_APP_ID").and_then(|s| s.parse::<u64>().ok()),
+        non_empty("SIDEWINDER_ACCOUNT_MNEMONIC"),
+    ) else {
+        eprintln!(
+            "skipping discovery_mtls_post_then_pop_round_trips_a_message: set \
+             SIDEWINDER_DISCOVERY_APP_ID and SIDEWINDER_ACCOUNT_MNEMONIC to run (see the module docs)"
+        );
+        return;
+    };
+
+    let algo = AlgoOps::new_for_algorand(Some(mnemonic.clone()), None, None);
+    let own_address =
+        AlgoOps::address_from_passphrase(&mnemonic).expect("derive address from mnemonic");
+
+    // No node URL/token: the discovery connection resolves the endpoint on-chain and pins the node's
+    // identity over mutual TLS. A discovery/connect failure is a clean skip (node/chain not ready).
+    let mut mailbox = match Mailbox::new(algo, MailboxConfig::discovered(app_id)) {
+        Ok(m) => m,
+        Err(BingleError::Retryable(reason)) => {
+            eprintln!("skipping: sidewinder discovery/connect not ready: {reason}");
+            return;
+        }
+        Err(other) => panic!("discovery mailbox build failed: {other}"),
+    };
+
+    let message = b"bingle store-and-forward discovery + mTLS round-trip #244".to_vec();
+    match mailbox.post(&own_address, &message) {
+        Ok(()) => {}
+        Err(BingleError::Retryable(reason)) => {
+            eprintln!("skipping: sidewinder node not reachable/ready: {reason}");
+            return;
+        }
+        Err(other) => panic!("post failed: {other}"),
+    }
+
+    let popped = mailbox
+        .pop()
+        .expect("pop succeeds")
+        .expect("a message is queued");
+    assert!(
+        payload_matches(&popped, &message),
+        "pop returns the posted message (raw or ARC-4 wrapped): got {popped:?}"
+    );
+
     let drained = mailbox.pop().expect("second pop succeeds");
     assert!(
         drained.is_none(),

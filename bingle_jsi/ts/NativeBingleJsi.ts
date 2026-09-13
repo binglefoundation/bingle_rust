@@ -140,18 +140,21 @@ export interface BingleJsiConfig {
    * /register (bingle_notify #i). null defaults to "sandbox". */
   notify_env: string | null;
   /** Base URL of the Sidewinder node for store-and-forward (epic #200), e.g. `http://host:9101`.
-   * When set together with `sidewinder_token` (and local mode), the offline path can post to and
-   * read from the recipient Mailbox; null/omitted leaves store-and-forward unconfigured. Optional:
-   * a client that does not use store-and-forward need not set it. */
+   * Optional bearer-transport override: when set together with `sidewinder_token` it forces the
+   * v0.0.2 plaintext transport (backwards-compat / local dev). Left null/omitted, the Mailbox is
+   * discovered on-chain from the Bingle DApp `app_id` and reached over identity-pinned mutual TLS —
+   * the default (story #244). A client that does not use store-and-forward need not set it. */
   sidewinder_node_url?: string | null;
   /** Bearer token for the Sidewinder node's client endpoints (the v0.0.2 fixed shared token,
-   * Sidewinder #164). Required alongside `sidewinder_node_url`; null/omitted leaves store-and-forward
-   * unconfigured. Optional: a client that does not use store-and-forward need not set it. */
+   * Sidewinder #164). Required alongside `sidewinder_node_url` to select the bearer override;
+   * null/omitted uses on-chain discovery + mutual TLS instead, which needs no token. Optional: a
+   * client that does not use store-and-forward need not set it. */
   sidewinder_token?: string | null;
   /** Send-side store-and-forward gate (epic #200): when true, a give-up on direct delivery posts the
    * sealed message to the recipient's Sidewinder Mailbox (#214). null/omitted defaults to false (off).
-   * Independent of `store_and_forward_receive`; also needs the sidewinder_* fields configured.
-   * Optional: a client that does not use store-and-forward need not set it. */
+   * Independent of `store_and_forward_receive`; also needs a Mailbox configured — either the Bingle
+   * `app_id` (discovery + mTLS) or the sidewinder_* fields (bearer). Optional: a client that does not
+   * use store-and-forward need not set it. */
   store_and_forward_send?: boolean | null;
   /** Receive-side store-and-forward gate (epic #200): when true, the client polls its own Sidewinder
    * Mailbox on reconnect and on a cadence, reading messages forwarded to it (#215). null/omitted

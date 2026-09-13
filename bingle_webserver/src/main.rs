@@ -132,8 +132,10 @@ async fn main() -> anyhow::Result<()> {
     if let Some(path) = &local_file {
         // Give-up nudge (bingle_notify #11/#17): a `--notify-gateway-url` activates the nudge;
         // `--notify-on-giveup false` disables it even when a URL is set.
-        // Store-and-forward (epic #200): configure the Sidewinder Mailbox from the environment
-        // (`SIDEWINDER_NODE_URL` + `SIDEWINDER_TOKEN`); unset leaves store-and-forward unconfigured.
+        // Store-and-forward (epic #200): configure the Sidewinder Mailbox. `SIDEWINDER_NODE_URL` +
+        // `SIDEWINDER_TOKEN` select the bearer (plaintext) override; otherwise the Bingle DApp app id
+        // drives on-chain discovery + identity-pinned mutual TLS (story #244). Neither available
+        // leaves store-and-forward unconfigured.
         let cfg = LocalApiConfig::with_notify(
             opts.algo_provider_config.clone().unwrap_or_default(),
             opts.app_id.unwrap_or(0),
@@ -141,10 +143,14 @@ async fn main() -> anyhow::Result<()> {
             notify_on_giveup,
             notify_gateway_url.clone(),
         )
-        .with_sidewinder(MailboxConfig::from_parts(
+        .with_sidewinder(MailboxConfig::select(
             std::env::var("SIDEWINDER_NODE_URL").ok(),
             std::env::var("SIDEWINDER_TOKEN").ok(),
+            opts.app_id,
         ));
+        // Fail loudly if store-and-forward is gated on with no reachable Mailbox (story #244).
+        cfg.validate_store_and_forward()
+            .map_err(anyhow::Error::msg)?;
         let mut impl_api = BingleApiLocalImpl::new(cfg);
         if path.exists()
             && let Err(e) = impl_api.load(path.to_string_lossy().as_ref())
