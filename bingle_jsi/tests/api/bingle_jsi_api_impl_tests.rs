@@ -428,17 +428,22 @@ fn runtime_messaging_settings_toggle_preserves_session() {
     );
 
     // The change was applied in place: the keypair (session state) survived — no re-init/teardown.
-    let status = api.keypair_status().expect("keypair_status");
+    // Read it straight from the local store (no chain round-trip, so this stays deterministic with no
+    // Algorand node — unlike keypair_status, which probes the chain for balance/asset).
+    let local = api.local_api_for_tests().expect("local api present");
+    let guard = local.lock().expect("local lock");
+    let stored = guard
+        .get_keypair()
+        .expect("get_keypair")
+        .expect("keypair present after generate");
     assert_eq!(
-        status.id.as_deref(),
-        Some(kp.id.as_str()),
+        stored.id, kp.id,
         "keypair preserved across the settings change"
     );
 
     // And the live local store — what the post-on-fail / poll paths (#214/#215) read per-operation —
     // holds the new gates, confirming the setter reached it (not just a JSI-side copy).
-    let local = api.local_api_for_tests().expect("local api present");
-    let live = local.lock().expect("local lock").messaging_settings();
+    let live = guard.messaging_settings();
     assert!(live.store_and_forward_send);
     assert!(!live.store_and_forward_receive);
     assert_eq!(
