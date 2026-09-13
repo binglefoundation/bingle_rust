@@ -51,7 +51,7 @@ fn poll_reads_decrypts_and_drops_a_mailbox_message() {
 
     // A Mailbox client for posting (and for draining first, so we count only what we post).
     let poster_algo = AlgoOps::new_for_algorand(Some(mnemonic.clone()), None, None);
-    let poster = Mailbox::new(
+    let mut poster = Mailbox::new(
         poster_algo,
         MailboxConfig::new(node_url.clone(), token.clone()),
     )

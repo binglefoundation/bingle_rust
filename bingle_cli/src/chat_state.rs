@@ -71,8 +71,10 @@ impl ChatState {
         // Configure the local store with whatever chain ids the CLI/node-file resolved; 0 means
         // "unset" for BingleLocal, matching how the webserver builds its config.
         let algo_config = opts.algo_provider_config.clone().unwrap_or_default();
-        // Store-and-forward (epic #200): configure the Sidewinder Mailbox from the environment
-        // (`SIDEWINDER_NODE_URL` + `SIDEWINDER_TOKEN`); unset leaves store-and-forward unconfigured.
+        // Store-and-forward (epic #200): configure the Sidewinder Mailbox. `SIDEWINDER_NODE_URL` +
+        // `SIDEWINDER_TOKEN` select the bearer (plaintext) override; otherwise the Bingle DApp app id
+        // drives on-chain discovery + identity-pinned mutual TLS (story #244). Neither available
+        // leaves store-and-forward unconfigured.
         let cfg = LocalApiConfig::with_notify(
             algo_config,
             opts.app_id.unwrap_or(0),
@@ -80,10 +82,13 @@ impl ChatState {
             None,
             None,
         )
-        .with_sidewinder(MailboxConfig::from_parts(
+        .with_sidewinder(MailboxConfig::select(
             std::env::var("SIDEWINDER_NODE_URL").ok(),
             std::env::var("SIDEWINDER_TOKEN").ok(),
+            opts.app_id,
         ));
+        // Fail loudly if store-and-forward is gated on with no reachable Mailbox (story #244).
+        cfg.validate_store_and_forward()?;
         let mut local = BingleApiLocalImpl::new(cfg);
 
         let state_file = args.state_file.clone();

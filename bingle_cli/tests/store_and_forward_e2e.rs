@@ -159,7 +159,7 @@ fn mailbox_round_trips_against_a_real_localnet_node() {
     let e = &cluster.endpoints;
 
     // Sender posts to the receiver's Mailbox (keyed by the receiver's address).
-    let sender = Mailbox::new(
+    let mut sender = Mailbox::new(
         AlgoOps::new_for_algorand(Some(e.sender_mnemonic.clone()), None, None),
         MailboxConfig::new(e.api_url.clone(), e.token.clone()),
     )
@@ -170,7 +170,7 @@ fn mailbox_round_trips_against_a_real_localnet_node() {
         .expect("post to the receiver's mailbox");
 
     // Receiver pops its own Mailbox and reads the message back.
-    let receiver = Mailbox::new(
+    let mut receiver = Mailbox::new(
         AlgoOps::new_for_algorand(Some(e.receiver_mnemonic.clone()), None, None),
         MailboxConfig::new(e.api_url.clone(), e.token.clone()),
     )
