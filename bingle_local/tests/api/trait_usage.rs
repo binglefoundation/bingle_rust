@@ -2,7 +2,9 @@ use std::collections::{HashMap, HashSet};
 
 use algo_ops::AlgoOps;
 use bingle_core::api::bingle_api::{BingleError, SendFailureKind};
-use bingle_local::api::{BingleLocalApi, Contact, ContactSource, Keypair, KeypairStatus, Message};
+use bingle_local::api::{
+    BingleLocalApi, Contact, ContactSource, Keypair, KeypairStatus, Message, MessagingSettings,
+};
 
 #[derive(Default)]
 struct DummyLocal {
@@ -168,6 +170,19 @@ impl BingleLocalApi for DummyLocal {
     fn poll_mailbox(&self) -> Result<Vec<Message>, BingleError> {
         // This dummy does no store-and-forward reading.
         Ok(Vec::new())
+    }
+
+    fn set_store_and_forward(&mut self, _send: bool, _receive: bool) {}
+
+    fn set_notify(&mut self, _enabled: bool, _gateway_url: Option<String>) {}
+
+    fn messaging_settings(&self) -> MessagingSettings {
+        MessagingSettings {
+            store_and_forward_send: false,
+            store_and_forward_receive: false,
+            notify_on_giveup: false,
+            notify_gateway_url: None,
+        }
     }
 
     fn save(&self, _path: &str) -> Result<(), BingleError> {

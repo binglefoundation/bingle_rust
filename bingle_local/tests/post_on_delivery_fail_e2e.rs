@@ -66,12 +66,12 @@ fn give_up_posts_exactly_once_to_the_recipient_mailbox() {
     // Drain the recipient's Mailbox first, so the assertion counts only what this test posts.
     let recipient_algo =
         AlgoOps::new_for_algorand(Some(env.recipient_mnemonic.clone()), None, None);
-    let recipient_box = Mailbox::new(
+    let mut recipient_box = Mailbox::new(
         recipient_algo,
         MailboxConfig::new(env.node_url.clone(), env.token.clone()),
     )
     .expect("recipient mailbox");
-    match drain(&recipient_box) {
+    match drain(&mut recipient_box) {
         Ok(_) => {}
         Err(reason) => {
             eprintln!("skipping: recipient Mailbox not reachable/ready: {reason}");
@@ -127,7 +127,7 @@ fn give_up_posts_exactly_once_to_the_recipient_mailbox() {
 
 /// Pop until the Mailbox is empty, returning how many messages were drained, or the failure reason
 /// (for a clean skip) if the node is not reachable.
-fn drain(mailbox: &Mailbox) -> Result<usize, String> {
+fn drain(mailbox: &mut Mailbox) -> Result<usize, String> {
     let mut count = 0;
     loop {
         match mailbox.pop() {

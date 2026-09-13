@@ -7,8 +7,8 @@
 
 pub mod mailbox;
 pub use mailbox::{
-    MAILBOX_POP_TYPE, MAILBOX_POST_TYPE, Mailbox, MailboxConfig, pending_forward_recipients,
-    should_forward_send,
+    MAILBOX_POP_TYPE, MAILBOX_POST_TYPE, Mailbox, MailboxConfig, MailboxConnection,
+    pending_forward_recipients, should_forward_send,
 };
 #[doc(hidden)]
-pub use mailbox::{build_pop_request, build_post_request};
+pub use mailbox::{build_pop_request, build_post_request, next_node_index};

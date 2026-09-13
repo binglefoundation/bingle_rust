@@ -22,7 +22,9 @@ pub use registration::{ChainRegistrationOps, RegistrationOps, run_registration};
 
 // Sidewinder Mailbox (FIFO) client for store-and-forward (epic #200, foundation story #213).
 pub mod sidewinder;
-pub use sidewinder::{MAILBOX_POP_TYPE, MAILBOX_POST_TYPE, Mailbox, MailboxConfig};
+pub use sidewinder::{
+    MAILBOX_POP_TYPE, MAILBOX_POST_TYPE, Mailbox, MailboxConfig, MailboxConnection,
+};
 
 // Give-up nudge to the notify gateway (bingle_notify #11).
 pub mod notify;

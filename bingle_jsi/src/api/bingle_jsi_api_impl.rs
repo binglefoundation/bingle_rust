@@ -13,8 +13,8 @@ use crate::api::callback::{
 use crate::api::error::BingleJsiError;
 use crate::api::types::{
     BingleJsiConfig, BingleMessage, Contact, ContactSource, FailureKind, HandleLookupPartialResult,
-    InetSocketAddress, Keypair, KeypairStatus, KeypairStatusResponse, Message, NatType,
-    NatTypeResponse, NetworkSourceKey, VersionInfo,
+    InetSocketAddress, Keypair, KeypairStatus, KeypairStatusResponse, Message, MessagingSettings,
+    NatType, NatTypeResponse, NetworkSourceKey, VersionInfo,
 };
 use algo_ops::error::AlgoErrorKind;
 use bingle_core::api::bingle_api::{
@@ -457,17 +457,23 @@ impl BingleJsiApiImpl {
             if let Some(env) = config.notify_env.clone() {
                 cfg.notify_env = env;
             }
-            // Store-and-forward (epic #200): configure the Sidewinder Mailbox when both the node URL
-            // and bearer token are supplied. Either one alone leaves store-and-forward unconfigured.
-            cfg = cfg.with_sidewinder(MailboxConfig::from_parts(
+            // Store-and-forward (epic #200): configure the Sidewinder Mailbox. `sidewinder_node_url`
+            // + `sidewinder_token` select the bearer (plaintext) override; otherwise the Bingle DApp
+            // app id drives on-chain discovery + identity-pinned mutual TLS (story #244). Neither
+            // available leaves store-and-forward unconfigured.
+            cfg = cfg.with_sidewinder(MailboxConfig::select(
                 config.sidewinder_node_url.clone(),
                 config.sidewinder_token.clone(),
+                opts.app_id,
             ));
             // Store-and-forward gates (#212): each side is independent and defaults off when unset.
             cfg = cfg.with_store_and_forward(
                 config.store_and_forward_send,
                 config.store_and_forward_receive,
             );
+            // Fail loudly if store-and-forward is gated on with no reachable Mailbox (story #244).
+            cfg.validate_store_and_forward()
+                .map_err(|reason| BingleJsiError::InvalidRequest { reason })?;
             let mut impl_api = BingleApiLocalImpl::new(cfg);
             if path.exists()
                 && let Err(e) = impl_api.load(path.to_string_lossy().as_ref())
@@ -1328,6 +1334,25 @@ impl BingleJsiApi for BingleJsiApiImpl {
     fn is_blocked(&self, id: String) -> Result<bool, BingleJsiError> {
         let guard = local_api_guard(&self.local_api)?;
         guard.is_blocked(&id).map_err(bingle_error_to_jsi)
+    }
+
+    fn set_store_and_forward(&self, send: bool, receive: bool) -> Result<(), BingleJsiError> {
+        // Applies to the live local store under its lock — no re-init, so the session (keypair,
+        // contacts, history, transport/relay connections) is preserved (story #242).
+        let mut guard = local_api_guard(&self.local_api)?;
+        guard.set_store_and_forward(send, receive);
+        Ok(())
+    }
+
+    fn set_notify(&self, enabled: bool, gateway_url: Option<String>) -> Result<(), BingleJsiError> {
+        let mut guard = local_api_guard(&self.local_api)?;
+        guard.set_notify(enabled, gateway_url);
+        Ok(())
+    }
+
+    fn messaging_settings(&self) -> Result<MessagingSettings, BingleJsiError> {
+        let guard = local_api_guard(&self.local_api)?;
+        Ok(guard.messaging_settings().into())
     }
 
     fn get_contacts(&self) -> Result<Vec<Contact>, BingleJsiError> {

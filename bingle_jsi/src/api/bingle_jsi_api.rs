@@ -4,7 +4,8 @@ use crate::api::callback::{
 use crate::api::error::BingleJsiError;
 use crate::api::types::{
     BingleMessage, Contact, ContactSource, HandleLookupPartialResult, Keypair,
-    KeypairStatusResponse, Message, NatTypeResponse, NetworkSourceKey, VersionInfo,
+    KeypairStatusResponse, Message, MessagingSettings, NatTypeResponse, NetworkSourceKey,
+    VersionInfo,
 };
 
 /// Primary Bingle API exposed over JSI / uniffi.
@@ -200,6 +201,22 @@ pub trait BingleJsiApi: Send + Sync {
 
     /// Check the status of the local keypair.
     fn keypair_status(&self) -> Result<KeypairStatusResponse, BingleJsiError>;
+
+    // ── Runtime messaging settings (store-and-forward + notify, story #242) ───────────────
+
+    /// Set the store-and-forward send / receive gates on the **running** session — the Settings-screen
+    /// toggle. Takes effect on the next send/poll without a re-init (keypair, contacts, history and
+    /// active connections are preserved). Errors if local mode is not enabled.
+    fn set_store_and_forward(&self, send: bool, receive: bool) -> Result<(), BingleJsiError>;
+
+    /// Set the give-up notify nudge on the **running** session: `enabled` toggles it and `gateway_url`
+    /// sets the notify gateway base URL (`null` leaves the nudge dormant even when enabled). Takes
+    /// effect immediately without a re-init. Errors if local mode is not enabled.
+    fn set_notify(&self, enabled: bool, gateway_url: Option<String>) -> Result<(), BingleJsiError>;
+
+    /// The current effective messaging settings (store-and-forward gates + notify), so the Settings
+    /// screen can render live state. Errors if local mode is not enabled.
+    fn messaging_settings(&self) -> Result<MessagingSettings, BingleJsiError>;
 
     /// Save all local state to a JSON file.
     fn save(&self, path: String) -> Result<(), BingleJsiError>;
