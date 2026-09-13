@@ -1,5 +1,5 @@
 // Unit tests for the `chat` subcommand argument parser (bingle_cli::chat::parse_chat_args).
-use bingle_cli::chat::parse_chat_args;
+use bingle_cli::chat::{StoreForwardMode, parse_chat_args};
 
 fn args(items: &[&str]) -> Vec<String> {
     items.iter().map(|s| s.to_string()).collect()
@@ -155,3 +155,78 @@ pub fn state_file_still_accepts_explicit_handle() {
     assert_eq!(parsed.opts.handle, "alice");
     assert_eq!(parsed.state_file.as_deref(), Some("chat.state"));
 }
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn store_forward_defaults_to_none() {
+    let parsed = parse_chat_args(args(&["alice"])).expect("parse");
+    assert_eq!(parsed.store_forward, StoreForwardMode::None);
+    assert_eq!(parsed.store_forward.gates(), (false, false));
+    assert!(parsed.notify_url.is_none());
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn store_forward_parses_all_modes() {
+    let cases = [
+        ("both", StoreForwardMode::Both, (true, true)),
+        ("send", StoreForwardMode::Send, (true, false)),
+        ("receive", StoreForwardMode::Receive, (false, true)),
+        ("none", StoreForwardMode::None, (false, false)),
+    ];
+    for (value, mode, gates) in cases {
+        let parsed = parse_chat_args(args(&["alice", "--store-forward", value]))
+            .unwrap_or_else(|e| panic!("--store-forward {value} should parse: {e}"));
+        assert_eq!(parsed.store_forward, mode, "mode for {value}");
+        assert_eq!(parsed.store_forward.gates(), gates, "gates for {value}");
+    }
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn store_forward_rejects_unknown_value() {
+    let err = parse_chat_args(args(&["alice", "--store-forward", "bogus"]))
+        .expect_err("unknown --store-forward value should error");
+    assert!(
+        err.contains("both|send|receive|none") && err.contains("bogus"),
+        "error should list valid values and echo the bad one; got: {err}"
+    );
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn store_forward_without_value_is_error() {
+    let err = parse_chat_args(args(&["alice", "--store-forward"]))
+        .expect_err("--store-forward needs a value");
+    assert!(
+        err.contains("--store-forward"),
+        "error should name the flag; got: {err}"
+    );
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn notify_parses_url() {
+    let parsed = parse_chat_args(args(&["alice", "--notify", "https://notify.example/alert"]))
+        .expect("--notify should parse");
+    assert_eq!(
+        parsed.notify_url.as_deref(),
+        Some("https://notify.example/alert")
+    );
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn notify_without_value_is_error() {
+    let err = parse_chat_args(args(&["alice", "--notify"])).expect_err("--notify needs a value");
+    assert!(
+        err.contains("--notify"),
+        "error should name the flag; got: {err}"
+    );
+}
+
+// The "gate on but no Mailbox configured -> fail loudly" check now lives on `LocalApiConfig`
+// (`validate_store_and_forward`, story #244), which also counts the app-id discovery path as
+// configured — not just the SIDEWINDER_NODE_URL/TOKEN bearer override. It is unit-tested in
+// bingle_local (`store_and_forward_toggles`), so the earlier CLI-level `validate_store_forward`
+// helper and its tests were removed here.
