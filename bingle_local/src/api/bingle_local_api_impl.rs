@@ -9,7 +9,7 @@ use crate::api::notify::{
 use crate::api::sidewinder::MailboxConfig;
 use crate::api::{
     BingleLocalApi, ChainRegistrationOps, Contact, ContactSource, Keypair, KeypairStatus, Message,
-    REQUIRED_ALGO, run_registration,
+    MessagingSettings, REQUIRED_ALGO, run_registration,
 };
 use algo_ops::error::AlgoErrorKind;
 use algo_ops::{AlgoChainConfig, AlgoOps};
@@ -1076,6 +1076,39 @@ impl BingleLocalApi for BingleApiLocalImpl {
     fn poll_mailbox(&self) -> Result<Vec<Message>, BingleError> {
         // The read-on-reconnect logic lives in the `store_and_forward` child module (#215).
         self.poll_mailbox_inner()
+    }
+
+    fn set_store_and_forward(&mut self, send: bool, receive: bool) {
+        // The gates are read per-operation from `config` (see the store_and_forward child module), so
+        // swapping them here takes effect on the next send/poll — the keypair, contacts, history and
+        // live connections are separate fields and are untouched (story #242).
+        self.config.store_and_forward_send = send;
+        self.config.store_and_forward_receive = receive;
+        tracing::info!(
+            "[BingleLocalApi] store-and-forward gates set: send={send} receive={receive}"
+        );
+    }
+
+    fn set_notify(&mut self, enabled: bool, gateway_url: Option<String>) {
+        // notify_on_giveup + notify_gateway_url are read per-give-up, so this applies live (story #242).
+        self.config.notify_on_giveup = enabled;
+        self.config.notify_gateway_url = gateway_url;
+        tracing::info!(
+            "[BingleLocalApi] notify set: enabled={enabled} gateway={}",
+            self.config
+                .notify_gateway_url
+                .as_deref()
+                .unwrap_or("<none>")
+        );
+    }
+
+    fn messaging_settings(&self) -> MessagingSettings {
+        MessagingSettings {
+            store_and_forward_send: self.config.store_and_forward_send,
+            store_and_forward_receive: self.config.store_and_forward_receive,
+            notify_on_giveup: self.config.notify_on_giveup,
+            notify_gateway_url: self.config.notify_gateway_url.clone(),
+        }
     }
 
     fn save(&self, path: &str) -> Result<(), BingleError> {

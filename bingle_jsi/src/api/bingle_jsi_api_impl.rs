@@ -13,8 +13,8 @@ use crate::api::callback::{
 use crate::api::error::BingleJsiError;
 use crate::api::types::{
     BingleJsiConfig, BingleMessage, Contact, ContactSource, FailureKind, HandleLookupPartialResult,
-    InetSocketAddress, Keypair, KeypairStatus, KeypairStatusResponse, Message, NatType,
-    NatTypeResponse, NetworkSourceKey, VersionInfo,
+    InetSocketAddress, Keypair, KeypairStatus, KeypairStatusResponse, Message, MessagingSettings,
+    NatType, NatTypeResponse, NetworkSourceKey, VersionInfo,
 };
 use algo_ops::error::AlgoErrorKind;
 use bingle_core::api::bingle_api::{
@@ -1334,6 +1334,25 @@ impl BingleJsiApi for BingleJsiApiImpl {
     fn is_blocked(&self, id: String) -> Result<bool, BingleJsiError> {
         let guard = local_api_guard(&self.local_api)?;
         guard.is_blocked(&id).map_err(bingle_error_to_jsi)
+    }
+
+    fn set_store_and_forward(&self, send: bool, receive: bool) -> Result<(), BingleJsiError> {
+        // Applies to the live local store under its lock — no re-init, so the session (keypair,
+        // contacts, history, transport/relay connections) is preserved (story #242).
+        let mut guard = local_api_guard(&self.local_api)?;
+        guard.set_store_and_forward(send, receive);
+        Ok(())
+    }
+
+    fn set_notify(&self, enabled: bool, gateway_url: Option<String>) -> Result<(), BingleJsiError> {
+        let mut guard = local_api_guard(&self.local_api)?;
+        guard.set_notify(enabled, gateway_url);
+        Ok(())
+    }
+
+    fn messaging_settings(&self) -> Result<MessagingSettings, BingleJsiError> {
+        let guard = local_api_guard(&self.local_api)?;
+        Ok(guard.messaging_settings().into())
     }
 
     fn get_contacts(&self) -> Result<Vec<Contact>, BingleJsiError> {

@@ -51,6 +51,19 @@ export interface Contact {
   fields: Record<string, string>;
 }
 
+/**
+ * Runtime-adjustable messaging settings — store-and-forward gates + give-up notify (issue #242).
+ * Read via `messagingSettings()` and changed on a running session via `setStoreAndForward` /
+ * `setNotify`, so a Settings screen can toggle these privacy-sensitive options without a re-init.
+ * The Sidewinder endpoint stays init-only (build/deploy config), so it is not represented here.
+ */
+export interface MessagingSettings {
+  store_and_forward_send: boolean;
+  store_and_forward_receive: boolean;
+  notify_on_giveup: boolean;
+  notify_gateway_url: string | null;
+}
+
 export interface HandleLookupPartialResult {
   /** Algorand address of the matching account. */
   id: string;
@@ -270,6 +283,19 @@ export interface BingleJsiApi {
     failureReason: string | null
   ): void;
   keypairStatus(): KeypairStatusResponse;
+  /**
+   * Set the store-and-forward send/receive gates on the running session (Settings screen, issue
+   * #242). Takes effect on the next send/poll without a re-init; keypair, contacts, history and
+   * active connections are preserved.
+   */
+  setStoreAndForward(send: boolean, receive: boolean): void;
+  /**
+   * Set the give-up notify nudge on the running session (issue #242): `enabled` toggles it and
+   * `gatewayUrl` sets the notify gateway base URL (null leaves the nudge dormant even when enabled).
+   */
+  setNotify(enabled: boolean, gatewayUrl: string | null): void;
+  /** Current effective messaging settings, for the Settings screen to render live state (#242). */
+  messagingSettings(): MessagingSettings;
   /**
    * Whether the network is available for sending (issue #31). Reflects the P2P transport only:
    * true when listening with a usable route, false when not listening or NoConnection. Independent

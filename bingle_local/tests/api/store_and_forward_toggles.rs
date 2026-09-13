@@ -6,7 +6,7 @@
 //! compatibility), and that the resolved value is observable on the implementation for #214/#215.
 
 use algo_ops::AlgoChainConfig;
-use bingle_local::api::{BingleApiLocalImpl, LocalApiConfig, MailboxConfig};
+use bingle_local::api::{BingleApiLocalImpl, BingleLocalApi, LocalApiConfig, MailboxConfig};
 
 #[test]
 fn both_gates_default_off() {
@@ -91,6 +91,39 @@ fn validate_passes_when_a_gate_is_on_and_a_mailbox_is_configured() {
         .with_sidewinder(Some(MailboxConfig::discovered(42)))
         .with_store_and_forward(Some(false), Some(true));
     assert!(discovered.validate_store_and_forward().is_ok());
+}
+
+// --- Runtime setters + getter (story #242): change gates / notify in place on a live session ---
+
+#[test]
+fn runtime_setters_change_gates_and_notify_in_place() {
+    let mut api = BingleApiLocalImpl::new(
+        LocalApiConfig::with_notify(AlgoChainConfig::default(), 0, 0, None, None)
+            .with_store_and_forward(Some(false), Some(false)),
+    );
+
+    // Gates flip via the trait setter and are observable both on the inherent accessors (#214/#215
+    // read these per-operation) and via the grouped getter.
+    api.set_store_and_forward(true, true);
+    assert!(api.store_and_forward_send());
+    assert!(api.store_and_forward_receive());
+
+    api.set_notify(true, Some("https://n.example".to_string()));
+
+    let s = api.messaging_settings();
+    assert!(s.store_and_forward_send);
+    assert!(s.store_and_forward_receive);
+    assert!(s.notify_on_giveup);
+    assert_eq!(s.notify_gateway_url.as_deref(), Some("https://n.example"));
+
+    // Each side is independent, and notify can be turned back off with a null gateway.
+    api.set_store_and_forward(false, true);
+    api.set_notify(false, None);
+    let s2 = api.messaging_settings();
+    assert!(!s2.store_and_forward_send);
+    assert!(s2.store_and_forward_receive);
+    assert!(!s2.notify_on_giveup);
+    assert!(s2.notify_gateway_url.is_none());
 }
 
 #[test]

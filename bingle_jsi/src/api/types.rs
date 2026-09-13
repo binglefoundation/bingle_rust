@@ -73,6 +73,33 @@ pub struct Contact {
     pub fields: HashMap<String, String>,
 }
 
+/// The runtime-adjustable messaging settings — store-and-forward gates + give-up notify — returned by
+/// `messagingSettings()` so a Settings screen can render live state (epic #200, story #242). Mirrors
+/// `bingle_local::api::MessagingSettings`. The Sidewinder endpoint stays init-only (build/deploy
+/// config, discovered on-chain or set via the bearer override), so it is not represented here.
+#[derive(uniffi::Record, Debug, Clone)]
+pub struct MessagingSettings {
+    /// Send-side gate: post a sealed message to the recipient's Mailbox on give-up.
+    pub store_and_forward_send: bool,
+    /// Receive-side gate: poll our own Mailbox for messages forwarded to us.
+    pub store_and_forward_receive: bool,
+    /// Whether the give-up notify nudge is enabled (fires only when a gateway URL is also set).
+    pub notify_on_giveup: bool,
+    /// The notify gateway base URL; `null` leaves the nudge dormant even when enabled.
+    pub notify_gateway_url: Option<String>,
+}
+
+impl From<bingle_local::api::MessagingSettings> for MessagingSettings {
+    fn from(s: bingle_local::api::MessagingSettings) -> Self {
+        Self {
+            store_and_forward_send: s.store_and_forward_send,
+            store_and_forward_receive: s.store_and_forward_receive,
+            notify_on_giveup: s.notify_on_giveup,
+            notify_gateway_url: s.notify_gateway_url,
+        }
+    }
+}
+
 /// Typed cause of a send failure, exposed to the client (issue #99).
 ///
 /// Mirrors `bingle_core`'s `SendFailureKind` (named `FailureKind` here to match the other FFI

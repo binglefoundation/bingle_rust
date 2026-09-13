@@ -147,6 +147,26 @@ pub struct KeypairStatus {
     pub stale: bool,
 }
 
+/// The runtime-adjustable messaging settings: the store-and-forward gates and the give-up notify
+/// nudge (epic #200, story #242). Read back via [`messaging_settings`](BingleLocalApi::messaging_settings)
+/// and changed on a live session via [`set_store_and_forward`](BingleLocalApi::set_store_and_forward)
+/// / [`set_notify`](BingleLocalApi::set_notify), so a Settings screen can toggle these privacy-sensitive
+/// options without a full re-init. The Sidewinder endpoint/token (or app-id discovery) stays init-only —
+/// endpoints are build/deploy configuration, not user settings — so they are not represented here.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MessagingSettings {
+    /// Send-side store-and-forward gate: post a sealed message to the recipient's Mailbox on give-up.
+    pub store_and_forward_send: bool,
+    /// Receive-side store-and-forward gate: poll our own Mailbox for messages forwarded to us.
+    pub store_and_forward_receive: bool,
+    /// Whether the give-up nudge to the notify gateway is enabled (only fires when a gateway URL is
+    /// also set — see [`notify_gateway_url`](MessagingSettings::notify_gateway_url)).
+    pub notify_on_giveup: bool,
+    /// The notify gateway base URL; `None` leaves the nudge dormant even when
+    /// [`notify_on_giveup`](MessagingSettings::notify_on_giveup) is set.
+    pub notify_gateway_url: Option<String>,
+}
+
 /// Trait describing the local API for storing messages and contacts.
 /// Do not provide default method implementations per project guidelines.
 pub trait BingleLocalApi: Send + Sync {
@@ -250,6 +270,23 @@ pub trait BingleLocalApi: Send + Sync {
     /// while foregrounded, stopped on `backgrounding()`. Real-time delivery normally beats the poll;
     /// it is a safety net. The read messages also appear in [`get_messages`](Self::get_messages).
     fn poll_mailbox(&self) -> Result<Vec<Message>, BingleError>;
+
+    /// Set the store-and-forward send / receive gates on a **running** session (epic #200, story
+    /// #242). Takes effect on the next send (post-on-give-up) / poll without dropping the session:
+    /// the keypair, contacts, message history, and active transport/relay connections are untouched —
+    /// only the config gates change. Mirrors the initial values from
+    /// [`with_store_and_forward`](crate::api::bingle_local_api_impl::LocalApiConfig::with_store_and_forward).
+    fn set_store_and_forward(&mut self, send: bool, receive: bool);
+
+    /// Set the give-up notify nudge on a **running** session (epic #200, story #242): `enabled`
+    /// drives `notify_on_giveup` and `gateway_url` the notify gateway base URL. The nudge fires only
+    /// when enabled *and* a gateway URL is set (a `None` URL leaves it dormant). Mirrors the initial
+    /// values from [`with_notify`](crate::api::bingle_local_api_impl::LocalApiConfig::with_notify).
+    fn set_notify(&mut self, enabled: bool, gateway_url: Option<String>);
+
+    /// The current effective messaging settings (store-and-forward gates + notify), so a Settings
+    /// screen can render live state (epic #200, story #242).
+    fn messaging_settings(&self) -> MessagingSettings;
 
     /// Save all local state to a JSON file at the given path.
     fn save(&self, path: &str) -> Result<(), BingleError>;
