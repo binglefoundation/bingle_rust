@@ -14,6 +14,70 @@ use bingle_core::util::cli_utils::parse_start_options_from_args;
 /// state-file bridge fills the real handle from the stored keypair. Never surfaced to the user.
 const HANDLE_FROM_STATE_FILE: &str = "__bingle_chat_handle_from_state_file__";
 
+/// Which store-and-forward gates `--store-forward <value>` enables (epic #200). Maps to
+/// [`LocalApiConfig::with_store_and_forward`](bingle_local::api::bingle_local_api_impl::LocalApiConfig::with_store_and_forward)
+/// send/receive booleans. Defaults to [`None`](StoreForwardMode::None) — today's behaviour, with
+/// both gates off.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StoreForwardMode {
+    /// `both`: post to the recipient's Mailbox on give-up (send) *and* poll our own Mailbox (receive).
+    Both,
+    /// `send`: post on give-up only; do not poll for inbound Mailbox messages.
+    Send,
+    /// `receive`: poll for inbound Mailbox messages only; do not post on give-up.
+    Receive,
+    /// `none` (default): both gates off — direct delivery only, no Mailbox post/poll.
+    None,
+}
+
+impl StoreForwardMode {
+    /// Parse the `--store-forward <value>` argument. Unknown values are a usage error.
+    fn parse(value: &str) -> Result<StoreForwardMode, String> {
+        match value {
+            "both" => Ok(StoreForwardMode::Both),
+            "send" => Ok(StoreForwardMode::Send),
+            "receive" => Ok(StoreForwardMode::Receive),
+            "none" => Ok(StoreForwardMode::None),
+            other => Err(format!(
+                "--store-forward expects one of both|send|receive|none, got '{other}'"
+            )),
+        }
+    }
+
+    /// The `(send_gate, receive_gate)` this mode enables.
+    pub fn gates(self) -> (bool, bool) {
+        match self {
+            StoreForwardMode::Both => (true, true),
+            StoreForwardMode::Send => (true, false),
+            StoreForwardMode::Receive => (false, true),
+            StoreForwardMode::None => (false, false),
+        }
+    }
+}
+
+/// Validate that a store-and-forward mode is usable given whether a Sidewinder Mailbox is configured.
+///
+/// A mode that enables a send or receive gate is useless without a Mailbox — the send would silently
+/// no-op ([`should_forward_send`](bingle_local::api::sidewinder::mailbox::should_forward_send) returns
+/// `false`) and the receive poll would have nothing to poll. So we fail loudly at startup rather than
+/// silently doing nothing. Pure (takes the configured flag, does not read the environment) so this
+/// "gate on but Mailbox unconfigured" check is unit-testable. The error names the environment
+/// variables the caller must set.
+pub fn validate_store_forward(
+    mode: StoreForwardMode,
+    mailbox_configured: bool,
+) -> Result<(), String> {
+    let (send_gate, receive_gate) = mode.gates();
+    if (send_gate || receive_gate) && !mailbox_configured {
+        return Err(
+            "--store-forward requires a Sidewinder Mailbox, but SIDEWINDER_NODE_URL and \
+             SIDEWINDER_TOKEN are not both set; set them or use --store-forward none"
+                .to_string(),
+        );
+    }
+    Ok(())
+}
+
 /// Parsed arguments for `bingle_cli chat`.
 #[derive(Debug)]
 pub struct ChatArgs {
@@ -29,6 +93,11 @@ pub struct ChatArgs {
     /// `--no-retries`: send each message once and report failure immediately instead of keeping it
     /// pending and retrying while the recipient is offline. Retries are on by default.
     pub no_retries: bool,
+    /// `--store-forward <both|send|receive|none>`: which store-and-forward Mailbox gates to enable
+    /// (epic #200). Defaults to [`StoreForwardMode::None`] (off — today's behaviour).
+    pub store_forward: StoreForwardMode,
+    /// `--notify <url>`: bingle_notify gateway URL to nudge on give-up. `None` leaves notify off.
+    pub notify_url: Option<String>,
 }
 
 /// Parse the arguments following `chat` into a [`ChatArgs`].
@@ -41,6 +110,8 @@ pub fn parse_chat_args(args: Vec<String>) -> Result<ChatArgs, String> {
     let mut to_id: Option<String> = None;
     let mut state_file: Option<String> = None;
     let mut no_retries = false;
+    let mut store_forward = StoreForwardMode::None;
+    let mut notify_url: Option<String> = None;
     // Everything not consumed here is forwarded to the shared start-options parser.
     let mut rest: Vec<String> = Vec::with_capacity(args.len());
 
@@ -60,6 +131,15 @@ pub fn parse_chat_args(args: Vec<String>) -> Result<ChatArgs, String> {
             // `--no-retry` too).
             "--no-retries" | "--no-retry" => {
                 no_retries = true;
+            }
+            "--store-forward" => {
+                let value = it
+                    .next()
+                    .ok_or("--store-forward requires a <both|send|receive|none> value")?;
+                store_forward = StoreForwardMode::parse(&value)?;
+            }
+            "--notify" => {
+                notify_url = Some(it.next().ok_or("--notify requires a <url> value")?);
             }
             // Logging flags are normally consumed before dispatch by `init_logger_from_args`. Tolerate
             // them here too (as no-ops) so they never reach `parse_start_options_from_args`, which
@@ -97,5 +177,7 @@ pub fn parse_chat_args(args: Vec<String>) -> Result<ChatArgs, String> {
         to_id,
         state_file,
         no_retries,
+        store_forward,
+        notify_url,
     })
 }

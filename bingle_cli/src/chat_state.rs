@@ -20,7 +20,7 @@ use bingle_local::api::MailboxConfig;
 use bingle_local::api::bingle_local_api::{BingleLocalApi, ContactSource, Message, REQUIRED_ALGO};
 use bingle_local::api::bingle_local_api_impl::{BingleApiLocalImpl, LocalApiConfig};
 
-use crate::chat::ChatArgs;
+use crate::chat::{ChatArgs, validate_store_forward};
 use crate::chat_register::AccountStatus;
 
 /// Outcome of an on-chain registration attempt, distinguishing the "handle already taken by another
@@ -71,19 +71,34 @@ impl ChatState {
         // Configure the local store with whatever chain ids the CLI/node-file resolved; 0 means
         // "unset" for BingleLocal, matching how the webserver builds its config.
         let algo_config = opts.algo_provider_config.clone().unwrap_or_default();
-        // Store-and-forward (epic #200): configure the Sidewinder Mailbox from the environment
-        // (`SIDEWINDER_NODE_URL` + `SIDEWINDER_TOKEN`); unset leaves store-and-forward unconfigured.
+
+        // Store-and-forward (epic #200, issue #241): configure the Sidewinder Mailbox from the
+        // environment (`SIDEWINDER_NODE_URL` + `SIDEWINDER_TOKEN`); `from_parts` yields `None` when
+        // either is unset, leaving the Mailbox unconfigured.
+        let mailbox = MailboxConfig::from_parts(
+            std::env::var("SIDEWINDER_NODE_URL").ok(),
+            std::env::var("SIDEWINDER_TOKEN").ok(),
+        );
+
+        // `--store-forward` selects which gates to enable; `--notify <url>` enables the give-up nudge.
+        // Fail loudly rather than silently no-op when a gate is on but no Mailbox is configured.
+        validate_store_forward(args.store_forward, mailbox.is_some())?;
+        let (send_gate, receive_gate) = args.store_forward.gates();
+
+        let (notify_on_giveup, notify_gateway_url) = match args.notify_url.as_ref() {
+            Some(url) => (Some(true), Some(url.clone())),
+            None => (None, None),
+        };
+
         let cfg = LocalApiConfig::with_notify(
             algo_config,
             opts.app_id.unwrap_or(0),
             opts.asset_id.unwrap_or(0),
-            None,
-            None,
+            notify_on_giveup,
+            notify_gateway_url,
         )
-        .with_sidewinder(MailboxConfig::from_parts(
-            std::env::var("SIDEWINDER_NODE_URL").ok(),
-            std::env::var("SIDEWINDER_TOKEN").ok(),
-        ));
+        .with_sidewinder(mailbox)
+        .with_store_and_forward(Some(send_gate), Some(receive_gate));
         let mut local = BingleApiLocalImpl::new(cfg);
 
         let state_file = args.state_file.clone();
