@@ -57,8 +57,7 @@ fn mailbox_config_discovered_carries_app_id_and_defaults() {
 #[test]
 fn select_prefers_bearer_override_even_when_app_id_present() {
     // The Bingle app id is always present in normal operation, so an explicit URL+token must win.
-    let conn =
-        MailboxConnection::select(Some("http://n:9101".into()), Some("tok".into()), Some(555));
+    let conn = MailboxConnection::new(Some("http://n:9101".into()), Some("tok".into()), Some(555));
     assert_eq!(
         conn,
         Some(MailboxConnection::Bearer {
@@ -72,18 +71,18 @@ fn select_prefers_bearer_override_even_when_app_id_present() {
 #[test]
 fn select_uses_discovery_when_only_app_id_available() {
     assert_eq!(
-        MailboxConnection::select(None, None, Some(555)),
+        MailboxConnection::new(None, None, Some(555)),
         Some(MailboxConnection::Discovered { app_id: 555 }),
         "no override + app id -> discovery + mTLS"
     );
     // A half-set bearer (url or token alone) is not an override, so it falls back to discovery.
     assert_eq!(
-        MailboxConnection::select(Some("http://n:9101".into()), None, Some(555)),
+        MailboxConnection::new(Some("http://n:9101".into()), None, Some(555)),
         Some(MailboxConnection::Discovered { app_id: 555 }),
         "url alone is not a bearer override; discovery is used"
     );
     assert_eq!(
-        MailboxConnection::select(None, Some("tok".into()), Some(555)),
+        MailboxConnection::new(None, Some("tok".into()), Some(555)),
         Some(MailboxConnection::Discovered { app_id: 555 }),
         "token alone is not a bearer override; discovery is used"
     );
@@ -92,12 +91,12 @@ fn select_uses_discovery_when_only_app_id_available() {
 #[test]
 fn select_is_none_when_neither_override_nor_app_id() {
     assert_eq!(
-        MailboxConnection::select(None, None, None),
+        MailboxConnection::new(None, None, None),
         None,
         "no override and no app id leaves store-and-forward unconfigured"
     );
     assert_eq!(
-        MailboxConnection::select(None, None, Some(0)),
+        MailboxConnection::new(None, None, Some(0)),
         None,
         "a 0 app id is treated as unset"
     );
@@ -107,16 +106,16 @@ fn select_is_none_when_neither_override_nor_app_id() {
 fn select_treats_blank_override_values_as_absent() {
     // A blank URL/token must not half-configure the bearer path; with an app id, discovery is used.
     assert_eq!(
-        MailboxConnection::select(Some("   ".into()), Some("tok".into()), Some(9)),
+        MailboxConnection::new(Some("   ".into()), Some("tok".into()), Some(9)),
         Some(MailboxConnection::Discovered { app_id: 9 }),
     );
     assert_eq!(
-        MailboxConnection::select(Some("http://n:9101".into()), Some("".into()), Some(9)),
+        MailboxConnection::new(Some("http://n:9101".into()), Some("".into()), Some(9)),
         Some(MailboxConnection::Discovered { app_id: 9 }),
     );
     // Blank override and no app id -> unconfigured.
     assert_eq!(
-        MailboxConnection::select(Some("   ".into()), Some("   ".into()), None),
+        MailboxConnection::new(Some("   ".into()), Some("   ".into()), None),
         None,
     );
 }
@@ -159,7 +158,7 @@ fn next_node_index_advances_then_exhausts() {
 #[test]
 fn mtls_identity_is_the_same_account_as_the_transaction_signer() {
     // The Mailbox uses one AlgoOps handle for everything: it signs Mailbox transactions with the
-    // account key AND (on the discovery transport) derives its mutual-TLS client identity from the
+    // account key AND (on the discovered transport) derives its mutual-TLS client identity from the
     // same account seed (sidewinder_ops::connect -> identity_key). So the on-chain identity a node
     // pins for this client is exactly the address that signs its transactions. `identity_key` is
     // pub(crate) in sidewinder_ops, so we assert the invariant through the public account surface:

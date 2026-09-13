@@ -69,7 +69,8 @@ pub enum MailboxConnection {
 }
 
 impl MailboxConnection {
-    /// Select the connection mode from a call site's optional URL/token override and the Bingle app id.
+    /// Build the connection mode from a call site's optional URL/token override and the Bingle app id
+    /// — the enum's constructor (there is no other way to make one).
     ///
     /// Deterministic and logged (story #244, deliverable 2):
     /// - `base_url` **and** `token` both set → [`Bearer`](MailboxConnection::Bearer) (plaintext
@@ -80,7 +81,7 @@ impl MailboxConnection {
     ///
     /// Blank strings and a `0` app id are treated as absent (a blank environment value must not
     /// half-configure the Mailbox).
-    pub fn select(
+    pub fn new(
         base_url: Option<String>,
         token: Option<String>,
         app_id: Option<u64>,
@@ -162,15 +163,14 @@ impl MailboxConfig {
     }
 
     /// Select the Mailbox connection from a call site's optional URL/token override and the Bingle app
-    /// id (see [`MailboxConnection::select`]). `None` means store-and-forward stays unconfigured.
-    /// Shared by the JSI, webserver, and CLI call sites so the selection lives — and is tested — in one
-    /// place.
+    /// id (see [`MailboxConnection::new`]). `None` means store-and-forward stays unconfigured. Shared
+    /// by the JSI, webserver, and CLI call sites so the selection lives — and is tested — in one place.
     pub fn select(
         base_url: Option<String>,
         token: Option<String>,
         app_id: Option<u64>,
     ) -> Option<Self> {
-        MailboxConnection::select(base_url, token, app_id).map(Self::from_connection)
+        MailboxConnection::new(base_url, token, app_id).map(Self::from_connection)
     }
 }
 
@@ -203,7 +203,7 @@ pub fn pending_forward_recipients(
 /// account (the [`AlgoOps`] handle signs every transaction it submits, and — on the discovery
 /// transport — is also the mutual-TLS client identity, so one account serves both roles).
 pub struct Mailbox {
-    /// The enrolled parent-chain account. Retained so the discovery transport can reconnect to a
+    /// The enrolled parent-chain account. Retained so the discovered transport can reconnect to a
     /// failed-over node and re-resolve without threading the handle back in.
     algo: AlgoOps,
     /// The live node connection (bearer client, or a discovered-node client with its failover set).
@@ -222,7 +222,7 @@ enum Transport {
     Discovered(DiscoveredTransport),
 }
 
-/// The discovery transport's state: the parameters to re-resolve with, the reachable node set, and
+/// The discovered transport's state: the parameters to re-resolve with, the reachable node set, and
 /// the client bound to the currently active node.
 struct DiscoveredTransport {
     /// Discovery parameters (Bingle app id + membership schema), reused to re-resolve on exhaustion.
@@ -307,13 +307,13 @@ impl Mailbox {
         }
     }
 
-    /// Whether this transport can fail over to another node (only the discovery transport can).
+    /// Whether this transport can fail over to another node (only the discovered transport can).
     fn can_failover(&self) -> bool {
         matches!(self.transport, Transport::Discovered(_))
     }
 
     /// Fetch suggested params — the first node round-trip of any operation, and thus the reachability
-    /// probe. On the discovery transport a transport failure fails over to the next resolved node, and
+    /// probe. On the discovered transport a transport failure fails over to the next resolved node, and
     /// re-resolves the set from chain once on exhaustion (story #244, deliverable 3). Failover is
     /// confined to this probe, **before** any transaction is submitted, so a finality timeout partway
     /// through an operation never re-submits on a second node (which could double-post).
@@ -481,7 +481,7 @@ pub fn build_pop_request(
     }
 }
 
-/// Connect the discovery transport: resolve the app's reachable cluster nodes on-chain and connect to
+/// Connect the discovered transport: resolve the app's reachable cluster nodes on-chain and connect to
 /// the first over identity-pinned mutual TLS, retaining the rest for failover.
 fn connect_discovered(algo: &AlgoOps, app_id: u64) -> Result<Transport, BingleError> {
     let discovery = DiscoveryConfig::bingle(app_id);
