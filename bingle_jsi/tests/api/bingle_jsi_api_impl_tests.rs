@@ -395,6 +395,59 @@ fn import_keypair_rejects_invalid_passphrase() {
 }
 
 #[test]
+fn runtime_messaging_settings_toggle_preserves_session() {
+    // Story #242: the Settings screen changes store-and-forward + notify on a running session via the
+    // JSI runtime-update API, and the change takes effect without dropping the session.
+    let api = init_with_local_helper();
+
+    // A generated keypair stands in for live session state that a re-init would tear down.
+    let kp = api.generate_keypair().expect("generate keypair");
+
+    // config_with_local leaves both gates unset -> off.
+    let before = api.messaging_settings().expect("messaging_settings");
+    assert!(!before.store_and_forward_send, "send gate defaults off");
+    assert!(
+        !before.store_and_forward_receive,
+        "receive gate defaults off"
+    );
+
+    // Flip the gates (send on, receive off — a split a single flag could not express) and notify.
+    api.set_store_and_forward(true, false)
+        .expect("set store-and-forward");
+    api.set_notify(true, Some("https://notify.example".to_string()))
+        .expect("set notify");
+
+    // The JSI getter reflects the new effective settings.
+    let after = api.messaging_settings().expect("messaging_settings");
+    assert!(after.store_and_forward_send, "send gate now on");
+    assert!(!after.store_and_forward_receive, "receive gate still off");
+    assert!(after.notify_on_giveup, "notify enabled");
+    assert_eq!(
+        after.notify_gateway_url.as_deref(),
+        Some("https://notify.example")
+    );
+
+    // The change was applied in place: the keypair (session state) survived — no re-init/teardown.
+    let status = api.keypair_status().expect("keypair_status");
+    assert_eq!(
+        status.id.as_deref(),
+        Some(kp.id.as_str()),
+        "keypair preserved across the settings change"
+    );
+
+    // And the live local store — what the post-on-fail / poll paths (#214/#215) read per-operation —
+    // holds the new gates, confirming the setter reached it (not just a JSI-side copy).
+    let local = api.local_api_for_tests().expect("local api present");
+    let live = local.lock().expect("local lock").messaging_settings();
+    assert!(live.store_and_forward_send);
+    assert!(!live.store_and_forward_receive);
+    assert_eq!(
+        live.notify_gateway_url.as_deref(),
+        Some("https://notify.example")
+    );
+}
+
+#[test]
 fn sign_notify_envelope_matches_the_committed_parity_vector() {
     // Full-stack parity check: import the test-vector account, then sign the register envelope
     // through the JSI primitive. Ed25519 is deterministic, so the signature must be byte-for-byte

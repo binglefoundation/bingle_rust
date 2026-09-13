@@ -12,6 +12,7 @@ import type {
   BingleJsiConfig,
   BingleJsiApi,
   FailureKind,
+  MessagingSettings,
 } from "./NativeBingleJsi";
 
 export type {
@@ -26,6 +27,7 @@ export type {
   FailureKind,
   KeypairStatusResponse,
   NatTypeResponse,
+  MessagingSettings,
   BingleJsiConfig,
   MessageCallback,
   LogCallback,
@@ -201,6 +203,15 @@ export const BingleJsi = BingleJsiNative as {
   /** Whether the network is available for sending (issue #31); reflects the P2P transport only —
    * true when listening with a usable route, false when not listening or NoConnection. Independent
    * of Algorand-node reachability (messages go over relays). forceRecheck accepted for compat. */
+  /** Set the store-and-forward send/receive gates on the running session (Settings screen, issue
+   * #242). Takes effect on the next send/poll without a re-init; keypair, contacts, history and
+   * active connections are preserved. */
+  setStoreAndForward(send: boolean, receive: boolean): Promise<void>;
+  /** Set the give-up notify nudge on the running session (issue #242): `enabled` toggles it and
+   * `gatewayUrl` sets the notify gateway base URL (null leaves the nudge dormant even when enabled). */
+  setNotify(enabled: boolean, gatewayUrl: string | null): Promise<void>;
+  /** Current effective messaging settings, for the Settings screen to render live state (#242). */
+  messagingSettings(): Promise<MessagingSettings>;
   networkAvailable(forceRecheck: boolean): Promise<boolean>;
   save(path: string): Promise<void>;
   load(path: string): Promise<void>;

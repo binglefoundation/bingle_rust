@@ -7,7 +7,8 @@ use bingle_jsi::api::callback::{
 use bingle_jsi::api::error::BingleJsiError;
 use bingle_jsi::api::types::{
     BingleMessage, Contact, ContactSource, HandleLookupPartialResult, Keypair,
-    KeypairStatusResponse, Message, NatTypeResponse, NetworkSourceKey, VersionInfo,
+    KeypairStatusResponse, Message, MessagingSettings, NatTypeResponse, NetworkSourceKey,
+    VersionInfo,
 };
 
 /// Stub implementation where every method returns NotImplemented.
@@ -235,6 +236,28 @@ impl BingleJsiApi for StubApi {
     fn keypair_status(&self) -> Result<KeypairStatusResponse, BingleJsiError> {
         Err(BingleJsiError::NotImplemented {
             reason: "keypair_status".to_string(),
+        })
+    }
+
+    fn set_store_and_forward(&self, _send: bool, _receive: bool) -> Result<(), BingleJsiError> {
+        Err(BingleJsiError::NotImplemented {
+            reason: "set_store_and_forward".to_string(),
+        })
+    }
+
+    fn set_notify(
+        &self,
+        _enabled: bool,
+        _gateway_url: Option<String>,
+    ) -> Result<(), BingleJsiError> {
+        Err(BingleJsiError::NotImplemented {
+            reason: "set_notify".to_string(),
+        })
+    }
+
+    fn messaging_settings(&self) -> Result<MessagingSettings, BingleJsiError> {
+        Err(BingleJsiError::NotImplemented {
+            reason: "messaging_settings".to_string(),
         })
     }
 
