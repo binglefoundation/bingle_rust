@@ -201,7 +201,7 @@ fn fail_delivery_twice(sender: &mut BingleApiLocalImpl, timestamp: i64) {
 /// so a re-run starts clean. Returns without error if the Mailbox is already empty.
 fn drain_receiver(cfg: &TestnetConfig) {
     use bingle_local::api::sidewinder::Mailbox;
-    let mailbox = Mailbox::new(
+    let mut mailbox = Mailbox::new(
         AlgoOps::new_for_algorand(Some(cfg.receiver_mnemonic.clone()), None, None),
         mailbox_config(cfg),
     )

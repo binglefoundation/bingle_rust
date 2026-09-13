@@ -19,9 +19,10 @@ impl BingleApiLocalImpl {
     /// enrolled account as [`get_algo_ops`](BingleLocalApi::get_algo_ops).
     ///
     /// Returns `Err` when no Sidewinder node is configured (`config.sidewinder` is `None`), when no
-    /// keypair is available, or when the endpoint/token is invalid — a surfaced error, never a
-    /// panic. The post-on-fail (#214) and read-on-reconnect (#215) stories call this to reach the
-    /// Mailbox.
+    /// keypair is available, or when the connection cannot be established (an invalid bearer
+    /// endpoint/token, or — on the discovery transport — no reachable node could be resolved and
+    /// connected over mutual TLS) — a surfaced error, never a panic. The post-on-fail (#214) and
+    /// read-on-reconnect (#215) stories call this to reach the Mailbox.
     pub fn get_mailbox(&self) -> Result<sidewinder::Mailbox, BingleError> {
         let Some(config) = self.config.sidewinder.clone() else {
             return Err(BingleError::Other(
@@ -138,7 +139,7 @@ impl BingleApiLocalImpl {
             }
         };
         let bgl = AlgoBingle::new(ops, self.config.app_id, self.config.asset_id);
-        let mailbox = match self.get_mailbox() {
+        let mut mailbox = match self.get_mailbox() {
             Ok(m) => m,
             Err(e) => {
                 tracing::warn!("[forward_to_mailbox] no mailbox configured ({e}); skipping");
@@ -260,7 +261,7 @@ impl BingleApiLocalImpl {
             }
         };
         let bgl = AlgoBingle::new(ops, self.config.app_id, self.config.asset_id);
-        let mailbox = match self.get_mailbox() {
+        let mut mailbox = match self.get_mailbox() {
             Ok(m) => m,
             Err(e) => {
                 tracing::warn!("[poll_mailbox] no mailbox configured ({e}); skipping");

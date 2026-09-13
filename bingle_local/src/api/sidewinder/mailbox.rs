@@ -18,8 +18,9 @@
 use algo_ops::AlgoOps;
 use bingle_core::api::bingle_api::BingleError;
 use sidewinder_ops::{
-    AppArg, PendingTransaction, SidewinderClient, SidewinderConfig, SidewinderError,
-    SidewinderErrorKind, SidewinderOps, Stage, TransactionRequest,
+    AppArg, DiscoveredNode, DiscoveryConfig, PendingTransaction, SidewinderClient,
+    SidewinderConfig, SidewinderError, SidewinderErrorKind, SidewinderOps, Stage, SuggestedParams,
+    TransactionRequest, resolve_nodes,
 };
 use std::time::{Duration, Instant};
 
@@ -40,18 +41,78 @@ const WATCH_WAIT_SECS: u64 = 5;
 /// (a not-found is propagation lag, not a failure), so we do not busy-loop.
 const NOT_FOUND_BACKOFF: Duration = Duration::from_millis(500);
 
-/// How to reach a recipient's Sidewinder Mailbox: the node connection plus the operation-type
+/// How the Mailbox reaches its Sidewinder node.
+///
+/// Two transports (Sidewinder authenticated-access epic #240 / consumer story #244):
+/// - [`Bearer`](MailboxConnection::Bearer): the v0.0.2 way — a static base URL plus the fixed shared
+///   client token (Sidewinder #164), plaintext. Kept for backwards-compat and local/dev testing, and
+///   selected whenever `SIDEWINDER_NODE_URL` + `SIDEWINDER_TOKEN` are supplied (an explicit override).
+/// - [`Discovered`](MailboxConnection::Discovered): find the node endpoint on-chain from the Bingle
+///   DApp application id, then connect over identity-pinned mutual Transport Layer Security (mTLS) —
+///   no bearer token; the enrolled account that signs Mailbox transactions is also the mTLS identity.
+///
+/// There is deliberately no `Default`: a connection is deployment-specific.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MailboxConnection {
+    /// Static base URL + fixed shared bearer token (plaintext), the v0.0.2 transport.
+    Bearer {
+        /// Base URL of the Sidewinder node, for example `http://localhost:9101`.
+        base_url: String,
+        /// Bearer token sent on every authenticated node endpoint.
+        token: String,
+    },
+    /// On-chain endpoint discovery + identity-pinned mutual TLS, keyed by the Bingle DApp app id.
+    Discovered {
+        /// The Bingle DApp application id whose opted-in cluster-node accounts publish endpoints.
+        app_id: u64,
+    },
+}
+
+impl MailboxConnection {
+    /// Select the connection mode from a call site's optional URL/token override and the Bingle app id.
+    ///
+    /// Deterministic and logged (story #244, deliverable 2):
+    /// - `base_url` **and** `token` both set → [`Bearer`](MailboxConnection::Bearer) (plaintext
+    ///   override, exactly as v0.0.2), because the Bingle app id is always present in normal operation
+    ///   and so cannot itself be the selector;
+    /// - else a non-zero `app_id` → [`Discovered`](MailboxConnection::Discovered) (discovery + mTLS);
+    /// - else `None` (store-and-forward stays unconfigured — today's behaviour).
+    ///
+    /// Blank strings and a `0` app id are treated as absent (a blank environment value must not
+    /// half-configure the Mailbox).
+    pub fn select(
+        base_url: Option<String>,
+        token: Option<String>,
+        app_id: Option<u64>,
+    ) -> Option<Self> {
+        let base_url = base_url.filter(|s| !s.trim().is_empty());
+        let token = token.filter(|s| !s.trim().is_empty());
+        if let (Some(base_url), Some(token)) = (base_url, token) {
+            tracing::info!(
+                "sidewinder mailbox: bearer transport (SIDEWINDER_NODE_URL/SIDEWINDER_TOKEN override)"
+            );
+            return Some(Self::Bearer { base_url, token });
+        }
+        match app_id.filter(|id| *id != 0) {
+            Some(app_id) => {
+                tracing::info!(
+                    "sidewinder mailbox: on-chain discovery + mutual TLS for Bingle app {app_id}"
+                );
+                Some(Self::Discovered { app_id })
+            }
+            None => None,
+        }
+    }
+}
+
+/// How to reach a recipient's Sidewinder Mailbox: the [`MailboxConnection`] plus the operation-type
 /// numbers `post` and `pop` are bound to in the node's application configuration.
 ///
-/// The endpoint and bearer token come from deployment configuration (the testnet node json or the
-/// environment), never hardcoded; the token is the v0.0.2 fixed shared client token (Sidewinder
-/// #164). There is deliberately no `Default`: a node URL and token are deployment-specific.
+/// There is deliberately no `Default`: a connection is deployment-specific.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MailboxConfig {
-    /// Base URL of the Sidewinder node, for example `http://localhost:9101`.
-    pub base_url: String,
-    /// Bearer token sent on every authenticated node endpoint.
-    pub token: String,
+    /// How to reach the node: bearer (plaintext) or on-chain discovery + mutual TLS.
+    pub connection: MailboxConnection,
     /// Transaction type bound to the Mailbox `post` operation (`FIFO.append`).
     pub post_type: u32,
     /// Transaction type bound to the Mailbox `pop` operation (`FIFO.remove_head`).
@@ -63,28 +124,53 @@ pub struct MailboxConfig {
 }
 
 impl MailboxConfig {
-    /// Build a config from a node URL and bearer token, using the default tier-1 Mailbox operation
-    /// types ([`MAILBOX_POST_TYPE`] / [`MAILBOX_POP_TYPE`]) and [`DEFAULT_FINALITY_TIMEOUT`]. Set the
-    /// fields on the returned value to override the types or the finality timeout.
+    /// Build a **bearer** (plaintext) config from a node URL and bearer token, using the default
+    /// tier-1 Mailbox operation types ([`MAILBOX_POST_TYPE`] / [`MAILBOX_POP_TYPE`]) and
+    /// [`DEFAULT_FINALITY_TIMEOUT`]. For discovery + mutual TLS use [`discovered`](Self::discovered).
+    /// Set the fields on the returned value to override the types or the finality timeout.
     pub fn new(base_url: impl Into<String>, token: impl Into<String>) -> Self {
-        Self {
+        Self::from_connection(MailboxConnection::Bearer {
             base_url: base_url.into(),
             token: token.into(),
+        })
+    }
+
+    /// Build a **discovery + mutual-TLS** config for the given Bingle DApp application id, with the
+    /// default operation types and finality timeout.
+    pub fn discovered(app_id: u64) -> Self {
+        Self::from_connection(MailboxConnection::Discovered { app_id })
+    }
+
+    /// Wrap a [`MailboxConnection`] with the default operation types and finality timeout.
+    pub fn from_connection(connection: MailboxConnection) -> Self {
+        Self {
+            connection,
             post_type: MAILBOX_POST_TYPE,
             pop_type: MAILBOX_POP_TYPE,
             finality_timeout: DEFAULT_FINALITY_TIMEOUT,
         }
     }
 
-    /// Map a caller's optional node URL and token to a Mailbox config: `Some` only when *both* are
-    /// supplied, `None` otherwise (store-and-forward stays unconfigured when either is missing).
-    /// Shared by the JSI, webserver, and CLI call sites so the mapping lives — and is tested — in one
-    /// place. Empty strings are treated as absent so a blank environment value does not half-configure
-    /// the Mailbox.
+    /// Map a caller's optional node URL and token to a **bearer** config: `Some` only when *both* are
+    /// supplied (blank = absent), `None` otherwise. Prefer [`select`](Self::select), which also enables
+    /// the on-chain discovery path from the Bingle app id; this remains for bearer-only call sites and
+    /// tests.
     pub fn from_parts(base_url: Option<String>, token: Option<String>) -> Option<Self> {
         let base_url = base_url.filter(|s| !s.trim().is_empty())?;
         let token = token.filter(|s| !s.trim().is_empty())?;
         Some(Self::new(base_url, token))
+    }
+
+    /// Select the Mailbox connection from a call site's optional URL/token override and the Bingle app
+    /// id (see [`MailboxConnection::select`]). `None` means store-and-forward stays unconfigured.
+    /// Shared by the JSI, webserver, and CLI call sites so the selection lives — and is tested — in one
+    /// place.
+    pub fn select(
+        base_url: Option<String>,
+        token: Option<String>,
+        app_id: Option<u64>,
+    ) -> Option<Self> {
+        MailboxConnection::select(base_url, token, app_id).map(Self::from_connection)
     }
 }
 
@@ -114,36 +200,72 @@ pub fn pending_forward_recipients(
 }
 
 /// A client for one recipient-addressable Sidewinder Mailbox, bound to an enrolled parent-chain
-/// account (the [`AlgoOps`] handle signs every transaction it submits).
+/// account (the [`AlgoOps`] handle signs every transaction it submits, and — on the discovery
+/// transport — is also the mutual-TLS client identity, so one account serves both roles).
 pub struct Mailbox {
-    client: SidewinderClient,
+    /// The enrolled parent-chain account. Retained so the discovery transport can reconnect to a
+    /// failed-over node and re-resolve without threading the handle back in.
+    algo: AlgoOps,
+    /// The live node connection (bearer client, or a discovered-node client with its failover set).
+    transport: Transport,
     post_type: u32,
     pop_type: u32,
     finality_timeout: Duration,
 }
 
+/// The live node connection: either the static bearer client, or a discovered-node client that
+/// retains the resolved node set so a dead node can be failed over to (and re-resolved) cheaply.
+enum Transport {
+    /// Plaintext + bearer token: a single static endpoint, no failover.
+    Bearer(SidewinderClient),
+    /// Identity-pinned mutual TLS to a discovered node, with the resolved set held for failover.
+    Discovered(DiscoveredTransport),
+}
+
+/// The discovery transport's state: the parameters to re-resolve with, the reachable node set, and
+/// the client bound to the currently active node.
+struct DiscoveredTransport {
+    /// Discovery parameters (Bingle app id + membership schema), reused to re-resolve on exhaustion.
+    discovery: DiscoveryConfig,
+    /// Reachable resolved nodes (those advertising an endpoint), in discovery order.
+    nodes: Vec<DiscoveredNode>,
+    /// Index into [`nodes`](DiscoveredTransport::nodes) of the currently connected node.
+    active: usize,
+    /// Client bound (identity-pinned mutual TLS) to `nodes[active]`.
+    client: SidewinderClient,
+}
+
 impl Mailbox {
     /// Build a Mailbox client from an enrolled [`AlgoOps`] handle and connection config.
     ///
-    /// Fails cleanly (a surfaced [`BingleError`], never a panic) when the endpoint or token is
-    /// missing, so a misconfigured deployment is reported rather than crashing.
+    /// For a [`Bearer`](MailboxConnection::Bearer) connection this fails cleanly (a surfaced
+    /// [`BingleError`], never a panic) when the endpoint or token is missing. For a
+    /// [`Discovered`](MailboxConnection::Discovered) connection it resolves the app's cluster nodes
+    /// on-chain and connects to the first reachable one over identity-pinned mutual TLS, retaining the
+    /// rest for failover; a discovery/connect failure is a surfaced (retryable) error.
     pub fn new(algo: AlgoOps, config: MailboxConfig) -> Result<Self, BingleError> {
-        if config.base_url.trim().is_empty() {
-            return Err(BingleError::Other(
-                "sidewinder mailbox: node base URL is empty".to_string(),
-            ));
-        }
-        if config.token.trim().is_empty() {
-            return Err(BingleError::Other(
-                "sidewinder mailbox: node bearer token is empty".to_string(),
-            ));
-        }
-        let client = SidewinderClient::from_algo_ops(
-            algo,
-            SidewinderConfig::new(config.base_url, config.token),
-        );
+        let transport = match config.connection {
+            MailboxConnection::Bearer { base_url, token } => {
+                if base_url.trim().is_empty() {
+                    return Err(BingleError::Other(
+                        "sidewinder mailbox: node base URL is empty".to_string(),
+                    ));
+                }
+                if token.trim().is_empty() {
+                    return Err(BingleError::Other(
+                        "sidewinder mailbox: node bearer token is empty".to_string(),
+                    ));
+                }
+                Transport::Bearer(SidewinderClient::from_algo_ops(
+                    algo.clone(),
+                    SidewinderConfig::new(base_url, token),
+                ))
+            }
+            MailboxConnection::Discovered { app_id } => connect_discovered(&algo, app_id)?,
+        };
         Ok(Self {
-            client,
+            algo,
+            transport,
             post_type: config.post_type,
             pop_type: config.pop_type,
             finality_timeout: config.finality_timeout,
@@ -153,8 +275,8 @@ impl Mailbox {
     /// Post `message` to `recipient`'s Mailbox (`FIFO.append`), waiting for the transaction to
     /// finalise. `recipient` is the recipient's Algorand address string, packed as the queue key in
     /// `arg[0]`; the message bytes are `arg[1]`.
-    pub fn post(&self, recipient: &str, message: &[u8]) -> Result<(), BingleError> {
-        let params = self.client.params().map_err(|e| map_error("params", e))?;
+    pub fn post(&mut self, recipient: &str, message: &[u8]) -> Result<(), BingleError> {
+        let params = self.params_with_failover("post")?;
         let request = build_post_request(self.post_type, recipient, message, &params);
         self.submit_and_finalize("post", request)?;
         // A successful `FIFO.append` returns an empty result; there is nothing to hand back.
@@ -167,8 +289,8 @@ impl Mailbox {
     ///
     /// The returned bytes are the value exactly as it was posted; interpreting them (opening the
     /// sealed store-and-forward envelope) is the read-on-reconnect story (#215), not this wrapper.
-    pub fn pop(&self) -> Result<Option<Vec<u8>>, BingleError> {
-        let params = self.client.params().map_err(|e| map_error("params", e))?;
+    pub fn pop(&mut self) -> Result<Option<Vec<u8>>, BingleError> {
+        let params = self.params_with_failover("pop")?;
         let request = build_pop_request(self.pop_type, &params);
         let finalized = self.submit_and_finalize("pop", request)?;
         Ok(match finalized.result {
@@ -177,16 +299,85 @@ impl Mailbox {
         })
     }
 
+    /// The client bound to the currently active node.
+    fn current_client(&self) -> &SidewinderClient {
+        match &self.transport {
+            Transport::Bearer(client) => client,
+            Transport::Discovered(d) => &d.client,
+        }
+    }
+
+    /// Whether this transport can fail over to another node (only the discovery transport can).
+    fn can_failover(&self) -> bool {
+        matches!(self.transport, Transport::Discovered(_))
+    }
+
+    /// Fetch suggested params — the first node round-trip of any operation, and thus the reachability
+    /// probe. On the discovery transport a transport failure fails over to the next resolved node, and
+    /// re-resolves the set from chain once on exhaustion (story #244, deliverable 3). Failover is
+    /// confined to this probe, **before** any transaction is submitted, so a finality timeout partway
+    /// through an operation never re-submits on a second node (which could double-post).
+    fn params_with_failover(&mut self, operation: &str) -> Result<SuggestedParams, BingleError> {
+        let mut reresolved = false;
+        loop {
+            match self
+                .current_client()
+                .params()
+                .map_err(|e| map_error("params", e))
+            {
+                Ok(params) => return Ok(params),
+                Err(e) if is_transport_error(&e) && self.can_failover() => {
+                    tracing::warn!(
+                        "[mailbox {operation}] node unreachable ({e}); trying another discovered node"
+                    );
+                    if !self.advance_or_reresolve(&mut reresolved)? {
+                        return Err(e);
+                    }
+                }
+                Err(e) => return Err(e),
+            }
+        }
+    }
+
+    /// Advance to the next reachable discovered node; on exhaustion, re-resolve the set from chain
+    /// exactly once (tracked by `reresolved`) and start over. Returns `true` when a fresh node was
+    /// connected (retry the probe), `false` when the set is exhausted and re-resolution has already
+    /// been tried. A no-op returning `false` on the bearer transport. Reconnect/re-resolve failures
+    /// surface as errors.
+    fn advance_or_reresolve(&mut self, reresolved: &mut bool) -> Result<bool, BingleError> {
+        let algo = self.algo.clone();
+        let Transport::Discovered(d) = &mut self.transport else {
+            return Ok(false);
+        };
+        if let Some(next) = next_node_index(d.active, d.nodes.len()) {
+            d.active = next;
+            d.client =
+                SidewinderClient::connect(algo, &d.nodes[next]).map_err(map_connect_error)?;
+            return Ok(true);
+        }
+        if *reresolved {
+            return Ok(false);
+        }
+        *reresolved = true;
+        tracing::info!("[mailbox] all discovered nodes exhausted; re-resolving from chain");
+        let reachable = resolve_reachable(&algo, &d.discovery)?;
+        d.nodes = reachable;
+        d.active = 0;
+        d.client = SidewinderClient::connect(algo, &d.nodes[0]).map_err(map_connect_error)?;
+        Ok(true)
+    }
+
     /// Submit `request`, then poll it to the `final` stage, returning the finalised transaction.
     /// A transaction that reaches `failed`, or does not finalise within the configured finality
-    /// timeout, is a surfaced error.
+    /// timeout, is a surfaced error. Runs against the currently active node (see
+    /// [`params_with_failover`](Self::params_with_failover), which already selected a reachable one).
     fn submit_and_finalize(
         &self,
         operation: &str,
         request: TransactionRequest,
     ) -> Result<PendingTransaction, BingleError> {
         let txid = self
-            .client
+            .current_client()
             .submit_transaction(&request)
             .map_err(|e| map_error(operation, e))?;
         // Log the transaction id at submit so it can be tracked on the node while it finalises.
@@ -207,7 +398,7 @@ impl Mailbox {
         // (e.g. stuck at `Pending` vs. reaching `Verified` but never anchored).
         let mut last_stage: Option<String> = None;
         loop {
-            match self.client.watch(txid, false, WATCH_WAIT_SECS) {
+            match self.current_client().watch(txid, false, WATCH_WAIT_SECS) {
                 Ok(pending) => {
                     last_stage = Some(format!("{:?}", pending.stage));
                     tracing::debug!("[mailbox {operation}] {txid} stage={:?}", pending.stage);
@@ -288,6 +479,67 @@ pub fn build_pop_request(
         note: Some(AlgoOps::unique_note()),
         group: None,
     }
+}
+
+/// Connect the discovery transport: resolve the app's reachable cluster nodes on-chain and connect to
+/// the first over identity-pinned mutual TLS, retaining the rest for failover.
+fn connect_discovered(algo: &AlgoOps, app_id: u64) -> Result<Transport, BingleError> {
+    let discovery = DiscoveryConfig::bingle(app_id);
+    let nodes = resolve_reachable(algo, &discovery)?;
+    // `nodes` is non-empty (resolve_reachable errors otherwise), so index 0 is present.
+    let client = SidewinderClient::connect(algo.clone(), &nodes[0]).map_err(map_connect_error)?;
+    Ok(Transport::Discovered(DiscoveredTransport {
+        discovery,
+        nodes,
+        active: 0,
+        client,
+    }))
+}
+
+/// Resolve the app's cluster nodes and keep only those advertising a reachable endpoint (a peer-only
+/// node holds `allow_sw_node` but publishes no [`EndpointRecord`](sidewinder_ops::EndpointRecord), and
+/// [`DiscoveredNode::base_url`] is then `None`). Errors (retryable) when the scan fails or no node has
+/// published an endpoint — so a gate that is on but has nowhere to reach is reported, not silent.
+fn resolve_reachable(
+    algo: &AlgoOps,
+    discovery: &DiscoveryConfig,
+) -> Result<Vec<DiscoveredNode>, BingleError> {
+    let nodes = resolve_nodes(algo, discovery).map_err(|e| {
+        BingleError::Retryable(format!(
+            "sidewinder discovery for app {} failed: {e}",
+            discovery.app_id
+        ))
+    })?;
+    let reachable: Vec<DiscoveredNode> = nodes
+        .into_iter()
+        .filter(|node| node.base_url().is_some())
+        .collect();
+    if reachable.is_empty() {
+        return Err(BingleError::Retryable(format!(
+            "no permitted cluster node of Bingle app {} has published a reachable endpoint",
+            discovery.app_id
+        )));
+    }
+    Ok(reachable)
+}
+
+/// The next node index to try after `active` in a set of `count` nodes, or `None` when the set is
+/// exhausted. Pure, so the failover cursor is unit-tested without a node.
+#[doc(hidden)]
+pub fn next_node_index(active: usize, count: usize) -> Option<usize> {
+    let next = active + 1;
+    (next < count).then_some(next)
+}
+
+/// Whether an error should trigger failover to another node: a transport/reachability failure, which
+/// [`map_error`] classifies as [`BingleError::Retryable`].
+fn is_transport_error(error: &BingleError) -> bool {
+    matches!(error, BingleError::Retryable(_))
+}
+
+/// Map a mutual-TLS connect failure to a retryable [`BingleError`] so failover/re-resolve can proceed.
+fn map_connect_error(error: anyhow::Error) -> BingleError {
+    BingleError::Retryable(format!("sidewinder mutual-TLS connect failed: {error}"))
 }
 
 /// Whether an error from the client is a Sidewinder not-found — the propagation-lag case tolerated
