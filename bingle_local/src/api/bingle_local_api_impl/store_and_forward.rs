@@ -65,6 +65,16 @@ impl BingleApiLocalImpl {
             .unwrap_or_default()
     }
 
+    /// Test seam: the resolved Sidewinder Mailbox connection config, so a caller (e.g. the JSI `init`
+    /// wiring, story #252) can assert which transport was selected — discovery + mutual TLS
+    /// ([`MailboxConnection::Discovered`](crate::api::sidewinder::MailboxConnection::Discovered)) vs
+    /// the legacy bearer override ([`Bearer`](crate::api::sidewinder::MailboxConnection::Bearer)) vs
+    /// unconfigured (`None`) — without a live node.
+    #[doc(hidden)]
+    pub fn sidewinder_config_for_tests(&self) -> Option<sidewinder::MailboxConfig> {
+        self.config.sidewinder.clone()
+    }
+
     /// Post a message whose direct delivery failed to each recipient's Sidewinder Mailbox
     /// (store-and-forward post-on-delivery-fail, epic #200 story #214).
     ///
