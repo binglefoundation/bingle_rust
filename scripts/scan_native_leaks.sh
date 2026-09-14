@@ -30,11 +30,20 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # appear in the output artifacts. The generic ones are identity-free catches —
 # any absolute home root, or an un-remapped cargo/rustup source dir, means a
 # build path slipped through.
+#
+# CARGO_HOME is deliberately NOT a machine-specific needle. Some C dependencies
+# (e.g. `ring`) bake the absolute path of their own registry source via the C
+# `__FILE__` macro, which rustc's --remap-path-prefix cannot rewrite; the build
+# scripts instead relocate CARGO_HOME to a username-free root (like they already
+# do for CARGO_TARGET_DIR/OUT_DIR), so that baked path carries no identity. A
+# *personal* CARGO_HOME (~/.cargo, /home/…/.cargo) is still caught by the generic
+# "/Users/", "/home/", and ".cargo/registry" needles below — so dropping the
+# machine-specific CARGO_HOME needle allows the intentional username-free root
+# without weakening detection of a real leak.
 _leak_needles() {
   local -a needles=()
   [[ -n "${HOME:-}"        ]] && needles+=("$HOME")
   [[ -n "${ROOT_DIR:-}"    ]] && needles+=("$ROOT_DIR")
-  [[ -n "${CARGO_HOME:-}"  ]] && needles+=("$CARGO_HOME")
   [[ -n "${RUSTUP_HOME:-}" ]] && needles+=("$RUSTUP_HOME")
   needles+=("/Users/" "/home/" ".cargo/registry" ".rustup/toolchains")
   printf '%s\n' "${needles[@]}"
