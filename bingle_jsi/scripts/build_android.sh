@@ -34,6 +34,27 @@ export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-/var/tmp/bingle_native_target}"
 BUILD_DIR="$CARGO_TARGET_DIR"
 GENERATED_DIR="$ANDROID_DIR/generated"
 
+# Build from a username-free CARGO_HOME too. Some C dependencies — notably `ring`
+# (pulled in via rustls/rcgen for the Sidewinder mutual-TLS client) — bake the
+# absolute path of their own registry source into the compiled objects through the
+# C `__FILE__` macro. That is a C-compiler path, so rustc's --remap-path-prefix
+# cannot rewrite it; and adding it to CFLAGS instead poisons OpenSSL's baked-in
+# `compiler:` string with the map's real-path argument. Relocating the registry
+# under a username-free root makes those baked paths carry no personal identifier
+# with no C-compiler flags at all. Seeded once from the default CARGO_HOME (a local
+# copy — no re-download; also carries any registry config/credentials), then reused
+# across builds. Overridable via BINGLE_NATIVE_CARGO_HOME (or set CARGO_HOME).
+DEFAULT_CARGO_HOME="${CARGO_HOME:-$HOME/.cargo}"
+export CARGO_HOME="${BINGLE_NATIVE_CARGO_HOME:-/var/tmp/bingle_native_cargo_home}"
+if [[ "$CARGO_HOME" != "$DEFAULT_CARGO_HOME" ]]; then
+  mkdir -p "$CARGO_HOME"
+  for entry in registry git config.toml config credentials.toml credentials; do
+    if [[ -e "$DEFAULT_CARGO_HOME/$entry" && ! -e "$CARGO_HOME/$entry" ]]; then
+      cp -a "$DEFAULT_CARGO_HOME/$entry" "$CARGO_HOME/$entry"
+    fi
+  done
+fi
+
 # ── helpers ───────────────────────────────────────────────────────────
 
 have_cmd() { command -v "$1" >/dev/null 2>&1; }
