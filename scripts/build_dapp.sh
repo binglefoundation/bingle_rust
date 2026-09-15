@@ -134,8 +134,17 @@ poetry -C "$DAPP_DIR" install --no-interaction
 # 3. Build the contracts
 # ------------------------------------------------------------------ #
 echo "==> Building smart contracts"
-# Run from the project dir so the `smart_contracts` package is importable.
-( cd "$DAPP_DIR" && poetry run python -m smart_contracts build )
+# Invoke the puya compile directly rather than `python -m smart_contracts build`, which
+# also runs `algokit generate client` (algokitgen-py). That client step is fragile —
+# AlgoKit 2.10 fails to locate the venv's algokitgen-py on its subprocess PATH — and the
+# typed Python client is only used by the unused `algokit project deploy` path
+# (smart_contracts/bingle_dapp/deploy_config.py), never by the schema check or the Rust
+# `bingle_admin deploy`, which read only the .approval.teal/.clear.teal/.arc56.json this
+# compile emits. This mirrors what CI does (see .github/workflows/e2e-android.yml).
+( cd "$DAPP_DIR" && poetry run algokit --no-color compile python \
+    "smart_contracts/$CONTRACT_NAME/contract.py" \
+    --out-dir "$ARTIFACT_DIR" \
+    --output-source-map )
 
 if [[ ! -f "$ARC56" ]]; then
   echo "Error: build did not produce expected artifact: $ARC56" >&2
