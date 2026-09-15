@@ -203,7 +203,7 @@ fn print_usage_and_exit(code: i32) -> ! {
         "  bingle_cli run [--handle <handle>|<handle>] [--passphrase <text>] [--relay] [--static-ip <ip:port>] [--stun-servers <list>] [--stun-servers-file <file>] [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--sentinel-file <path>] [--echo] [--auto-migrate] [--log-mode <Plain|ANSI|AWS|JS>]\n",
         "  bingle_cli chat [--handle <handle>|<handle>] [--passphrase <text>] [--to <handle> | --to-id <id>] [--state_file <file>] [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--stun-servers <list>] [--stun-servers-file <file>] [--no-retries] [--store-forward <both|send|receive|none>] [--notify <url>] [--info|--debug]\n",
         "  bingle_cli register --handle <handle> --passphrase <text> --app-id <id> --asset-id <id> --price-units <n> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>] [--log-mode <Plain|ANSI|AWS|JS>]\n",
-        "  bingle_cli buybingle <price_algos> --passphrase <text> --app-id <id> --asset-id <id> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>] [--log-mode <Plain|ANSI|AWS|JS>]\n",
+        "  bingle_cli buybingle [<price_algos>] --passphrase <text> --app-id <id> --asset-id <id> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>] [--log-mode <Plain|ANSI|AWS|JS>]  (omit <price_algos> to pay the on-chain price)\n",
         "  bingle_cli sellbingle <amount_units> <price_algos> --passphrase <text> --app-id <id> --asset-id <id> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>] [--log-mode <Plain|ANSI|AWS|JS>]\n",
         "  bingle_cli checkrelays --passphrase <text> [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--interval-ms <n>] [--stun-servers <list>] [--stun-servers-file <file>] [--log-mode <Plain|ANSI|AWS|JS>]",
     );
@@ -1630,6 +1630,33 @@ fn cmd_register(args: Vec<String>) {
         bal_algos
     );
 
+    // Preflight: registration pays `price_units` Bingle$ to the app in an atomic asset transfer
+    // (AlgoBingle::register_unchecked). A sender holding fewer units fails on-chain with an opaque
+    // "underflow on subtracting N from sender amount 0", so check the holding first and point at
+    // buybingle. asset_holding returns 0 for a not-opted-in account, so this also catches that.
+    match ops.asset_holding(&address, asset_id) {
+        Ok(held) if held < price_units => {
+            warn!(
+                "Account {} holds {} Bingle$ (asset {}) but registering '{}' costs {} — acquire \
+                 Bingle$ first with `bingle_cli buybingle` (each buy yields 1 unit), then retry.",
+                address, held, asset_id, handle, price_units
+            );
+            std::process::exit(2);
+        }
+        Ok(held) => {
+            tracing::info!(
+                "Bingle$ balance {} covers the {}-unit registration price",
+                held,
+                price_units
+            );
+        }
+        // A read failure here is non-fatal: don't block a legitimate register on a transient error;
+        // the on-chain group still enforces the balance (just with a less friendly message).
+        Err(e) => {
+            tracing::warn!("could not read Bingle$ balance for preflight ({e}); proceeding");
+        }
+    }
+
     // Register the handle on-chain
     let bingle = AlgoBingle::new(ops.clone(), app_id, asset_id);
     loop {
@@ -1660,25 +1687,28 @@ fn cmd_register(args: Vec<String>) {
 
 fn cmd_buybingle(args: Vec<String>) {
     // Usage help: an explicit --help prints to stdout and exits 0; missing args is an error to stderr.
-    const USAGE: &str = "Usage: bingle_cli buybingle <price_algos> --passphrase <text> --app-id <id> --asset-id <id> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>]";
+    const USAGE: &str = "Usage: bingle_cli buybingle [<price_algos>] --passphrase <text> --app-id <id> --asset-id <id> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>]\n  <price_algos> is optional: omit it to pay the current on-chain BinglePrice; if given it must equal that price.";
     if args.iter().any(|a| a == "--help" || a == "-h") {
         println!("{USAGE}");
         std::process::exit(0);
     }
-    if args.is_empty() {
-        eprintln!("{USAGE}");
-        std::process::exit(2);
-    }
 
-    let mut it = args.into_iter();
-    // First positional: price in ALGOs (decimal), convert to microAlgos
-    let price_str = it.next().expect("checked non-empty");
-    let price_micro = match parse_algos_decimal_to_microalgos(&price_str) {
-        Ok(v) => v,
-        Err(e) => {
-            warn!("Invalid <price_algos> '{}': {}", price_str, e);
-            std::process::exit(2);
+    let mut it = args.into_iter().peekable();
+    // Optional first positional: price in ALGOs (decimal), converted to microAlgos. Omit it to pay
+    // the current on-chain BinglePrice (the app asserts the payment equals it exactly). A leading
+    // token starting with '-' is a flag, not a price.
+    let price_micro_opt: Option<u64> = match it.peek() {
+        Some(first) if !first.starts_with('-') => {
+            let price_str = it.next().expect("peeked a value");
+            match parse_algos_decimal_to_microalgos(&price_str) {
+                Ok(v) => Some(v),
+                Err(e) => {
+                    warn!("Invalid <price_algos> '{}': {}", price_str, e);
+                    std::process::exit(2);
+                }
+            }
         }
+        _ => None,
     };
 
     let mut app_id: Option<u64> = None;
@@ -1777,6 +1807,50 @@ fn cmd_buybingle(args: Vec<String>) {
     tracing::info!("Using account {} (balance {:.6} ALGO)", address, bal_algos);
 
     let bingle = AlgoBingle::new(ops.clone(), app_id, asset_id);
+
+    // The app asserts the payment equals its configured BinglePrice exactly (global state), so read
+    // it rather than trusting a hand-supplied amount. Omitting <price_algos> uses the on-chain price;
+    // supplying one that mismatches is almost always a mistake (an opaque on-chain assert failure),
+    // so reject it up front and show both values.
+    let onchain_price = loop {
+        match bingle.get_bingle_price(app_id) {
+            Ok(p) => break p,
+            Err(e) => {
+                if let Some(ae) = e.downcast_ref::<AlgoError>()
+                    && ae.kind == AlgoErrorKind::HostUnreachable
+                {
+                    tracing::error!("Algorand node unreachable: {}. Retrying in 60s...", ae);
+                    std::thread::sleep(Duration::from_secs(60));
+                    continue;
+                }
+                warn!("could not read the on-chain Bingle$ price: {}", e);
+                std::process::exit(1);
+            }
+        }
+    };
+    let price_micro = match price_micro_opt {
+        None => {
+            tracing::info!(
+                "using on-chain Bingle$ price: {} microAlgos ({:.6} ALGO)",
+                onchain_price,
+                onchain_price as f64 / 1_000_000.0
+            );
+            onchain_price
+        }
+        Some(p) if p == onchain_price => p,
+        Some(p) => {
+            warn!(
+                "requested price {} microAlgos ({:.6} ALGO) does not match the on-chain Bingle$ \
+                 price of {} microAlgos ({:.6} ALGO); omit <price_algos> to pay the on-chain price",
+                p,
+                p as f64 / 1_000_000.0,
+                onchain_price,
+                onchain_price as f64 / 1_000_000.0
+            );
+            std::process::exit(2);
+        }
+    };
+
     loop {
         match bingle.buy_bingle(app_id, asset_id, price_micro) {
             Ok(txid) => {
