@@ -26,7 +26,7 @@ blockchain_ops = "0.8.4"
 # issue #231); 0.8.1 adds AccountScanCache::clear() (used by clear_accounts_cache); 0.8.2 adds
 # call_app_with_accounts (used by the set_allow_* bindings) and auto-sizes extra program pages so the
 # larger allow-flags contract deploys (issue #232).
-algo_ops = "0.8.4"
+algo_ops = "0.8.5"
 algonaut = "0.8.0"
 anyhow = "1"
 thiserror = "1"

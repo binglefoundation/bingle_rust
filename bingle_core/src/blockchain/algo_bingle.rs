@@ -1783,6 +1783,41 @@ impl AlgoBingle {
         initial_hot_bingle: u64,
         accounts: &HashMap<String, AlgoOps>,
     ) -> Result<(u64, u64)> {
+        self.deploy_app_and_asset_reserving(
+            app_path,
+            new_app,
+            new_asset,
+            app_id,
+            asset_id,
+            asset_name,
+            total_units,
+            initial_hot_bingle,
+            accounts,
+            0,
+        )
+    }
+
+    /// Like [`deploy_app_and_asset`](Self::deploy_app_and_asset), but when it *creates* a new app it
+    /// reserves at least `reserve_extra_pages` spare program pages at create time, so the app can
+    /// later be updated with a larger program without migrating (`extra_program_pages` is immutable
+    /// after create). `reserve_extra_pages = 0` is identical to
+    /// [`deploy_app_and_asset`](Self::deploy_app_and_asset); the value is ignored when an existing app
+    /// is reused. Each reserved page adds 0.1 ALGO to the creator's minimum balance for the life of
+    /// the app.
+    #[allow(clippy::too_many_arguments)]
+    pub fn deploy_app_and_asset_reserving(
+        &self,
+        app_path: &std::path::Path,
+        new_app: bool,
+        new_asset: bool,
+        app_id: Option<u64>,
+        asset_id: Option<u64>,
+        asset_name: &str,
+        total_units: u64,
+        initial_hot_bingle: u64,
+        accounts: &HashMap<String, AlgoOps>,
+        reserve_extra_pages: u32,
+    ) -> Result<(u64, u64)> {
         // All six named roles are required; all seven addresses must be distinct.
         let required_roles = [
             ACCOUNT_APP_ADMIN,
@@ -1831,7 +1866,7 @@ impl AlgoBingle {
             let withdrawer_pk = address_to_byte_key(&withdrawer_addr)?;
             let id = self
                 .ops
-                .deploy_app(
+                .deploy_app_reserving(
                     &approval,
                     &clear,
                     None,
@@ -1842,6 +1877,7 @@ impl AlgoBingle {
                     ],
                     "opt_in_to_bingle(uint64)void",
                     &arc56_json,
+                    reserve_extra_pages,
                 )?
                 .ok_or_else(|| anyhow!("deploy_app returned no app_id"))?;
             // Default price of 1 so registration/buy flows work immediately.
