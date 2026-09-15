@@ -5,6 +5,11 @@
 #   scripts/deploy_code.sh <version>            e.g. scripts/deploy_code.sh 0.2.2
 #   scripts/deploy_code.sh --dry-run <version>  validate + dry-run only, publish nothing
 #   scripts/deploy_code.sh --skip-native-build <version>
+#   scripts/deploy_code.sh --allow-behind-staging <version>
+#         deploy even if `deployed` is missing commits that are on `staging`
+#         (use when intentionally cutting a release from an earlier point).
+#   scripts/deploy_code.sh --skip-resolution-check <version>
+#         skip the from-scratch dependency-resolution build check (not advised).
 #
 #   NPM_TOKEN=<automation-token>  publish to npm non-interactively (bypasses npm
 #                                 2FA), so an unattended release needs no browser
@@ -21,6 +26,7 @@ set -euo pipefail
 
 # ── configuration ─────────────────────────────────────────────────────
 BRANCH="deployed"
+STAGING_BRANCH="staging"   # every commit here must be in `deployed` before a release (unless overridden)
 PUBLISH_CRATES=(bingle_core bingle_local bingle_cli)   # crates.io, in dependency order (bingle_cli depends on the other two, so it publishes last)
 NPM_DIR="bingle_jsi"
 NPM_PKG="react-native-bingle-jsi"
@@ -42,14 +48,18 @@ die()  { printf '\033[1;31merror:\033[0m %s\n' "$*" >&2; exit 1; }
 # ── argument parsing ──────────────────────────────────────────────────
 DRY_RUN_ONLY=0
 SKIP_NATIVE=0
+ALLOW_BEHIND_STAGING=0
+SKIP_RESOLUTION_CHECK=0
 VERSION=""
 for arg in "$@"; do
   case "$arg" in
-    --dry-run)           DRY_RUN_ONLY=1 ;;
-    --skip-native-build) SKIP_NATIVE=1 ;;
-    -h|--help)           sed -n '2,12p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
-    -*)                  die "unknown option: $arg" ;;
-    *)                   [[ -n "$VERSION" ]] && die "unexpected extra argument: $arg"; VERSION="$arg" ;;
+    --dry-run)              DRY_RUN_ONLY=1 ;;
+    --skip-native-build)    SKIP_NATIVE=1 ;;
+    --allow-behind-staging) ALLOW_BEHIND_STAGING=1 ;;
+    --skip-resolution-check) SKIP_RESOLUTION_CHECK=1 ;;
+    -h|--help)              sed -n '2,16p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -*)                     die "unknown option: $arg" ;;
+    *)                      [[ -n "$VERSION" ]] && die "unexpected extra argument: $arg"; VERSION="$arg" ;;
   esac
 done
 [[ -n "$VERSION" ]] || die "usage: scripts/deploy_code.sh [--dry-run] [--skip-native-build] <version>"
@@ -88,6 +98,32 @@ cur_branch="$(git rev-parse --abbrev-ref HEAD)"
 
 git diff --quiet && git diff --cached --quiet \
   || die "working tree has uncommitted changes to tracked files. Commit or stash them first."
+
+# ── preflight: deployed must include all of staging ───────────────────
+# A release is cut from `deployed`; if `staging` has commits that were never
+# merged down into `deployed`, we would ship a version that is *behind* the work
+# on staging (silently dropping merged PRs from the release). Fail unless the
+# operator is deliberately releasing an earlier point (--allow-behind-staging).
+info "checking $BRANCH includes all of $STAGING_BRANCH"
+if git fetch --quiet origin "$STAGING_BRANCH" 2>/dev/null; then
+  behind_count="$(git rev-list --count "HEAD..origin/$STAGING_BRANCH" 2>/dev/null || echo "")"
+  [[ -n "$behind_count" ]] || die "could not compare HEAD with origin/$STAGING_BRANCH"
+  if [[ "$behind_count" -gt 0 ]]; then
+    warn "origin/$STAGING_BRANCH has $behind_count commit(s) not in $BRANCH:"
+    git --no-pager log --oneline --no-decorate "HEAD..origin/$STAGING_BRANCH" | sed 's/^/      /' >&2
+    if [[ $ALLOW_BEHIND_STAGING -eq 1 ]]; then
+      warn "--allow-behind-staging set: releasing from $BRANCH anyway (an earlier point than $STAGING_BRANCH)"
+    else
+      die "refusing to release: merge $STAGING_BRANCH into $BRANCH first, or pass --allow-behind-staging to release this earlier point on purpose"
+    fi
+  else
+    ok "$BRANCH is up to date with origin/$STAGING_BRANCH"
+  fi
+elif [[ $ALLOW_BEHIND_STAGING -eq 1 ]]; then
+  warn "could not fetch origin/$STAGING_BRANCH; --allow-behind-staging set, continuing without the check"
+else
+  die "could not fetch origin/$STAGING_BRANCH to verify $BRANCH is up to date; fix connectivity or pass --allow-behind-staging"
+fi
 
 need() { command -v "$1" >/dev/null 2>&1 || die "required tool '$1' not found on PATH${2:+ — $2}"; }
 need git; need cargo; need npm; need python3; need curl
@@ -236,6 +272,34 @@ ok "versions bumped"
 info "compiling workspace at $VERSION"
 cargo check --workspace
 ok "workspace compiles"
+
+# ── from-scratch dependency-resolution check ──────────────────────────
+# `cargo check --workspace` above uses the committed Cargo.lock, so it cannot
+# catch what a downstream `cargo install` hits: that IGNORES the lockfile and
+# re-resolves every dependency to the newest semver-compatible version. A newer
+# release of a transitive dep can break that fresh resolve while the locked build
+# stays green (e.g. precis-profiles 0.1.14 pulling precis-core 0.2.0, which breaks
+# stun-rs 0.1.11). Reproduce the fresh resolve here — bump the lock to
+# latest-compatible, compile, then restore the committed lock — so the break is
+# caught before publishing rather than by users after `cargo install`.
+if [[ $SKIP_RESOLUTION_CHECK -eq 0 ]]; then
+  info "checking a from-scratch dependency resolution (what 'cargo install' does)"
+  fresh_lock_backup="$(mktemp -t bingle-cargo-lock.XXXXXX)"
+  cp Cargo.lock "$fresh_lock_backup"
+  restore_lock() { cp "$fresh_lock_backup" Cargo.lock; rm -f "$fresh_lock_backup"; }
+  if ! cargo update >/dev/null 2>&1; then
+    restore_lock
+    die "fresh dependency resolution failed (cargo update); a dependency's version requirements may be unsatisfiable."
+  fi
+  if ! cargo check --workspace; then
+    restore_lock
+    die "workspace fails to compile under a from-scratch dependency resolution — a downstream 'cargo install' would fail even though the locked build passed. A newer semver-compatible dependency broke the build; pin the offending crate in the relevant Cargo.toml (see the precis-* pins in bingle_core/Cargo.toml), commit, then re-run. To bypass, pass --skip-resolution-check."
+  fi
+  restore_lock
+  ok "from-scratch dependency resolution compiles"
+else
+  warn "skipping from-scratch dependency-resolution check (--skip-resolution-check)"
+fi
 
 if [[ $SKIP_NATIVE -eq 0 ]]; then
   info "building native libraries (iOS + Android)"
