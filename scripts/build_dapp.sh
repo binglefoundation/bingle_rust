@@ -32,6 +32,15 @@ SCHEMA_REF_REL="dapp_projects/smart_contracts/$CONTRACT_NAME/app_schema.json"
 SCHEMA_REF="$REPO_ROOT/$SCHEMA_REF_REL"
 BASELINE_REF="staging"
 
+# Supported AlgoKit CLI window. `algokit compile python` resolves the puya compiler,
+# which must match the `algorand-python` / `puyapy` pins in dapp_projects/pyproject.toml.
+# AlgoKit is installed system-wide (Homebrew / `pipx install algokit`) and unpinned, so a
+# silent upgrade can float the compiler past those pins — the failure mode this guards.
+# A patch bump within the tested minor is allowed; a newer minor/major fails loudly so
+# the pins get re-validated first. Bump both after validating against a newer AlgoKit.
+ALGOKIT_MIN_VERSION="2.10.0"
+ALGOKIT_MAX_TESTED_MINOR="2.10"
+
 DO_SCHEMA_CHECK=1
 for arg in "$@"; do
   case "$arg" in
@@ -86,7 +95,34 @@ if ! command -v algokit >/dev/null 2>&1; then
   exit 1
 fi
 
-echo "==> Poetry: $(poetry --version 2>&1)   AlgoKit: $(algokit --version 2>&1)"
+# Assert AlgoKit is within the validated window (see ALGOKIT_* above). A dotted
+# MAJOR.MINOR.PATCH is turned into a sortable integer key for comparison so we do not
+# depend on `sort -V` (absent on stock macOS `sort`).
+ver_key() { local a b c; IFS=. read -r a b c <<<"${1:-0.0.0}"; echo $(( 10#${a:-0} * 1000000 + 10#${b:-0} * 1000 + 10#${c:-0} )); }
+
+ALGOKIT_RAW="$(algokit --version 2>&1)"
+ALGOKIT_VERSION="$(printf '%s' "$ALGOKIT_RAW" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)"
+if [[ -z "$ALGOKIT_VERSION" ]]; then
+  echo "Error: could not parse an AlgoKit version from: $ALGOKIT_RAW" >&2
+  exit 1
+fi
+if (( $(ver_key "$ALGOKIT_VERSION") < $(ver_key "$ALGOKIT_MIN_VERSION") )); then
+  echo "Error: AlgoKit $ALGOKIT_VERSION is older than the required $ALGOKIT_MIN_VERSION." >&2
+  echo "       The dApp's puya/algorand-python pins need AlgoKit >= $ALGOKIT_MIN_VERSION; upgrade it." >&2
+  exit 1
+fi
+# Fail on a newer minor/major than validated: that is when the bundled puya can move
+# past the pyproject pins and silently emit different (or broken) TEAL.
+ALGOKIT_MINOR="$(printf '%s' "$ALGOKIT_VERSION" | cut -d. -f1,2)"
+if (( $(ver_key "$ALGOKIT_MINOR.0") > $(ver_key "$ALGOKIT_MAX_TESTED_MINOR.0") )); then
+  echo "Error: AlgoKit $ALGOKIT_VERSION is newer than the last validated line ($ALGOKIT_MAX_TESTED_MINOR.x)." >&2
+  echo "       Its bundled puya may need updated algorand-python/puyapy pins in dapp_projects/pyproject.toml." >&2
+  echo "       Re-validate the build, then bump ALGOKIT_MAX_TESTED_MINOR (and the pins) in this script/pyproject." >&2
+  echo "       To build anyway at your own risk, pin the pins yourself and edit ALGOKIT_MAX_TESTED_MINOR." >&2
+  exit 1
+fi
+
+echo "==> Poetry: $(poetry --version 2>&1)   AlgoKit: $ALGOKIT_VERSION (validated: >=$ALGOKIT_MIN_VERSION, <=$ALGOKIT_MAX_TESTED_MINOR.x)"
 
 echo "==> Ensuring Poetry virtualenv uses $PYTHON"
 poetry -C "$DAPP_DIR" env use "$PYTHON" >/dev/null
