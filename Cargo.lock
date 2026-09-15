@@ -605,6 +605,7 @@ dependencies = [
  "openssl",
  "openssl-sys",
  "precis-core",
+ "precis-profiles",
  "rand_core 0.6.4",
  "serde",
  "serde_json",
