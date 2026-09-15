@@ -566,7 +566,7 @@ dependencies = [
 
 [[package]]
 name = "bingle_cli"
-version = "0.3.10"
+version = "0.3.11"
 dependencies = [
  "algo_ops",
  "bingle_core",
@@ -586,7 +586,7 @@ dependencies = [
 
 [[package]]
 name = "bingle_core"
-version = "0.3.10"
+version = "0.3.11"
 dependencies = [
  "algo_ops",
  "algonaut",
@@ -624,7 +624,7 @@ dependencies = [
 
 [[package]]
 name = "bingle_jsi"
-version = "0.3.10"
+version = "0.3.11"
 dependencies = [
  "algo_ops",
  "bingle_core",
@@ -644,7 +644,7 @@ dependencies = [
 
 [[package]]
 name = "bingle_local"
-version = "0.3.10"
+version = "0.3.11"
 dependencies = [
  "algo_ops",
  "anyhow",
@@ -663,7 +663,7 @@ dependencies = [
 
 [[package]]
 name = "bingle_test"
-version = "0.3.10"
+version = "0.3.11"
 dependencies = [
  "algo_ops",
  "base64 0.21.7",
@@ -680,7 +680,7 @@ dependencies = [
 
 [[package]]
 name = "bingle_webserver"
-version = "0.3.10"
+version = "0.3.11"
 dependencies = [
  "algo_ops",
  "anyhow",
