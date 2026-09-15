@@ -48,9 +48,9 @@ dependencies = [
 
 [[package]]
 name = "algo_ops"
-version = "0.8.4"
+version = "0.8.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "30948c812a01805fadc95ccda8fb991dadf824fd141445096fb06c654f8abe03"
+checksum = "a22d50e9f16f885cf3f0937782f88df3f3e3241d6a4f692c9682cec4a9fe1c32"
 dependencies = [
  "algonaut",
  "anyhow",
@@ -742,9 +742,9 @@ dependencies = [
 
 [[package]]
 name = "blockchain_ops"
-version = "0.8.4"
+version = "0.8.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "54dd5717f56a495b199db8c49881db7f1f5a0f02d1ddf2213c943b903c9a7b08"
+checksum = "e3615af0021645ebf3d91a3cef530738fd8bac82b6a10d735a0c6e900664a698"
 dependencies = [
  "anyhow",
  "serde",
@@ -1888,7 +1888,7 @@ dependencies = [
  "libc",
  "percent-encoding",
  "pin-project-lite",
- "socket2 0.5.10",
+ "socket2 0.6.4",
  "system-configuration 0.7.0",
  "tokio",
  "tower-service",
@@ -2775,7 +2775,7 @@ dependencies = [
  "quinn-udp",
  "rustc-hash",
  "rustls",
- "socket2 0.5.10",
+ "socket2 0.6.4",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
@@ -2813,7 +2813,7 @@ dependencies = [
  "cfg_aliases",
  "libc",
  "once_cell",
- "socket2 0.5.10",
+ "socket2 0.6.4",
  "tracing",
  "windows-sys 0.60.2",
 ]
@@ -4638,7 +4638,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.48.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
