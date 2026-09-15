@@ -10,12 +10,17 @@ package-mode = false
 python = "^3.12"
 algokit-utils = "^4.0.0"
 python-dotenv = "^1.0.0"
-algorand-python = "^3"
+# algorand-python 4.0.x is the range puyapy 5.10.x (AlgoKit >= 2.10) compiles against;
+# constrained to <4.1 so it stays in that compiler's supported window.
+algorand-python = "~4.0.0"
 algorand-python-testing = "^1"
 
 [tool.poetry.group.dev.dependencies]
 algokit-client-generator = "^2.1.0"
-puyapy = "*"
+# Pin the puya compiler (was "*"): an unpinned puyapy let AlgoKit resolve a newer
+# compiler than the venv's algorand-python supported, producing an out-of-range
+# warning and non-reproducible TEAL. Pin it to the AlgoKit 2.10 compiler line.
+puyapy = "~5.10.1"
 pytest = "^9.1.1"
 
 [tool.pytest.ini_options]
