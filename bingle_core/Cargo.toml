@@ -40,6 +40,12 @@ serde_json = "1"
 tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros"] }
 tokio-openssl = "0.6"
 stun-rs = "0.1.11"
+# Transitive-version pin (not used directly): stun-rs 0.1.11 -> precis-profiles -> precis-core.
+# precis-core 0.2.0 dropped OpaqueString::{prepare,enforce,compare}, which stun-rs 0.1.11 still
+# calls, so a fresh resolve that pulls precis-profiles 0.1.14 (which wants precis-core ^0.2) fails to
+# compile. Constraining precis-core to the 0.1.x line keeps precis-profiles on 0.1.13 and makes
+# `cargo install` work without `--locked`. Remove once stun-rs supports precis-core 0.2.
+precis-core = "0.1.11"
 uuid = { version = "1", features = ["v4"] }
 libc = "0.2"
 ctrlc = { version = "3", features = ["termination"] }
