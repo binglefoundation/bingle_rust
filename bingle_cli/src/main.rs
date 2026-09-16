@@ -17,7 +17,8 @@ use bingle_core::ddb::{AdvertRecord, InetSocketAddress};
 use bingle_core::engine::BingleAccess;
 use bingle_core::util::cli_utils::{args_request_auto_migrate, parse_start_options_from_args};
 use bingle_core::util::config_utils::{
-    parse_algos_decimal_to_microalgos, parse_node_file_with_ids, resolve_app_asset_ids,
+    load_config_and_resolve_ids, parse_algos_decimal_to_microalgos, parse_node_file_with_ids,
+    resolve_app_asset_ids,
 };
 use bingle_core::util::logging::{BingleFormatter, HandleLayer, LogMode};
 use chrono::Utc;
@@ -1665,19 +1666,8 @@ fn setup_chain_ops(
     cli_asset_id: Option<u64>,
     passphrase: String,
 ) -> (AlgoOps, u64, u64, String) {
-    let (cfg, node_app_id, node_asset_id): (AlgoChainConfig, Option<u64>, Option<u64>) =
-        match node_file {
-            Some(path) => match parse_node_file_with_ids(&path) {
-                Ok((_net, cfg, nid_app, nid_asset)) => (cfg, nid_app, nid_asset),
-                Err(e) => {
-                    warn!("{}", e);
-                    std::process::exit(2);
-                }
-            },
-            None => (AlgoChainConfig::default(), None, None),
-        };
-    let (app_id, asset_id) =
-        match resolve_app_asset_ids(node_app_id, node_asset_id, cli_app_id, cli_asset_id) {
+    let (cfg, app_id, asset_id) =
+        match load_config_and_resolve_ids(node_file.as_deref(), cli_app_id, cli_asset_id) {
             Ok(v) => v,
             Err(e) => {
                 warn!("{}", e);
