@@ -120,6 +120,41 @@ if aws logs describe-log-groups --log-group-name-prefix "$LOG_GROUP_NAME" --regi
   aws logs delete-log-group --log-group-name "$LOG_GROUP_NAME" --region "$REGION" || true
 fi
 
+# On a failed deploy the CloudFormation error is just the symptom (typically the opaque "ECS
+# Deployment Circuit Breaker was triggered"). The real cause is usually in the relay container's
+# own logs, which survive the circuit-breaker rollback because the log group is DeletionPolicy:
+# Retain. Pull them and surface the prominent `RELAY STARTUP ABORTED` banner (or a tail + hint when
+# the container never wrote a line, e.g. it was never placed on an instance) so the operator sees
+# the cause without going digging in CloudWatch.
+show_relay_failure_logs() {
+  echo "" >&2
+  echo "[deploy] ✗ Deploy failed. Fetching relay container logs from '$LOG_GROUP_NAME'..." >&2
+  local start_ms events
+  start_ms=$(( ($(date +%s) - 900) * 1000 ))
+  events=$(aws logs filter-log-events \
+    --log-group-name "$LOG_GROUP_NAME" \
+    --region "$REGION" \
+    --start-time "$start_ms" \
+    --query "events[].message" --output text 2>/dev/null || true)
+  if [[ -z "$events" ]]; then
+    echo "[deploy] No container logs found — the task likely never started (no container instance" >&2
+    echo "         registered, or an image/secret pull error), so nothing was written. Inspect the" >&2
+    echo "         ECS service events and stopped-task reasons:" >&2
+    echo "         aws ecs describe-services --cluster ${STACK_NAME}-Cluster --services <svc> --region ${REGION} --query 'services[0].events'" >&2
+    return
+  fi
+  if grep -q "RELAY STARTUP ABORTED" <<<"$events"; then
+    echo "" >&2
+    echo "[deploy] The relay started but refused to run — cause below (from the container logs):" >&2
+    echo "" >&2
+    grep -A 8 "RELAY STARTUP ABORTED" <<<"$events" | tail -n +1 | head -n 20 >&2
+    echo "" >&2
+  else
+    echo "[deploy] Last relay container log lines:" >&2
+    tail -n 30 <<<"$events" >&2
+  fi
+}
+
 if [[ $REDEPLOY_ONLY -eq 1 ]]; then
   echo "[deploy] Redeploying ECS service '$STACK_NAME' with new image..."
   # When using --redeploy-only, we assume the stack exists and we just want to update the ECS service
@@ -135,7 +170,7 @@ else
   if [[ $EXPRESS -eq 1 ]]; then
     TEMPLATE_FILE="aws/relay_express.yaml"
     echo "[deploy] Deploying CloudFormation stack '$STACK_NAME' (EXPRESS MODE)..."
-    aws cloudformation deploy \
+    if ! aws cloudformation deploy \
       --stack-name "$STACK_NAME" \
       --template-file "$TEMPLATE_FILE" \
       --capabilities CAPABILITY_IAM \
@@ -147,11 +182,14 @@ else
         Passphrase="$PASSPHRASE" \
         NatMode="$NAT_MODE" \
         NodeFile="$NODE_FILE" \
-        CostTag="$COST_TAG"
+        CostTag="$COST_TAG"; then
+      show_relay_failure_logs
+      exit 1
+    fi
   else
     TEMPLATE_FILE="aws/relay_stack.yaml"
     echo "[deploy] Deploying CloudFormation stack '$STACK_NAME'..."
-    aws cloudformation deploy \
+    if ! aws cloudformation deploy \
       --stack-name "$STACK_NAME" \
       --template-file "$TEMPLATE_FILE" \
       --capabilities CAPABILITY_IAM \
@@ -164,7 +202,10 @@ else
         Passphrase="$PASSPHRASE" \
         NatMode="$NAT_MODE" \
         NodeFile="$NODE_FILE" \
-        CostTag="$COST_TAG"
+        CostTag="$COST_TAG"; then
+      show_relay_failure_logs
+      exit 1
+    fi
   fi
 fi
 
