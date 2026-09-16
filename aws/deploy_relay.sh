@@ -7,7 +7,8 @@
 #   aws/deploy_relay.sh --handle <handle> --passphrase <passphrase> [options]
 #
 # Options:
-#   --stack-name <name>    CloudFormation stack name (default: bingle-relay)
+#   --stack-name <name>    CloudFormation stack name (default: derived from the handle,
+#                          'bingle-relay-<handle>' — see stack_name_for_handle)
 #   --instance-type <type> EC2 instance type (default: t4g.nano, ignored in --express)
 #   --port <port>          UDP port (default: 12121)
 #   --nat-mode <mode>      Direct|Full|Restricted (default: Direct)
@@ -19,8 +20,21 @@
 
 set -euo pipefail
 
+# Derive the CloudFormation stack name from a relay handle: 'bingle-relay-<handle>', with any
+# character that is not a letter or digit collapsed to a single hyphen (CFN stack names allow only
+# [A-Za-z0-9-] and must start with a letter — the 'bingle-relay-' prefix guarantees that). Making
+# the stack name a deterministic function of the handle means redeploying a handle updates its one
+# stack in place, instead of spawning a parallel stack — and a fresh VPC each time — under an
+# ad-hoc name (which is how we exhausted the region's VPC limit).
+stack_name_for_handle() {
+  local h
+  h=$(printf '%s' "$1" | tr -c 'A-Za-z0-9' '-' | tr -s '-' | sed 's/^-//; s/-$//')
+  printf 'bingle-relay-%s' "$h"
+}
+
 # Default values
-STACK_NAME="bingle-relay"
+# STACK_NAME left empty: derived from --handle after parsing, unless --stack-name overrides it.
+STACK_NAME=""
 INSTANCE_TYPE="t4g.micro"
 PORT="12121"
 NAT_MODE="Direct"
@@ -43,7 +57,7 @@ usage() {
   echo "Options:"
   echo "  --handle <handle>      (Required) Relay handle"
   echo "  --passphrase <pass>    (Required) Relay passphrase"
-  echo "  --stack-name <name>    CloudFormation stack name (default: $STACK_NAME)"
+  echo "  --stack-name <name>    CloudFormation stack name (default: derived from handle, 'bingle-relay-<handle>')"
   echo "  --instance-type <type> EC2 instance type (default: $INSTANCE_TYPE)"
   echo "  --port <port>          UDP port (default: $PORT)"
   echo "  --nat-mode <mode>      Direct|Full|Restricted (default: $NAT_MODE)"
@@ -79,6 +93,13 @@ done
 if [[ -z "$HANDLE" || -z "$PASSPHRASE" ]]; then
   echo "Error: --handle and --passphrase are required."
   usage
+fi
+
+# Derive the stack name from the handle unless the caller pinned one with --stack-name. Same handle
+# => same stack => in-place update rather than a new parallel stack (and VPC) each deploy.
+if [[ -z "$STACK_NAME" ]]; then
+  STACK_NAME=$(stack_name_for_handle "$HANDLE")
+  echo "[deploy] Stack name derived from handle '$HANDLE': $STACK_NAME"
 fi
 
 # 1) Build the Docker image
