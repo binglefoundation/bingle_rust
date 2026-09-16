@@ -82,3 +82,62 @@ pub fn test_relay_start_fails_if_not_allowed_on_chain() {
         res.err()
     );
 }
+
+/// A relay whose account has never opted into the app must fail to start with a clear
+/// `not opted-in` error (and, in production, the prominent `RELAY STARTUP ABORTED` banner).
+/// This is the failure mode seen when a dApp is redeployed under a new app_id and the relay
+/// account still holds state only on the old app — the operator must `migrate`/`register` first.
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn test_relay_start_fails_if_not_opted_in() {
+    test_util::init_test_logging();
+    test_util::assert_localnet_available();
+
+    let cfg = test_util::localnet_config();
+    let creator_addr = test_util::ADDRESS_SPEND;
+    let creator_pass = test_util::PASSPHRASE_SPEND;
+    let relay_addr_str = test_util::ADDRESS_RECEIVE;
+    let relay_pass = test_util::PASSPHRASE_RECEIVE;
+
+    setup_localnet::ensure_localnet_accounts_funded(&cfg, &[creator_addr, relay_addr_str])
+        .expect("Failed to fund localnet accounts");
+
+    let ops_creator =
+        AlgoOps::new_for_algorand(Some(creator_pass.to_string()), None, Some(cfg.clone()));
+    let (app_id, _asset_id) =
+        test_util::deploy_bingle_app_and_asset(&ops_creator, "BINGLE$", 1_000_000);
+
+    // Deliberately do NOT opt the relay account into the app, so check_allow_relay returns
+    // `Ok(None)` (not opted-in) rather than `Ok(Some(false))` (opted-in but not allowed).
+
+    let r_opts = StartOptions {
+        handle: "relay_not_opted_in".into(),
+        algo_passphrase: Some(relay_pass.to_string()),
+        static_ip: Some(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0)),
+        am_relay: true,
+        stun_servers: None,
+        algo_provider_config: Some(cfg.clone()),
+        algo_network: None,
+        app_id: Some(app_id),
+        asset_id: None,
+        log_level: None,
+        handle_cache_expiry: None,
+        dangerous_debug: true,
+        log_mode: bingle_core::util::logging::LogMode::Plain,
+        wait_response_timeout: None,
+    };
+
+    let relay = BingleApiImpl::new(&r_opts);
+    let res = relay.access_unsafe_for_tests(|api| api.start(&r_opts));
+
+    assert!(
+        res.is_err(),
+        "relay start should fail because the account is not opted in"
+    );
+    let err_msg = res.unwrap_err().to_string();
+    assert!(
+        err_msg.contains("not opted-in"),
+        "expected 'not opted-in' error, got: {}",
+        err_msg
+    );
+}
