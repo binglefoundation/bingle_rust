@@ -327,6 +327,14 @@ Resources:
   RelayService:
     Type: AWS::ECS::Service
     DependsOn:
+      # ECSAutoScalingGroup must come first: the service enables the deployment
+      # circuit breaker, which fast-fails (~60s) if it cannot place its task.
+      # Without this dependency the service is created before the ASG's EC2
+      # instance has registered as a container instance, so on a cold create the
+      # service finds "No Container Instances" and the circuit breaker trips
+      # before the agent joins (~90-120s to boot+register). Ordering the service
+      # after the ASG gives the instance a head start and closes the race.
+      - ECSAutoScalingGroup
       - VPCGatewayAttachment
       - DefaultRoute
       - SubnetRouteTableAssociation
