@@ -15,6 +15,8 @@ pub mod chat_send;
 pub mod chat_state;
 #[path = "echo_mode.rs"]
 pub mod echo_mode;
+#[path = "logging.rs"]
+pub mod logging;
 #[path = "run_args.rs"]
 pub mod run_args;
 #[path = "shutdown.rs"]

@@ -129,14 +129,10 @@ fn init_logger_from_args(args: &mut Vec<String>) {
             i += 1;
         }
     }
-    // With all logging flags stripped, the first remaining arg is the subcommand. `chat` is an
-    // interactive REPL, so it defaults to WARN to keep the prompt clean (use `--info`/`--debug` to
-    // restore verbose logs); every other subcommand keeps the INFO default.
-    let default_level = if args.first().map(String::as_str) == Some("chat") {
-        LevelFilter::WARN
-    } else {
-        LevelFilter::INFO
-    };
+    // With all logging flags stripped, the first remaining arg is the subcommand, which decides the
+    // default level when the user passed no explicit --log-* flag (see logging::default_log_level:
+    // chat and checkrelays default to WARN, everything else to INFO).
+    let default_level = bingle_cli::logging::default_log_level(args.first().map(String::as_str));
     let level = chosen.unwrap_or(default_level);
     let mode = chosen_mode.unwrap_or(LogMode::Plain);
     let fmt_layer = tracing_subscriber::fmt::layer().event_format(BingleFormatter { mode });
@@ -201,7 +197,7 @@ fn print_usage_and_exit(code: i32) -> ! {
     let usage = concat!(
         "Usage: bingle_cli <run|chat|register|migrate|buybingle|sellbingle|checkrelays> [options]\n",
         "  Common options (for all commands): -h|--help | -V|--version | --log-warn|--warn|-q | --log-info|--info | --log-debug|--debug|-v | --log-trace|--vv|-vv | --log-mode <Plain|ANSI|AWS|JS> | --stun-servers <list> | --stun-servers-file <file>\n",
-        "  Note: chat defaults to WARN-level logs to keep the prompt clean; use --info or --debug to see more.\n",
+        "  Note: chat and checkrelays default to WARN-level logs so their output isn't buried under engine tracing; use --info or --debug to see more (or --log-level error for just the result).\n",
         "  bingle_cli run [--handle <handle>|<handle>] [--passphrase <text>] [--relay] [--static-ip <ip:port>] [--stun-servers <list>] [--stun-servers-file <file>] [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--sentinel-file <path>] [--echo] [--auto-migrate] [--log-mode <Plain|ANSI|AWS|JS>]\n",
         "  bingle_cli chat [--handle <handle>|<handle>] [--passphrase <text>] [--to <handle> | --to-id <id>] [--state_file <file>] [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--stun-servers <list>] [--stun-servers-file <file>] [--no-retries] [--store-forward <both|send|receive|none>] [--notify <url>] [--info|--debug]\n",
         "  bingle_cli register --handle <handle> --passphrase <text> --app-id <id> --asset-id <id> --price-units <n> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>] [--log-mode <Plain|ANSI|AWS|JS>]\n",
