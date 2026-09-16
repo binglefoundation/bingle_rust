@@ -17,7 +17,8 @@ use bingle_core::ddb::{AdvertRecord, InetSocketAddress};
 use bingle_core::engine::BingleAccess;
 use bingle_core::util::cli_utils::{args_request_auto_migrate, parse_start_options_from_args};
 use bingle_core::util::config_utils::{
-    parse_algos_decimal_to_microalgos, parse_node_file_with_ids, resolve_app_asset_ids,
+    load_config_and_resolve_ids, parse_algos_decimal_to_microalgos, parse_node_file_with_ids,
+    resolve_app_asset_ids,
 };
 use bingle_core::util::logging::{BingleFormatter, HandleLayer, LogMode};
 use chrono::Utc;
@@ -182,6 +183,7 @@ fn main() {
         "run" => cmd_run(args),
         "chat" => cmd_chat(args),
         "register" => cmd_register(args),
+        "migrate" => cmd_migrate(args),
         "buybingle" => cmd_buybingle(args),
         "sellbingle" => cmd_sellbingle(args),
         "checkrelays" => cmd_checkrelays(args),
@@ -197,12 +199,13 @@ fn print_usage_and_exit(code: i32) -> ! {
     // One string literal per output line (adjacent literals are concatenated at compile time), so the
     // usage block stays readable in source; each line keeps its trailing `\n` except the last.
     let usage = concat!(
-        "Usage: bingle_cli <run|chat|register|buybingle|sellbingle|checkrelays> [options]\n",
+        "Usage: bingle_cli <run|chat|register|migrate|buybingle|sellbingle|checkrelays> [options]\n",
         "  Common options (for all commands): -h|--help | -V|--version | --log-warn|--warn|-q | --log-info|--info | --log-debug|--debug|-v | --log-trace|--vv|-vv | --log-mode <Plain|ANSI|AWS|JS> | --stun-servers <list> | --stun-servers-file <file>\n",
         "  Note: chat defaults to WARN-level logs to keep the prompt clean; use --info or --debug to see more.\n",
         "  bingle_cli run [--handle <handle>|<handle>] [--passphrase <text>] [--relay] [--static-ip <ip:port>] [--stun-servers <list>] [--stun-servers-file <file>] [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--sentinel-file <path>] [--echo] [--auto-migrate] [--log-mode <Plain|ANSI|AWS|JS>]\n",
         "  bingle_cli chat [--handle <handle>|<handle>] [--passphrase <text>] [--to <handle> | --to-id <id>] [--state_file <file>] [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--stun-servers <list>] [--stun-servers-file <file>] [--no-retries] [--store-forward <both|send|receive|none>] [--notify <url>] [--info|--debug]\n",
         "  bingle_cli register --handle <handle> --passphrase <text> --app-id <id> --asset-id <id> --price-units <n> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>] [--log-mode <Plain|ANSI|AWS|JS>]\n",
+        "  bingle_cli migrate --passphrase <text> [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--log-mode <Plain|ANSI|AWS|JS>]  (opt-in + migrate local state to the app from a blessed ancestor; handle is copied on-chain)\n",
         "  bingle_cli buybingle [<price_algos>] --passphrase <text> --app-id <id> --asset-id <id> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>] [--log-mode <Plain|ANSI|AWS|JS>]  (omit <price_algos> to pay the on-chain price)\n",
         "  bingle_cli sellbingle <amount_units> <price_algos> --passphrase <text> --app-id <id> --asset-id <id> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>] [--log-mode <Plain|ANSI|AWS|JS>]\n",
         "  bingle_cli checkrelays --passphrase <text> [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--interval-ms <n>] [--stun-servers <list>] [--stun-servers-file <file>] [--log-mode <Plain|ANSI|AWS|JS>]",
@@ -1558,40 +1561,7 @@ fn cmd_register(args: Vec<String>) {
         }
     };
 
-    // Load node file (may also contain app_id/asset_id) and build config
-    let (cfg, node_app_id, node_asset_id): (AlgoChainConfig, Option<u64>, Option<u64>) =
-        match node_file {
-            Some(path) => match parse_node_file_with_ids(&path) {
-                Ok((_net, cfg, nid_app, nid_asset)) => (cfg, nid_app, nid_asset),
-                Err(e) => {
-                    warn!("{}", e);
-                    std::process::exit(2);
-                }
-            },
-            None => (AlgoChainConfig::default(), None, None),
-        };
-
-    // Resolve IDs with precedence: node file > CLI > env; error if node+CLI both set
-    let (app_id, asset_id) =
-        match resolve_app_asset_ids(node_app_id, node_asset_id, app_id, asset_id) {
-            Ok(v) => v,
-            Err(e) => {
-                warn!("{}", e);
-                std::process::exit(2);
-            }
-        };
-
-    // Build AlgoOps with provided passphrase; address is derived immediately in AlgoOps::new
-    let ops = AlgoOps::new_for_algorand(Some(passphrase.clone()), None, Some(cfg));
-    let address = match ops.address.as_ref() {
-        Some(a) => a.clone(),
-        None => {
-            warn!(
-                "Invalid passphrase: unable to derive address. Provide a valid Algorand mnemonic or supported secret format."
-            );
-            std::process::exit(2);
-        }
-    };
+    let (ops, app_id, asset_id, address) = setup_chain_ops(node_file, app_id, asset_id, passphrase);
 
     // Ensure the account is funded
     let bal_algos = loop {
@@ -1685,6 +1655,117 @@ fn cmd_register(args: Vec<String>) {
     }
 }
 
+/// Shared preamble for the one-shot on-chain subcommands (register / migrate / buybingle /
+/// sellbingle): load the optional node file, resolve the app/asset ids (node file or flags, else
+/// the `APP_ID`/`ASSET_ID` env — erroring if both a flag and the node file set one), build
+/// `AlgoOps` from the passphrase, and derive the sender address. Exits(2) with a clear message on a
+/// node-file / id-resolution / passphrase error. Returns `(ops, app_id, asset_id, address)`.
+fn setup_chain_ops(
+    node_file: Option<String>,
+    cli_app_id: Option<u64>,
+    cli_asset_id: Option<u64>,
+    passphrase: String,
+) -> (AlgoOps, u64, u64, String) {
+    let (cfg, app_id, asset_id) =
+        match load_config_and_resolve_ids(node_file.as_deref(), cli_app_id, cli_asset_id) {
+            Ok(v) => v,
+            Err(e) => {
+                warn!("{}", e);
+                std::process::exit(2);
+            }
+        };
+    let ops = AlgoOps::new_for_algorand(Some(passphrase), None, Some(cfg));
+    let address = ops.address.as_ref().cloned().unwrap_or_else(|| {
+        warn!(
+            "Invalid passphrase: unable to derive address. Provide a valid Algorand mnemonic or supported secret format."
+        );
+        std::process::exit(2);
+    });
+    (ops, app_id, asset_id, address)
+}
+
+fn cmd_migrate(args: Vec<String>) {
+    // One-shot local-state migration to the configured app: opt into the app (idempotent) and copy
+    // this account's local state (handle, allow flags, endpoints) from the nearest blessed ancestor,
+    // then exit. Unlike `run --auto-migrate` this needs no handle — `migrate_local` copies the Handle
+    // from the ancestor on-chain — and it does not start the node/protocol, so no Ctrl-C dance.
+    // Usage help: an explicit --help prints to stdout and exits 0; missing args is an error to stderr.
+    const USAGE: &str = "Usage: bingle_cli migrate --passphrase <text> [--node-file <file>] [--app-id <id>] [--asset-id <id>]\n  Opts in and migrates local state to the app from a blessed ancestor. app_id/asset_id come from --node-file or the flags (not both).";
+    if args.iter().any(|a| a == "--help" || a == "-h") {
+        println!("{USAGE}");
+        std::process::exit(0);
+    }
+
+    let mut app_id: Option<u64> = None;
+    let mut asset_id: Option<u64> = None;
+    let mut node_file: Option<String> = None;
+    let mut passphrase: Option<String> = None;
+
+    let mut it = args.into_iter();
+    while let Some(arg) = it.next() {
+        match arg.as_str() {
+            "--app-id" => app_id = Some(parse_u64(req_value(&mut it, "--app-id"), "--app-id")),
+            "--asset-id" => {
+                asset_id = Some(parse_u64(req_value(&mut it, "--asset-id"), "--asset-id"))
+            }
+            "--node-file" => node_file = Some(req_value(&mut it, "--node-file")),
+            "--passphrase" => passphrase = Some(req_value(&mut it, "--passphrase")),
+            // Accept common STUN options for consistency across commands; ignored for migrate.
+            "--stun-servers" => {
+                let _ = req_value(&mut it, "--stun-servers");
+            }
+            "--stun-servers-file" => {
+                let _ = req_value(&mut it, "--stun-servers-file");
+            }
+            other => {
+                warn!("Unknown option for migrate: {}", other);
+                std::process::exit(2);
+            }
+        }
+    }
+
+    let passphrase = match passphrase {
+        Some(p) => p,
+        None => {
+            warn!("migrate requires --passphrase <text>");
+            std::process::exit(2);
+        }
+    };
+
+    let (ops, app_id, asset_id, address) = setup_chain_ops(node_file, app_id, asset_id, passphrase);
+    tracing::info!("Migrating local state for {} to app {}", address, app_id);
+
+    let bingle = AlgoBingle::new(ops, app_id, asset_id);
+    loop {
+        match bingle.ensure_local_migrated(app_id) {
+            Ok(Some(txid)) => {
+                tracing::info!("migrated local state to app {} (tx: {})", app_id, txid);
+                break;
+            }
+            Ok(None) => {
+                // Either already migrated (holds a Handle on this app) or nothing on any blessed
+                // ancestor to copy (a fresh account, which must `register` instead).
+                tracing::info!(
+                    "nothing to migrate for app {} (already migrated, or no blessed ancestor holds this account's state — a fresh account must `register`)",
+                    app_id
+                );
+                break;
+            }
+            Err(e) => {
+                if let Some(ae) = e.downcast_ref::<AlgoError>()
+                    && ae.kind == AlgoErrorKind::HostUnreachable
+                {
+                    tracing::error!("Algorand node unreachable: {}. Retrying in 60s...", ae);
+                    std::thread::sleep(Duration::from_secs(60));
+                    continue;
+                }
+                warn!("migrate failed: {}", e);
+                std::process::exit(1);
+            }
+        }
+    }
+}
+
 fn cmd_buybingle(args: Vec<String>) {
     // Usage help: an explicit --help prints to stdout and exits 0; missing args is an error to stderr.
     const USAGE: &str = "Usage: bingle_cli buybingle [<price_algos>] --passphrase <text> --app-id <id> --asset-id <id> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>]\n  <price_algos> is optional: omit it to pay the current on-chain BinglePrice; if given it must equal that price.";
@@ -1752,35 +1833,7 @@ fn cmd_buybingle(args: Vec<String>) {
         }
     };
 
-    // Load node file (may also contain app_id/asset_id)
-    let (cfg, node_app_id, node_asset_id): (AlgoChainConfig, Option<u64>, Option<u64>) =
-        match node_file {
-            Some(path) => match parse_node_file_with_ids(&path) {
-                Ok((_net, cfg, nid_app, nid_asset)) => (cfg, nid_app, nid_asset),
-                Err(e) => {
-                    warn!("{}", e);
-                    std::process::exit(2);
-                }
-            },
-            None => (AlgoChainConfig::default(), None, None),
-        };
-
-    // Resolve IDs with precedence
-    let (app_id, asset_id) =
-        match resolve_app_asset_ids(node_app_id, node_asset_id, app_id, asset_id) {
-            Ok(v) => v,
-            Err(e) => {
-                warn!("{}", e);
-                std::process::exit(2);
-            }
-        };
-
-    // Ops
-    let ops = AlgoOps::new_for_algorand(Some(passphrase.clone()), None, Some(cfg));
-    let address = ops.address.as_ref().cloned().unwrap_or_else(|| {
-        warn!("Invalid passphrase: unable to derive address.");
-        std::process::exit(2);
-    });
+    let (ops, app_id, asset_id, address) = setup_chain_ops(node_file, app_id, asset_id, passphrase);
     let bal_algos = loop {
         match ops.account_balance() {
             Ok(Some(b)) => break b,
@@ -1949,35 +2002,7 @@ fn cmd_sellbingle(args: Vec<String>) {
         }
     };
 
-    // Load node file (may also contain app_id/asset_id)
-    let (cfg, node_app_id, node_asset_id): (AlgoChainConfig, Option<u64>, Option<u64>) =
-        match node_file {
-            Some(path) => match parse_node_file_with_ids(&path) {
-                Ok((_net, cfg, nid_app, nid_asset)) => (cfg, nid_app, nid_asset),
-                Err(e) => {
-                    warn!("{}", e);
-                    std::process::exit(2);
-                }
-            },
-            None => (AlgoChainConfig::default(), None, None),
-        };
-
-    // Resolve IDs with precedence
-    let (app_id, asset_id) =
-        match resolve_app_asset_ids(node_app_id, node_asset_id, app_id, asset_id) {
-            Ok(v) => v,
-            Err(e) => {
-                warn!("{}", e);
-                std::process::exit(2);
-            }
-        };
-
-    // Ops
-    let ops = AlgoOps::new_for_algorand(Some(passphrase.clone()), None, Some(cfg));
-    let address = ops.address.as_ref().cloned().unwrap_or_else(|| {
-        warn!("Invalid passphrase: unable to derive address.");
-        std::process::exit(2);
-    });
+    let (ops, app_id, asset_id, address) = setup_chain_ops(node_file, app_id, asset_id, passphrase);
     let bal_algos = loop {
         match ops.account_balance() {
             Ok(Some(b)) => break b,
