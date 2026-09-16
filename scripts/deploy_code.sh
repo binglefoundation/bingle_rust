@@ -10,6 +10,10 @@
 #         (use when intentionally cutting a release from an earlier point).
 #   scripts/deploy_code.sh --skip-resolution-check <version>
 #         skip the from-scratch dependency-resolution build check (not advised).
+#   scripts/deploy_code.sh --publish-only <version>
+#         skip the compile / resolution / native-build / dry-run gates and jump
+#         straight to publishing. Use to resume a release whose build already
+#         passed — e.g. to retry just the npm step after a missed 2FA window.
 #
 #   NPM_TOKEN=<automation-token>  publish to npm non-interactively (bypasses npm
 #                                 2FA), so an unattended release needs no browser
@@ -50,6 +54,7 @@ DRY_RUN_ONLY=0
 SKIP_NATIVE=0
 ALLOW_BEHIND_STAGING=0
 SKIP_RESOLUTION_CHECK=0
+PUBLISH_ONLY=0
 VERSION=""
 for arg in "$@"; do
   case "$arg" in
@@ -57,12 +62,21 @@ for arg in "$@"; do
     --skip-native-build)    SKIP_NATIVE=1 ;;
     --allow-behind-staging) ALLOW_BEHIND_STAGING=1 ;;
     --skip-resolution-check) SKIP_RESOLUTION_CHECK=1 ;;
-    -h|--help)              sed -n '2,16p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    --publish-only)         PUBLISH_ONLY=1 ;;
+    -h|--help)              sed -n '2,20p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
     -*)                     die "unknown option: $arg" ;;
     *)                      [[ -n "$VERSION" ]] && die "unexpected extra argument: $arg"; VERSION="$arg" ;;
   esac
 done
-[[ -n "$VERSION" ]] || die "usage: scripts/deploy_code.sh [--dry-run] [--skip-native-build] <version>"
+[[ -n "$VERSION" ]] || die "usage: scripts/deploy_code.sh [--dry-run] [--skip-native-build] [--publish-only] <version>"
+# --publish-only resumes publishing a release whose build already passed, so it turns
+# off every build/verify gate (they cannot fail cheaply and were already run). It is
+# incompatible with --dry-run, which exists to run those gates and publish nothing.
+if [[ $PUBLISH_ONLY -eq 1 ]]; then
+  [[ $DRY_RUN_ONLY -eq 1 ]] && die "--publish-only and --dry-run are mutually exclusive"
+  SKIP_NATIVE=1
+  SKIP_RESOLUTION_CHECK=1
+fi
 [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.]+)?$ ]] \
   || die "not a valid semver version: '$VERSION' (expected e.g. 0.2.2)"
 
@@ -198,9 +212,10 @@ else
     die "not authenticated to npm. Run: npm login"
   fi
   ok "npm authenticated as '$npm_user'"
-  warn "no NPM_TOKEN set — the final 'npm publish' will require an interactive 2FA browser click,"
-  warn "which appears only after the native build. For an unattended release, create an npm"
-  warn "Automation token (npmjs.com > Access Tokens) and re-run with NPM_TOKEN=... set."
+  warn "no NPM_TOKEN set — the final 'npm publish' will require an interactive 2FA browser click."
+  warn "It is gated on a keypress (so the short-lived window opens only when you're present) and"
+  warn "retried on failure, so a missed window is recoverable. For a fully unattended release,"
+  warn "create an npm Automation token (npmjs.com > Access Tokens) and re-run with NPM_TOKEN=... set."
 fi
 
 # crates.io: confirm a token is present in the environment or the cargo credentials
@@ -233,6 +248,37 @@ wait_for_crate() { # <crate> <version> — poll the index after a publish
 }
 npm_version_exists() { # <pkg> <version>
   [[ -n "$(npm view "$1@$2" version 2>/dev/null || true)" ]]
+}
+
+# Publish the npm module on the interactive (no-NPM_TOKEN) path. The 2FA browser
+# window npm opens is short-lived, so we gate each attempt on an operator keypress —
+# the window then opens only when someone is present to approve it, not unattended at
+# an unpredictable point after the long build — and retry on failure so a missed or
+# expired window is recoverable without re-running the whole build. Token publishes
+# are non-interactive and never call this.
+publish_npm_interactive() { # <pkg> <version>
+  local attempt=1 ans
+  while true; do
+    if [[ -t 0 ]]; then
+      printf '\n'
+      info "ready to publish $1@$2 to npm (attempt $attempt)."
+      warn "npm will open a browser 2FA window that expires quickly — be ready to approve it."
+      read -rp "    press Enter to start the npm publish (Ctrl-C to abort): " _ || return 1
+    fi
+    if ( cd "$NPM_DIR" && npm publish ${NPM_PUBLISH_ARGS[@]+"${NPM_PUBLISH_ARGS[@]}"} ); then
+      return 0
+    fi
+    # A prior attempt may have actually landed the version before the client errored.
+    if npm_version_exists "$1" "$2"; then
+      ok "$1@$2 is already on npm — treating as published"
+      return 0
+    fi
+    warn "npm publish attempt $attempt failed (the 2FA window may have expired)."
+    [[ -t 0 ]] || return 1   # non-interactive: nothing to retry against, give up
+    read -rp "    retry npm publish? [Y/n]: " ans || return 1
+    [[ "$ans" =~ ^[Nn] ]] && return 1
+    attempt=$((attempt + 1))
+  done
 }
 
 # ── bump versions ─────────────────────────────────────────────────────
@@ -269,6 +315,11 @@ cargo update --workspace >/dev/null 2>&1 || cargo update -w >/dev/null
 ok "versions bumped"
 
 # ── build / compile gate ──────────────────────────────────────────────
+if [[ $PUBLISH_ONLY -eq 1 ]]; then
+  warn "--publish-only: skipping compile, resolution, native-build, and dry-run gates"
+  warn "(resuming publish of a build that already passed these checks)"
+fi
+if [[ $PUBLISH_ONLY -eq 0 ]]; then
 info "compiling workspace at $VERSION"
 cargo check --workspace
 ok "workspace compiles"
@@ -325,6 +376,7 @@ for crate in "${PUBLISH_CRATES[@]}"; do ok "packaged $crate@$VERSION"; done
 info "dry-run: npm module"
 ( cd "$NPM_DIR" && npm publish --dry-run ${NPM_PUBLISH_ARGS[@]+"${NPM_PUBLISH_ARGS[@]}"} )
 ok "packaged $NPM_PKG@$VERSION"
+fi  # end: build / dry-run gates (skipped under --publish-only)
 
 if [[ $DRY_RUN_ONLY -eq 1 ]]; then
   info "--dry-run: all checks passed, publishing nothing; reverting version bump"
@@ -360,8 +412,13 @@ done
 info "publishing $NPM_PKG to npm"
 if npm_version_exists "$NPM_PKG" "$VERSION"; then
   ok "$NPM_PKG@$VERSION already published — skipping"
-else
+elif [[ -n "${NPM_TOKEN:-}" ]]; then
+  # Token publish: non-interactive, no 2FA window, so no gating/retry needed.
   ( cd "$NPM_DIR" && npm publish ${NPM_PUBLISH_ARGS[@]+"${NPM_PUBLISH_ARGS[@]}"} )
+  ok "published $NPM_PKG@$VERSION"
+else
+  publish_npm_interactive "$NPM_PKG" "$VERSION" \
+    || die "npm publish did not complete for $NPM_PKG@$VERSION. The crates are already published; re-run 'scripts/deploy_code.sh --publish-only $VERSION' to retry just the npm step (skips the build)."
   ok "published $NPM_PKG@$VERSION"
 fi
 
