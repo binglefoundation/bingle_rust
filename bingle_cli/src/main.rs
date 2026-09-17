@@ -721,11 +721,13 @@ fn cmd_chat(args: Vec<String>) {
     run_chat_startup(&mut state, cli_handle.as_deref(), cli_passphrase.as_deref());
 
     // Start the engine and run the interactive REPL (send / receive / switch) until exit.
+    let poll_interval = bingle_cli::chat_poll::resolve_poll_interval(chat_args.poll_interval_secs);
     run_chat_session(
         state,
         chat_args.to.clone(),
         chat_args.to_id.clone(),
         !chat_args.no_retries,
+        poll_interval,
     );
 }
 
@@ -774,11 +776,15 @@ fn reprint_prompt(prompt: &str) {
 /// current recipient (persisted + retried via the pending-message model); `/prefix` switches the
 /// recipient (resolved to its canonical handle via `handle_lookup_partial`); `!exit` or Ctrl-D exits
 /// cleanly (Ctrl-C likewise, via the signal handler). Mirrors `cmd_run`'s start loop.
+///
+/// When the store-and-forward receive gate is on, a background poller drains this account's Sidewinder
+/// Mailbox on connect and then every `poll_interval`, surfacing messages held while offline (#274).
 fn run_chat_session(
     state: ChatState,
     to: Option<String>,
     to_id: Option<String>,
     retries_enabled: bool,
+    poll_interval: Duration,
 ) {
     let opts = state.opts.clone();
     // Shared with the engine callback and the retry worker: all mutate the one ChatState.
@@ -925,6 +931,38 @@ fn run_chat_session(
                 }
                 let prompt = retry_prompt.lock().map(|g| g.clone()).unwrap_or_default();
                 reprint_prompt(&prompt);
+            }
+        });
+    }
+
+    // Background store-and-forward receive poller (issue #274): when the receive gate is on, drain
+    // this account's Sidewinder Mailbox now (it may have been offline) and then every `poll_interval`,
+    // so messages held while offline are picked up and shown like real-time ones. `poll_once` is a
+    // no-op when the gate is off, but we only spawn the thread when it is on to avoid an idle wake-up.
+    let receive_enabled = match shared.lock() {
+        Ok(guard) => guard.store_and_forward_receive_enabled(),
+        Err(_) => false,
+    };
+    if receive_enabled {
+        let poll_shared = shared.clone();
+        let poll_prompt = prompt_line.clone();
+        std::thread::spawn(move || {
+            tracing::info!("chat: mailbox poller started (every {:?})", poll_interval);
+            loop {
+                let read = match poll_shared.lock() {
+                    Ok(guard) => bingle_cli::chat_poll::poll_once(&guard),
+                    Err(_) => Vec::new(),
+                };
+                if !read.is_empty() {
+                    // Print each held message above the current prompt, then redraw it — the same
+                    // presentation as a real-time message.
+                    for msg in &read {
+                        println!("\n{}: {}", msg.sender_handle, msg.text);
+                    }
+                    let prompt = poll_prompt.lock().map(|g| g.clone()).unwrap_or_default();
+                    reprint_prompt(&prompt);
+                }
+                std::thread::sleep(poll_interval);
             }
         });
     }
