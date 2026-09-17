@@ -50,6 +50,11 @@ pub trait MessageSender {
 pub enum SendOutcome {
     /// Delivered and marked complete.
     Delivered,
+    /// The direct send failed but, with the store-and-forward send gate on, the sealed message was
+    /// posted to the recipient's Sidewinder Mailbox (bingle_local post-on-give-up, #214); the peer
+    /// reads it on reconnect. Marked complete — no direct retry (issue #272). Carries the
+    /// human-readable reason the direct send failed, for the transcript.
+    Forwarded(String),
     /// A transient failure: the message stays pending and will keep being retried. Carries the
     /// human-readable reason.
     Retrying(String),
@@ -75,11 +80,19 @@ fn failure_of(result: &Result<bool, BingleError>) -> SendFailure {
     })
 }
 
-/// Classify a failed send and persist the message accordingly, returning the outcome.
+/// Classify a failed send, persist the message accordingly, and return the outcome — routing through
+/// store-and-forward when the send gate is on (issue #272).
 ///
 /// A retryable failure (per [`SendFailureKind::is_retryable`]) stays pending (`progress 0.0`) to be
 /// retried; a permanent one is marked terminal (`progress 1.0`). When `retries_enabled` is false
 /// (`--no-retries`) every failure is treated as permanent so nothing lingers pending.
+///
+/// Persisting the failure ([`ChatState::mark_send_failed`]) is what drives the bingle_local
+/// post-on-give-up path (#214): with the store-and-forward SEND gate on it seals the message to the
+/// recipient's Sidewinder Mailbox and, once fully handed off, marks it complete. So after persisting
+/// we check whether the message was handed off: if so the forward *is* the fallback — report
+/// [`SendOutcome::Forwarded`] and stop retrying; otherwise (gate off, or the post could not
+/// complete) fall back to retry/queue exactly as before, so nothing is silently dropped.
 fn classify_and_persist(
     state: &mut ChatState,
     timestamp: i64,
@@ -87,20 +100,24 @@ fn classify_and_persist(
     retries_enabled: bool,
 ) -> SendOutcome {
     let transient = retries_enabled && failure.kind.is_retryable();
-    if transient {
-        let _ = state.mark_send_failed(timestamp, &failure.reason, Some(failure.kind), false);
+    let _ = state.mark_send_failed(timestamp, &failure.reason, Some(failure.kind), !transient);
+
+    if state.store_and_forward_send_enabled() && state.is_handed_off(timestamp) {
+        SendOutcome::Forwarded(failure.reason)
+    } else if transient {
         SendOutcome::Retrying(failure.reason)
     } else {
-        let _ = state.mark_send_failed(timestamp, &failure.reason, Some(failure.kind), true);
         SendOutcome::Failed(failure.reason)
     }
 }
 
 /// Persist an outbound message as pending, make one send attempt, and record the result.
 ///
-/// On success the message is marked delivered. On a transient failure it stays pending for
-/// [`retry_pending`] to keep retrying; on a permanent failure (or when `retries_enabled` is false) it
-/// is marked failed. Does not echo the sent text — the terminal already echoed it.
+/// On success the message is marked delivered. On a failure the outcome is decided by
+/// `classify_and_persist`: with the store-and-forward send gate on and the message handed off to
+/// the recipient's Mailbox it is [`SendOutcome::Forwarded`]; otherwise a transient failure stays
+/// pending for [`retry_pending`] to keep retrying, and a permanent failure (or any failure under
+/// `--no-retries`) is marked failed. Does not echo the sent text — the terminal already echoed it.
 pub fn send_once(
     sender: &dyn MessageSender,
     state: &mut ChatState,
@@ -146,18 +163,22 @@ pub fn retry_pending(
         retry_after.remove(&msg.timestamp);
         SendOutcome::Delivered
     } else {
-        let failure = failure_of(&result);
-        if failure.kind.is_retryable() {
-            let _ =
-                state.mark_send_failed(msg.timestamp, &failure.reason, Some(failure.kind), false);
-            retry_after.insert(msg.timestamp, now + RETRY_BACKOFF);
-            SendOutcome::Retrying(failure.reason)
-        } else {
-            let _ =
-                state.mark_send_failed(msg.timestamp, &failure.reason, Some(failure.kind), true);
-            retry_after.remove(&msg.timestamp);
-            SendOutcome::Failed(failure.reason)
+        // The retry worker only runs when retries are enabled, so a retryable failure is transient
+        // here. `classify_and_persist` records the failure — which drives the store-and-forward
+        // post-on-give-up (#214) — and reports [`SendOutcome::Forwarded`] when the message was handed
+        // off to the Mailbox (issue #272).
+        let outcome = classify_and_persist(state, msg.timestamp, failure_of(&result), true);
+        // Back a still-transient message off so it keeps retrying without starving newer messages;
+        // a forwarded, delivered or permanently-failed message needs no further attempts.
+        match outcome {
+            SendOutcome::Retrying(_) => {
+                retry_after.insert(msg.timestamp, now + RETRY_BACKOFF);
+            }
+            _ => {
+                retry_after.remove(&msg.timestamp);
+            }
         }
+        outcome
     };
     Some(RetryOutcome {
         timestamp: msg.timestamp,

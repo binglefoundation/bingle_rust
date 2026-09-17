@@ -8,7 +8,8 @@ use std::time::{Duration, Instant};
 use bingle_cli::chat::parse_chat_args;
 use bingle_cli::chat_send::{MessageSender, SendOutcome, SendTarget, retry_pending, send_once};
 use bingle_cli::chat_state::ChatState;
-use bingle_core::api::bingle_api::{BingleError, SendFailureKind};
+use bingle_core::api::bingle_api::{BingleError, SendFailureKind, StartOptions};
+use bingle_local::api::MailboxConfig;
 use bingle_local::api::bingle_local_api::BingleLocalApi;
 use bingle_local::api::bingle_local_api_impl::{BingleApiLocalImpl, LocalApiConfig};
 use bingle_local::api::send_retry::RETRY_BACKOFF;
@@ -96,6 +97,21 @@ fn alice_state() -> (ChatState, TempDir) {
 
 fn bob() -> SendTarget {
     SendTarget::Handle("bob".into())
+}
+
+/// A `ChatState` registered as "alice" whose local store has the store-and-forward SEND gate set as
+/// given and (optionally) a Sidewinder Mailbox configured. Built directly from parts so a test can
+/// exercise the forward-on-give-up path with an arbitrary Mailbox config, without the state-file
+/// bridge's `validate_store_and_forward` (which rejects a gate with no Mailbox). Store is in-memory.
+fn alice_state_gated(send_gate: bool, sidewinder: Option<MailboxConfig>) -> ChatState {
+    let mut local = BingleApiLocalImpl::new(LocalApiConfig {
+        sidewinder,
+        store_and_forward_send: send_gate,
+        ..LocalApiConfig::default()
+    });
+    local.generate_keypair().expect("keypair");
+    local.seed_own_handle_for_tests("alice".to_string());
+    ChatState::from_parts_for_tests(local, StartOptions::new("alice".to_string()))
 }
 
 #[test]
@@ -216,6 +232,66 @@ pub fn retry_keeps_transient_pending_forever_with_backoff() {
     let second = retry_pending(&sender, &mut state, &mut retry_after, t1).expect("attempt");
     assert!(matches!(second.outcome, SendOutcome::Retrying(_)));
     assert_eq!(state.pending_outbound().expect("pending").len(), 1);
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn send_gate_on_failed_send_forwards_to_mailbox_and_stops_retrying() {
+    // Issue #272: with the store-and-forward SEND gate on, a failed direct send to an offline
+    // recipient posts the sealed message to their Sidewinder Mailbox instead of being kept for
+    // retry. Pre-mark the recipient as already posted (test seam) so the forward completes without a
+    // live node, mirroring bingle_local's `a_fully_forwarded_message_stops_retrying_direct_delivery`.
+    let mut state = alice_state_gated(true, Some(MailboxConfig::new("http://localhost:9", "tok")));
+    let ts = state
+        .queue_outbound("bob", "hi while offline")
+        .expect("queue");
+    state.mark_forwarded_for_tests(ts, "bob");
+
+    // The direct send keeps failing (recipient offline), but the forward is the fallback.
+    let sender = MockSender::always(MockResult::Transient("peer offline".into()));
+    let mut retry_after = std::collections::HashMap::new();
+    let outcome = retry_pending(&sender, &mut state, &mut retry_after, Instant::now())
+        .expect("a pending message to attempt");
+
+    assert!(
+        matches!(outcome.outcome, SendOutcome::Forwarded(_)),
+        "expected the message to be reported forwarded to the mailbox, got {:?}",
+        outcome.outcome
+    );
+    // Handed off to the sidechain: no longer pending, marked complete, transient failure cleared.
+    assert!(
+        state.pending_outbound().expect("pending").is_empty(),
+        "a forwarded message is no longer retried directly"
+    );
+    let stored = state
+        .messages()
+        .expect("messages")
+        .into_iter()
+        .find(|m| m.timestamp == ts)
+        .expect("message present");
+    assert_eq!(stored.progress, Some(1.0));
+    assert!(stored.failure_reason.is_none());
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn send_gate_on_but_forward_incomplete_falls_back_to_retry() {
+    // Issue #272: if the Mailbox post cannot complete (here: no reachable Mailbox), the send is not
+    // silently dropped — it falls back to the retry/queue path exactly as with the gate off.
+    let mut state = alice_state_gated(true, None);
+    let sender = MockSender::always(MockResult::Transient("peer offline".into()));
+
+    match send_once(&sender, &mut state, &bob(), "hi", RETRIES_ON) {
+        SendOutcome::Retrying(reason) => assert!(reason.contains("keep retrying"), "got: {reason}"),
+        other => panic!("expected Retrying fallback, got {other:?}"),
+    }
+    let pending = state.pending_outbound().expect("pending");
+    assert_eq!(
+        pending.len(),
+        1,
+        "the message is kept for retry, not dropped"
+    );
+    assert!(pending[0].progress.unwrap_or(1.0) < 1.0);
 }
 
 #[test]
