@@ -305,6 +305,22 @@ impl ChatState {
             .unwrap_or(false)
     }
 
+    /// Whether the store-and-forward RECEIVE gate is on for this session (issue #274). When it is, the
+    /// chat session polls this account's Sidewinder Mailbox (bingle_local read-on-reconnect, #215) on
+    /// connect and on a backstop cycle, so messages held while offline are picked up.
+    pub fn store_and_forward_receive_enabled(&self) -> bool {
+        self.local.store_and_forward_receive()
+    }
+
+    /// Drain this account's Sidewinder Mailbox once, decrypting and storing each held message on the
+    /// local history, and return the batch read this poll (sorted by sent time). A no-op returning an
+    /// empty vector when the receive gate is off or no Sidewinder node is configured. Best-effort: a
+    /// node/keypair problem is logged by bingle_local and surfaces here as an empty batch, never an
+    /// error that would tear down the session. The caller persists via [`save_state`](Self::save_state).
+    pub fn poll_mailbox(&self) -> Result<Vec<Message>, String> {
+        self.local.poll_mailbox().map_err(|e| e.to_string())
+    }
+
     /// Whether the local store currently holds a keypair.
     pub fn has_keypair(&self) -> bool {
         matches!(self.local.get_keypair(), Ok(Some(_)))

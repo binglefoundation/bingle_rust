@@ -225,6 +225,45 @@ pub fn notify_without_value_is_error() {
     );
 }
 
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn poll_interval_defaults_to_none() {
+    // Absent `--poll-interval`, the receive-poll cadence is left unset so the session picks the
+    // default (issue #274).
+    let parsed = parse_chat_args(args(&["alice"])).expect("should parse");
+    assert!(parsed.poll_interval_secs.is_none());
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn poll_interval_parses_secs() {
+    let parsed =
+        parse_chat_args(args(&["alice", "--poll-interval", "30"])).expect("--poll-interval parses");
+    assert_eq!(parsed.poll_interval_secs, Some(30));
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn poll_interval_rejects_non_numeric() {
+    let err = parse_chat_args(args(&["alice", "--poll-interval", "soon"]))
+        .expect_err("a non-numeric --poll-interval should error");
+    assert!(
+        err.contains("--poll-interval"),
+        "error should name the flag; got: {err}"
+    );
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn poll_interval_without_value_is_error() {
+    let err = parse_chat_args(args(&["alice", "--poll-interval"]))
+        .expect_err("--poll-interval needs a value");
+    assert!(
+        err.contains("--poll-interval"),
+        "error should name the flag; got: {err}"
+    );
+}
+
 // The "gate on but no Mailbox configured -> fail loudly" check now lives on `LocalApiConfig`
 // (`validate_store_and_forward`, story #244), which also counts the app-id discovery path as
 // configured — not just the SIDEWINDER_NODE_URL/TOKEN bearer override. It is unit-tested in

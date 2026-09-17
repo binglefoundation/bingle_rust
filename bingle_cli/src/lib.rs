@@ -12,6 +12,8 @@
 #[doc(hidden)]
 pub mod chat;
 #[doc(hidden)]
+pub mod chat_poll;
+#[doc(hidden)]
 pub mod chat_receive;
 #[doc(hidden)]
 pub mod chat_register;
