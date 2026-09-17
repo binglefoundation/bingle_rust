@@ -951,7 +951,10 @@ fn run_chat_session(
             loop {
                 let read = match poll_shared.lock() {
                     Ok(guard) => bingle_cli::chat_poll::poll_once(&guard),
-                    Err(_) => Vec::new(),
+                    Err(e) => {
+                        warn!("chat: state lock poisoned; skipping mailbox poll: {e}");
+                        Vec::new()
+                    }
                 };
                 if !read.is_empty() {
                     // Print each held message above the current prompt, then redraw it — the same
