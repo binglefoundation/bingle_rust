@@ -283,6 +283,28 @@ impl ChatState {
         self.local.get_pending_messages().map_err(|e| e.to_string())
     }
 
+    /// Whether the store-and-forward SEND gate is on for this session (issue #272). When it is, a
+    /// failed direct send is routed to the recipient's Sidewinder Mailbox (bingle_local's
+    /// post-on-give-up, #214) rather than being kept only for direct retry.
+    pub fn store_and_forward_send_enabled(&self) -> bool {
+        self.local.store_and_forward_send()
+    }
+
+    /// Whether the message at `timestamp` has been handed off — delivered directly or posted to the
+    /// recipient's Sidewinder Mailbox — i.e. it is complete (`progress == 1.0`) and carries no
+    /// failure. The send path uses this after recording a failed direct send to tell a
+    /// store-and-forward handoff (the forward succeeded) apart from a still-failing send (issue #272).
+    pub fn is_handed_off(&self, timestamp: i64) -> bool {
+        self.local
+            .get_messages()
+            .ok()
+            .into_iter()
+            .flatten()
+            .find(|m| m.timestamp == timestamp)
+            .map(|m| m.progress == Some(1.0) && m.failure_reason.is_none())
+            .unwrap_or(false)
+    }
+
     /// Whether the local store currently holds a keypair.
     pub fn has_keypair(&self) -> bool {
         matches!(self.local.get_keypair(), Ok(Some(_)))
@@ -384,6 +406,27 @@ impl ChatState {
             })?;
         // Persist the registered keypair + handle so later runs need no --passphrase/--handle.
         self.save_state().map_err(RegisterError::Other)
+    }
+
+    /// Test seam: build a `ChatState` directly from an already-configured local store and options,
+    /// bypassing the `--state_file` bridge (and its `validate_store_and_forward`). Lets a test drive
+    /// the send/forward path with an arbitrary Mailbox config and no state file (issue #272).
+    #[doc(hidden)]
+    pub fn from_parts_for_tests(local: BingleApiLocalImpl, opts: StartOptions) -> ChatState {
+        ChatState {
+            local,
+            state_file: None,
+            opts,
+            contacts: HashMap::new(),
+        }
+    }
+
+    /// Test seam: record a `(timestamp, handle)` as already posted to a Mailbox, so a test can drive
+    /// the fully-forwarded handoff without a live Sidewinder node (delegates to the bingle_local
+    /// seam of the same name). Issue #272.
+    #[doc(hidden)]
+    pub fn mark_forwarded_for_tests(&self, timestamp: i64, handle: &str) {
+        self.local.mark_forwarded_for_tests(timestamp, handle);
     }
 }
 

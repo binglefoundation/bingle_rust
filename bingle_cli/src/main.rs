@@ -913,6 +913,10 @@ fn run_chat_session(
                 };
                 match outcome.outcome {
                     SendOutcome::Delivered => println!("\n✓ delivered to {}", outcome.recipient),
+                    SendOutcome::Forwarded(_) => println!(
+                        "\n↪ {} is offline; queued to their mailbox — they'll get it when they reconnect",
+                        outcome.recipient
+                    ),
                     SendOutcome::Failed(reason) => {
                         println!("\n! send to {} failed: {}", outcome.recipient, reason)
                     }
@@ -1030,6 +1034,10 @@ fn run_chat_session(
                     // the transcript entry. Only surface failures.
                     match outcome {
                         SendOutcome::Delivered => {}
+                        SendOutcome::Forwarded(_) => println!(
+                            "↪ {} is offline; queued to their mailbox — they'll get it when they reconnect",
+                            target.label()
+                        ),
                         SendOutcome::Retrying(reason) => println!(
                             "! send to {} not delivered ({}); will keep retrying…",
                             target.label(),
