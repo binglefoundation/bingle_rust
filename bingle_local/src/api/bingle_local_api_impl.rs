@@ -484,6 +484,230 @@ pub fn status_or_last_known(
     Err(err)
 }
 
+/// `&self` cores for the store's mutating operations. The [`BingleLocalApi`] trait declares these
+/// with a `&mut self` receiver, but the store is entirely interior-mutable (every field is a
+/// `Mutex`), so the actual work needs only a shared reference. Exposing `&self` cores lets a caller
+/// that holds the store behind an `Arc<BingleApiLocalImpl>` — the `chat` session shares one store
+/// between the interactive loop and its background Mailbox poller — mutate it without a coarse outer
+/// lock. The trait methods delegate here; behaviour is unchanged (`register_keypair` is already
+/// `&self` for the same reason).
+impl BingleApiLocalImpl {
+    /// `&self` core of [`BingleLocalApi::add_contact`].
+    pub fn add_contact_shared(
+        &self,
+        handle: String,
+        id: String,
+        source: ContactSource,
+    ) -> Result<(), BingleError> {
+        tracing::info!(
+            "[BingleLocalApi] Adding contact: handle={}, id={}, source={:?}",
+            handle,
+            id,
+            source
+        );
+        // Validate inputs
+        if handle.trim().is_empty() {
+            return Err(BingleError::Other("handle cannot be empty".to_string()));
+        }
+        if id.trim().is_empty() {
+            return Err(BingleError::Other("id cannot be empty".to_string()));
+        }
+
+        let mut map = match self.contacts.lock() {
+            Ok(g) => g,
+            Err(e) => {
+                let msg = format!("mutex poisoned: {}", e);
+                tracing::error!("[add_contact] Failed to lock contacts: {}", msg);
+                return Err(BingleError::Other(msg));
+            }
+        };
+        if map.contains_key(&id) {
+            return Err(BingleError::Other("contact already exists".to_string()));
+        }
+        map.insert(id, (handle, source, false));
+        Ok(())
+    }
+
+    /// `&self` core of [`BingleLocalApi::add_message`].
+    pub fn add_message_shared(
+        &self,
+        sender_handle: String,
+        recipient_handles: Vec<String>,
+        timestamp: i64,
+        text: String,
+        cipher_suite: Option<String>,
+    ) -> Result<(), BingleError> {
+        tracing::debug!(
+            "[BingleLocalApi] Adding message from: {} to: {:?}",
+            sender_handle,
+            recipient_handles
+        );
+        // Basic input validation
+        if sender_handle.trim().is_empty() {
+            return Err(BingleError::Other(
+                "sender_handle cannot be empty".to_string(),
+            ));
+        }
+        if recipient_handles.is_empty() {
+            return Err(BingleError::Other(
+                "recipient_handles cannot be empty".to_string(),
+            ));
+        }
+        if recipient_handles.iter().any(|h| h.trim().is_empty()) {
+            return Err(BingleError::Other(
+                "recipient_handles cannot contain empty handles".to_string(),
+            ));
+        }
+        if text.trim().is_empty() {
+            return Err(BingleError::Other("text cannot be empty".to_string()));
+        }
+
+        let msg = Message {
+            sender_handle,
+            recipient_handles,
+            timestamp,
+            text,
+            cipher_suite,
+            progress: Some(1.0),
+            failure_reason: None,
+            failure_kind: None,
+            sent_time: None,
+            delivered_time: None,
+            signature: None,
+        };
+        let mut guard = match self.messages.lock() {
+            Ok(g) => g,
+            Err(e) => {
+                let msg = format!("mutex poisoned: {}", e);
+                tracing::error!("[add_message] Failed to lock messages: {}", msg);
+                return Err(BingleError::Other(msg));
+            }
+        };
+        guard.push(msg);
+        Ok(())
+    }
+
+    /// `&self` core of [`BingleLocalApi::update_message_status`].
+    pub fn update_message_status_shared(
+        &self,
+        timestamp: i64,
+        progress: f32,
+        failure_reason: Option<String>,
+        failure_kind: Option<SendFailureKind>,
+    ) -> Result<(), BingleError> {
+        let mut guard = match self.messages.lock() {
+            Ok(g) => g,
+            Err(e) => {
+                let msg = format!("mutex poisoned: {}", e);
+                tracing::error!("[update_message_status] Failed to lock messages: {}", msg);
+                return Err(BingleError::Other(msg));
+            }
+        };
+
+        // Fire the notify nudge whenever a send reports a failure — the recipient is unreachable and
+        // still retrying (progress < 1.0), or the send has terminally given up (progress >= 1.0).
+        // Waking an offline recipient with a content-free push lets the pending retries land, so the
+        // nudge must fire while the message is still unreachable, not only on give-up (which, for a
+        // transient "keep retrying" failure, never happens) — bingle_notify #11/#17. A successful
+        // send (progress 1.0, no failure_reason) never nudges. Dedup happens below.
+        let failed_recipients = {
+            if let Some(msg) = guard.iter_mut().find(|m| m.timestamp == timestamp) {
+                msg.progress = Some(progress);
+                if failure_reason.is_some() || progress >= 1.0 {
+                    msg.failure_reason = failure_reason;
+                    // Keep the typed cause in lockstep with the reason: set on failure, cleared on
+                    // a successful/terminal send with no reason (issue #99).
+                    msg.failure_kind = failure_kind;
+                }
+                if msg.failure_reason.is_some() {
+                    Some((
+                        msg.timestamp,
+                        msg.recipient_handles.clone(),
+                        msg.text.clone(),
+                    ))
+                } else {
+                    None
+                }
+            } else {
+                return Err(BingleError::Other(format!(
+                    "Message with timestamp {} not found",
+                    timestamp
+                )));
+            }
+        };
+        // Release the messages lock before nudging: notify_giveup takes other locks (keypair /
+        // algo_ops) and hands off to the poster, which must not run under the messages lock.
+        drop(guard);
+        if let Some((ts, recipients, text)) = failed_recipients {
+            // Nudge at most once per message: HashSet::insert returns true only the first time this
+            // timestamp is seen, so repeated retries of the same unreachable message don't re-nudge.
+            let first_nudge = match self.nudged_messages.lock() {
+                Ok(mut nudged) => nudged.insert(ts),
+                Err(e) => {
+                    tracing::error!(
+                        "[update_message_status] Failed to lock nudged_messages: {}",
+                        e
+                    );
+                    false
+                }
+            };
+            if first_nudge {
+                self.notify_giveup(&recipients);
+            }
+            // Store-and-forward post-on-delivery-fail (#214): post the sealed message to each
+            // recipient's Sidewinder Mailbox so it survives until they reconnect. Runs on each failed
+            // retry but is idempotent per recipient, so it posts once per recipient and retries only
+            // recipients whose post has not yet succeeded. Gated + best-effort; never affects delivery.
+            let fully_forwarded = self.forward_message_to_mailbox(ts, &recipients, &text);
+            if fully_forwarded {
+                // The message is now safely in every recipient's Mailbox, so stop retrying direct
+                // Bingle delivery: mark it complete and clear the transient failure. The recipient
+                // reads it from the Mailbox on reconnect (#215).
+                if let Ok(mut guard) = self.messages.lock() {
+                    if let Some(m) = guard.iter_mut().find(|m| m.timestamp == ts) {
+                        m.progress = Some(1.0);
+                        m.failure_reason = None;
+                        m.failure_kind = None;
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// `&self` core of [`BingleLocalApi::import_keypair`].
+    pub fn import_keypair_shared(&self, passphrase: String) -> Result<Keypair, BingleError> {
+        tracing::info!("[BingleLocalApi] Importing keypair from passphrase");
+        // Validate the mnemonic and derive the account id. The passphrase itself is never logged.
+        let id = AlgoOps::address_from_passphrase(&passphrase)
+            .map_err(|e| BingleError::Other(e.to_string()))?;
+        let kp = Keypair { id, passphrase };
+        tracing::info!("[BingleLocalApi] Imported keypair with id: {}", kp.id);
+        if let Ok(mut guard) = self.keypair.lock() {
+            *guard = Some(kp.clone());
+        }
+        // The imported account's on-chain state is unknown (it may already be registered), so
+        // clear the memoized ACTIVE handle/status and let keypair_status re-resolve from chain.
+        if let Ok(mut g) = self.own_handle.lock() {
+            *g = None;
+        }
+        if let Ok(mut g) = self.own_handle_app_id.lock() {
+            *g = None;
+        }
+        if let Ok(mut g) = self.live_app_confirmed.lock() {
+            *g = None;
+        }
+        if let Ok(mut g) = self.last_status.lock() {
+            *g = None;
+        }
+        // Invalidate cached AlgoOps since keypair changed
+        if let Ok(mut ops_guard) = self.algo_ops.lock() {
+            *ops_guard = None;
+        }
+        Ok(kp)
+    }
+}
+
 impl BingleLocalApi for BingleApiLocalImpl {
     fn generate_keypair(&mut self) -> Result<Keypair, BingleError> {
         tracing::info!("[BingleLocalApi] Generating new keypair");
@@ -515,34 +739,7 @@ impl BingleLocalApi for BingleApiLocalImpl {
     }
 
     fn import_keypair(&mut self, passphrase: String) -> Result<Keypair, BingleError> {
-        tracing::info!("[BingleLocalApi] Importing keypair from passphrase");
-        // Validate the mnemonic and derive the account id. The passphrase itself is never logged.
-        let id = AlgoOps::address_from_passphrase(&passphrase)
-            .map_err(|e| BingleError::Other(e.to_string()))?;
-        let kp = Keypair { id, passphrase };
-        tracing::info!("[BingleLocalApi] Imported keypair with id: {}", kp.id);
-        if let Ok(mut guard) = self.keypair.lock() {
-            *guard = Some(kp.clone());
-        }
-        // The imported account's on-chain state is unknown (it may already be registered), so
-        // clear the memoized ACTIVE handle/status and let keypair_status re-resolve from chain.
-        if let Ok(mut g) = self.own_handle.lock() {
-            *g = None;
-        }
-        if let Ok(mut g) = self.own_handle_app_id.lock() {
-            *g = None;
-        }
-        if let Ok(mut g) = self.live_app_confirmed.lock() {
-            *g = None;
-        }
-        if let Ok(mut g) = self.last_status.lock() {
-            *g = None;
-        }
-        // Invalidate cached AlgoOps since keypair changed
-        if let Ok(mut ops_guard) = self.algo_ops.lock() {
-            *ops_guard = None;
-        }
-        Ok(kp)
+        self.import_keypair_shared(passphrase)
     }
 
     fn register_keypair(&self, handle: String) -> Result<bool, BingleError> {
@@ -734,33 +931,7 @@ impl BingleLocalApi for BingleApiLocalImpl {
         id: String,
         source: ContactSource,
     ) -> Result<(), BingleError> {
-        tracing::info!(
-            "[BingleLocalApi] Adding contact: handle={}, id={}, source={:?}",
-            handle,
-            id,
-            source
-        );
-        // Validate inputs
-        if handle.trim().is_empty() {
-            return Err(BingleError::Other("handle cannot be empty".to_string()));
-        }
-        if id.trim().is_empty() {
-            return Err(BingleError::Other("id cannot be empty".to_string()));
-        }
-
-        let mut map = match self.contacts.lock() {
-            Ok(g) => g,
-            Err(e) => {
-                let msg = format!("mutex poisoned: {}", e);
-                tracing::error!("[add_contact] Failed to lock contacts: {}", msg);
-                return Err(BingleError::Other(msg));
-            }
-        };
-        if map.contains_key(&id) {
-            return Err(BingleError::Other("contact already exists".to_string()));
-        }
-        map.insert(id, (handle, source, false));
-        Ok(())
+        self.add_contact_shared(handle, id, source)
     }
 
     fn block_contact(&mut self, id: String) -> Result<(), BingleError> {
@@ -850,54 +1021,13 @@ impl BingleLocalApi for BingleApiLocalImpl {
         text: String,
         cipher_suite: Option<String>,
     ) -> Result<(), BingleError> {
-        tracing::debug!(
-            "[BingleLocalApi] Adding message from: {} to: {:?}",
-            sender_handle,
-            recipient_handles
-        );
-        // Basic input validation
-        if sender_handle.trim().is_empty() {
-            return Err(BingleError::Other(
-                "sender_handle cannot be empty".to_string(),
-            ));
-        }
-        if recipient_handles.is_empty() {
-            return Err(BingleError::Other(
-                "recipient_handles cannot be empty".to_string(),
-            ));
-        }
-        if recipient_handles.iter().any(|h| h.trim().is_empty()) {
-            return Err(BingleError::Other(
-                "recipient_handles cannot contain empty handles".to_string(),
-            ));
-        }
-        if text.trim().is_empty() {
-            return Err(BingleError::Other("text cannot be empty".to_string()));
-        }
-
-        let msg = Message {
+        self.add_message_shared(
             sender_handle,
             recipient_handles,
             timestamp,
             text,
             cipher_suite,
-            progress: Some(1.0),
-            failure_reason: None,
-            failure_kind: None,
-            sent_time: None,
-            delivered_time: None,
-            signature: None,
-        };
-        let mut guard = match self.messages.lock() {
-            Ok(g) => g,
-            Err(e) => {
-                let msg = format!("mutex poisoned: {}", e);
-                tracing::error!("[add_message] Failed to lock messages: {}", msg);
-                return Err(BingleError::Other(msg));
-            }
-        };
-        guard.push(msg);
-        Ok(())
+        )
     }
 
     fn queue_message(
@@ -965,84 +1095,7 @@ impl BingleLocalApi for BingleApiLocalImpl {
         failure_reason: Option<String>,
         failure_kind: Option<SendFailureKind>,
     ) -> Result<(), BingleError> {
-        let mut guard = match self.messages.lock() {
-            Ok(g) => g,
-            Err(e) => {
-                let msg = format!("mutex poisoned: {}", e);
-                tracing::error!("[update_message_status] Failed to lock messages: {}", msg);
-                return Err(BingleError::Other(msg));
-            }
-        };
-
-        // Fire the notify nudge whenever a send reports a failure — the recipient is unreachable and
-        // still retrying (progress < 1.0), or the send has terminally given up (progress >= 1.0).
-        // Waking an offline recipient with a content-free push lets the pending retries land, so the
-        // nudge must fire while the message is still unreachable, not only on give-up (which, for a
-        // transient "keep retrying" failure, never happens) — bingle_notify #11/#17. A successful
-        // send (progress 1.0, no failure_reason) never nudges. Dedup happens below.
-        let failed_recipients = {
-            if let Some(msg) = guard.iter_mut().find(|m| m.timestamp == timestamp) {
-                msg.progress = Some(progress);
-                if failure_reason.is_some() || progress >= 1.0 {
-                    msg.failure_reason = failure_reason;
-                    // Keep the typed cause in lockstep with the reason: set on failure, cleared on
-                    // a successful/terminal send with no reason (issue #99).
-                    msg.failure_kind = failure_kind;
-                }
-                if msg.failure_reason.is_some() {
-                    Some((
-                        msg.timestamp,
-                        msg.recipient_handles.clone(),
-                        msg.text.clone(),
-                    ))
-                } else {
-                    None
-                }
-            } else {
-                return Err(BingleError::Other(format!(
-                    "Message with timestamp {} not found",
-                    timestamp
-                )));
-            }
-        };
-        // Release the messages lock before nudging: notify_giveup takes other locks (keypair /
-        // algo_ops) and hands off to the poster, which must not run under the messages lock.
-        drop(guard);
-        if let Some((ts, recipients, text)) = failed_recipients {
-            // Nudge at most once per message: HashSet::insert returns true only the first time this
-            // timestamp is seen, so repeated retries of the same unreachable message don't re-nudge.
-            let first_nudge = match self.nudged_messages.lock() {
-                Ok(mut nudged) => nudged.insert(ts),
-                Err(e) => {
-                    tracing::error!(
-                        "[update_message_status] Failed to lock nudged_messages: {}",
-                        e
-                    );
-                    false
-                }
-            };
-            if first_nudge {
-                self.notify_giveup(&recipients);
-            }
-            // Store-and-forward post-on-delivery-fail (#214): post the sealed message to each
-            // recipient's Sidewinder Mailbox so it survives until they reconnect. Runs on each failed
-            // retry but is idempotent per recipient, so it posts once per recipient and retries only
-            // recipients whose post has not yet succeeded. Gated + best-effort; never affects delivery.
-            let fully_forwarded = self.forward_message_to_mailbox(ts, &recipients, &text);
-            if fully_forwarded {
-                // The message is now safely in every recipient's Mailbox, so stop retrying direct
-                // Bingle delivery: mark it complete and clear the transient failure. The recipient
-                // reads it from the Mailbox on reconnect (#215).
-                if let Ok(mut guard) = self.messages.lock() {
-                    if let Some(m) = guard.iter_mut().find(|m| m.timestamp == ts) {
-                        m.progress = Some(1.0);
-                        m.failure_reason = None;
-                        m.failure_kind = None;
-                    }
-                }
-            }
-        }
-        Ok(())
+        self.update_message_status_shared(timestamp, progress, failure_reason, failure_kind)
     }
 
     fn get_pending_messages(&self) -> Result<Vec<Message>, BingleError> {

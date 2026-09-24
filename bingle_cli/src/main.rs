@@ -877,14 +877,24 @@ fn run_chat_session(
 
     // Ctrl-C / SIGTERM: the main thread blocks on stdin, so the signal handler itself performs the
     // clean shutdown (stop + final save) and exits.
+    //
+    // The final save runs on the shared local store handle, NOT the session lock. A background poll can
+    // hold the session state for the length of its network wait (up to 120s, issue #274); the handler
+    // used to block on that lock, so Ctrl-C/SIGTERM could not exit until the poll finished — leaving
+    // `kill -9` as the only way out (issue #276). `save` (`&self`) touches only the store's own
+    // short-lived internal locks and never waits on the network, so the handler now always exits
+    // promptly.
     {
         let api_sig = api.clone();
-        let shared_sig = shared.clone();
+        let (handler_local, handler_state_file) = match shared.lock() {
+            Ok(guard) => (Some(guard.local_handle()), guard.state_file_path()),
+            Err(_) => (None, None),
+        };
         if let Err(e) = ctrlc::set_handler(move || {
             tracing::info!("chat: received signal; shutting down");
             api_sig.access(|api_mut| api_mut.stop());
-            if let Ok(guard) = shared_sig.lock() {
-                let _ = guard.save_state();
+            if let Some(local) = &handler_local {
+                bingle_cli::chat_poll::save_shared(local, handler_state_file.as_deref());
             }
             std::process::exit(0);
         }) {
@@ -939,23 +949,25 @@ fn run_chat_session(
     // this account's Sidewinder Mailbox now (it may have been offline) and then every `poll_interval`,
     // so messages held while offline are picked up and shown like real-time ones. `poll_once` is a
     // no-op when the gate is off, but we only spawn the thread when it is on to avoid an idle wake-up.
-    let receive_enabled = match shared.lock() {
-        Ok(guard) => guard.store_and_forward_receive_enabled(),
-        Err(_) => false,
+    // Take a clone of the shared local store handle (and the state-file path) up front, so the poller
+    // runs off the session lock. Holding the session lock across a poll — whose network wait can be up
+    // to 120s — froze the REPL and, worse, blocked Ctrl-C/SIGTERM shutdown behind the in-flight poll
+    // (issue #276). The store is interior-mutable, so a poll and a concurrent interactive send are safe.
+    let (receive_enabled, poll_local, poll_state_file) = match shared.lock() {
+        Ok(guard) => (
+            guard.store_and_forward_receive_enabled(),
+            Some(guard.local_handle()),
+            guard.state_file_path(),
+        ),
+        Err(_) => (false, None, None),
     };
-    if receive_enabled {
-        let poll_shared = shared.clone();
+    if let (true, Some(poll_local)) = (receive_enabled, poll_local) {
         let poll_prompt = prompt_line.clone();
         std::thread::spawn(move || {
             tracing::info!("chat: mailbox poller started (every {:?})", poll_interval);
             loop {
-                let read = match poll_shared.lock() {
-                    Ok(guard) => bingle_cli::chat_poll::poll_once(&guard),
-                    Err(e) => {
-                        warn!("chat: state lock poisoned; skipping mailbox poll: {e}");
-                        Vec::new()
-                    }
-                };
+                let read =
+                    bingle_cli::chat_poll::poll_shared(&poll_local, poll_state_file.as_deref());
                 if !read.is_empty() {
                     // Print each held message above the current prompt, then redraw it — the same
                     // presentation as a real-time message.
