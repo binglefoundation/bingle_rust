@@ -12,6 +12,7 @@
 
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use bingle_core::api::bingle_api::{BingleError, SendFailureKind, StartOptions};
@@ -39,8 +40,15 @@ pub enum RegisterError {
 /// Holds the concrete [`BingleApiLocalImpl`] so mutations (new contacts, message history) can be
 /// written back to the same file via [`save_state`](ChatState::save_state).
 pub struct ChatState {
-    /// Owned local store: keypair, contacts and messages loaded from (and saved back to) the file.
-    local: BingleApiLocalImpl,
+    /// The local store (keypair, contacts and messages) loaded from — and saved back to — the file.
+    ///
+    /// Held behind an [`Arc`] so the background Mailbox poller (issue #274) can share the one store
+    /// and run [`poll_mailbox`](Self::poll_mailbox) / [`save_state`](Self::save_state) off the
+    /// session lock — a poll's network wait can be up to 120s, and holding the session lock across it
+    /// froze the REPL and blocked Ctrl-C/SIGTERM shutdown (issue #276). The store is fully
+    /// interior-mutable, so the `&mut self`-declared trait mutations are reached via their `&self`
+    /// cores (`*_shared`).
+    local: Arc<BingleApiLocalImpl>,
     /// Path to persist to on [`save_state`](ChatState::save_state); `None` when no `--state_file`
     /// was given (state is in-memory only for this run).
     state_file: Option<String>,
@@ -151,11 +159,26 @@ impl ChatState {
         // account status. Callers that need a definitely-registered handle go through that flow.
 
         Ok(ChatState {
-            local,
+            // All `&mut self` setup (the state-file `load` above) is done; wrap the store so it can be
+            // shared with the background poller (issue #274) from here on.
+            local: Arc::new(local),
             state_file,
             opts,
             contacts,
         })
+    }
+
+    /// A shared handle to the local store, for the background Mailbox poller (issue #274). The poller
+    /// runs [`poll_mailbox`](Self::poll_mailbox) / [`save_state`](Self::save_state)-equivalent calls on
+    /// this handle off the session lock, so a slow poll never freezes the REPL or blocks shutdown
+    /// (issue #276). See [`poll_shared`](crate::chat_poll::poll_shared).
+    pub fn local_handle(&self) -> Arc<BingleApiLocalImpl> {
+        Arc::clone(&self.local)
+    }
+
+    /// The configured `--state_file` path (if any), so the poller can persist reads on its own handle.
+    pub fn state_file_path(&self) -> Option<String> {
+        self.state_file.clone()
     }
 
     /// Persist the current local state back to the `--state_file`. A no-op (returns `Ok`) when no
@@ -180,8 +203,10 @@ impl ChatState {
         text: &str,
         cipher_suite: Option<String>,
     ) -> Result<Message, String> {
+        // The store is shared via `Arc`, so the `&mut self`-declared trait mutations are reached
+        // through their `&self` cores (`*_shared`); see [`ChatState::local`].
         self.local
-            .add_message(
+            .add_message_shared(
                 sender_handle.to_string(),
                 recipient_handles,
                 timestamp,
@@ -214,7 +239,7 @@ impl ChatState {
     /// [`save_state`](ChatState::save_state).
     pub fn add_received_contact(&mut self, handle: &str, id: &str) -> Result<(), String> {
         self.local
-            .add_contact(handle.to_string(), id.to_string(), ContactSource::Received)
+            .add_contact_shared(handle.to_string(), id.to_string(), ContactSource::Received)
             .map_err(|e| e.to_string())?;
         self.contacts.insert(handle.to_string(), id.to_string());
         Ok(())
@@ -238,7 +263,7 @@ impl ChatState {
         // add_message records it delivered (progress 1.0); immediately mark it pending so the retry
         // path owns its lifecycle.
         self.local
-            .add_message(
+            .add_message_shared(
                 sender,
                 vec![recipient_handle.to_string()],
                 timestamp,
@@ -247,7 +272,7 @@ impl ChatState {
             )
             .map_err(|e| e.to_string())?;
         self.local
-            .update_message_status(timestamp, 0.0, None, None)
+            .update_message_status_shared(timestamp, 0.0, None, None)
             .map_err(|e| e.to_string())?;
         self.save_state()?;
         Ok(timestamp)
@@ -256,7 +281,7 @@ impl ChatState {
     /// Mark a previously queued outbound message (by `timestamp`) delivered, and save.
     pub fn mark_delivered(&mut self, timestamp: i64) -> Result<(), String> {
         self.local
-            .update_message_status(timestamp, 1.0, None, None)
+            .update_message_status_shared(timestamp, 1.0, None, None)
             .map_err(|e| e.to_string())?;
         self.save_state()
     }
@@ -273,7 +298,12 @@ impl ChatState {
     ) -> Result<(), String> {
         let progress = if permanent { 1.0 } else { 0.0 };
         self.local
-            .update_message_status(timestamp, progress, Some(reason.to_string()), failure_kind)
+            .update_message_status_shared(
+                timestamp,
+                progress,
+                Some(reason.to_string()),
+                failure_kind,
+            )
             .map_err(|e| e.to_string())?;
         self.save_state()
     }
@@ -330,7 +360,7 @@ impl ChatState {
     /// the first-run flow when the state file has no keypair. Never logs the passphrase.
     pub fn import_keypair(&mut self, passphrase: &str) -> Result<(), String> {
         self.local
-            .import_keypair(passphrase.to_string())
+            .import_keypair_shared(passphrase.to_string())
             .map(|_keypair| ())
             .map_err(|e| e.to_string())
     }
@@ -430,7 +460,7 @@ impl ChatState {
     #[doc(hidden)]
     pub fn from_parts_for_tests(local: BingleApiLocalImpl, opts: StartOptions) -> ChatState {
         ChatState {
-            local,
+            local: Arc::new(local),
             state_file: None,
             opts,
             contacts: HashMap::new(),

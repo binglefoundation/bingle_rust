@@ -3,7 +3,9 @@
 // cover the interval resolution and the receive-gate no-op, which need no live node.
 use std::time::Duration;
 
-use bingle_cli::chat_poll::{DEFAULT_MAILBOX_POLL_SECS, poll_once, resolve_poll_interval};
+use bingle_cli::chat_poll::{
+    DEFAULT_MAILBOX_POLL_SECS, poll_once, poll_shared, resolve_poll_interval,
+};
 use bingle_cli::chat_state::ChatState;
 use bingle_core::api::bingle_api::StartOptions;
 use bingle_local::api::MailboxConfig;
@@ -62,5 +64,39 @@ pub fn poll_once_is_noop_when_receive_gate_off() {
     assert!(
         poll_once(&state).is_empty(),
         "with the receive gate off, a poll reads nothing"
+    );
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn poll_shared_is_noop_when_receive_gate_off() {
+    // The off-lock poller/shutdown entry point (issue #276) is gate-checked exactly like `poll_once`:
+    // with the receive gate off it reads nothing and contacts no node.
+    let state = alice_state_receive(false);
+    let local = state.local_handle();
+    assert!(
+        poll_shared(&local, None).is_empty(),
+        "with the receive gate off, an off-lock poll reads nothing"
+    );
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn local_handle_shares_the_one_store() {
+    // The fix for issue #276 has the background poller and the Ctrl-C/SIGTERM save run on
+    // `local_handle()` off the session lock. That is only correct if the handle is the SAME store the
+    // interactive session mutates — a copy would lose polled messages and final saves. Prove the
+    // sharing: a contact added through the session is visible on the handle.
+    let mut state = alice_state_receive(true);
+    let handle = state.local_handle();
+    state
+        .add_received_contact("bob", "BOB_ID")
+        .expect("add contact through the session");
+    let seen = handle
+        .get_contacts()
+        .expect("read contacts on the shared handle");
+    assert!(
+        seen.iter().any(|c| c.handle == "bob" && c.id == "BOB_ID"),
+        "a contact added through the session must be visible on the shared handle"
     );
 }
