@@ -44,8 +44,9 @@ cd "$ROOT_DIR"
 
 # The tmp root that bounds every out-of-repo deletion. The native build scripts
 # (bingle_jsi/scripts/build_*.sh) write their caches under /var/tmp; keep these in
-# sync. Nothing outside this root is ever rm -rf'd.
-TMP_ROOT="/var/tmp"
+# sync. `readonly` so it is a fixed constant — every `rm -rf` below names
+# "$TMP_ROOT/<relative>" literally, so nothing outside this root can ever be removed.
+readonly TMP_ROOT="/var/tmp"
 
 # Discover the native cache locations, honouring the same env overrides the build
 # scripts use — but see remove_under_tmp: a location that resolves outside $TMP_ROOT
@@ -64,11 +65,15 @@ resolve_dir() {
   fi
 }
 
-# rm -rf a directory ONLY if it resolves to a location strictly under $TMP_ROOT.
-# This is the safety net: a mis-set CARGO_TARGET_DIR / BINGLE_NATIVE_CARGO_HOME (or
-# a bad expansion) pointing outside the tmp root is refused rather than deleted.
+# rm -rf a native cache dir, but only ever a path spelled "$TMP_ROOT/<relative>".
+# We resolve the (possibly env-overridden) location, reject anything that does not sit
+# strictly under $TMP_ROOT, reduce it to its relative remainder under the root, and
+# delete "$TMP_ROOT/$rel". The rm target is thus built from the readonly tmp root plus
+# a relative sub-path — statically confined to the tmp root — rather than a bare
+# resolved absolute path. A mis-set CARGO_TARGET_DIR / BINGLE_NATIVE_CARGO_HOME (or a
+# bad expansion) pointing outside the tmp root is refused, never deleted.
 remove_under_tmp() {
-  local p="$1" real root
+  local p="$1" real root rel
   real="$(resolve_dir "$p")"
   if [[ -z "$real" ]]; then
     echo "    skip (absent): $p"
@@ -79,12 +84,21 @@ remove_under_tmp() {
     echo "    REFUSING '$p' (resolved '$real'): not under tmp root '$TMP_ROOT'" >&2
     return
   fi
-  local size; size="$(size_of "$real")"
+  # The remainder of the resolved path below the tmp root. `real` comes from `pwd -P`,
+  # so it is symlink- and `..`-free, and the check above proved it starts with "$root/";
+  # `rel` is therefore a non-empty relative path. Re-validate defensively (no leading
+  # slash, no `..` component) before it is spliced back after the constant root.
+  rel="${real#"$root"/}"
+  if [[ -z "$rel" || "$rel" = /* || "/$rel/" == *"/../"* ]]; then
+    echo "    REFUSING '$p' (resolved '$real'): unsafe relative path '$rel'" >&2
+    return
+  fi
+  local size; size="$(size_of "$TMP_ROOT/$rel")"
   if [[ $DRY_RUN -eq 1 ]]; then
-    echo "    would remove:  $real ($size)"
+    echo "    would remove:  $TMP_ROOT/$rel ($size)"
   else
-    echo "    removing:      $real ($size)"
-    rm -rf "$real"
+    echo "    removing:      $TMP_ROOT/$rel ($size)"
+    rm -rf "$TMP_ROOT/$rel"
   fi
 }
 
