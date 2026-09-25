@@ -92,7 +92,9 @@ pub fn local_handle_shares_the_one_store() {
     state
         .add_received_contact("bob", "BOB_ID")
         .expect("add contact through the session");
-    let seen = handle.get_contacts().expect("read contacts on the shared handle");
+    let seen = handle
+        .get_contacts()
+        .expect("read contacts on the shared handle");
     assert!(
         seen.iter().any(|c| c.handle == "bob" && c.id == "BOB_ID"),
         "a contact added through the session must be visible on the shared handle"
