@@ -44,8 +44,9 @@ cd "$ROOT_DIR"
 
 # The tmp root that bounds every out-of-repo deletion. The native build scripts
 # (bingle_jsi/scripts/build_*.sh) write their caches under /var/tmp; keep these in
-# sync. `readonly` so it is a fixed constant — every `rm -rf` below names
-# "$TMP_ROOT/<relative>" literally, so nothing outside this root can ever be removed.
+# sync. `readonly` so it is a fixed constant. Note remove_under_tmp deliberately spells
+# its `rm -rf` target with the /var/tmp/ literal (not this variable), so the deletion is
+# confined at a glance; this must therefore stay equal to /var/tmp.
 readonly TMP_ROOT="/var/tmp"
 
 # Discover the native cache locations, honouring the same env overrides the build
@@ -65,13 +66,15 @@ resolve_dir() {
   fi
 }
 
-# rm -rf a native cache dir, but only ever a path spelled "$TMP_ROOT/<relative>".
+# rm -rf a native cache dir, but only ever a path spelled with a literal /var/tmp/ prefix.
 # We resolve the (possibly env-overridden) location, reject anything that does not sit
-# strictly under $TMP_ROOT, reduce it to its relative remainder under the root, and
-# delete "$TMP_ROOT/$rel". The rm target is thus built from the readonly tmp root plus
-# a relative sub-path — statically confined to the tmp root — rather than a bare
-# resolved absolute path. A mis-set CARGO_TARGET_DIR / BINGLE_NATIVE_CARGO_HOME (or a
-# bad expansion) pointing outside the tmp root is refused, never deleted.
+# strictly under $TMP_ROOT, reduce it to its relative remainder under the root, and delete
+# "/var/tmp/$rel". The deletion command names /var/tmp/ literally — not a variable, not the
+# resolved absolute path — so a reader can see, with no cross-referencing, that it cannot
+# remove anything outside /var/tmp. TMP_ROOT is fixed at /var/tmp (see above), so the literal
+# and $TMP_ROOT are the same directory; the literal is used here on purpose, for that
+# at-a-glance guarantee. A mis-set CARGO_TARGET_DIR / BINGLE_NATIVE_CARGO_HOME (or a bad
+# expansion) pointing outside the tmp root is refused, never deleted.
 remove_under_tmp() {
   local p="$1" real root rel
   real="$(resolve_dir "$p")"
@@ -87,18 +90,18 @@ remove_under_tmp() {
   # The remainder of the resolved path below the tmp root. `real` comes from `pwd -P`,
   # so it is symlink- and `..`-free, and the check above proved it starts with "$root/";
   # `rel` is therefore a non-empty relative path. Re-validate defensively (no leading
-  # slash, no `..` component) before it is spliced back after the constant root.
+  # slash, no `..` component) before it is spliced after the literal /var/tmp/ prefix.
   rel="${real#"$root"/}"
   if [[ -z "$rel" || "$rel" = /* || "/$rel/" == *"/../"* ]]; then
     echo "    REFUSING '$p' (resolved '$real'): unsafe relative path '$rel'" >&2
     return
   fi
-  local size; size="$(size_of "$TMP_ROOT/$rel")"
+  local size; size="$(size_of "/var/tmp/$rel")"
   if [[ $DRY_RUN -eq 1 ]]; then
-    echo "    would remove:  $TMP_ROOT/$rel ($size)"
+    echo "    would remove:  /var/tmp/$rel ($size)"
   else
-    echo "    removing:      $TMP_ROOT/$rel ($size)"
-    rm -rf "$TMP_ROOT/$rel"
+    echo "    removing:      /var/tmp/$rel ($size)"
+    rm -rf "/var/tmp/$rel"
   fi
 }
 
