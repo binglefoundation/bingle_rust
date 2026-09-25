@@ -14,6 +14,10 @@
 #         skip the compile / resolution / native-build / dry-run gates and jump
 #         straight to publishing. Use to resume a release whose build already
 #         passed — e.g. to retry just the npm step after a missed 2FA window.
+#   scripts/deploy_code.sh --clean <version>
+#         on success, reclaim the build cache (workspace target/ + the JSI
+#         multi-arch native caches) via scripts/clean_build_cache.sh. The next
+#         build rebuilds from scratch. Never runs under --dry-run or on failure.
 #
 #   NPM_TOKEN=<automation-token>  publish to npm non-interactively (bypasses npm
 #                                 2FA), so an unattended release needs no browser
@@ -55,6 +59,7 @@ SKIP_NATIVE=0
 ALLOW_BEHIND_STAGING=0
 SKIP_RESOLUTION_CHECK=0
 PUBLISH_ONLY=0
+CLEAN_AFTER=0
 VERSION=""
 for arg in "$@"; do
   case "$arg" in
@@ -63,6 +68,7 @@ for arg in "$@"; do
     --allow-behind-staging) ALLOW_BEHIND_STAGING=1 ;;
     --skip-resolution-check) SKIP_RESOLUTION_CHECK=1 ;;
     --publish-only)         PUBLISH_ONLY=1 ;;
+    --clean)                CLEAN_AFTER=1 ;;
     -h|--help)              sed -n '2,20p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
     -*)                     die "unknown option: $arg" ;;
     *)                      [[ -n "$VERSION" ]] && die "unexpected extra argument: $arg"; VERSION="$arg" ;;
@@ -427,3 +433,13 @@ git push origin "$BRANCH"
 git push origin "v$VERSION"
 
 info "release v$VERSION complete: crates.io (${PUBLISH_CRATES[*]}) + npm ($NPM_PKG)"
+
+# Opt-in post-release cleanup: the native (JSI multi-arch) builds above and the
+# workspace target/ leave tens of GB of regenerable cache. With the release fully
+# published and pushed there is nothing left to retry, so it is safe to reclaim it.
+# Only on real success (never under --dry-run, and past the success point here so a
+# failed/abortable release keeps its cache for a resume).
+if [[ $CLEAN_AFTER -eq 1 ]]; then
+  info "cleaning build cache (--clean)"
+  bash "$REPO_ROOT/scripts/clean_build_cache.sh" --yes
+fi
