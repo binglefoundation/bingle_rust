@@ -87,7 +87,13 @@ class BingleJsiBridge: RCTEventEmitter {
                     local: config["local"] as? String,
                     notifyGatewayUrl: config["notify_gateway_url"] as? String,
                     notifyOnGiveup: config["notify_on_giveup"] as? Bool,
-                    notifyEnv: config["notify_env"] as? String
+                    notifyEnv: config["notify_env"] as? String,
+                    sidewinderNodeUrl: config["sidewinder_node_url"] as? String,
+                    sidewinderToken: config["sidewinder_token"] as? String,
+                    storeAndForwardSend: config["store_and_forward_send"] as? Bool,
+                    storeAndForwardReceive: config["store_and_forward_receive"] as? Bool,
+                    storeAndForwardPollIntervalSecs: (config["store_and_forward_poll_interval_secs"] as? NSNumber)?.uint64Value,
+                    sendPendingMessages: config["send_pending_messages"] as? Bool
                 )
                 let api = try createBingleApi(config: jsiConfig)
                 self.apiInstance = api
