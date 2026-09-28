@@ -22,6 +22,11 @@ set -euo pipefail
 #     no internet/DNS needed (all IP-based). Adds a loopback alias via sudo (prompts once on macOS).
 #     Run: BINGLE_E2E_BACKEND=localnet bash bingle_jsi/example/scripts/run_e2e_android.sh
 #
+# Sender selection (issue #283): BINGLE_E2E_SEND_PENDING_MESSAGES=1 runs the network suites with the
+# shared pending-message sender instead of the legacy loop; pending_sender.test.ts always uses it.
+# BINGLE_E2E_STORE_FORWARD=1 also turns on the store-and-forward send gate in that suite (see
+# run_e2e_ios.sh). Both are read from the environment, so export them before running this script.
+#
 # Prerequisites: Android SDK + NDK, a JDK 17, an AVD matching .detoxrc.js (`emulator -list-avds`),
 # Node, Rust with Android targets. Set JAVA_HOME to a JDK 17 (RN 0.84 requires 17) or the script
 # auto-detects one via /usr/libexec/java_home -v 17 on macOS.

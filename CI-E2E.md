@@ -83,6 +83,18 @@ grows materially.
 
       BINGLE_E2E_PASSPHRASE="word word … word" BINGLE_E2E_HANDLE=my-handle bash bingle_jsi/example/scripts/run_e2e_android.sh
 
+### Pending-message sender (issue #283)
+
+- **pending_sender** always inits with `send_pending_messages: true`, so it exercises the shared
+  `bingle_local` sender: delivery with the echo, a message to `BINGLE_E2E_OFFLINE_HANDLE` staying
+  pending with a retryable cause, and the local store staying responsive while that send is in
+  flight. The offline cases skip when `BINGLE_E2E_OFFLINE_HANDLE` is unset. `BINGLE_E2E_STORE_FORWARD=1`
+  also turns on the store-and-forward send gate (Mailbox from the app id, or
+  `BINGLE_E2E_SIDEWINDER_URL` / `BINGLE_E2E_SIDEWINDER_TOKEN`).
+- `BINGLE_E2E_SEND_PENDING_MESSAGES=1` runs **messaging**, **send_variants** and **failure_causes**
+  against the shared sender too (`withSenderSelection` in `e2e/harness.ts`). Unset, they use the
+  legacy loop, which is the default until the app switches over.
+
 ## Run it manually
 
 Dispatch on any branch that has the workflow (add the branch to the `push` trigger, or use the

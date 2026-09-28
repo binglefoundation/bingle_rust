@@ -150,3 +150,15 @@ export async function callExpectingError(command: Command): Promise<string> {
   }
   return output;
 }
+
+/**
+ * Apply the sender selection from the environment to an `init` config (issue #283). With
+ * `BINGLE_E2E_SEND_PENDING_MESSAGES=1` the config gets `send_pending_messages: true`, so a suite runs
+ * against the shared bingle_local pending-message sender instead of the legacy processing loop.
+ * Unset, the config is returned unchanged (legacy loop), so every network suite can run either way.
+ */
+export function withSenderSelection<T extends object>(config: T): T & {send_pending_messages?: boolean} {
+  return process.env.BINGLE_E2E_SEND_PENDING_MESSAGES === '1'
+    ? {...config, send_pending_messages: true}
+    : config;
+}

@@ -16,7 +16,14 @@
  */
 import {describe, it, beforeAll, afterAll} from '@jest/globals';
 import assert from 'assert';
-import {call, textOf, sleep, resolveNetworkInputs, localStatePath} from './harness';
+import {
+  call,
+  textOf,
+  sleep,
+  resolveNetworkInputs,
+  localStatePath,
+  withSenderSelection,
+} from './harness';
 
 const backend = process.env.BINGLE_E2E_BACKEND || 'testnet';
 const passphrase = process.env.BINGLE_E2E_PASSPHRASE || '';
@@ -77,13 +84,13 @@ describeOrSkip(`bingle_jsi messaging (${backend})`, () => {
     await call({
       method: 'init',
       args: [
-        {
+        withSenderSelection({
           handle,
           passphrase,
           node_file: net.node_file,
           stun_servers: net.stun_servers,
           local: localStatePath('bingle_e2e_messaging_state.json'),
-        },
+        }),
       ],
     });
     // init only loads local state + sets the engine passphrase; it does NOT import the passphrase
