@@ -24,7 +24,7 @@ impl BingleApiLocalImpl {
     /// connected over mutual TLS) — a surfaced error, never a panic. The post-on-fail (#214) and
     /// read-on-reconnect (#215) stories call this to reach the Mailbox.
     pub fn get_mailbox(&self) -> Result<sidewinder::Mailbox, BingleError> {
-        let Some(config) = self.config.sidewinder.clone() else {
+        let Some(config) = self.config().sidewinder.clone() else {
             return Err(BingleError::Other(
                 "no sidewinder node configured for store-and-forward".to_string(),
             ));
@@ -37,14 +37,14 @@ impl BingleApiLocalImpl {
     /// path (#214) reads this and, when `false`, behaves exactly as today. Exposed so the gate is
     /// observable by that path and by tests.
     pub fn store_and_forward_send(&self) -> bool {
-        self.config.store_and_forward_send
+        self.config().store_and_forward_send
     }
 
     /// Whether the receive-side store-and-forward gate is on (epic #200, story #212): the
     /// read-on-reconnect path (#215) reads this and, when `false`, does no polling. Exposed so the
     /// gate is observable by that path and by tests.
     pub fn store_and_forward_receive(&self) -> bool {
-        self.config.store_and_forward_receive
+        self.config().store_and_forward_receive
     }
 
     /// Test seam: record a `(timestamp, handle)` as already posted to a Mailbox, so the
@@ -72,7 +72,7 @@ impl BingleApiLocalImpl {
     /// unconfigured (`None`) — without a live node.
     #[doc(hidden)]
     pub fn sidewinder_config_for_tests(&self) -> Option<sidewinder::MailboxConfig> {
-        self.config.sidewinder.clone()
+        self.config().sidewinder.clone()
     }
 
     /// Post a message whose direct delivery failed to each recipient's Sidewinder Mailbox
@@ -96,8 +96,8 @@ impl BingleApiLocalImpl {
         text: &str,
     ) -> bool {
         if !sidewinder::should_forward_send(
-            self.config.store_and_forward_send,
-            self.config.sidewinder.is_some(),
+            self.config().store_and_forward_send,
+            self.config().sidewinder.is_some(),
         ) {
             return false;
         }
@@ -148,7 +148,7 @@ impl BingleApiLocalImpl {
                 return false;
             }
         };
-        let bgl = AlgoBingle::new(ops, self.config.app_id, self.config.asset_id);
+        let bgl = AlgoBingle::new(ops, self.config().app_id, self.config().asset_id);
         // `mut`: post/pop take `&mut self` — on the discovered transport they fail over to another
         // node and re-resolve, which mutates the retained node set / active client.
         let mut mailbox = match self.get_mailbox() {
@@ -240,7 +240,7 @@ impl BingleApiLocalImpl {
     /// Best-effort: the node being unreachable, a keypair being absent, or a message that fails to
     /// decrypt stops / skips without error. Returns the messages read this poll (possibly empty).
     pub(crate) fn poll_mailbox_inner(&self) -> Result<Vec<Message>, BingleError> {
-        if !self.config.store_and_forward_receive || self.config.sidewinder.is_none() {
+        if !self.config().store_and_forward_receive || self.config().sidewinder.is_none() {
             return Ok(Vec::new());
         }
 
@@ -272,7 +272,7 @@ impl BingleApiLocalImpl {
                 return Ok(Vec::new());
             }
         };
-        let bgl = AlgoBingle::new(ops, self.config.app_id, self.config.asset_id);
+        let bgl = AlgoBingle::new(ops, self.config().app_id, self.config().asset_id);
         // `mut`: post/pop take `&mut self` — on the discovered transport they fail over to another
         // node and re-resolve, which mutates the retained node set / active client.
         let mut mailbox = match self.get_mailbox() {
@@ -324,7 +324,7 @@ impl BingleApiLocalImpl {
             let sender_handle = sender_address
                 .as_deref()
                 .and_then(|addr| {
-                    bgl.handle_for_address(self.config.app_id, addr)
+                    bgl.handle_for_address(self.config().app_id, addr)
                         .ok()
                         .flatten()
                 })

@@ -178,6 +178,12 @@ export interface BingleJsiConfig {
    * #200, #215): started on foregrounding, stopped on backgrounding. null/omitted defaults to 120
    * (2 minutes, a testing cadence); production builds set a longer period (e.g. 600). Optional. */
   store_and_forward_poll_interval_secs?: number | null;
+  /** Which background sender delivers pending outbound messages (issue #283). true uses the shared
+   * bingle_local pending-message sender, which sends and records outcomes without holding the local
+   * store's lock. null/omitted defaults to false: the legacy processing loop, which also sends pending
+   * messages. Needs `local`. Transitional: deprecated and then removed, with the legacy loop, once the
+   * shared sender is proven. Optional. */
+  send_pending_messages?: boolean | null;
 }
 
 // ── Enums ────────────────────────────────────────────────────────────

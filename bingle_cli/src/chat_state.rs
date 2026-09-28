@@ -10,8 +10,8 @@
 //! Later subtasks of the chat epic (#56) drive the transport and interactive I/O; this subtask is
 //! the storage bridge only.
 
-use std::collections::HashMap;
-use std::path::Path;
+use std::collections::{HashMap, HashSet};
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -20,6 +20,7 @@ use bingle_core::blockchain::algo_bingle::AlgoBingle;
 use bingle_local::api::MailboxConfig;
 use bingle_local::api::bingle_local_api::{BingleLocalApi, ContactSource, Message, REQUIRED_ALGO};
 use bingle_local::api::bingle_local_api_impl::{BingleApiLocalImpl, LocalApiConfig};
+use bingle_local::api::pending_sender::LocalOutboundStore;
 
 use crate::chat::ChatArgs;
 use crate::chat_register::AccountStatus;
@@ -176,6 +177,17 @@ impl ChatState {
         Arc::clone(&self.local)
     }
 
+    /// A handle on this session's store for the shared pending-message sender (issue #283). It shares
+    /// the one local store, saving to the `--state_file` after each update, so the sender sends and
+    /// records outcomes — including the store-and-forward post a failure triggers — without the
+    /// session lock.
+    pub fn outbound_store(&self) -> LocalOutboundStore {
+        LocalOutboundStore::new(
+            BingleApiLocalImpl::clone(&self.local),
+            self.state_file.as_ref().map(PathBuf::from),
+        )
+    }
+
     /// The configured `--state_file` path (if any), so the poller can persist reads on its own handle.
     pub fn state_file_path(&self) -> Option<String> {
         self.state_file.clone()
@@ -253,12 +265,25 @@ impl ChatState {
     /// Persist an outbound message as **pending** (`progress = 0.0`) and return its timestamp, which
     /// keys later [`mark_delivered`](ChatState::mark_delivered) /
     /// [`mark_send_failed`](ChatState::mark_send_failed) updates. Persisting before the send attempt
-    /// means a failed send survives in the state file for retry. Saves the state file.
+    /// means a failed send survives in the state file for retry. The timestamp is unique among
+    /// stored messages. Saves the state file.
     pub fn queue_outbound(&mut self, recipient_handle: &str, text: &str) -> Result<i64, String> {
-        let timestamp = SystemTime::now()
+        let mut timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_millis() as i64)
             .map_err(|e| e.to_string())?;
+        // The timestamp keys the message, so two messages queued in the same millisecond must not
+        // share one: bump past any already taken.
+        let taken: HashSet<i64> = self
+            .local
+            .get_messages()
+            .map_err(|e| e.to_string())?
+            .iter()
+            .map(|m| m.timestamp)
+            .collect();
+        while taken.contains(&timestamp) {
+            timestamp += 1;
+        }
         let sender = self.opts.handle.clone();
         // add_message records it delivered (progress 1.0); immediately mark it pending so the retry
         // path owns its lifecycle.

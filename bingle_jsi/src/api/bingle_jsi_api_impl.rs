@@ -29,6 +29,9 @@ use bingle_core::util::config_utils::{
 use bingle_local::api::MailboxConfig;
 use bingle_local::api::bingle_local_api::BingleLocalApi;
 use bingle_local::api::bingle_local_api_impl::{BingleApiLocalImpl, LocalApiConfig};
+use bingle_local::api::pending_sender::{
+    LocalOutboundStore, MessageDelivery, PendingSender, PendingSenderOptions,
+};
 // Shared outbound-send retry policy (issue #82). Re-exported so existing
 // `bingle_jsi::api::bingle_jsi_api_impl::{is_transient_send_failure, pending_failure_reason}`
 // paths (and tests) keep resolving after the move to bingle_local.
@@ -57,6 +60,13 @@ pub struct BingleJsiApiImpl {
     /// the poller, `backgrounding` sets the flag so it exits. The inner `Arc` shares the flag with the
     /// spawned poller thread; the field itself needs no `Arc` (the whole impl is already `Arc`-shared).
     mailbox_poller: Mutex<Option<Arc<AtomicBool>>>,
+    /// A lock-free handle on the local store for the shared pending-message sender (issue #283);
+    /// `Some` when `local` is configured.
+    outbound: Option<LocalOutboundStore>,
+    /// `BingleJsiConfig::send_pending_messages`: use the shared sender instead of the legacy loop.
+    send_pending_messages: bool,
+    /// The running shared sender, while started with `send_pending_messages` on.
+    pending_sender: Mutex<Option<PendingSender>>,
 }
 
 /// Default period of the store-and-forward backstop Mailbox poll when the JSI config does not set
@@ -230,6 +240,54 @@ impl BingleJsiApiImpl {
             }
             tracing::debug!("[mailbox poller] stopped");
         });
+    }
+
+    /// With `send_pending_messages` on and a local store configured, start the shared pending-message
+    /// sender in place of the legacy processing loop (issue #283) and return `true`. Returns `false`
+    /// (start the legacy loop) otherwise. Idempotent while running.
+    fn start_pending_sender(&self) -> bool {
+        if !self.send_pending_messages {
+            return false;
+        }
+        let Some(outbound) = self.outbound.clone() else {
+            tracing::warn!(
+                "[BingleJsiApiImpl] send_pending_messages needs a local store; using the legacy loop"
+            );
+            return false;
+        };
+        let mut guard = match self.pending_sender.lock() {
+            Ok(g) => g,
+            Err(e) => {
+                tracing::error!("[BingleJsiApiImpl] pending sender lock poisoned: {e}");
+                return false;
+            }
+        };
+        if guard.is_some() {
+            return true;
+        }
+        // The transport can deliver only when listening and not in NoConnection (no route) — the
+        // same gate as the legacy loop.
+        let listening = self.listening.clone();
+        let nat_type = self.nat_type.clone();
+        let ready = Arc::new(move || {
+            listening.load(Ordering::SeqCst)
+                && nat_type
+                    .lock()
+                    .map(|g| *g != "NoConnection")
+                    .unwrap_or(true)
+        });
+        let delivery: Arc<dyn MessageDelivery> = Arc::new(self.api.clone());
+        *guard = Some(PendingSender::start(
+            Arc::new(outbound),
+            delivery,
+            PendingSenderOptions::new(),
+            ready,
+            Arc::new(|report| {
+                tracing::debug!("[BingleJsiApiImpl] pending message outcome: {report:?}");
+            }),
+        ));
+        tracing::info!("[BingleJsiApiImpl] shared pending-message sender started");
+        true
     }
 
     /// Stop the backstop Mailbox poller if one is running (called on `backgrounding`). Signals the
@@ -441,6 +499,7 @@ impl BingleJsiApiImpl {
 
         // Initialize local API if --local was provided
         let mut local_api: Option<Arc<Mutex<Box<dyn BingleLocalApi>>>> = None;
+        let mut outbound: Option<LocalOutboundStore> = None;
         if let Some(path) = &local_file {
             // Give-up nudge (bingle_notify #11/#17): the feature stays on by default; supplying a
             // gateway URL is what activates it. An explicit `notify_on_giveup: false` disables it
@@ -480,6 +539,12 @@ impl BingleJsiApiImpl {
             {
                 tracing::warn!("Failed to load local state from {}: {}", path.display(), e);
             }
+            // A second handle on the same store for the shared pending-message sender (issue #283):
+            // clones share state, so the sender works on it without taking `local_api`'s lock.
+            outbound = Some(LocalOutboundStore::new(
+                impl_api.clone(),
+                Some(path.clone()),
+            ));
             local_api = Some(Arc::new(Mutex::new(Box::new(impl_api))));
         }
 
@@ -514,6 +579,9 @@ impl BingleJsiApiImpl {
             opts: opts_mutex,
             mailbox_poll_interval,
             mailbox_poller: Mutex::new(None),
+            outbound,
+            send_pending_messages: config.send_pending_messages.unwrap_or(false),
+            pending_sender: Mutex::new(None),
         });
 
         // Output INFO with version information as early as possible
@@ -982,6 +1050,27 @@ impl BingleJsiApiImpl {
         api: Arc<dyn BingleApiBoth>,
         local_api: Option<Arc<Mutex<Box<dyn BingleLocalApi>>>>,
     ) -> Arc<Self> {
+        Self::build_for_tests(api, local_api, None, false)
+    }
+
+    /// Test seam: as [`init_for_tests`](Self::init_for_tests) over `local`, with
+    /// `send_pending_messages` on, so `start` runs the shared pending-message sender (issue #283).
+    /// The boxed local API and the sender's handle are clones of `local`, sharing its state.
+    pub fn init_for_tests_with_pending_sender(
+        api: Arc<dyn BingleApiBoth>,
+        local: BingleApiLocalImpl,
+    ) -> Arc<Self> {
+        let outbound = LocalOutboundStore::new(local.clone(), None);
+        let local_api: Arc<Mutex<Box<dyn BingleLocalApi>>> = Arc::new(Mutex::new(Box::new(local)));
+        Self::build_for_tests(api, Some(local_api), Some(outbound), true)
+    }
+
+    fn build_for_tests(
+        api: Arc<dyn BingleApiBoth>,
+        local_api: Option<Arc<Mutex<Box<dyn BingleLocalApi>>>>,
+        outbound: Option<LocalOutboundStore>,
+        send_pending_messages: bool,
+    ) -> Arc<Self> {
         let messages: Arc<Mutex<Vec<JsonValue>>> = Arc::new(Mutex::new(Vec::new()));
         let nat_type: Arc<Mutex<String>> = Arc::new(Mutex::new("Unknown".to_string()));
         let listening = Arc::new(AtomicBool::new(false));
@@ -1012,6 +1101,9 @@ impl BingleJsiApiImpl {
             opts,
             mailbox_poll_interval: std::time::Duration::from_secs(DEFAULT_MAILBOX_POLL_SECS),
             mailbox_poller: Mutex::new(None),
+            outbound,
+            send_pending_messages,
+            pending_sender: Mutex::new(None),
         })
     }
 
@@ -1408,6 +1500,12 @@ impl BingleJsiApi for BingleJsiApiImpl {
             .map_err(bingle_error_to_jsi)?;
         drop(guard);
         save_if_configured(&self.local_api, &self.local_file);
+        // Attempt the new message now rather than at the shared sender's next tick (issue #283).
+        if let Ok(guard) = self.pending_sender.lock()
+            && let Some(sender) = guard.as_ref()
+        {
+            sender.wake();
+        }
         Ok(())
     }
 
@@ -1594,6 +1692,10 @@ impl BingleJsiApi for BingleJsiApiImpl {
                 *started_guard = true;
             }
         }
+        if self.start_pending_sender() {
+            tracing::info!("[BingleJsiApiImpl][start] Bingle engine started (shared sender)");
+            return Ok(());
+        }
         tracing::info!("[BingleJsiApiImpl][start] Bingle API started, will run processing loop");
 
         // Start processing thread
@@ -1651,6 +1753,12 @@ impl BingleJsiApi for BingleJsiApiImpl {
         match self.api.ddb_signoff() {
             Ok(()) => tracing::info!("Sent DDB signoff"),
             Err(e) => tracing::warn!("DDB signoff failed (continuing shutdown): {}", e),
+        }
+
+        // Stop the shared pending-message sender, if running (issue #283).
+        let pending_sender = self.pending_sender.lock().ok().and_then(|mut g| g.take());
+        if let Some(sender) = pending_sender {
+            sender.stop();
         }
 
         // Stop the engine

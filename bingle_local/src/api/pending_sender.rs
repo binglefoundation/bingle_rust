@@ -1,0 +1,476 @@
+//! Background sender for pending outbound messages, shared by bingle_jsi and bingle_cli (issue #283).
+//!
+//! A client persists an outbound message as **pending** (`progress < 1.0`) in the local store and
+//! calls [`PendingSender::wake`]; the sender does the rest. It follows the shared retry policy in
+//! [`send_retry`](crate::api::send_retry): a transient failure keeps the message pending and it is
+//! retried, with per-message backoff so one unreachable recipient cannot starve the others; a
+//! permanent failure marks it terminal.
+//!
+//! Two threads do the work. The **scheduler** never blocks on the network: it picks the oldest
+//! eligible pending message, hands it to the **worker**, and reaps the result, so it stays
+//! responsive to [`wake`](PendingSender::wake) and [`stop`](PendingSender::stop) however long a send
+//! takes. The worker sends one message at a time and records the outcome in the store. It works on
+//! an [`OutboundStore`] handle rather than behind any client lock, so a slow send — or the
+//! store-and-forward Mailbox post a failed send triggers — never blocks the client's other calls.
+
+use std::collections::HashMap;
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{self, RecvTimeoutError};
+use std::sync::{Arc, Mutex};
+use std::thread::JoinHandle;
+use std::time::{Duration, Instant};
+
+use bingle_core::api::bingle_api::{BingleApiBoth, BingleError, ProgressCallback, SendFailureKind};
+use serde_json::{Value as JsonValue, json};
+
+use crate::api::bingle_local_api::{BingleLocalApi, Message};
+use crate::api::bingle_local_api_impl::BingleApiLocalImpl;
+use crate::api::send_retry::{
+    RETRY_BACKOFF, SendFailure, classify_send_error, select_sendable_message,
+};
+
+/// The outbound side of the local store, as the [`PendingSender`] uses it. Every method takes
+/// `&self`: implementations are shared, interior-mutable handles, so the sender never needs a
+/// client's lock.
+pub trait OutboundStore: Send + Sync {
+    /// Outbound messages still awaiting delivery (`progress < 1.0`).
+    fn pending_messages(&self) -> Result<Vec<Message>, BingleError>;
+
+    /// Record a send attempt's progress or outcome. Recording a failure is what drives the
+    /// store-and-forward post-on-give-up (#214) when the send gate is on, so this can make a
+    /// network call.
+    fn update_message_status(
+        &self,
+        timestamp: i64,
+        progress: f32,
+        failure_reason: Option<String>,
+        failure_kind: Option<SendFailureKind>,
+    ) -> Result<(), BingleError>;
+
+    /// Whether the store-and-forward SEND gate is on.
+    fn store_and_forward_send(&self) -> bool;
+
+    /// Whether the message at `timestamp` is complete with no failure — delivered, or handed off
+    /// to the recipient's Mailbox.
+    fn is_handed_off(&self, timestamp: i64) -> bool;
+}
+
+/// An [`OutboundStore`] over a [`BingleApiLocalImpl`] handle that also saves the state file after
+/// each status update, when one is configured.
+#[derive(Clone)]
+pub struct LocalOutboundStore {
+    local: BingleApiLocalImpl,
+    state_file: Option<PathBuf>,
+}
+
+impl LocalOutboundStore {
+    /// Wrap a handle to the local store (see [`BingleApiLocalImpl`]'s `Clone`), saving to
+    /// `state_file` after each update when it is `Some`.
+    pub fn new(local: BingleApiLocalImpl, state_file: Option<PathBuf>) -> Self {
+        Self { local, state_file }
+    }
+}
+
+impl OutboundStore for LocalOutboundStore {
+    fn pending_messages(&self) -> Result<Vec<Message>, BingleError> {
+        self.local.get_pending_messages()
+    }
+
+    fn update_message_status(
+        &self,
+        timestamp: i64,
+        progress: f32,
+        failure_reason: Option<String>,
+        failure_kind: Option<SendFailureKind>,
+    ) -> Result<(), BingleError> {
+        self.local.update_message_status_shared(
+            timestamp,
+            progress,
+            failure_reason,
+            failure_kind,
+        )?;
+        if let Some(path) = &self.state_file
+            && let Err(e) = self.local.save(path.to_string_lossy().as_ref())
+        {
+            tracing::warn!("[PendingSender] could not save state: {e}");
+        }
+        Ok(())
+    }
+
+    fn store_and_forward_send(&self) -> bool {
+        self.local.store_and_forward_send()
+    }
+
+    fn is_handed_off(&self, timestamp: i64) -> bool {
+        self.local
+            .get_messages()
+            .ok()
+            .into_iter()
+            .flatten()
+            .find(|m| m.timestamp == timestamp)
+            .map(|m| m.progress == Some(1.0) && m.failure_reason.is_none())
+            .unwrap_or(false)
+    }
+}
+
+/// How the [`PendingSender`] delivers one message to one recipient. Abstracted so the sender is
+/// testable without a live engine.
+pub trait MessageDelivery: Send + Sync {
+    /// Send `message` to `recipient` (the label stored on the message — normally a handle).
+    /// `Ok(true)` is delivered; `Ok(false)` or an error is a failure, classified by
+    /// [`classify_send_error`].
+    fn deliver(
+        &self,
+        recipient: &str,
+        message: JsonValue,
+        progress: Option<Arc<ProgressCallback>>,
+    ) -> Result<bool, BingleError>;
+}
+
+impl MessageDelivery for Arc<dyn BingleApiBoth> {
+    fn deliver(
+        &self,
+        recipient: &str,
+        message: JsonValue,
+        progress: Option<Arc<ProgressCallback>>,
+    ) -> Result<bool, BingleError> {
+        self.send_message_to_handle(&recipient.to_string(), message, progress)
+    }
+}
+
+/// What happened to a message on one attempt.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SendOutcome {
+    /// Delivered to every recipient; marked complete.
+    Delivered,
+    /// The direct send failed but, with the store-and-forward send gate on, the message was
+    /// handed off to the recipients' Sidewinder Mailboxes and marked complete (#214, #272). Carries
+    /// the human-readable reason the direct send failed.
+    Forwarded(String),
+    /// A transient failure: the message stays pending and will be retried. Carries the
+    /// human-readable reason.
+    Retrying(String),
+    /// A permanent failure (or any failure with retries disabled): marked failed. Carries the
+    /// human-readable reason.
+    Failed(String),
+}
+
+/// One attempt's outcome, passed to the [`PendingSender`]'s outcome callback.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SendReport {
+    /// The message's timestamp (its key in the store).
+    pub timestamp: i64,
+    /// The message's recipients.
+    pub recipients: Vec<String>,
+    /// What happened.
+    pub outcome: SendOutcome,
+    /// Whether an earlier attempt had already failed (the message carried a failure reason). Lets
+    /// a client report a message's first failure, and a later recovery, without repeating itself
+    /// on every retry.
+    pub previously_failed: bool,
+}
+
+/// Tuning for a [`PendingSender`].
+#[derive(Debug, Clone)]
+pub struct PendingSenderOptions {
+    /// How often the scheduler wakes to look for work when nothing else wakes it.
+    pub tick: Duration,
+    /// When `false` (`bingle_cli chat --no-retries`), every failure is permanent, so nothing is
+    /// left pending to retry.
+    pub retries_enabled: bool,
+    /// A send taking longer than this is logged (once); the scheduler keeps running regardless.
+    pub watchdog: Duration,
+}
+
+impl PendingSenderOptions {
+    /// Defaults matching the React Native client: a 200ms tick, retries on, and a 45s watchdog.
+    pub fn new() -> Self {
+        Self {
+            tick: Duration::from_millis(200),
+            retries_enabled: true,
+            watchdog: Duration::from_secs(45),
+        }
+    }
+}
+
+impl Default for PendingSenderOptions {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Readiness check: whether the transport can deliver right now (for example, listening and not
+/// in `NoConnection`). Nothing is handed to the worker while it returns `false`.
+pub type ReadyCheck = dyn Fn() -> bool + Send + Sync;
+
+/// Called with each attempt's outcome, on the scheduler thread.
+pub type OutcomeCallback = dyn Fn(SendReport) + Send + Sync;
+
+/// Scheduler input.
+enum Event {
+    /// The worker finished a message.
+    Done { timestamp: i64, report: SendReport },
+    /// New work may be available; look now rather than at the next tick.
+    Wake,
+    /// Shut down.
+    Stop,
+}
+
+/// The shared background sender for pending outbound messages. See the [module docs](self).
+///
+/// Started with [`start`](Self::start); stops on [`stop`](Self::stop) or when dropped.
+pub struct PendingSender {
+    events: Mutex<mpsc::Sender<Event>>,
+    running: Arc<AtomicBool>,
+    scheduler: Mutex<Option<JoinHandle<()>>>,
+}
+
+impl PendingSender {
+    /// Start the scheduler and worker threads.
+    pub fn start(
+        store: Arc<dyn OutboundStore>,
+        delivery: Arc<dyn MessageDelivery>,
+        options: PendingSenderOptions,
+        ready: Arc<ReadyCheck>,
+        on_outcome: Arc<OutcomeCallback>,
+    ) -> PendingSender {
+        let (event_tx, event_rx) = mpsc::channel::<Event>();
+        let (work_tx, work_rx) = mpsc::channel::<Message>();
+        let running = Arc::new(AtomicBool::new(true));
+
+        let worker_store = Arc::clone(&store);
+        let worker_events = event_tx.clone();
+        let retries_enabled = options.retries_enabled;
+        let spawned_worker = std::thread::Builder::new()
+            .name("bingle-pending-sender".to_string())
+            .spawn(move || {
+                while let Ok(msg) = work_rx.recv() {
+                    let timestamp = msg.timestamp;
+                    let report = send_one(&worker_store, &*delivery, &msg, retries_enabled);
+                    if worker_events
+                        .send(Event::Done { timestamp, report })
+                        .is_err()
+                    {
+                        break; // scheduler gone
+                    }
+                }
+                tracing::debug!("[PendingSender] worker stopped");
+            });
+        if let Err(e) = spawned_worker {
+            tracing::error!("[PendingSender] could not start the worker thread: {e}");
+        }
+
+        let scheduler_running = Arc::clone(&running);
+        let scheduler = std::thread::Builder::new()
+            .name("bingle-pending-scheduler".to_string())
+            .spawn(move || {
+                run_scheduler(
+                    &*store,
+                    options,
+                    &*ready,
+                    &*on_outcome,
+                    event_rx,
+                    work_tx,
+                    &scheduler_running,
+                )
+            });
+        let scheduler = match scheduler {
+            Ok(handle) => Some(handle),
+            Err(e) => {
+                tracing::error!("[PendingSender] could not start the scheduler thread: {e}");
+                None
+            }
+        };
+
+        PendingSender {
+            events: Mutex::new(event_tx),
+            running,
+            scheduler: Mutex::new(scheduler),
+        }
+    }
+
+    /// Look for work now — call after queueing a message so its first attempt is immediate rather
+    /// than at the next tick.
+    pub fn wake(&self) {
+        if let Ok(tx) = self.events.lock() {
+            let _ = tx.send(Event::Wake);
+        }
+    }
+
+    /// Stop the scheduler and wait for it to exit. The worker is not joined: a send in progress
+    /// finishes (bounded by the send path's own timeouts) and the worker then exits, so stopping
+    /// never blocks on a slow send. Idempotent.
+    pub fn stop(&self) {
+        self.running.store(false, Ordering::SeqCst);
+        if let Ok(tx) = self.events.lock() {
+            let _ = tx.send(Event::Stop);
+        }
+        let handle = self.scheduler.lock().ok().and_then(|mut g| g.take());
+        if let Some(handle) = handle {
+            let _ = handle.join();
+        }
+    }
+}
+
+impl Drop for PendingSender {
+    fn drop(&mut self) {
+        self.stop();
+    }
+}
+
+fn run_scheduler(
+    store: &dyn OutboundStore,
+    options: PendingSenderOptions,
+    ready: &ReadyCheck,
+    on_outcome: &OutcomeCallback,
+    events: mpsc::Receiver<Event>,
+    work: mpsc::Sender<Message>,
+    running: &AtomicBool,
+) {
+    tracing::info!("[PendingSender] started");
+    let mut in_flight: Option<(i64, Instant)> = None;
+    let mut warned_stuck = false;
+    // Per-message backoff deadlines, so a repeatedly failing recipient yields the head of the queue.
+    let mut retry_after: HashMap<i64, Instant> = HashMap::new();
+
+    while running.load(Ordering::SeqCst) {
+        match events.recv_timeout(options.tick) {
+            Ok(Event::Done { timestamp, report }) => {
+                match report.outcome {
+                    SendOutcome::Retrying(_) => {
+                        retry_after.insert(timestamp, Instant::now() + RETRY_BACKOFF);
+                    }
+                    _ => {
+                        retry_after.remove(&timestamp);
+                    }
+                }
+                if in_flight.is_some_and(|(t, _)| t == timestamp) {
+                    in_flight = None;
+                    warned_stuck = false;
+                }
+                on_outcome(report);
+            }
+            Ok(Event::Wake) | Err(RecvTimeoutError::Timeout) => {}
+            Ok(Event::Stop) | Err(RecvTimeoutError::Disconnected) => break,
+        }
+
+        // Tolerate, but note, a send taking a long time. No second send is started meanwhile.
+        if let Some((timestamp, since)) = in_flight
+            && !warned_stuck
+            && since.elapsed() > options.watchdog
+        {
+            tracing::warn!(
+                "[PendingSender] message {} send exceeded {:?}; holding further sends until it completes",
+                timestamp,
+                options.watchdog
+            );
+            warned_stuck = true;
+        }
+
+        if in_flight.is_none() && ready() {
+            let pending = match store.pending_messages() {
+                Ok(pending) => pending,
+                Err(e) => {
+                    tracing::error!("[PendingSender] could not read pending messages: {e}");
+                    Vec::new()
+                }
+            };
+            // Forget deadlines for messages no longer pending, so the map stays bounded.
+            retry_after.retain(|ts, _| pending.iter().any(|m| m.timestamp == *ts));
+            if let Some(msg) = select_sendable_message(pending, &retry_after, Instant::now()) {
+                tracing::debug!("[PendingSender] sending message {}", msg.timestamp);
+                in_flight = Some((msg.timestamp, Instant::now()));
+                if work.send(msg).is_err() {
+                    tracing::error!("[PendingSender] worker gone; stopping");
+                    break;
+                }
+            }
+        }
+    }
+    tracing::info!("[PendingSender] stopped");
+}
+
+/// Send one message to each of its recipients, record the outcome in the store, and report it.
+///
+/// Recipients are tried in order. A transient failure stops the attempt (the transport is likely
+/// down, so the rest would fail too); a permanent one moves on to the next recipient. A panic in
+/// the send path is contained and treated as a transient failure, so it cannot kill the worker.
+fn send_one(
+    store: &Arc<dyn OutboundStore>,
+    delivery: &dyn MessageDelivery,
+    msg: &Message,
+    retries_enabled: bool,
+) -> SendReport {
+    let timestamp = msg.timestamp;
+    let previously_failed = msg.failure_reason.is_some();
+
+    let mut last_failure: Option<SendFailure> = None;
+    for recipient in &msg.recipient_handles {
+        // Surface the send path's progress on the message, as the React Native client expects.
+        let progress_store = Arc::clone(store);
+        let progress: Arc<ProgressCallback> = Arc::new(move |percent: u8, _status: String| {
+            let _ = progress_store.update_message_status(
+                timestamp,
+                f32::from(percent) / 100.0,
+                None,
+                None,
+            );
+        });
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            delivery.deliver(recipient, json!({ "text": msg.text }), Some(progress))
+        }))
+        .unwrap_or_else(|_| {
+            tracing::error!("[PendingSender] send to {recipient} panicked");
+            Err(BingleError::Send {
+                kind: SendFailureKind::NotReady,
+                detail: "send panicked".to_string(),
+            })
+        });
+        if let Some(failure) = classify_send_error(&result) {
+            let retryable = failure.kind.is_retryable();
+            last_failure = Some(failure);
+            if retryable {
+                break;
+            }
+        }
+    }
+
+    let outcome = match last_failure {
+        None => {
+            let _ = store.update_message_status(timestamp, 1.0, None, None);
+            SendOutcome::Delivered
+        }
+        Some(failure) => {
+            let transient = retries_enabled && failure.kind.is_retryable();
+            let progress = if transient { 0.0 } else { 1.0 };
+            tracing::debug!(
+                "[PendingSender] message {} send failed ({}, {:?}): {}",
+                timestamp,
+                if transient { "transient" } else { "permanent" },
+                failure.kind,
+                failure.reason
+            );
+            // Recording the failure drives the store-and-forward post when the send gate is on.
+            let _ = store.update_message_status(
+                timestamp,
+                progress,
+                Some(failure.reason.clone()),
+                Some(failure.kind),
+            );
+            if store.store_and_forward_send() && store.is_handed_off(timestamp) {
+                SendOutcome::Forwarded(failure.reason)
+            } else if transient {
+                SendOutcome::Retrying(failure.reason)
+            } else {
+                SendOutcome::Failed(failure.reason)
+            }
+        }
+    };
+    SendReport {
+        timestamp,
+        recipients: msg.recipient_handles.clone(),
+        outcome,
+        previously_failed,
+    }
+}

@@ -731,39 +731,15 @@ fn cmd_chat(args: Vec<String>) {
     );
 }
 
-/// How often the background worker checks for a pending outbound message to (re)attempt. A message
-/// is only eligible once its per-message backoff has elapsed, so this poll is just the scheduler
-/// tick, not the retry interval (that is `bingle_local::api::send_retry::RETRY_BACKOFF`).
+/// How often the shared pending-message sender looks for a message to retry when nothing wakes it.
+/// A message is only eligible once its per-message backoff has elapsed, so this is just the
+/// scheduler tick, not the retry interval (that is `bingle_local::api::send_retry::RETRY_BACKOFF`).
 const RETRY_POLL_INTERVAL: Duration = Duration::from_secs(1);
 
 /// How long the chat REPL waits for the node to reach the listening state before showing the prompt
 /// (issue #91). On timeout it proceeds best-effort so the REPL never hangs — outbound messages are
 /// still queued and retried by the background worker.
 const LISTENING_WAIT_TIMEOUT: Duration = Duration::from_secs(45);
-
-/// `MessageSender` backed by the live engine: sends by handle or id.
-struct EngineSender {
-    api: Arc<BingleApiImpl>,
-}
-
-impl bingle_cli::chat_send::MessageSender for EngineSender {
-    fn send_text(
-        &self,
-        target: &bingle_cli::chat_send::SendTarget,
-        message: &serde_json::Value,
-    ) -> Result<bool, bingle_core::api::bingle_api::BingleError> {
-        use bingle_cli::chat_send::SendTarget;
-        // Return the typed error unchanged so the send-failure cause survives to the classifier
-        // (issue #99).
-        match target {
-            SendTarget::Handle(handle) => {
-                self.api
-                    .send_message_to_handle(handle, message.clone(), None)
-            }
-            SendTarget::Id(id) => self.api.send_message_to_id(id, message.clone(), None),
-        }
-    }
-}
 
 /// Print `prompt` with no trailing newline and flush, so the cursor sits after it.
 fn reprint_prompt(prompt: &str) {
@@ -796,11 +772,14 @@ fn run_chat_session(
     // listening on the network. The REPL waits on this before showing the prompt so the user cannot
     // send (and lose) a message before there is a return path (issue #91).
     let listening_gate = Arc::new((std::sync::Mutex::new(false), std::sync::Condvar::new()));
+    // Whether the node is listening right now: the shared sender only sends while it is.
+    let listening_now = Arc::new(std::sync::atomic::AtomicBool::new(false));
 
     {
         let shared_for_msg = shared.clone();
         let prompt_for_msg = prompt_line.clone();
         let listening_gate_cb = listening_gate.clone();
+        let listening_now_cb = listening_now.clone();
         api.access(|api_mut| {
             let on_message: Arc<OnMessageHandler> =
                 Arc::new(move |sender, sender_handle, message| {
@@ -839,6 +818,7 @@ fn run_chat_session(
 
             let on_listening: Arc<OnListeningHandler> = Arc::new(move |listening, _nat_type| {
                 tracing::debug!("chat: listening={}", listening);
+                listening_now_cb.store(listening, std::sync::atomic::Ordering::SeqCst);
                 // Signal the readiness gate once (and only once) the node is listening, so the REPL
                 // can stop waiting and show the prompt (issue #91).
                 if listening
@@ -902,48 +882,40 @@ fn run_chat_session(
         }
     }
 
-    // Background retry worker: keep re-attempting pending outbound messages (transient failures are
-    // retried indefinitely with per-message backoff, mirroring the RN client). Not started under
-    // --no-retries, where a failed send is reported once and never queued.
-    if retries_enabled {
-        let retry_api = api.clone();
-        let retry_shared = shared.clone();
-        let retry_prompt = prompt_line.clone();
-        std::thread::spawn(move || {
-            let sender = EngineSender { api: retry_api };
-            let mut retry_after: std::collections::HashMap<i64, std::time::Instant> =
-                std::collections::HashMap::new();
-            loop {
-                std::thread::sleep(RETRY_POLL_INTERVAL);
-                let outcome = match retry_shared.lock() {
-                    Ok(mut guard) => bingle_cli::chat_send::retry_pending(
-                        &sender,
-                        &mut guard,
-                        &mut retry_after,
-                        std::time::Instant::now(),
-                    ),
-                    Err(_) => continue,
-                };
-                let Some(outcome) = outcome else {
-                    continue; // nothing eligible right now
-                };
-                match outcome.outcome {
-                    SendOutcome::Delivered => println!("\n✓ delivered to {}", outcome.recipient),
-                    SendOutcome::Forwarded(_) => println!(
-                        "\n↪ {} is offline; queued to their mailbox — they'll get it when they reconnect",
-                        outcome.recipient
-                    ),
-                    SendOutcome::Failed(reason) => {
-                        println!("\n! send to {} failed: {}", outcome.recipient, reason)
-                    }
-                    // Transient: still retrying, stays quiet (the first failure already printed).
-                    SendOutcome::Retrying(_) => continue,
+    // Shared background sender (issue #283): the same pending-message sender the React Native client
+    // uses. It attempts each queued message as soon as the REPL wakes it, retries transient failures
+    // with per-message backoff (unless --no-retries), and hands failed messages to the recipient's
+    // Mailbox when the store-and-forward send gate is on. It runs off the REPL thread and off the
+    // session lock, so the prompt returns immediately even when the recipient is offline. Outcomes
+    // print above the current prompt, which is then redrawn.
+    let outbound = match shared.lock() {
+        Ok(guard) => guard.outbound_store(),
+        Err(_) => {
+            warn!("chat: state lock poisoned");
+            return;
+        }
+    };
+    let pending_sender = {
+        let report_prompt = prompt_line.clone();
+        let ready_listening = listening_now.clone();
+        PendingSender::start(
+            Arc::new(outbound),
+            Arc::new(ChatDelivery::new(api.clone())),
+            PendingSenderOptions {
+                tick: RETRY_POLL_INTERVAL,
+                retries_enabled,
+                ..PendingSenderOptions::new()
+            },
+            Arc::new(move || ready_listening.load(std::sync::atomic::Ordering::SeqCst)),
+            Arc::new(move |report| {
+                if let Some(line) = report_line(&report) {
+                    println!("\n{line}");
+                    let prompt = report_prompt.lock().map(|g| g.clone()).unwrap_or_default();
+                    reprint_prompt(&prompt);
                 }
-                let prompt = retry_prompt.lock().map(|g| g.clone()).unwrap_or_default();
-                reprint_prompt(&prompt);
-            }
-        });
-    }
+            }),
+        )
+    };
 
     // Background store-and-forward receive poller (issue #274): when the receive gate is on, drain
     // this account's Sidewinder Mailbox now (it may have been offline) and then every `poll_interval`,
@@ -1019,8 +991,7 @@ fn run_chat_session(
         let _ = std::io::stdout().flush();
     }
 
-    // Interactive loop on the main thread (engine + retry worker run on their own threads).
-    let sender = EngineSender { api: api.clone() };
+    // Interactive loop on the main thread (engine, sender and poller run on their own threads).
     let mut recipient = CurrentRecipient::from_args(to.as_deref(), to_id.as_deref());
     let stdin = std::io::stdin();
     loop {
@@ -1070,35 +1041,15 @@ fn run_chat_session(
             ChatInput::Send { text } => match recipient.target() {
                 None => println!("no recipient; use /<handle> to pick one, or start with --to"),
                 Some(target) => {
-                    let outcome = match shared.lock() {
-                        Ok(mut guard) => bingle_cli::chat_send::send_once(
-                            &sender,
-                            &mut guard,
-                            &target,
-                            &text,
-                            retries_enabled,
-                        ),
-                        Err(_) => {
-                            warn!("chat: state lock poisoned");
-                            continue;
-                        }
+                    // Persist as pending (a brief lock), then wake the sender; the outcome prints
+                    // when it is known.
+                    let queued = match shared.lock() {
+                        Ok(mut guard) => guard.queue_outbound(target.label(), &text),
+                        Err(_) => Err("state lock poisoned".to_string()),
                     };
-                    // On success print nothing: the terminal already echoed the typed line, which is
-                    // the transcript entry. Only surface failures.
-                    match outcome {
-                        SendOutcome::Delivered => {}
-                        SendOutcome::Forwarded(_) => println!(
-                            "↪ {} is offline; queued to their mailbox — they'll get it when they reconnect",
-                            target.label()
-                        ),
-                        SendOutcome::Retrying(reason) => println!(
-                            "! send to {} not delivered ({}); will keep retrying…",
-                            target.label(),
-                            reason
-                        ),
-                        SendOutcome::Failed(reason) => {
-                            println!("! send to {} failed: {}", target.label(), reason)
-                        }
+                    match queued {
+                        Ok(_) => pending_sender.wake(),
+                        Err(e) => println!("! send to {} failed: {}", target.label(), e),
                     }
                 }
             },
@@ -1106,6 +1057,7 @@ fn run_chat_session(
     }
 
     tracing::info!("chat: shutting down...");
+    pending_sender.stop();
     api.access(|api_mut| api_mut.stop());
     if let Ok(guard) = shared.lock()
         && let Err(e) = guard.save_state()
@@ -1216,10 +1168,11 @@ fn resolve_status_or_exit(state: &ChatState) -> chat_register::AccountStatus {
 use bingle_cli::chat::parse_chat_args;
 use bingle_cli::chat_register::{self, CredentialGap, StartupDecision, decide_startup};
 use bingle_cli::chat_repl::{ChatInput, CurrentRecipient, parse_input};
-use bingle_cli::chat_send::SendOutcome;
+use bingle_cli::chat_send::{ChatDelivery, report_line};
 use bingle_cli::chat_state::ChatState;
 use bingle_cli::chat_state::RegisterError;
 use bingle_core::api::network_endpoint::NetworkEndpoint;
+use bingle_local::api::pending_sender::{PendingSender, PendingSenderOptions};
 use serde_json::json;
 use std::net::SocketAddr;
 use std::time::Duration;
