@@ -14,16 +14,26 @@
  *   BINGLE_E2E_HANDLE, BINGLE_E2E_ECHO_TO   as for messaging.test.ts
  *   BINGLE_E2E_OFFLINE_HANDLE               (optional) a handle registered but offline; the
  *                                           offline cases skip when unset
- *   BINGLE_E2E_STORE_FORWARD=1              (optional) also turn on the store-and-forward send
- *                                           gate, so a failed send is posted to the recipient's
- *                                           Mailbox — the case where holding the store's lock would
- *                                           block the app — and run the offline-window case (#278). Uses BINGLE_E2E_SIDEWINDER_URL /
- *                                           BINGLE_E2E_SIDEWINDER_TOKEN when set (bearer override),
- *                                           otherwise on-chain discovery from the node file's app id.
+ *   BINGLE_E2E_STORE_FORWARD=1              (optional) also turn on store-and-forward, so a
+ *                                           failed send is posted to the recipient's Mailbox (the
+ *                                           case where holding the store's lock would block the
+ *                                           app), and run the offline-window case (#278). Uses
+ *                                           BINGLE_E2E_SIDEWINDER_URL / _TOKEN when set (bearer
+ *                                           override), else on-chain discovery from the node file's
+ *                                           app id. On localnet the provisioner sets all three when
+ *                                           it starts its Sidewinder node (#284); see
+ *                                           harness.storeForwardConfig.
  */
 import {describe, it, beforeAll, afterAll} from '@jest/globals';
 import assert from 'assert';
-import {call, textOf, sleep, resolveNetworkInputs, localStatePath} from './harness';
+import {
+  call,
+  textOf,
+  sleep,
+  resolveNetworkInputs,
+  localStatePath,
+  storeForwardConfig,
+} from './harness';
 
 const backend = process.env.BINGLE_E2E_BACKEND || 'testnet';
 const passphrase = process.env.BINGLE_E2E_PASSPHRASE || '';
@@ -32,9 +42,8 @@ const echoTo = process.env.BINGLE_E2E_ECHO_TO || '';
 const nodeFile = process.env.BINGLE_E2E_NODE_FILE || '';
 const stunFile = process.env.BINGLE_E2E_STUN_FILE || '';
 const offlineHandle = process.env.BINGLE_E2E_OFFLINE_HANDLE || '';
-const storeForward = process.env.BINGLE_E2E_STORE_FORWARD === '1';
-const sidewinderUrl = process.env.BINGLE_E2E_SIDEWINDER_URL || null;
-const sidewinderToken = process.env.BINGLE_E2E_SIDEWINDER_TOKEN || null;
+const storeForwardInit = storeForwardConfig();
+const storeForward = storeForwardInit != null;
 
 const haveCreds = passphrase && handle && echoTo && nodeFile;
 const describeOrSkip = haveCreds ? describe : describe.skip;
@@ -109,9 +118,7 @@ describeOrSkip(`bingle_jsi shared pending-message sender (${backend})`, () => {
           stun_servers: net.stun_servers,
           local: localStatePath(`bingle_e2e_pending_sender_${Date.now()}.json`),
           send_pending_messages: true,
-          store_and_forward_send: storeForward,
-          sidewinder_node_url: storeForward ? sidewinderUrl : null,
-          sidewinder_token: storeForward ? sidewinderToken : null,
+          ...(storeForwardInit ?? {}),
         },
       ],
     });

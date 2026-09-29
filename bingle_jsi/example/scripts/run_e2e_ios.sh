@@ -30,7 +30,9 @@ set -euo pipefail
 # in-process echo peer and funded/registered sender + offline-fixture accounts on the running
 # `algokit localnet`, then writes the node-file, STUN list and a BINGLE_E2E_* env file this script
 # sources — so no credentials need to be supplied by hand. It needs `algokit localnet` running and
-# the `algokit`/`goal` CLIs on PATH.
+# the `algokit`/`goal` CLIs on PATH. With `sw-node` installed (`cargo install sw-node`) it also starts
+# a one-node Sidewinder Mailbox (#284) and sets BINGLE_E2E_STORE_FORWARD=1 plus the Mailbox URL and
+# token, so the store-and-forward cases run; BINGLE_E2E_SIDEWINDER=0 skips it.
 #
 # One-time prerequisites: Xcode + command-line tools, CocoaPods, Node, Rust with iOS targets, and
 # applesimutils (a newer Homebrew needs the tap trusted):
@@ -57,6 +59,11 @@ METRO_BG_PID=""
 cleanup() {
   [[ -n "$PROVISIONER_PID" ]] && kill "$PROVISIONER_PID" 2>/dev/null || true
   [[ -n "$METRO_BG_PID" ]] && kill "$METRO_BG_PID" 2>/dev/null || true
+  # The localnet provisioner may have started a Sidewinder Mailbox node (#284); it runs as its own
+  # process, so stop it too.
+  if [[ "${BINGLE_E2E_BACKEND:-}" == "localnet" ]]; then
+    WORK=/tmp/bingle_e2e_sidewinder sh "$ROOT_DIR/scripts/e2e_sidewinder_localnet.sh" down >/dev/null 2>&1 || true
+  fi
 }
 trap cleanup EXIT
 

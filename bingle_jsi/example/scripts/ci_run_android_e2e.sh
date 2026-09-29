@@ -41,7 +41,7 @@ if [[ ! -f /tmp/bingle_e2e_localnet.env ]]; then
 fi
 # shellcheck disable=SC1090
 source /tmp/bingle_e2e_localnet.env
-echo "localnet: sender='$BINGLE_E2E_HANDLE' echo -> $BINGLE_E2E_ECHO_TO offline='${BINGLE_E2E_OFFLINE_HANDLE:-}'"
+echo "localnet: sender='$BINGLE_E2E_HANDLE' echo -> $BINGLE_E2E_ECHO_TO offline='${BINGLE_E2E_OFFLINE_HANDLE:-}' sidewinder='${BINGLE_E2E_SIDEWINDER_URL:-off}'"
 
 cd "$EXAMPLE_DIR"
 

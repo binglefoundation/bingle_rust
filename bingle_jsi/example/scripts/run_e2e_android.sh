@@ -20,6 +20,8 @@ set -euo pipefail
 #     emulator mode (relays/STUN advertised at 10.0.2.2, reached by the emulator via its qemu gateway
 #     and by the host echo peer via a loopback alias), and sources the derived creds. No secrets and
 #     no internet/DNS needed (all IP-based). Adds a loopback alias via sudo (prompts once on macOS).
+#     With `sw-node` installed it also starts a one-node Sidewinder Mailbox for the store-and-forward
+#     cases (#284); BINGLE_E2E_SIDEWINDER=0 skips it.
 #     Run: BINGLE_E2E_BACKEND=localnet bash bingle_jsi/example/scripts/run_e2e_android.sh
 #
 # Sender selection (issue #283): BINGLE_E2E_SEND_PENDING_MESSAGES=1 runs the network suites with the
@@ -60,6 +62,11 @@ cleanup() {
   [[ -n "$PROVISIONER_PID" ]] && kill "$PROVISIONER_PID" 2>/dev/null || true
   [[ -n "$METRO_BG_PID" ]] && kill "$METRO_BG_PID" 2>/dev/null || true
   [[ -n "$LO0_ALIAS_IP" ]] && sudo ifconfig lo0 -alias "$LO0_ALIAS_IP" 2>/dev/null || true
+  # The localnet provisioner may have started a Sidewinder Mailbox node (#284); it runs as its own
+  # process, so stop it too.
+  if [[ "${BINGLE_E2E_BACKEND:-}" == "localnet" ]]; then
+    WORK=/tmp/bingle_e2e_sidewinder sh "$ROOT_DIR/scripts/e2e_sidewinder_localnet.sh" down >/dev/null 2>&1 || true
+  fi
 }
 trap cleanup EXIT
 

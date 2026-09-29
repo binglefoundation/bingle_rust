@@ -11,12 +11,13 @@
 # so it needs no repository checkout or build — copy this one file anywhere and run it.
 #
 # Prereqs:
-#   - sw-node on PATH:        cargo install --path sw-node   (from the repo), or `cargo install sw-node`
+#   - sw-node on PATH:        cargo install sw-node   (crates.io), or `cargo install --path sw-node` from the repo
 #   - algokit LocalNet up:    algokit localnet start
 #   - curl                    (to probe the node's health endpoint)
 #
 # Usage:
 #   e2e_sidewinder_localnet.sh [up]    # generate/reuse accounts, start the node, print access details
+#                                      # (EXTRA_CALLERS="ADDR1 ADDR2" enrols more caller accounts)
 #   e2e_sidewinder_localnet.sh down    # stop the node and remove the work dir
 set -eu
 
@@ -32,6 +33,9 @@ ALGOD_URL=${ALGOD_URL:-http://localhost:4001}
 ALGOD_TOKEN=${ALGOD_TOKEN:-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa}
 # optional: an application config file to use instead of the built-in Mailbox registry.
 APP_CONFIG=${APP_CONFIG:-}
+# optional: space-separated addresses of further accounts to enrol as callers, alongside the
+# generated sender and receiver — e.g. the Bingle accounts the localnet e2e provisioner uses (#284).
+EXTRA_CALLERS=${EXTRA_CALLERS:-}
 
 die() { echo "e2e_sidewinder_localnet: $1" >&2; exit 1; }
 
@@ -122,6 +126,9 @@ callers:
   - "$SENDER_ADDR"
   - "$RECEIVER_ADDR"
 EOF
+for addr in $EXTRA_CALLERS; do
+  printf '  - "%s"\n' "$addr" >> "$WORK/etc/allowlist.yaml"
+done
 cat > "$WORK/etc/node.yaml" <<EOF
 index: 0
 data_dir: $(cd "$WORK/data" && pwd)
