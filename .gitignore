@@ -38,7 +38,6 @@
 /bingle_jsi/example/ios/BingleJsiExample.xcworkspace/
 # Per-machine Xcode node path override — must not be versioned (RN convention).
 /bingle_jsi/example/ios/.xcode.env.local
-/bingle_jsi/example/ios/BingleJsiExample.xcodeproj/
 /bingle_jsi/example/package-lock.json
 # Android build outputs + per-machine gradle files (the android/ project itself is committed).
 /bingle_jsi/example/android/.gradle/
