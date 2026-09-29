@@ -17,7 +17,7 @@
  *   BINGLE_E2E_STORE_FORWARD=1              (optional) also turn on the store-and-forward send
  *                                           gate, so a failed send is posted to the recipient's
  *                                           Mailbox — the case where holding the store's lock would
- *                                           block the app. Uses BINGLE_E2E_SIDEWINDER_URL /
+ *                                           block the app — and run the offline-window case (#278). Uses BINGLE_E2E_SIDEWINDER_URL /
  *                                           BINGLE_E2E_SIDEWINDER_TOKEN when set (bearer override),
  *                                           otherwise on-chain discovery from the node file's app id.
  */
@@ -39,6 +39,7 @@ const sidewinderToken = process.env.BINGLE_E2E_SIDEWINDER_TOKEN || null;
 const haveCreds = passphrase && handle && echoTo && nodeFile;
 const describeOrSkip = haveCreds ? describe : describe.skip;
 const itWithOffline = offlineHandle ? it : it.skip;
+const itWithStoreForward = offlineHandle && storeForward ? it : it.skip;
 
 const LISTEN_TIMEOUT = 90000;
 const DELIVER_TIMEOUT = 120000;
@@ -47,6 +48,10 @@ const FAIL_TIMEOUT = 90000;
 // How much slower than an idle call a local-store call may be while a send is in flight. The
 // harness round trip itself takes around a second, so this allows for its jitter only.
 const RESPONSIVE_MARGIN_MS = 2000;
+// Inside the recipient-offline window (issue #278) a send skips the direct attempt and its connect
+// and relay timeouts, so the hand-off to the Mailbox is quick. The Mailbox post itself is a
+// network round trip, hence a few seconds rather than instant.
+const WINDOW_HANDOFF_MS = 15000;
 
 async function waitForFeed(substring: string, timeoutMs: number): Promise<void> {
   const start = Date.now();
@@ -190,4 +195,25 @@ describeOrSkip(`bingle_jsi shared pending-message sender (${backend})`, () => {
       `getContacts took ${busyContacts}ms during a send (idle ${idleContacts}ms)`,
     );
   });
+
+  itWithStoreForward(
+    'hands messages to an offline recipient to their Mailbox, skipping direct sends in the offline window',
+    async () => {
+      const handedOff = (m: any) => (m.progress ?? 0) >= 1.0 && m.failure_reason == null;
+
+      // The first message tries direct, fails (recipient offline), and is handed to the Mailbox.
+      const first = `e2e-window-first ${Date.now()}`;
+      await call({method: 'queueMessage', args: [[offlineHandle], first]});
+      await waitForMessage(first, FAIL_TIMEOUT, handedOff, 'be handed off to the Mailbox');
+
+      // The recipient is now inside its offline window, so the next message skips the direct
+      // attempt and goes straight to the Mailbox.
+      const second = `e2e-window-second ${Date.now()}`;
+      const queuedAt = Date.now();
+      await call({method: 'queueMessage', args: [[offlineHandle], second]});
+      await waitForMessage(second, WINDOW_HANDOFF_MS, handedOff, 'be handed off promptly');
+      // eslint-disable-next-line no-console
+      console.log(`second message handed off after ${Date.now() - queuedAt}ms`);
+    },
+  );
 });

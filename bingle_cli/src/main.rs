@@ -775,14 +775,58 @@ fn run_chat_session(
     // Whether the node is listening right now: the shared sender only sends while it is.
     let listening_now = Arc::new(std::sync::atomic::AtomicBool::new(false));
 
+    // Shared background sender (issue #283): the same pending-message sender the React Native client
+    // uses. It attempts each queued message as soon as the REPL wakes it, retries transient failures
+    // with per-message backoff (unless --no-retries), and hands failed messages to the recipient's
+    // Mailbox when the store-and-forward send gate is on. It runs off the REPL thread and off the
+    // session lock, so the prompt returns immediately even when the recipient is offline. Outcomes
+    // print above the current prompt, which is then redrawn. Started before the receive callback is
+    // installed, so hearing from a peer can end its offline window (issue #278); nothing is sent
+    // until the node is listening.
+    let outbound = match shared.lock() {
+        Ok(guard) => guard.outbound_store(),
+        Err(_) => {
+            warn!("chat: state lock poisoned");
+            return;
+        }
+    };
+    let pending_sender = Arc::new({
+        let report_prompt = prompt_line.clone();
+        let ready_listening = listening_now.clone();
+        PendingSender::start(
+            Arc::new(outbound),
+            Arc::new(ChatDelivery::new(api.clone())),
+            PendingSenderOptions {
+                tick: RETRY_POLL_INTERVAL,
+                retries_enabled,
+                ..PendingSenderOptions::new()
+            },
+            Arc::new(move || ready_listening.load(std::sync::atomic::Ordering::SeqCst)),
+            Arc::new(move |report| {
+                if let Some(line) = report_line(&report) {
+                    println!("\n{line}");
+                    let prompt = report_prompt.lock().map(|g| g.clone()).unwrap_or_default();
+                    reprint_prompt(&prompt);
+                }
+            }),
+        )
+    });
+
     {
         let shared_for_msg = shared.clone();
         let prompt_for_msg = prompt_line.clone();
+        let sender_for_msg = pending_sender.clone();
         let listening_gate_cb = listening_gate.clone();
         let listening_now_cb = listening_now.clone();
         api.access(|api_mut| {
             let on_message: Arc<OnMessageHandler> =
                 Arc::new(move |sender, sender_handle, message| {
+                    // Hearing from a peer means it is online: end any offline window so the next
+                    // send to it is attempted direct (issue #278).
+                    sender_for_msg.peer_seen(&sender);
+                    if !sender_handle.is_empty() {
+                        sender_for_msg.peer_seen(&sender_handle);
+                    }
                     let received = {
                         let mut guard = match shared_for_msg.lock() {
                             Ok(g) => g,
@@ -882,41 +926,6 @@ fn run_chat_session(
         }
     }
 
-    // Shared background sender (issue #283): the same pending-message sender the React Native client
-    // uses. It attempts each queued message as soon as the REPL wakes it, retries transient failures
-    // with per-message backoff (unless --no-retries), and hands failed messages to the recipient's
-    // Mailbox when the store-and-forward send gate is on. It runs off the REPL thread and off the
-    // session lock, so the prompt returns immediately even when the recipient is offline. Outcomes
-    // print above the current prompt, which is then redrawn.
-    let outbound = match shared.lock() {
-        Ok(guard) => guard.outbound_store(),
-        Err(_) => {
-            warn!("chat: state lock poisoned");
-            return;
-        }
-    };
-    let pending_sender = {
-        let report_prompt = prompt_line.clone();
-        let ready_listening = listening_now.clone();
-        PendingSender::start(
-            Arc::new(outbound),
-            Arc::new(ChatDelivery::new(api.clone())),
-            PendingSenderOptions {
-                tick: RETRY_POLL_INTERVAL,
-                retries_enabled,
-                ..PendingSenderOptions::new()
-            },
-            Arc::new(move || ready_listening.load(std::sync::atomic::Ordering::SeqCst)),
-            Arc::new(move |report| {
-                if let Some(line) = report_line(&report) {
-                    println!("\n{line}");
-                    let prompt = report_prompt.lock().map(|g| g.clone()).unwrap_or_default();
-                    reprint_prompt(&prompt);
-                }
-            }),
-        )
-    };
-
     // Background store-and-forward receive poller (issue #274): when the receive gate is on, drain
     // this account's Sidewinder Mailbox now (it may have been offline) and then every `poll_interval`,
     // so messages held while offline are picked up and shown like real-time ones. `poll_once` is a
@@ -935,6 +944,7 @@ fn run_chat_session(
     };
     if let (true, Some(poll_local)) = (receive_enabled, poll_local) {
         let poll_prompt = prompt_line.clone();
+        let poll_sender = pending_sender.clone();
         std::thread::spawn(move || {
             tracing::info!("chat: mailbox poller started (every {:?})", poll_interval);
             loop {
@@ -944,6 +954,8 @@ fn run_chat_session(
                     // Print each held message above the current prompt, then redraw it — the same
                     // presentation as a real-time message.
                     for msg in &read {
+                        // A Mailbox message shows the sender is back online (issue #278).
+                        poll_sender.peer_seen(&msg.sender_handle);
                         println!("\n{}: {}", msg.sender_handle, msg.text);
                     }
                     let prompt = poll_prompt.lock().map(|g| g.clone()).unwrap_or_default();
