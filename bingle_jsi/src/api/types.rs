@@ -305,4 +305,10 @@ pub struct BingleJsiConfig {
     /// [`DEFAULT_MAILBOX_POLL_SECS`](crate::api::bingle_jsi_api_impl::DEFAULT_MAILBOX_POLL_SECS)
     /// (2 minutes, a testing cadence); production builds set a longer period (e.g. 600).
     pub store_and_forward_poll_interval_secs: Option<u64>,
+    /// Which background sender delivers pending outbound messages (issue #283). `true` uses the
+    /// shared `bingle_local` pending-message sender, which sends and records outcomes without holding
+    /// the local store's lock. `null` defaults to `false`: the legacy JSI processing loop, which also
+    /// sends pending messages. Needs `local` to be set. **Transitional:** once the shared sender is
+    /// proven in the app, this flag and the legacy loop are deprecated and then removed.
+    pub send_pending_messages: Option<bool>,
 }

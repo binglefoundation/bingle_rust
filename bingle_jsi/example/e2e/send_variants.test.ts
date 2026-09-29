@@ -21,7 +21,14 @@
  */
 import {describe, it, beforeAll, afterAll} from '@jest/globals';
 import assert from 'assert';
-import {call, textOf, sleep, resolveNetworkInputs, localStatePath} from './harness';
+import {
+  call,
+  textOf,
+  sleep,
+  resolveNetworkInputs,
+  localStatePath,
+  withSenderSelection,
+} from './harness';
 
 const backend = process.env.BINGLE_E2E_BACKEND || 'testnet';
 const passphrase = process.env.BINGLE_E2E_PASSPHRASE || '';
@@ -73,13 +80,13 @@ describeOrSkip(`bingle_jsi send variants (${backend})`, () => {
     await call({
       method: 'init',
       args: [
-        {
+        withSenderSelection({
           handle,
           passphrase,
           node_file: net.node_file,
           stun_servers: net.stun_servers,
           local: localStatePath(`bingle_e2e_send_variants_${Date.now()}.json`),
-        },
+        }),
       ],
     });
     await call({method: 'importKeypair', args: [passphrase]});

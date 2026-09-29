@@ -17,6 +17,12 @@ set -euo pipefail
 #   BINGLE_E2E_ECHO_TO=<handle>           a live echo peer/relay to send to (replies "Echo: ...")
 #   BINGLE_E2E_OFFLINE_HANDLE=<handle>    (optional) a handle registered but offline, for the
 #                                         RecipientNotAdvertised failure-cause case (#112)
+#   BINGLE_E2E_SEND_PENDING_MESSAGES=1    (optional) run the network suites with the shared
+#                                         pending-message sender instead of the legacy loop (#283);
+#                                         pending_sender.test.ts always uses the shared sender
+#   BINGLE_E2E_STORE_FORWARD=1            (optional) pending_sender.test.ts also turns on the
+#                                         store-and-forward send gate (testnet: Mailbox discovered
+#                                         from the app id; or set BINGLE_E2E_SIDEWINDER_URL/_TOKEN)
 # The messaging/failure tests skip cleanly when these are unset; the smoke test ignores them.
 #
 # localnet (issue #123) is self-provisioning: a Rust provisioner binary (bingle_test

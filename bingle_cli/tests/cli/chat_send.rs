@@ -1,83 +1,101 @@
-// Unit tests for the outbound send/retry path (bingle_cli::chat_send), using a mock sender so no
-// live engine or chain is needed. Mirrors the RN client's policy: transient failures keep retrying
-// (with backoff); only non-transient failures — or any failure under --no-retries — are permanent.
-use std::collections::VecDeque;
-use std::sync::Mutex;
-use std::time::{Duration, Instant};
+// Unit tests for the chat send path (bingle_cli::chat_send) on the shared pending-message sender
+// (issue #283), using a mock delivery so no live engine or chain is needed. The sender's own retry
+// and scheduling behaviour is covered in bingle_local; these cover the chat wiring: queueing from a
+// ChatState, the store handle, transcript lines and label routing.
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex, mpsc};
+use std::time::Duration;
 
 use bingle_cli::chat::parse_chat_args;
-use bingle_cli::chat_send::{MessageSender, SendOutcome, SendTarget, retry_pending, send_once};
+use bingle_cli::chat_send::{SendTarget, is_account_id, report_line};
 use bingle_cli::chat_state::ChatState;
-use bingle_core::api::bingle_api::{BingleError, SendFailureKind, StartOptions};
+use bingle_core::api::bingle_api::{BingleError, ProgressCallback, SendFailureKind, StartOptions};
 use bingle_local::api::MailboxConfig;
 use bingle_local::api::bingle_local_api::BingleLocalApi;
 use bingle_local::api::bingle_local_api_impl::{BingleApiLocalImpl, LocalApiConfig};
-use bingle_local::api::send_retry::RETRY_BACKOFF;
+use bingle_local::api::pending_sender::{
+    MessageDelivery, PendingSender, PendingSenderOptions, SendOutcome, SendReport,
+};
 use serde_json::Value;
 use tempfile::TempDir;
 
-const RETRIES_ON: bool = true;
-const RETRIES_OFF: bool = false;
+const REPORT_TIMEOUT: Duration = Duration::from_secs(5);
 
-/// A cloneable description of one send outcome. `BingleError` is not `Clone`, so the mock stores
-/// these and builds a fresh `Result` per call (issue #99).
-#[derive(Clone)]
-enum MockResult {
-    /// Delivered (`Ok(true)`).
+/// How the mock answers every delivery.
+#[derive(Clone, Copy)]
+enum Answer {
     Delivered,
-    /// A typed transient send failure — kept pending and retried.
-    Transient(String),
-    /// A legacy untyped `Other` error, classified via the keyword fallback. Proves the classifier
-    /// still handles errors that did not come through `BingleError::Send`.
-    Other(String),
-    /// A legacy `Retryable` error — treated as transient by the classifier.
-    Retryable(String),
+    Transient,
+    Permanent,
 }
 
-impl MockResult {
-    fn to_result(&self) -> Result<bool, BingleError> {
-        match self {
-            MockResult::Delivered => Ok(true),
-            MockResult::Transient(d) => Err(BingleError::Send {
+/// A `MessageDelivery` that always gives the same answer and counts calls.
+struct MockDelivery {
+    answer: Answer,
+    calls: AtomicUsize,
+}
+
+impl MockDelivery {
+    fn new(answer: Answer) -> Arc<Self> {
+        Arc::new(Self {
+            answer,
+            calls: AtomicUsize::new(0),
+        })
+    }
+}
+
+impl MessageDelivery for MockDelivery {
+    fn deliver(
+        &self,
+        _recipient: &str,
+        _message: Value,
+        _progress: Option<Arc<ProgressCallback>>,
+    ) -> Result<bool, BingleError> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        match self.answer {
+            Answer::Delivered => Ok(true),
+            Answer::Transient => Err(BingleError::Send {
                 kind: SendFailureKind::PeerUnreachable,
-                detail: d.clone(),
+                detail: "peer offline".to_string(),
             }),
-            MockResult::Other(d) => Err(BingleError::Other(d.clone())),
-            MockResult::Retryable(d) => Err(BingleError::Retryable(d.clone())),
+            Answer::Permanent => Err(BingleError::Send {
+                kind: SendFailureKind::HandleNotFound,
+                detail: "no such handle".to_string(),
+            }),
         }
     }
 }
 
-/// A scripted `MessageSender`: pops the next result per call, falling back to `default` when the
-/// script is exhausted.
-struct MockSender {
-    results: Mutex<VecDeque<MockResult>>,
-    default: MockResult,
+/// Start a sender over `state`'s store, returning it with a receiver of its reports.
+fn start_sender(
+    state: &ChatState,
+    delivery: Arc<MockDelivery>,
+    retries_enabled: bool,
+) -> (PendingSender, mpsc::Receiver<SendReport>) {
+    let (tx, rx) = mpsc::channel();
+    let tx = Mutex::new(tx);
+    let sender = PendingSender::start(
+        Arc::new(state.outbound_store()),
+        delivery,
+        PendingSenderOptions {
+            tick: Duration::from_millis(20),
+            retries_enabled,
+            ..PendingSenderOptions::new()
+        },
+        Arc::new(|| true),
+        Arc::new(move |report| {
+            let _ = tx.lock().expect("report tx").send(report);
+        }),
+    );
+    (sender, rx)
 }
 
-impl MockSender {
-    fn scripted(seq: Vec<MockResult>) -> Self {
-        Self {
-            results: Mutex::new(seq.into()),
-            default: MockResult::Delivered,
-        }
-    }
-    fn always(result: MockResult) -> Self {
-        Self {
-            results: Mutex::new(VecDeque::new()),
-            default: result,
-        }
-    }
-}
-
-impl MessageSender for MockSender {
-    fn send_text(&self, _target: &SendTarget, _message: &Value) -> Result<bool, BingleError> {
-        self.results
-            .lock()
-            .expect("mock lock")
-            .pop_front()
-            .unwrap_or_else(|| self.default.clone())
-            .to_result()
+fn report(outcome: SendOutcome, previously_failed: bool) -> SendReport {
+    SendReport {
+        timestamp: 1,
+        recipients: vec!["bob".to_string()],
+        outcome,
+        previously_failed,
     }
 }
 
@@ -93,10 +111,6 @@ fn alice_state() -> (ChatState, TempDir) {
     let chat_args = parse_chat_args(vec!["--state_file".to_string(), path.clone()]).expect("parse");
     let state = ChatState::from_chat_args(&chat_args).expect("bridge");
     (state, dir)
-}
-
-fn bob() -> SendTarget {
-    SendTarget::Handle("bob".into())
 }
 
 /// A `ChatState` registered as "alice" whose local store has the store-and-forward SEND gate set as
@@ -116,204 +130,207 @@ fn alice_state_gated(send_gate: bool, sidewinder: Option<MailboxConfig>) -> Chat
 
 #[test]
 #[cfg(not(target_os = "ios"))]
-pub fn send_once_delivered_marks_message_delivered() {
-    let (mut state, _dir) = alice_state();
-    let sender = MockSender::always(MockResult::Delivered);
+pub fn queued_message_is_delivered_and_saved() {
+    let (mut state, dir) = alice_state();
+    let ts = state.queue_outbound("bob", "hi").expect("queue");
+    let (sender, rx) = start_sender(&state, MockDelivery::new(Answer::Delivered), true);
+    sender.wake();
 
-    assert_eq!(
-        send_once(&sender, &mut state, &bob(), "hi", RETRIES_ON),
-        SendOutcome::Delivered
-    );
+    let report = rx.recv_timeout(REPORT_TIMEOUT).expect("report");
+    assert_eq!(report.timestamp, ts);
+    assert_eq!(report.outcome, SendOutcome::Delivered);
     assert!(state.pending_outbound().expect("pending").is_empty());
-    let messages = state.messages().expect("messages");
-    assert_eq!(messages.len(), 1);
-    assert_eq!(messages[0].text, "hi");
-    assert_eq!(messages[0].progress, Some(1.0));
-    assert!(messages[0].failure_reason.is_none());
+
+    // Saved to the state file by the sender's store handle.
+    let path = dir.path().join("state.json").to_string_lossy().into_owned();
+    let mut reloaded = BingleApiLocalImpl::new(LocalApiConfig::default());
+    reloaded.load(&path).expect("reload");
+    let stored = reloaded
+        .get_messages()
+        .expect("messages")
+        .into_iter()
+        .find(|m| m.timestamp == ts)
+        .expect("message saved");
+    assert_eq!(stored.progress, Some(1.0));
 }
 
 #[test]
 #[cfg(not(target_os = "ios"))]
-pub fn transient_failure_stays_pending_and_retrying() {
+pub fn transient_failure_stays_pending() {
     let (mut state, _dir) = alice_state();
-    // A typed transient (connectivity) failure keeps the message pending (issue #99).
-    let sender = MockSender::always(MockResult::Transient("peer offline".into()));
+    state.queue_outbound("bob", "hi").expect("queue");
+    let (_sender, rx) = start_sender(&state, MockDelivery::new(Answer::Transient), true);
 
-    match send_once(&sender, &mut state, &bob(), "hi", RETRIES_ON) {
+    let report = rx.recv_timeout(REPORT_TIMEOUT).expect("report");
+    match &report.outcome {
         SendOutcome::Retrying(reason) => assert!(reason.contains("keep retrying"), "got: {reason}"),
         other => panic!("expected Retrying, got {other:?}"),
     }
-    let pending = state.pending_outbound().expect("pending");
-    assert_eq!(pending.len(), 1);
-    assert!(pending[0].progress.unwrap_or(1.0) < 1.0);
-}
-
-#[test]
-#[cfg(not(target_os = "ios"))]
-pub fn non_transient_failure_is_permanent() {
-    let (mut state, _dir) = alice_state();
-    // A non-connectivity error is a permanent failure — not retried.
-    let sender = MockSender::always(MockResult::Other("recipient handle is invalid".into()));
-
-    match send_once(&sender, &mut state, &bob(), "hi", RETRIES_ON) {
-        SendOutcome::Failed(reason) => assert!(reason.contains("Message failed to send")),
-        other => panic!("expected Failed, got {other:?}"),
-    }
-    // Marked terminal (progress 1.0), not left pending.
-    assert!(state.pending_outbound().expect("pending").is_empty());
-    assert_eq!(state.messages().expect("messages")[0].progress, Some(1.0));
-}
-
-#[test]
-#[cfg(not(target_os = "ios"))]
-pub fn no_retries_marks_even_transient_failure_permanent() {
-    let (mut state, _dir) = alice_state();
-    // Transient error, but --no-retries: must be permanent (nothing left pending).
-    let sender = MockSender::always(MockResult::Retryable("relay connect timeout".into()));
-
-    match send_once(&sender, &mut state, &bob(), "hi", RETRIES_OFF) {
-        SendOutcome::Failed(_) => {}
-        other => panic!("expected Failed under --no-retries, got {other:?}"),
-    }
-    assert!(state.pending_outbound().expect("pending").is_empty());
-    assert_eq!(state.messages().expect("messages")[0].progress, Some(1.0));
-}
-
-#[test]
-#[cfg(not(target_os = "ios"))]
-pub fn transient_send_then_retry_delivers() {
-    let (mut state, _dir) = alice_state();
-    // First attempt is a transient error; the background retry then succeeds.
-    let sender = MockSender::scripted(vec![
-        MockResult::Transient("temporarily offline".into()),
-        MockResult::Delivered,
-    ]);
-
-    assert!(matches!(
-        send_once(&sender, &mut state, &bob(), "hello", RETRIES_ON),
-        SendOutcome::Retrying(_)
-    ));
     assert_eq!(state.pending_outbound().expect("pending").len(), 1);
+}
 
-    let mut retry_after = std::collections::HashMap::new();
-    let outcome = retry_pending(&sender, &mut state, &mut retry_after, Instant::now())
-        .expect("a pending message to attempt");
-    assert_eq!(outcome.outcome, SendOutcome::Delivered);
-    assert_eq!(outcome.recipient, "bob");
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn permanent_failure_is_terminal() {
+    let (mut state, _dir) = alice_state();
+    state.queue_outbound("bob", "hi").expect("queue");
+    let (_sender, rx) = start_sender(&state, MockDelivery::new(Answer::Permanent), true);
 
-    assert!(state.pending_outbound().expect("pending").is_empty());
-    assert_eq!(state.messages().expect("messages")[0].progress, Some(1.0));
+    let report = rx.recv_timeout(REPORT_TIMEOUT).expect("report");
     assert!(
-        state.messages().expect("messages")[0]
-            .failure_reason
-            .is_none()
+        matches!(report.outcome, SendOutcome::Failed(_)),
+        "{report:?}"
     );
+    assert!(state.pending_outbound().expect("pending").is_empty());
 }
 
 #[test]
 #[cfg(not(target_os = "ios"))]
-pub fn retry_keeps_transient_pending_forever_with_backoff() {
+pub fn no_retries_marks_a_transient_failure_terminal() {
     let (mut state, _dir) = alice_state();
-    let _ts = state.queue_outbound("bob", "hello").expect("queue");
-    let sender = MockSender::always(MockResult::Retryable("still offline".into()));
-    let mut retry_after = std::collections::HashMap::new();
-    let t0 = Instant::now();
+    state.queue_outbound("bob", "hi").expect("queue");
+    let (_sender, rx) = start_sender(&state, MockDelivery::new(Answer::Transient), false);
 
-    // First attempt: transient failure → stays pending, backed off (never gives up).
-    let first = retry_pending(&sender, &mut state, &mut retry_after, t0).expect("attempt");
-    assert!(matches!(first.outcome, SendOutcome::Retrying(_)));
-    assert_eq!(state.pending_outbound().expect("pending").len(), 1);
-
-    // Immediately after: the message is backed off, so nothing is eligible.
-    assert!(retry_pending(&sender, &mut state, &mut retry_after, t0).is_none());
-
-    // Once the backoff elapses it retries again — and still never permanently fails.
-    let t1 = t0 + RETRY_BACKOFF + Duration::from_millis(1);
-    let second = retry_pending(&sender, &mut state, &mut retry_after, t1).expect("attempt");
-    assert!(matches!(second.outcome, SendOutcome::Retrying(_)));
-    assert_eq!(state.pending_outbound().expect("pending").len(), 1);
+    let report = rx.recv_timeout(REPORT_TIMEOUT).expect("report");
+    assert!(
+        matches!(report.outcome, SendOutcome::Failed(_)),
+        "{report:?}"
+    );
+    assert!(state.pending_outbound().expect("pending").is_empty());
 }
 
 #[test]
 #[cfg(not(target_os = "ios"))]
-pub fn send_gate_on_failed_send_forwards_to_mailbox_and_stops_retrying() {
+pub fn send_gate_on_failed_send_forwards_to_mailbox() {
     // Issue #272: with the store-and-forward SEND gate on, a failed direct send to an offline
-    // recipient posts the sealed message to their Sidewinder Mailbox instead of being kept for
-    // retry. Pre-mark the recipient as already posted (test seam) so the forward completes without a
-    // live node, mirroring bingle_local's `a_fully_forwarded_message_stops_retrying_direct_delivery`.
+    // recipient is handed to their Mailbox. Pre-mark it posted (test seam) so no node is needed.
     let mut state = alice_state_gated(true, Some(MailboxConfig::new("http://localhost:9", "tok")));
     let ts = state
         .queue_outbound("bob", "hi while offline")
         .expect("queue");
     state.mark_forwarded_for_tests(ts, "bob");
+    let (_sender, rx) = start_sender(&state, MockDelivery::new(Answer::Transient), true);
 
-    // The direct send keeps failing (recipient offline), but the forward is the fallback.
-    let sender = MockSender::always(MockResult::Transient("peer offline".into()));
-    let mut retry_after = std::collections::HashMap::new();
-    let outcome = retry_pending(&sender, &mut state, &mut retry_after, Instant::now())
-        .expect("a pending message to attempt");
-
+    let report = rx.recv_timeout(REPORT_TIMEOUT).expect("report");
     assert!(
-        matches!(outcome.outcome, SendOutcome::Forwarded(_)),
-        "expected the message to be reported forwarded to the mailbox, got {:?}",
-        outcome.outcome
+        matches!(report.outcome, SendOutcome::Forwarded(_)),
+        "{report:?}"
     );
-    // Handed off to the sidechain: no longer pending, marked complete, transient failure cleared.
-    assert!(
-        state.pending_outbound().expect("pending").is_empty(),
-        "a forwarded message is no longer retried directly"
-    );
-    let stored = state
-        .messages()
-        .expect("messages")
-        .into_iter()
-        .find(|m| m.timestamp == ts)
-        .expect("message present");
-    assert_eq!(stored.progress, Some(1.0));
-    assert!(stored.failure_reason.is_none());
+    assert!(state.pending_outbound().expect("pending").is_empty());
 }
 
 #[test]
 #[cfg(not(target_os = "ios"))]
 pub fn send_gate_on_but_forward_incomplete_falls_back_to_retry() {
-    // Issue #272: if the Mailbox post cannot complete (here: no reachable Mailbox), the send is not
-    // silently dropped — it falls back to the retry/queue path exactly as with the gate off.
     let mut state = alice_state_gated(true, None);
-    let sender = MockSender::always(MockResult::Transient("peer offline".into()));
+    state.queue_outbound("bob", "hi").expect("queue");
+    let (_sender, rx) = start_sender(&state, MockDelivery::new(Answer::Transient), true);
 
-    match send_once(&sender, &mut state, &bob(), "hi", RETRIES_ON) {
-        SendOutcome::Retrying(reason) => assert!(reason.contains("keep retrying"), "got: {reason}"),
-        other => panic!("expected Retrying fallback, got {other:?}"),
-    }
-    let pending = state.pending_outbound().expect("pending");
-    assert_eq!(
-        pending.len(),
-        1,
-        "the message is kept for retry, not dropped"
+    let report = rx.recv_timeout(REPORT_TIMEOUT).expect("report");
+    assert!(
+        matches!(report.outcome, SendOutcome::Retrying(_)),
+        "{report:?}"
     );
-    assert!(pending[0].progress.unwrap_or(1.0) < 1.0);
+    assert_eq!(state.pending_outbound().expect("pending").len(), 1);
 }
 
 #[test]
 #[cfg(not(target_os = "ios"))]
-pub fn retry_marks_non_transient_permanent() {
+pub fn sending_does_not_need_the_session_lock() {
+    // The REPL, receive callback and sender share the ChatState behind a mutex; the sender uses its
+    // own store handle, so a send completes while that mutex is held.
     let (mut state, _dir) = alice_state();
-    let ts = state.queue_outbound("bob", "hello").expect("queue");
-    let sender = MockSender::always(MockResult::Other("account not opted in".into()));
-    let mut retry_after = std::collections::HashMap::new();
+    let ts = state.queue_outbound("bob", "hi").expect("queue");
+    let store = state.outbound_store();
+    let shared = Mutex::new(state);
+    let held = shared.lock().expect("session lock");
 
-    let outcome =
-        retry_pending(&sender, &mut state, &mut retry_after, Instant::now()).expect("attempt");
-    assert!(matches!(outcome.outcome, SendOutcome::Failed(_)));
+    let (tx, rx) = mpsc::channel();
+    let tx = Mutex::new(tx);
+    let _sender = PendingSender::start(
+        Arc::new(store),
+        MockDelivery::new(Answer::Delivered),
+        PendingSenderOptions {
+            tick: Duration::from_millis(20),
+            ..PendingSenderOptions::new()
+        },
+        Arc::new(|| true),
+        Arc::new(move |report: SendReport| {
+            let _ = tx.lock().expect("report tx").send(report);
+        }),
+    );
+    let report = rx
+        .recv_timeout(REPORT_TIMEOUT)
+        .expect("report while locked");
+    assert_eq!(report.timestamp, ts);
+    assert_eq!(report.outcome, SendOutcome::Delivered);
+    drop(held);
+}
 
-    // No longer pending; recorded as a permanent failure.
-    assert!(state.pending_outbound().expect("pending").is_empty());
-    let stored = state
-        .messages()
-        .expect("messages")
-        .into_iter()
-        .find(|m| m.timestamp == ts)
-        .expect("message present");
-    assert_eq!(stored.progress, Some(1.0));
-    assert!(stored.failure_reason.is_some());
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn messages_queued_in_the_same_millisecond_get_distinct_timestamps() {
+    let (mut state, _dir) = alice_state();
+    let a = state.queue_outbound("bob", "one").expect("queue");
+    let b = state.queue_outbound("bob", "two").expect("queue");
+    let c = state.queue_outbound("bob", "three").expect("queue");
+    assert!(a != b && b != c && a != c);
+    assert_eq!(state.pending_outbound().expect("pending").len(), 3);
+}
+
+#[test]
+pub fn report_line_is_quiet_for_a_first_time_delivery() {
+    assert_eq!(report_line(&report(SendOutcome::Delivered, false)), None);
+}
+
+#[test]
+pub fn report_line_announces_a_delivery_after_a_failure() {
+    assert_eq!(
+        report_line(&report(SendOutcome::Delivered, true)).as_deref(),
+        Some("✓ delivered to bob")
+    );
+}
+
+#[test]
+pub fn report_line_reports_only_the_first_transient_failure() {
+    let first = report_line(&report(SendOutcome::Retrying("offline".into()), false));
+    assert_eq!(
+        first.as_deref(),
+        Some("! send to bob not delivered (offline); will keep retrying…")
+    );
+    assert_eq!(
+        report_line(&report(SendOutcome::Retrying("offline".into()), true)),
+        None
+    );
+}
+
+#[test]
+pub fn report_line_reports_forwarding_and_permanent_failure() {
+    assert_eq!(
+        report_line(&report(SendOutcome::Forwarded("offline".into()), false)).as_deref(),
+        Some("↪ bob is offline; queued to their mailbox — they'll get it when they reconnect")
+    );
+    assert_eq!(
+        report_line(&report(SendOutcome::Failed("no such handle".into()), false)).as_deref(),
+        Some("! send to bob failed: no such handle")
+    );
+}
+
+#[test]
+pub fn account_ids_are_told_apart_from_handles() {
+    assert!(is_account_id(
+        "7XDA6VEISOVEDQUS3Z7QKR2ANXXWDHJ5ICNVIQJT7BSJZ4FHP5FDATK4E4"
+    ));
+    assert!(!is_account_id("sidewinder_caller_0"));
+    assert!(!is_account_id("bob"));
+    // Right length but not base32 (lower case).
+    assert!(!is_account_id(
+        "7xda6veisovedqus3z7qkr2anxxwdhj5icnviqjt7bsjz4fhp5fdatk4e4"
+    ));
+}
+
+#[test]
+pub fn send_target_label_is_the_handle_or_id() {
+    assert_eq!(SendTarget::Handle("bob".into()).label(), "bob");
+    assert_eq!(SendTarget::Id("ABC".into()).label(), "ABC");
 }
