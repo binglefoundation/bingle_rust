@@ -172,5 +172,11 @@ else
   wait_for_metro
 fi
 
+# Pre-warm the iOS bundle, as the Android CI script does: on a fresh checkout Metro compiles it on
+# the first app launch, which can outlast the first suite's launch wait (its beforeAll hook times out
+# at 120s). Building it here makes that first launch as fast as the rest.
+echo "==> Pre-warming the iOS JS bundle"
+curl -s -o /dev/null "http://localhost:8081/index.bundle?platform=ios&dev=true&minify=false" || true
+
 echo "==> Running the Detox e2e suite"
 npm run e2e:test:ios

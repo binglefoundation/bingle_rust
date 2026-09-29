@@ -6,7 +6,7 @@ set -euo pipefail
 # This script:
 #   1. Builds the bingle_jsi native iOS libraries (XCFramework + Swift bindings)
 #   2. Runs `npm install` in the example directory
-#   3. Generates the Xcode project via react-native community CLI
+#   3. Checks the committed Xcode project is present
 #   4. Runs `pod install` to link native dependencies
 #
 # Prerequisites:
@@ -43,36 +43,16 @@ cd "$EXAMPLE_DIR"
 npm install --legacy-peer-deps
 echo ""
 
-# ── Step 3: Generate Xcode project if missing ────────────────────────
+# ── Step 3: Check the Xcode project ──────────────────────────────────
 
+# The project (ios/BingleJsiExample.xcodeproj) is committed. It is not generated here: copying a
+# React Native template's ios/ folder over ours would overwrite the committed Podfile and sources.
 XCODEPROJ="$EXAMPLE_DIR/ios/BingleJsiExample.xcodeproj"
 if [[ ! -d "$XCODEPROJ" ]]; then
-  echo "Step 3: Generating Xcode project..."
-  # Use react-native's init to create ios/ project scaffolding
-  # We use a temp project and copy the ios/ folder.
-  # The scaffold version tracks the example's pinned react-native (see package.json),
-  # currently 0.84.1 (Detox-supported; see #109/#115). NOTE: this generation path is not yet
-  # validated end to end on 0.84.1 — see the #109 native-build sub-issue.
-  TMPDIR_INIT="$(mktemp -d)"
-  cd "$TMPDIR_INIT"
-
-  npx --yes @react-native-community/cli@latest init BingleJsiExample --version 0.84.1 --skip-install --skip-git-init 2>&1 || true
-
-  if [[ -d "$TMPDIR_INIT/BingleJsiExample/ios" ]]; then
-    # Copy generated ios project files (keep our Podfile)
-    cp -R "$TMPDIR_INIT/BingleJsiExample/ios/"* "$EXAMPLE_DIR/ios/" 2>/dev/null || true
-    # Keep our custom Podfile
-    cp "$EXAMPLE_DIR/ios/Podfile" "$EXAMPLE_DIR/ios/Podfile"
-  else
-    echo "Warning: react-native init did not produce ios/ directory."
-    echo "You may need to create the Xcode project manually."
-  fi
-
-  rm -rf "$TMPDIR_INIT"
-  cd "$EXAMPLE_DIR"
-else
-  echo "Step 3: Xcode project already exists, skipping generation."
+  echo "Error: $XCODEPROJ is missing; it is committed, so restore it from git." >&2
+  exit 1
 fi
+echo "Step 3: Xcode project present."
 echo ""
 
 # ── Step 4: Pod install ──────────────────────────────────────────────

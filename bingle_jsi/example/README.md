@@ -49,7 +49,7 @@ You can also drive it by hand in a simulator — type a command and tap **Run**.
 From the project root:
 
 ```bash
-# One-time setup: build native libs, npm install, generate Xcode project, pod install
+# One-time setup: build native libs, npm install, pod install (the Xcode project is committed)
 bash bingle_jsi/example/scripts/setup_example.sh
 
 # Run on iOS Simulator
@@ -66,15 +66,10 @@ bash bingle_jsi/scripts/build_ios.sh
 cd bingle_jsi/example
 npm install --legacy-peer-deps
 
-# 3. Generate the Xcode project (first time only). Version tracks the pin in package.json (0.84.1).
-npx --yes @react-native-community/cli init BingleJsiExample --version 0.84.1 --directory /tmp/rn-init --skip-install --skip-git-init
-cp -R /tmp/rn-init/ios/* ios/
-rm -rf /tmp/rn-init
-
-# 4. Install pods
+# 3. Install pods (the Xcode project, ios/BingleJsiExample.xcodeproj, is committed)
 cd ios && pod install && cd ..
 
-# 5. Run
+# 4. Run
 npx react-native run-ios
 ```
 
