@@ -596,7 +596,9 @@ impl PacketTransport for DtlsReliablePacketTransport {
             match Self::wait_for_ack_complete_with_timeout(tx_id, &waiter, *delay) {
                 Ok(true) => return Ok(()),
                 Ok(false) => {
-                    tracing::warn!(
+                    // Per-attempt timeouts are expected while a peer is offline; only the final
+                    // failure is reported, by the caller (issue #278).
+                    tracing::debug!(
                         "[DtlsReliablePacketTransport::send] timed out waiting {:?} for ACK_COMPLETE key={} generation={} tx_id={} attempt={}",
                         delay,
                         ack_key.0,

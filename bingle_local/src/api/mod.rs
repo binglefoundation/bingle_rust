@@ -38,8 +38,9 @@ pub mod send_retry;
 pub mod pending_sender;
 #[doc(hidden)]
 pub use send_retry::{
-    RETRY_BACKOFF, SendFailure, classify_send_error, is_transient_send_failure,
-    pending_failure_reason, select_sendable_message,
+    OFFLINE_WINDOW, OfflineWindow, RETRY_BACKOFF, SendFailure, classify_send_error,
+    indicates_peer_offline, is_transient_send_failure, pending_failure_reason,
+    select_sendable_message,
 };
 // Typed send-failure cause (issue #99), re-exported for clients that classify send results.
 pub use bingle_core::api::bingle_api::SendFailureKind;

@@ -424,3 +424,148 @@ fn stop_does_not_wait_for_a_slow_send() {
     );
     release.store(true, Ordering::SeqCst);
 }
+
+// ── Recipient-offline window (issue #278) ─────────────────────────────────────────────────────
+
+/// A local store with the store-and-forward send gate on and, optionally, a Mailbox configured.
+fn gated_store(sidewinder: Option<MailboxConfig>) -> BingleApiLocalImpl {
+    local_store(LocalApiConfig {
+        sidewinder,
+        store_and_forward_send: true,
+        ..LocalApiConfig::default()
+    })
+}
+
+#[test]
+fn a_peer_unreachable_failure_opens_the_offline_window() {
+    let local = local_store(LocalApiConfig::default());
+    queue(&local, 1, &["bob"], "hi");
+    let delivery = MockDelivery::new();
+    delivery.script("bob", vec![Scripted::Transient]);
+    let (sender, rx) = start(&local, delivery, fast_options(), ready());
+
+    rx.recv_timeout(REPORT_TIMEOUT).expect("report");
+    assert!(sender.is_offline("bob"));
+}
+
+#[test]
+fn a_permanent_failure_does_not_open_the_offline_window() {
+    let local = local_store(LocalApiConfig::default());
+    queue(&local, 1, &["bob"], "hi");
+    let delivery = MockDelivery::new();
+    delivery.script("bob", vec![Scripted::Permanent]);
+    let (sender, rx) = start(&local, delivery, fast_options(), ready());
+
+    rx.recv_timeout(REPORT_TIMEOUT).expect("report");
+    assert!(!sender.is_offline("bob"));
+}
+
+#[test]
+fn with_the_send_gate_on_an_offline_recipient_gets_no_direct_attempt() {
+    // No Mailbox configured, so the post cannot complete and the message falls back to retry; the
+    // point is that no direct send is attempted inside the window.
+    let local = gated_store(None);
+    queue(&local, 1, &["bob"], "first");
+    let delivery = MockDelivery::new();
+    delivery.script("bob", vec![Scripted::Transient]);
+    let (sender, rx) = start(&local, delivery.clone(), fast_options(), ready());
+    rx.recv_timeout(REPORT_TIMEOUT).expect("first report");
+    assert_eq!(delivery.calls().len(), 1);
+
+    queue(&local, 2, &["bob"], "second");
+    sender.wake();
+    let second = rx.recv_timeout(REPORT_TIMEOUT).expect("second report");
+    assert_eq!(second.timestamp, 2);
+    assert!(
+        matches!(second.outcome, SendOutcome::Retrying(_)),
+        "{second:?}"
+    );
+    assert_eq!(
+        delivery.calls().len(),
+        1,
+        "no direct attempt inside the offline window"
+    );
+}
+
+#[test]
+fn with_the_send_gate_on_an_offline_recipient_is_forwarded_to_their_mailbox() {
+    let local = gated_store(Some(MailboxConfig::new("http://localhost:9", "tok")));
+    queue(&local, 1, &["bob"], "first");
+    let delivery = MockDelivery::new();
+    delivery.script("bob", vec![Scripted::Transient]);
+    let (sender, rx) = start(&local, delivery.clone(), fast_options(), ready());
+    rx.recv_timeout(REPORT_TIMEOUT).expect("first report");
+
+    // Pre-mark the second message posted (test seam), so the forward completes without a node.
+    queue(&local, 2, &["bob"], "second");
+    local.mark_forwarded_for_tests(2, "bob");
+    sender.wake();
+    let second = rx.recv_timeout(REPORT_TIMEOUT).expect("second report");
+    assert_eq!(second.timestamp, 2);
+    assert!(
+        matches!(second.outcome, SendOutcome::Forwarded(_)),
+        "{second:?}"
+    );
+    assert_eq!(
+        delivery.calls().len(),
+        1,
+        "no direct attempt inside the offline window"
+    );
+}
+
+#[test]
+fn with_the_send_gate_off_an_offline_recipient_is_still_sent_direct() {
+    // Without store-and-forward there is no other route, so the direct attempt is still made.
+    let local = local_store(LocalApiConfig::default());
+    queue(&local, 1, &["bob"], "first");
+    let delivery = MockDelivery::new();
+    delivery.script("bob", vec![Scripted::Transient, Scripted::Transient]);
+    let (sender, rx) = start(&local, delivery.clone(), fast_options(), ready());
+    rx.recv_timeout(REPORT_TIMEOUT).expect("first report");
+
+    queue(&local, 2, &["bob"], "second");
+    sender.wake();
+    rx.recv_timeout(REPORT_TIMEOUT).expect("second report");
+    assert_eq!(delivery.calls().len(), 2);
+}
+
+#[test]
+fn peer_seen_ends_the_offline_window() {
+    let local = gated_store(None);
+    queue(&local, 1, &["bob"], "first");
+    let delivery = MockDelivery::new();
+    delivery.script("bob", vec![Scripted::Transient]);
+    let (sender, rx) = start(&local, delivery.clone(), fast_options(), ready());
+    rx.recv_timeout(REPORT_TIMEOUT).expect("first report");
+
+    sender.peer_seen("bob");
+    assert!(!sender.is_offline("bob"));
+    queue(&local, 2, &["bob"], "second");
+    sender.wake();
+    let second = rx.recv_timeout(REPORT_TIMEOUT).expect("second report");
+    assert_eq!(second.timestamp, 2);
+    assert_eq!(second.outcome, SendOutcome::Delivered);
+    assert_eq!(delivery.calls().len(), 2);
+}
+
+#[test]
+fn the_offline_window_lapses_and_direct_is_tried_again() {
+    let local = gated_store(None);
+    queue(&local, 1, &["bob"], "first");
+    let delivery = MockDelivery::new();
+    delivery.script("bob", vec![Scripted::Transient]);
+    let options = PendingSenderOptions {
+        offline_window: Duration::from_millis(50),
+        ..fast_options()
+    };
+    let (sender, rx) = start(&local, delivery.clone(), options, ready());
+    rx.recv_timeout(REPORT_TIMEOUT).expect("first report");
+
+    std::thread::sleep(Duration::from_millis(100));
+    assert!(!sender.is_offline("bob"));
+    queue(&local, 2, &["bob"], "second");
+    sender.wake();
+    let second = rx.recv_timeout(REPORT_TIMEOUT).expect("second report");
+    assert_eq!(second.outcome, SendOutcome::Delivered);
+    assert_eq!(delivery.calls().len(), 2);
+}

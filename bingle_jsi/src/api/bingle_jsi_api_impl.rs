@@ -65,8 +65,9 @@ pub struct BingleJsiApiImpl {
     outbound: Option<LocalOutboundStore>,
     /// `BingleJsiConfig::send_pending_messages`: use the shared sender instead of the legacy loop.
     send_pending_messages: bool,
-    /// The running shared sender, while started with `send_pending_messages` on.
-    pending_sender: Mutex<Option<PendingSender>>,
+    /// The running shared sender, while started with `send_pending_messages` on. Shared with the
+    /// message callback and the Mailbox poller, which report peers heard from (issue #278).
+    pending_sender: Arc<Mutex<Option<PendingSender>>>,
 }
 
 /// Default period of the store-and-forward backstop Mailbox poll when the JSI config does not set
@@ -164,6 +165,20 @@ fn json_to_message(val: &JsonValue) -> BingleMessage {
     }
 }
 
+/// Tell the shared pending-message sender, if running, that a peer (by id and/or handle; empty ones
+/// are skipped) was heard from, ending its offline window (issue #278).
+fn note_peer_seen(sender: &Mutex<Option<PendingSender>>, id: &str, handle: &str) {
+    if let Ok(guard) = sender.lock()
+        && let Some(sender) = guard.as_ref()
+    {
+        for peer in [id, handle] {
+            if !peer.is_empty() {
+                sender.peer_seen(peer);
+            }
+        }
+    }
+}
+
 /// Save local state if local_api and local_file are both configured.
 fn save_if_configured(
     local_api: &Option<Arc<Mutex<Box<dyn BingleLocalApi>>>>,
@@ -218,6 +233,7 @@ impl BingleJsiApiImpl {
 
         let interval = self.mailbox_poll_interval;
         let local_file = self.local_file.clone();
+        let sender_slot = self.pending_sender.clone();
         std::thread::spawn(move || {
             tracing::info!("[mailbox poller] started (every {:?})", interval);
             while !stop.load(Ordering::Relaxed) {
@@ -228,6 +244,10 @@ impl BingleJsiApiImpl {
                         Vec::new()
                     }
                 };
+                // A Mailbox message shows its sender is back online (issue #278).
+                for msg in &read {
+                    note_peer_seen(&sender_slot, "", &msg.sender_handle);
+                }
                 if !read.is_empty() {
                     tracing::info!(
                         "[mailbox poller] read {} store-and-forward message(s)",
@@ -564,6 +584,9 @@ impl BingleJsiApiImpl {
                 .store_and_forward_poll_interval_secs
                 .unwrap_or(DEFAULT_MAILBOX_POLL_SECS),
         );
+        // The shared sender slot, filled by `start` when `send_pending_messages` is on.
+        let pending_sender: Arc<Mutex<Option<PendingSender>>> = Arc::new(Mutex::new(None));
+
         let api_instance = Arc::new(Self {
             api: api.clone(),
             messages: messages.clone(),
@@ -581,7 +604,7 @@ impl BingleJsiApiImpl {
             mailbox_poller: Mutex::new(None),
             outbound,
             send_pending_messages: config.send_pending_messages.unwrap_or(false),
-            pending_sender: Mutex::new(None),
+            pending_sender: pending_sender.clone(),
         });
 
         // Output INFO with version information as early as possible
@@ -625,6 +648,7 @@ impl BingleJsiApiImpl {
 
         // Setup on-message handler to queue received messages
         {
+            let sender_slot = pending_sender.clone();
             let msgs = messages.clone();
             let local_api_for_closure = local_api.clone();
             let local_file_for_closure = local_file.clone();
@@ -634,6 +658,9 @@ impl BingleJsiApiImpl {
                 let on_message: Arc<bingle_core::api::bingle_api::OnMessageHandler> =
                     Arc::new(move |sender, sender_handle, message| {
                         tracing::info!("[BingleJsiApiImpl][init handler] Received message from {}: {}", sender_handle, message);
+                        // Hearing from a peer means it is online: end any offline window so the
+                        // next send to it is attempted direct (issue #278).
+                        note_peer_seen(&sender_slot, &sender, &sender_handle);
                         // Invoke user callback if registered
                         if let Ok(guard) = cb.lock() {
                             if let Some(ref callback) = *guard {
@@ -1103,7 +1130,7 @@ impl BingleJsiApiImpl {
             mailbox_poller: Mutex::new(None),
             outbound,
             send_pending_messages,
-            pending_sender: Mutex::new(None),
+            pending_sender: Arc::new(Mutex::new(None)),
         })
     }
 

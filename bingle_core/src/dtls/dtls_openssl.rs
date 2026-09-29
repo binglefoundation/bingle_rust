@@ -263,7 +263,7 @@ pub mod openssl_impl {
                     let cmd2 = cmd.clone();
                     tracing::debug!("[DtlsOpenSsl:{}] received peer command: {}", handle_tag, cmd2);
                     if !on_command(cmd) {
-                        tracing::warn!("[DtlsOpenSsl:{}] peer command handler returned false; terminating worker", handle_tag);
+                        tracing::debug!("[DtlsOpenSsl:{}] peer command handler returned false; terminating worker", handle_tag);
                         failed = true;
                         break;
                     }
@@ -1995,7 +1995,7 @@ pub mod openssl_impl {
                 use std::sync::atomic::Ordering;
                 flag.store(true, Ordering::SeqCst);
             } else {
-                tracing::warn!("[DtlsOpenSsl:::stop] already stopped");
+                tracing::debug!("[DtlsOpenSsl:::stop] already stopped");
             }
 
             // Clear peer states and close their async queues to signal EOF to background reader threads
@@ -2028,7 +2028,7 @@ pub mod openssl_impl {
             if let Some(mux) = self.owned_udp_mux.lock().unwrap().take() {
                 mux.stop();
             } else {
-                tracing::warn!("[DtlsOpenSsl:::stop] no owned mux");
+                tracing::info!("[DtlsOpenSsl:::stop] no owned mux");
             }
             tracing::debug!("[DtlsOpenSsl:::stop] done");
             Ok(())
@@ -2290,7 +2290,9 @@ pub mod openssl_impl {
                             );
                         }
                     }
-                    tracing::warn!(
+                    // An unreachable peer is an expected condition; the caller reports the failure
+                    // (issue #278).
+                    tracing::debug!(
                         "[DtlsOpenSsl:::send] connect/write timeout to {} after {}ms",
                         to,
                         start.elapsed().as_millis()

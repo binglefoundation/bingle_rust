@@ -12,6 +12,12 @@
 //! takes. The worker sends one message at a time and records the outcome in the store. It works on
 //! an [`OutboundStore`] handle rather than behind any client lock, so a slow send — or the
 //! store-and-forward Mailbox post a failed send triggers — never blocks the client's other calls.
+//!
+//! After a send fails because the recipient is unreachable, the sender treats that recipient as
+//! offline for [`PendingSenderOptions::offline_window`] (issue #278). With the store-and-forward send
+//! gate on, sends to them inside the window skip the direct attempt — and its connect and relay
+//! timeouts — and go straight to their Mailbox. A delivered send, or the client reporting that it
+//! heard from the peer ([`PendingSender::peer_seen`]), ends the window early.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -27,7 +33,8 @@ use serde_json::{Value as JsonValue, json};
 use crate::api::bingle_local_api::{BingleLocalApi, Message};
 use crate::api::bingle_local_api_impl::BingleApiLocalImpl;
 use crate::api::send_retry::{
-    RETRY_BACKOFF, SendFailure, classify_send_error, select_sendable_message,
+    OFFLINE_WINDOW, OfflineWindow, RETRY_BACKOFF, SendFailure, classify_send_error,
+    indicates_peer_offline, select_sendable_message,
 };
 
 /// The outbound side of the local store, as the [`PendingSender`] uses it. Every method takes
@@ -181,15 +188,20 @@ pub struct PendingSenderOptions {
     pub retries_enabled: bool,
     /// A send taking longer than this is logged (once); the scheduler keeps running regardless.
     pub watchdog: Duration,
+    /// How long a recipient is treated as offline after a send to them fails because they could not
+    /// be reached (issue #278).
+    pub offline_window: Duration,
 }
 
 impl PendingSenderOptions {
-    /// Defaults matching the React Native client: a 200ms tick, retries on, and a 45s watchdog.
+    /// Defaults matching the React Native client: a 200ms tick, retries on, a 45s watchdog, and
+    /// the shared [`OFFLINE_WINDOW`].
     pub fn new() -> Self {
         Self {
             tick: Duration::from_millis(200),
             retries_enabled: true,
             watchdog: Duration::from_secs(45),
+            offline_window: OFFLINE_WINDOW,
         }
     }
 }
@@ -224,6 +236,8 @@ pub struct PendingSender {
     events: Mutex<mpsc::Sender<Event>>,
     running: Arc<AtomicBool>,
     scheduler: Mutex<Option<JoinHandle<()>>>,
+    /// Recipients recently found unreachable, shared with the worker (issue #278).
+    offline: Arc<Mutex<OfflineWindow>>,
 }
 
 impl PendingSender {
@@ -239,6 +253,8 @@ impl PendingSender {
         let (work_tx, work_rx) = mpsc::channel::<Message>();
         let running = Arc::new(AtomicBool::new(true));
 
+        let offline = Arc::new(Mutex::new(OfflineWindow::new(options.offline_window)));
+        let worker_offline = Arc::clone(&offline);
         let worker_store = Arc::clone(&store);
         let worker_events = event_tx.clone();
         let retries_enabled = options.retries_enabled;
@@ -247,7 +263,13 @@ impl PendingSender {
             .spawn(move || {
                 while let Ok(msg) = work_rx.recv() {
                     let timestamp = msg.timestamp;
-                    let report = send_one(&worker_store, &*delivery, &msg, retries_enabled);
+                    let report = send_one(
+                        &worker_store,
+                        &*delivery,
+                        &worker_offline,
+                        &msg,
+                        retries_enabled,
+                    );
                     if worker_events
                         .send(Event::Done { timestamp, report })
                         .is_err()
@@ -287,7 +309,26 @@ impl PendingSender {
             events: Mutex::new(event_tx),
             running,
             scheduler: Mutex::new(scheduler),
+            offline,
         }
+    }
+
+    /// The client heard from `recipient` (a handle or id) — a real-time message or one read from
+    /// the Mailbox — so it is online: end its offline window, so the next send to it is attempted
+    /// direct, and look for work now (issue #278).
+    pub fn peer_seen(&self, recipient: &str) {
+        if let Ok(mut offline) = self.offline.lock() {
+            offline.clear(recipient);
+        }
+        self.wake();
+    }
+
+    /// Whether `recipient` is inside its offline window now.
+    pub fn is_offline(&self, recipient: &str) -> bool {
+        self.offline
+            .lock()
+            .map(|offline| offline.is_offline(recipient, Instant::now()))
+            .unwrap_or(false)
     }
 
     /// Look for work now — call after queueing a message so its first attempt is immediate rather
@@ -396,17 +437,39 @@ fn run_scheduler(
 /// Recipients are tried in order. A transient failure stops the attempt (the transport is likely
 /// down, so the rest would fail too); a permanent one moves on to the next recipient. A panic in
 /// the send path is contained and treated as a transient failure, so it cannot kill the worker.
+///
+/// With the store-and-forward send gate on, a recipient inside its offline window is not sent to
+/// directly: the attempt counts as unreachable straight away, and recording that failure posts the
+/// message to their Mailbox (issue #278).
 fn send_one(
     store: &Arc<dyn OutboundStore>,
     delivery: &dyn MessageDelivery,
+    offline: &Mutex<OfflineWindow>,
     msg: &Message,
     retries_enabled: bool,
 ) -> SendReport {
     let timestamp = msg.timestamp;
     let previously_failed = msg.failure_reason.is_some();
+    let forwarding = store.store_and_forward_send();
 
     let mut last_failure: Option<SendFailure> = None;
     for recipient in &msg.recipient_handles {
+        let recently_offline = forwarding
+            && offline
+                .lock()
+                .map(|o| o.is_offline(recipient, Instant::now()))
+                .unwrap_or(false);
+        if recently_offline {
+            tracing::debug!(
+                "[PendingSender] {recipient} is offline; sending via store-and-forward"
+            );
+            last_failure = classify_send_error(&Err(BingleError::Send {
+                kind: SendFailureKind::PeerUnreachable,
+                detail: format!("{recipient} is offline (a recent send failed)"),
+            }));
+            break;
+        }
+
         // Surface the send path's progress on the message, as the React Native client expects.
         let progress_store = Arc::clone(store);
         let progress: Arc<ProgressCallback> = Arc::new(move |percent: u8, _status: String| {
@@ -427,11 +490,27 @@ fn send_one(
                 detail: "send panicked".to_string(),
             })
         });
-        if let Some(failure) = classify_send_error(&result) {
-            let retryable = failure.kind.is_retryable();
-            last_failure = Some(failure);
-            if retryable {
-                break;
+        match classify_send_error(&result) {
+            None => {
+                if let Ok(mut o) = offline.lock() {
+                    o.clear(recipient);
+                }
+            }
+            Some(failure) => {
+                if indicates_peer_offline(failure.kind) {
+                    tracing::info!(
+                        "[PendingSender] {recipient} is unreachable: {}",
+                        failure.reason
+                    );
+                    if let Ok(mut o) = offline.lock() {
+                        o.mark_offline(recipient, Instant::now());
+                    }
+                }
+                let retryable = failure.kind.is_retryable();
+                last_failure = Some(failure);
+                if retryable {
+                    break;
+                }
             }
         }
     }

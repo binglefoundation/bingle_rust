@@ -511,7 +511,9 @@ impl BingleApiImpl {
         match self.engine.access(|e| e.send_to_peer(nsk, &bytes)) {
             Ok(_) => Ok(true),
             Err(err) => {
-                warn!("[BingleApiImpl] Engine send_to_peer failed: {}", err);
+                // The single report of a failed send; an unreachable peer is expected, so not a
+                // warning (issue #278).
+                tracing::info!("[BingleApiImpl] Engine send_to_peer failed: {}", err);
                 if err.contains("rejecting") {
                     Ok(false)
                 } else {
@@ -1254,7 +1256,7 @@ impl BingleApi for BingleApiImpl {
                             }
                         }
                         Err(err) => {
-                            tracing::warn!(
+                            tracing::info!(
                                 "[BingleApiImpl::send_message_to_network] relay Call failed: {}",
                                 err
                             );
@@ -1459,7 +1461,8 @@ impl BingleApi for BingleApiImpl {
             } else {
                 "send failed".to_string()
             };
-            tracing::warn!(
+            // The caller classifies and reports the failure (issue #278).
+            tracing::info!(
                 "[BingleApiImpl::send_message_to_network_with_response][exit] nsk={} user_id={} msg={} Err({})",
                 network_source_key,
                 user_id,

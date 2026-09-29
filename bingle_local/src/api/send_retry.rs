@@ -166,3 +166,68 @@ pub fn select_sendable_message(
             .unwrap_or(true)
     })
 }
+
+/// How long a recipient is treated as offline after a send to them fails because they could not be
+/// reached (issue #278). While the window is open a client with the store-and-forward send gate on
+/// skips the direct attempt — which would otherwise pay a DTLS connect or relay timeout on every
+/// message — and posts straight to the recipient's Sidewinder Mailbox. Once it lapses the next send
+/// tries direct again.
+#[doc(hidden)]
+pub const OFFLINE_WINDOW: Duration = Duration::from_secs(60);
+
+/// Whether a send failure of this `kind` means the recipient itself is currently unreachable (not
+/// connected, not advertised, or not answering), as opposed to a local or permanent problem. Only
+/// these failures open a recipient's [`OfflineWindow`] (issue #278).
+#[doc(hidden)]
+pub fn indicates_peer_offline(kind: SendFailureKind) -> bool {
+    matches!(
+        kind,
+        SendFailureKind::PeerUnreachable
+            | SendFailureKind::RelayAllocationFailed
+            | SendFailureKind::RecipientNotAdvertised
+            | SendFailureKind::NoResponse
+    )
+}
+
+/// Per-recipient record of recent "peer offline" failures (issue #278).
+///
+/// After a send fails with a cause for which [`indicates_peer_offline`] holds, the recipient is
+/// marked offline until `now + window`; callers consult [`is_offline`](Self::is_offline) to skip
+/// the direct attempt while the window is open. Hearing from the peer (a real-time message or one
+/// read from the Mailbox) ends the window early via [`clear`](Self::clear). Recipients are keyed by
+/// whatever label the caller sends to — a handle or an id.
+#[doc(hidden)]
+#[derive(Debug, Clone)]
+pub struct OfflineWindow {
+    window: Duration,
+    until: HashMap<String, Instant>,
+}
+
+impl OfflineWindow {
+    /// An empty record whose windows last `window`.
+    pub fn new(window: Duration) -> Self {
+        Self {
+            window,
+            until: HashMap::new(),
+        }
+    }
+
+    /// Mark `recipient` offline from `now` for the configured window, dropping any lapsed entries
+    /// so the map stays bounded.
+    pub fn mark_offline(&mut self, recipient: &str, now: Instant) {
+        self.until.retain(|_, deadline| *deadline > now);
+        self.until.insert(recipient.to_string(), now + self.window);
+    }
+
+    /// Whether `recipient`'s offline window is still open at `now`.
+    pub fn is_offline(&self, recipient: &str, now: Instant) -> bool {
+        self.until
+            .get(recipient)
+            .is_some_and(|deadline| *deadline > now)
+    }
+
+    /// End `recipient`'s offline window (they have been heard from, or a send to them succeeded).
+    pub fn clear(&mut self, recipient: &str) {
+        self.until.remove(recipient);
+    }
+}
