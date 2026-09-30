@@ -123,6 +123,7 @@ pub fn test_relay_ping_handler_honors_exclusions() {
             None
         }
         fn set_handle_peer_certificate(&self, _h: Option<HandlePeerCertificate>) {}
+        fn set_public_endpoint(&self, _addr: Option<std::net::SocketAddr>) {}
         fn with_handle_peer_certificate(self, _h: HandlePeerCertificate) -> Self {
             self
         }

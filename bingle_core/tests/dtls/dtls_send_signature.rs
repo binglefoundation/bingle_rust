@@ -39,6 +39,7 @@ impl Dtls for DummyDtls {
         None
     }
     fn set_handle_peer_certificate(&self, _handler: Option<HandlePeerCertificate>) {}
+    fn set_public_endpoint(&self, _addr: Option<std::net::SocketAddr>) {}
     fn with_handle_peer_certificate(self, _handler: HandlePeerCertificate) -> Self
     where
         Self: Sized,

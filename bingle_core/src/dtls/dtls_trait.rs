@@ -103,6 +103,14 @@ pub trait Dtls {
     fn set_handle_peer_certificate(&self, handler: Option<HandlePeerCertificate>);
 
     /**
+     * Tell the DTLS layer this node's own public endpoint: a relay's configured public `host:port`,
+     * or a client's STUN-discovered address (`None` while unknown). It breaks simultaneous-connect
+     * ties (issue #288): both peers must compare the same pair of endpoints, which behind NAT
+     * means the public ones, not the locally bound socket.
+     */
+    fn set_public_endpoint(&self, addr: Option<std::net::SocketAddr>);
+
+    /**
      * Fluently set the peer certificate handler function
      */
     fn with_handle_peer_certificate(self, handler: HandlePeerCertificate) -> Self
