@@ -33,10 +33,10 @@ jobs:
       CARGO_TERM_COLOR: always
       # Android package id of the example app (matches example/android/app/build.gradle).
       ANDROID_PKG: com.binglejsiexample
-      # sw-node (the Sidewinder node binary) version for the store-and-forward e2e (issue #284). Must
-      # be published to crates.io; bump deliberately, since the node's CLI and config are driven by
-      # scripts/e2e_sidewinder_localnet.sh.
-      SW_NODE_VERSION: "0.0.4"
+      # Version of the sidewinder-node crate (it installs the `sw-node` binary) for the
+      # store-and-forward e2e (issue #284). Bump deliberately: scripts/e2e_sidewinder_localnet.sh
+      # drives the node's CLI and config.
+      SW_NODE_VERSION: "0.1.0"
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -163,7 +163,7 @@ jobs:
 
       - name: Install sw-node
         if: steps.sw-node-cache.outputs.cache-hit != 'true'
-        run: cargo install sw-node --version "$SW_NODE_VERSION" --locked
+        run: cargo install sidewinder-node --version "$SW_NODE_VERSION" --locked
 
       - name: Start localnet provisioner (emulator mode)
         run: |

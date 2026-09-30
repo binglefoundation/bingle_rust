@@ -30,7 +30,7 @@ set -euo pipefail
 # in-process echo peer and funded/registered sender + offline-fixture accounts on the running
 # `algokit localnet`, then writes the node-file, STUN list and a BINGLE_E2E_* env file this script
 # sources — so no credentials need to be supplied by hand. It needs `algokit localnet` running and
-# the `algokit`/`goal` CLIs on PATH. With `sw-node` installed (`cargo install sw-node`) it also starts
+# the `algokit`/`goal` CLIs on PATH. With `sw-node` installed (`cargo install sidewinder-node`) it also starts
 # a one-node Sidewinder Mailbox (#284) and sets BINGLE_E2E_STORE_FORWARD=1 plus the Mailbox URL and
 # token, so the store-and-forward cases run; BINGLE_E2E_SIDEWINDER=0 skips it.
 #

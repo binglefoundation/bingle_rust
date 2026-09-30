@@ -20,7 +20,7 @@ set -euo pipefail
 #     emulator mode (relays/STUN advertised at 10.0.2.2, reached by the emulator via its qemu gateway
 #     and by the host echo peer via a loopback alias), and sources the derived creds. No secrets and
 #     no internet/DNS needed (all IP-based). Adds a loopback alias via sudo (prompts once on macOS).
-#     With `sw-node` installed it also starts a one-node Sidewinder Mailbox for the store-and-forward
+#     With `sw-node` installed (`cargo install sidewinder-node`) it also starts a one-node Sidewinder Mailbox for the store-and-forward
 #     cases (#284); BINGLE_E2E_SIDEWINDER=0 skips it.
 #     Run: BINGLE_E2E_BACKEND=localnet bash bingle_jsi/example/scripts/run_e2e_android.sh
 #

@@ -11,7 +11,7 @@
 # so it needs no repository checkout or build — copy this one file anywhere and run it.
 #
 # Prereqs:
-#   - sw-node on PATH:        cargo install sw-node   (crates.io), or `cargo install --path sw-node` from the repo
+#   - sw-node on PATH:        cargo install sidewinder-node   (crates.io), or `cargo install --path sw-node` from the repo
 #   - algokit LocalNet up:    algokit localnet start
 #   - curl                    (to probe the node's health endpoint)
 #

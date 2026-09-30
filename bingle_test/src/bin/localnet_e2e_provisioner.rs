@@ -103,7 +103,10 @@ fn start_sidewinder(callers: &[&str], api_host: &str) -> Option<String> {
         .is_ok_and(|o| o.status.success());
     if !installed {
         if required {
-            eprintln!("Error: BINGLE_E2E_SIDEWINDER=1 but '{sw_node}' is not installed");
+            eprintln!(
+                "Error: BINGLE_E2E_SIDEWINDER=1 but '{sw_node}' is not installed \
+                 (cargo install sidewinder-node)"
+            );
             std::process::exit(1);
         }
         tracing::info!("[provision] sw-node not installed; skipping the Sidewinder node");

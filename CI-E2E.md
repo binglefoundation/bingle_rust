@@ -32,7 +32,7 @@ Not on pull requests: emulator runs are heavy, so this is a post-merge check on 
 1. Installs JDK 17, the Rust toolchain + Android targets, Node, the Android SDK/NDK, and `ktlint`.
 2. Starts `algokit localnet` (native Docker) — the smoke suite's default `init` queries the chain at
    `localhost:4001`, which Detox adb-reverses to the runner host.
-3. Installs the pinned `sw-node` (`SW_NODE_VERSION`, cached by version) and starts the localnet
+3. Installs the pinned `sidewinder-node` crate's `sw-node` binary (`SW_NODE_VERSION`, cached by version) and starts the localnet
    provisioner in emulator mode with `BINGLE_E2E_SIDEWINDER=1`. Besides the app, relays, STUN, echo
    peer and fixtures, it starts a one-node Sidewinder Mailbox (`scripts/e2e_sidewinder_localnet.sh`,
    client API on `10.0.2.2:1080`, bearer token) with the sender, echo and `e2e-offline` accounts
