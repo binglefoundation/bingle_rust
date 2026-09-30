@@ -281,6 +281,13 @@ pub mod openssl_impl {
     // Combined per-endpoint state: writer + verified issuer string + per-peer async queue
     const ASYNC_PEER_QUEUE_CAPACITY: usize = 8192;
 
+    /// How long an outbound send may take to establish its DTLS session: the connect handshake, or
+    /// (issue #288) waiting for a session the peer's inbound connect is still setting up.
+    const CONNECT_DEADLINE: std::time::Duration = std::time::Duration::from_secs(10);
+
+    /// How often a send waiting for a session being set up checks whether it is ready (issue #288).
+    const SESSION_READY_POLL: std::time::Duration = std::time::Duration::from_millis(20);
+
     #[derive(Clone)]
     struct PeerState {
         writer: Option<PeerWriter>,
@@ -1545,7 +1552,7 @@ pub mod openssl_impl {
                         to
                     ));
                 }
-                std::thread::sleep(std::time::Duration::from_millis(20));
+                std::thread::sleep(SESSION_READY_POLL);
             }
         }
 
@@ -1871,7 +1878,7 @@ pub mod openssl_impl {
                 {}
             }
             // Find or create the async queue and worker handle for this peer.
-            let (async_q_arc, peer_handle) = {
+            let (async_q_arc, peer_handle, accept_generation) = {
                 let key = from.get_key().expect("direct endpoint key");
                 let mut pm = peers.lock().unwrap();
 
@@ -1939,7 +1946,32 @@ pub mod openssl_impl {
                 }
 
                 let ps = get_or_create_peer_state(&mut pm, &key);
-                (ps.async_queue.clone(), ps.peer_handle.clone())
+                // No session for this peer yet: claim the peer state for an inbound accept now,
+                // in the same critical section as the lookup, before the datagram is queued.
+                // Otherwise a local send could create an outbound connect on this queue in the gap
+                // and its client stream would read the peer's ClientHello (issue #288).
+                let accept_generation = if ps.writer.is_none() {
+                    let generation = next_peer_generation(ps.generation);
+                    ps.generation = generation;
+                    let (placeholder_tx, _placeholder_rx) = mpsc::channel::<Vec<u8>>();
+                    // A placeholder writer, so later packets from this peer are queued rather
+                    // than starting another stream; `run_accept_stream` installs the real one.
+                    ps.writer = Some(PeerWriter::from_channel(placeholder_tx));
+                    ps.handshake_logged = false;
+                    tracing::debug!(
+                        "[DtlsOpenSsl:::accept] reserved peer state for an accept, generation {} for {}",
+                        generation,
+                        from
+                    );
+                    Some(generation)
+                } else {
+                    None
+                };
+                (
+                    ps.async_queue.clone(),
+                    ps.peer_handle.clone(),
+                    accept_generation,
+                )
             };
 
             if peer_handle.is_none() {
@@ -1997,20 +2029,12 @@ pub mod openssl_impl {
                 );
             }
 
-            let create_stream = {
-                let key = from.get_key().expect("direct endpoint key");
-                let pm = peers.lock().unwrap();
-                let have_writer = pm.get(&key).map(|ps| ps.writer.is_some()).unwrap_or(false);
-                !have_writer // && !suppressed
-            };
-            if create_stream {
+            if let Some(accept_generation) = accept_generation {
                 tracing::debug!(
                     "[DtlsOpenSsl:::accept] creating new SslStream (accept_state) for [{} -> {:?}]",
                     from,
                     my_ip
                 );
-                #[allow(unused)]
-                {}
                 let mut ssl = openssl::ssl::Ssl::new(acceptor.context()).expect("ssl new");
                 ssl.set_accept_state();
                 let conn = CommonNetworkMuxConn {
@@ -2020,36 +2044,6 @@ pub mod openssl_impl {
                     read_remainder: Vec::new(),
                 };
                 let ssl_stream = TokioSslStream::new(ssl, conn).expect("ssl stream new");
-
-                // Install a placeholder writer immediately so that subsequent inbound packets
-                // from this peer see `have_writer == true` and are enqueued rather than
-                // triggering a duplicate stream creation.  The real writer is installed by
-                // `run_accept_stream` once the handshake completes.
-                let (placeholder_tx, _placeholder_rx) = mpsc::channel::<Vec<u8>>();
-                let placeholder_writer = PeerWriter::from_channel(placeholder_tx);
-                let mut accept_generation = 0u64;
-
-                if let Ok(mut m) = peers.lock() {
-                    let key = from.get_key().expect("direct endpoint key");
-                    let ps = get_or_create_peer_state(&mut m, &key);
-                    accept_generation = next_peer_generation(ps.generation);
-                    ps.generation = accept_generation;
-                    tracing::debug!(
-                        "[DtlsOpenSsl:::accept] create_stream, is_connecting_peer={}",
-                        ps.is_connecting_peer
-                    );
-                    ps.writer = Some(placeholder_writer);
-                    ps.handshake_logged = false;
-                    tracing::debug!(
-                        "[DtlsOpenSsl:::accept] assigned generation {} for {}",
-                        accept_generation,
-                        from
-                    );
-                    tracing::debug!(
-                        "[DtlsOpenSsl:::accept] installed placeholder writer for {}",
-                        from
-                    );
-                }
 
                 // Spawn a background thread that drives the DTLS accept handshake, extracts
                 // SSL state, splits the stream, and runs the post-handshake read loop.
@@ -2246,7 +2240,7 @@ pub mod openssl_impl {
                     "[DtlsOpenSsl:::send] {} is mid-handshake inbound; waiting for the accepted session",
                     to
                 );
-                let deadline = std::time::Instant::now() + std::time::Duration::from_millis(10_000);
+                let deadline = std::time::Instant::now() + CONNECT_DEADLINE;
                 return self.send_when_session_ready(&key_to, to, data, deadline);
             }
 
@@ -2296,6 +2290,22 @@ pub mod openssl_impl {
                     .map_err(|_| "peers lock poisoned".to_string())?;
 
                 let ps = get_or_create_peer_state(&mut map, &key_to);
+                // The peer dialled us between our lookup above and here: its accept holds this
+                // state. Taking it over would put our client stream on the accept's queue. Use
+                // that session instead (issue #288).
+                if ps.writer.is_some() && !ps.is_connecting_peer {
+                    drop(map);
+                    tracing::debug!(
+                        "[DtlsOpenSsl:::send] {} dialled us meanwhile; waiting for the accepted session",
+                        to
+                    );
+                    return self.send_when_session_ready(
+                        &key_to,
+                        to,
+                        data,
+                        std::time::Instant::now() + CONNECT_DEADLINE,
+                    );
+                }
                 let owner_generation = next_peer_generation(ps.generation);
                 ps.generation = owner_generation;
                 let async_q_arc = ps.async_queue.clone();
@@ -2364,15 +2374,16 @@ pub mod openssl_impl {
                 .map_err(|_| "newly created stream lock poisoned".to_string())?;
 
             tracing::info!(
-                "[DtlsOpenSsl:::send] starting DTLS connect/handshake to {} with 10s deadline",
-                to
+                "[DtlsOpenSsl:::send] starting DTLS connect/handshake to {} with {:?} deadline",
+                to,
+                CONNECT_DEADLINE
             );
             use std::time::Instant;
             let start = Instant::now();
             let runtime = self.dtls_async_runtime.clone();
 
             let io_result = runtime.block_on(async {
-                tokio::time::timeout(std::time::Duration::from_millis(10_000), async {
+                tokio::time::timeout(CONNECT_DEADLINE, async {
                     stream.write_all(data).await.map_err(|e| e.to_string())
                 })
                 .await
@@ -2434,7 +2445,7 @@ pub mod openssl_impl {
                     }
                     // Simultaneous connect (issue #288): if we yielded this connect to the peer's
                     // inbound one, deliver the data over that session once it is ready.
-                    let deadline = start + std::time::Duration::from_millis(10_000);
+                    let deadline = start + CONNECT_DEADLINE;
                     if let Some(result) = self.send_over_taken_over_session(
                         &key_to,
                         to,
