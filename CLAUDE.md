@@ -26,6 +26,7 @@
 - Do not use Title Case in comments.
 - Expand acronyms on first use in documents.
 - Shell commands in docs should be a single line to ease cut/paste/edit.
+- Any shell command you reference — in docs, chat, PRs, or issues — must be a single line with no backslash continuations, so it can be copied and pasted and run as-is.
 
 ## Worktrees
 

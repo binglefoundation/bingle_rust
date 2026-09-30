@@ -33,6 +33,10 @@ jobs:
       CARGO_TERM_COLOR: always
       # Android package id of the example app (matches example/android/app/build.gradle).
       ANDROID_PKG: com.binglejsiexample
+      # Version of the sidewinder-node crate (it installs the `sw-node` binary) for the
+      # store-and-forward e2e (issue #284). Bump deliberately: scripts/e2e_sidewinder_localnet.sh
+      # drives the node's CLI and config.
+      SW_NODE_VERSION: "0.1.0"
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -148,12 +152,26 @@ jobs:
       # the app+asset, brings up relays/STUN/echo peer, registers the fixtures, and writes the
       # node-file/STUN list (advertising 10.0.2.2) + an env file with the derived creds that the
       # emulator script sources. Backgrounded processes survive into the emulator step.
+      # Sidewinder Mailbox node for the store-and-forward suites (issue #284). The provisioner starts a
+      # one-node network with it (scripts/e2e_sidewinder_localnet.sh). Pinned; cached by version.
+      - name: Cache sw-node
+        uses: actions/cache@v6
+        id: sw-node-cache
+        with:
+          path: ~/.cargo/bin/sw-node
+          key: sw-node-${{ runner.os }}-${{ env.SW_NODE_VERSION }}
+
+      - name: Install sw-node
+        if: steps.sw-node-cache.outputs.cache-hit != 'true'
+        run: cargo install sidewinder-node --version "$SW_NODE_VERSION" --locked
+
       - name: Start localnet provisioner (emulator mode)
         run: |
           cargo build --locked -p bingle_test --features localnet --bin localnet_e2e_provisioner
           rm -f /tmp/bingle_e2e_localnet.env
           # nohup + setsid so the provisioner survives this step's shell into the emulator step.
-          BINGLE_E2E_EMULATOR_HOST=10.0.2.2 \
+          # BINGLE_E2E_SIDEWINDER=1: the Sidewinder node is required, so a failure to start it fails here.
+          BINGLE_E2E_EMULATOR_HOST=10.0.2.2 BINGLE_E2E_SIDEWINDER=1 \
             setsid nohup ./target/debug/localnet_e2e_provisioner >/tmp/bingle_e2e_provisioner.log 2>&1 &
           echo "waiting for provisioner readiness ..."
           for _ in $(seq 1 600); do
@@ -216,4 +234,14 @@ jobs:
         with:
           name: detox-artifacts
           path: bingle_jsi/example/artifacts
+          if-no-files-found: ignore
+
+      - name: Upload localnet logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: localnet-logs
+          path: |
+            /tmp/bingle_e2e_provisioner.log
+            /tmp/bingle_e2e_sidewinder/node.log
           if-no-files-found: ignore

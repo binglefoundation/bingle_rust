@@ -33,6 +33,12 @@ mod notify_giveup;
 #[path = "api/send_retry_classify.rs"]
 mod send_retry_classify;
 
+#[path = "api/pending_sender.rs"]
+mod pending_sender;
+
+#[path = "api/send_retry_offline_window.rs"]
+mod send_retry_offline_window;
+
 #[path = "api/register.rs"]
 mod register;
 

@@ -1,24 +1,24 @@
-//! Outbound send + retry for the `chat` REPL, built on BingleLocal's pending-message model.
+//! Outbound sending for the `chat` REPL, built on BingleLocal's pending-message model.
 //!
-//! Follows the same retry policy the React Native client uses (`bingle_jsi`): an outbound message is
-//! first persisted as **pending** (`progress < 1.0`) so a failed send survives in the `--state_file`;
-//! a **transient** (connectivity) failure keeps the message pending and is retried **indefinitely**
-//! with a short per-message backoff, so it delivers once the recipient comes back online; only a
-//! **non-transient** failure is marked permanently failed. The classifier, human-readable reason and
-//! fair-scheduling selection are shared via `bingle_local::api::send_retry` (issue #82).
+//! The REPL persists each typed message as **pending** in the `--state_file` and wakes the shared
+//! background sender, [`PendingSender`](bingle_local::api::pending_sender::PendingSender) — the same
+//! one the React Native client uses (issue #283). The sender attempts it straight away, keeps a
+//! transient failure pending and retries it with per-message backoff, marks a permanent failure
+//! terminal, and with the store-and-forward send gate on hands a failed message to the recipient's
+//! Mailbox. It runs off the REPL thread and off the session lock, so the prompt returns immediately.
 //!
-//! Sending is abstracted behind [`MessageSender`] so the flow is unit-testable without a live engine.
+//! This module holds the CLI's side of that: where to send ([`SendTarget`]), how a stored recipient
+//! label is delivered ([`ChatDelivery`]), and how outcomes read in the transcript
+//! ([`report_line`]).
 
-use std::collections::HashMap;
-use std::time::Instant;
+use std::sync::Arc;
+use std::time::Duration;
 
-use bingle_core::api::bingle_api::{BingleError, SendFailureKind};
-use bingle_local::api::send_retry::{
-    RETRY_BACKOFF, SendFailure, classify_send_error, select_sendable_message,
+use bingle_core::api::bingle_api::{BingleApi, BingleError, ProgressCallback};
+use bingle_local::api::pending_sender::{
+    MessageDelivery, NotSentReason, SendOutcome, SendReport, ShutdownReport,
 };
-use serde_json::{Value, json};
-
-use crate::chat_state::ChatState;
+use serde_json::Value as JsonValue;
 
 /// Where to send: a handle (resolved by the engine) or a raw id/address.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -37,131 +37,95 @@ impl SendTarget {
     }
 }
 
-/// Abstraction over the engine's send calls, so send/retry logic is testable without a live engine.
-/// `Ok(true)` = delivered, `Ok(false)` = not accepted, `Err` = a send error; the last two are both
-/// treated as failures (and classified transient vs permanent). Returns the typed [`BingleError`]
-/// so the failure cause survives to the classifier (issue #99).
-pub trait MessageSender {
-    fn send_text(&self, target: &SendTarget, message: &Value) -> Result<bool, BingleError>;
+/// Whether a stored recipient label is an account id (an Algorand address: 58 characters of
+/// base32) rather than a handle. `--to-id` stores the id itself as the label.
+pub fn is_account_id(label: &str) -> bool {
+    label.len() == 58
+        && label
+            .bytes()
+            .all(|b| b.is_ascii_uppercase() || (b'2'..=b'7').contains(&b))
 }
 
-/// Outcome of an attempt (from [`send_once`] or one [`retry_pending`] step).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum SendOutcome {
-    /// Delivered and marked complete.
-    Delivered,
-    /// A transient failure: the message stays pending and will keep being retried. Carries the
-    /// human-readable reason.
-    Retrying(String),
-    /// A permanent failure (non-transient, or retries disabled): marked failed in the state.
-    Failed(String),
+/// [`MessageDelivery`] over the live engine: a label that is an account id is sent by id, anything
+/// else by handle.
+pub struct ChatDelivery<A: BingleApi> {
+    api: Arc<A>,
 }
 
-/// A per-message retry outcome from [`retry_pending`], for the transcript.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RetryOutcome {
-    pub timestamp: i64,
-    pub recipient: String,
-    pub outcome: SendOutcome,
-}
-
-/// Classify a non-delivered send result into a typed [`SendFailure`] (issue #99). Should only be
-/// called for `Ok(false)`/`Err` results; a delivered `Ok(true)` has no failure, so it falls back to
-/// an `Unknown` cause defensively.
-fn failure_of(result: &Result<bool, BingleError>) -> SendFailure {
-    classify_send_error(result).unwrap_or_else(|| SendFailure {
-        kind: SendFailureKind::Unknown,
-        reason: "unknown send failure".to_string(),
-    })
-}
-
-/// Classify a failed send and persist the message accordingly, returning the outcome.
-///
-/// A retryable failure (per [`SendFailureKind::is_retryable`]) stays pending (`progress 0.0`) to be
-/// retried; a permanent one is marked terminal (`progress 1.0`). When `retries_enabled` is false
-/// (`--no-retries`) every failure is treated as permanent so nothing lingers pending.
-fn classify_and_persist(
-    state: &mut ChatState,
-    timestamp: i64,
-    failure: SendFailure,
-    retries_enabled: bool,
-) -> SendOutcome {
-    let transient = retries_enabled && failure.kind.is_retryable();
-    if transient {
-        let _ = state.mark_send_failed(timestamp, &failure.reason, Some(failure.kind), false);
-        SendOutcome::Retrying(failure.reason)
-    } else {
-        let _ = state.mark_send_failed(timestamp, &failure.reason, Some(failure.kind), true);
-        SendOutcome::Failed(failure.reason)
+impl<A: BingleApi> ChatDelivery<A> {
+    /// Deliver through `api`.
+    pub fn new(api: Arc<A>) -> Self {
+        Self { api }
     }
 }
 
-/// Persist an outbound message as pending, make one send attempt, and record the result.
-///
-/// On success the message is marked delivered. On a transient failure it stays pending for
-/// [`retry_pending`] to keep retrying; on a permanent failure (or when `retries_enabled` is false) it
-/// is marked failed. Does not echo the sent text — the terminal already echoed it.
-pub fn send_once(
-    sender: &dyn MessageSender,
-    state: &mut ChatState,
-    target: &SendTarget,
-    text: &str,
-    retries_enabled: bool,
-) -> SendOutcome {
-    let ts = match state.queue_outbound(target.label(), text) {
-        Ok(ts) => ts,
-        Err(e) => return SendOutcome::Failed(format!("could not queue message: {e}")),
-    };
-    let result = sender.send_text(target, &json!({ "text": text }));
-    if matches!(result, Ok(true)) {
-        let _ = state.mark_delivered(ts);
-        return SendOutcome::Delivered;
-    }
-    classify_and_persist(state, ts, failure_of(&result), retries_enabled)
-}
-
-/// Re-attempt the oldest *eligible* pending outbound message (respecting per-message backoff), one
-/// per call. `retry_after` holds backoff deadlines keyed by timestamp and is maintained across
-/// calls. A transient failure keeps the message pending and backs it off by [`RETRY_BACKOFF`] (so it
-/// keeps retrying without starving newer messages); a permanent failure marks it failed. Returns the
-/// outcome for the message attempted, or `None` when nothing is eligible right now.
-pub fn retry_pending(
-    sender: &dyn MessageSender,
-    state: &mut ChatState,
-    retry_after: &mut HashMap<i64, Instant>,
-    now: Instant,
-) -> Option<RetryOutcome> {
-    let pending = state.pending_outbound().ok()?;
-    // Drop backoff deadlines for messages that are no longer pending, keeping the map bounded.
-    retry_after.retain(|ts, _| pending.iter().any(|m| m.timestamp == *ts));
-
-    let msg = select_sendable_message(pending, retry_after, now)?;
-    let recipient = msg.recipient_handles.first().cloned().unwrap_or_default();
-    // We stored the recipient label; retry by handle (the common case).
-    let target = SendTarget::Handle(recipient.clone());
-
-    let result = sender.send_text(&target, &json!({ "text": msg.text }));
-    let outcome = if matches!(result, Ok(true)) {
-        let _ = state.mark_delivered(msg.timestamp);
-        retry_after.remove(&msg.timestamp);
-        SendOutcome::Delivered
-    } else {
-        let failure = failure_of(&result);
-        if failure.kind.is_retryable() {
-            let _ =
-                state.mark_send_failed(msg.timestamp, &failure.reason, Some(failure.kind), false);
-            retry_after.insert(msg.timestamp, now + RETRY_BACKOFF);
-            SendOutcome::Retrying(failure.reason)
+impl<A: BingleApi> MessageDelivery for ChatDelivery<A> {
+    fn deliver(
+        &self,
+        recipient: &str,
+        message: JsonValue,
+        progress: Option<Arc<ProgressCallback>>,
+    ) -> Result<bool, BingleError> {
+        let recipient = recipient.to_string();
+        if is_account_id(&recipient) {
+            self.api.send_message_to_id(&recipient, message, progress)
         } else {
-            let _ =
-                state.mark_send_failed(msg.timestamp, &failure.reason, Some(failure.kind), true);
-            retry_after.remove(&msg.timestamp);
-            SendOutcome::Failed(failure.reason)
+            self.api
+                .send_message_to_handle(&recipient, message, progress)
         }
-    };
-    Some(RetryOutcome {
-        timestamp: msg.timestamp,
-        recipient,
-        outcome,
-    })
+    }
+}
+
+/// How long `chat` waits on exit for an in-flight send and the Mailbox hand-off of whatever is still
+/// queued (issue #282): enough for a direct attempt to time out (about 10s) and a post to complete.
+pub const EXIT_FLUSH_DEADLINE: Duration = Duration::from_secs(15);
+
+/// The transcript lines for the exit flush (issue #282): one per message still queued at exit,
+/// saying whether it went to the recipient's Mailbox or stays queued for the next session.
+pub fn shutdown_lines(report: &ShutdownReport) -> Vec<String> {
+    let retry = "it will be retried next time you start chat";
+    let forwarded = report.forwarded.iter().map(|entry| {
+        format!(
+            "↪ {} is offline; queued to their mailbox — they'll get it when they reconnect",
+            entry.recipients.join(", ")
+        )
+    });
+    let not_sent = report.not_sent.iter().map(|(entry, reason)| {
+        let to = entry.recipients.join(", ");
+        match reason {
+            NotSentReason::StoreForwardOff => {
+                format!("! message to {to} not delivered (store-and-forward is off); {retry}")
+            }
+            NotSentReason::PostFailed => {
+                format!("! message to {to} could not be posted to the mailbox; {retry}")
+            }
+            NotSentReason::InFlight => {
+                format!("! message to {to} was still sending at exit; {retry}")
+            }
+            NotSentReason::DeadlineReached => {
+                format!("! message to {to} not delivered before exit; {retry}")
+            }
+        }
+    });
+    forwarded.chain(not_sent).collect()
+}
+
+/// The transcript line for a send outcome, or `None` to stay quiet.
+///
+/// A delivery is silent unless an earlier attempt had failed (the terminal already echoed the typed
+/// line); a transient failure is reported once, on the message's first failure, not on every retry.
+pub fn report_line(report: &SendReport) -> Option<String> {
+    let to = report.recipients.join(", ");
+    match (&report.outcome, report.previously_failed) {
+        (SendOutcome::Delivered, false) => None,
+        (SendOutcome::Delivered, true) => Some(format!("✓ delivered to {to}")),
+        (SendOutcome::Forwarded(_), _) => Some(format!(
+            "↪ {to} is offline; queued to their mailbox — they'll get it when they reconnect"
+        )),
+        (SendOutcome::Retrying(reason), false) => Some(format!(
+            "! send to {to} not delivered ({reason}); will keep retrying…"
+        )),
+        (SendOutcome::Retrying(_), true) => None,
+        (SendOutcome::Failed(reason), _) => Some(format!("! send to {to} failed: {reason}")),
+    }
 }

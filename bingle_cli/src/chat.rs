@@ -75,6 +75,10 @@ pub struct ChatArgs {
     pub store_forward: StoreForwardMode,
     /// `--notify <url>`: bingle_notify gateway URL to nudge on give-up. `None` leaves notify off.
     pub notify_url: Option<String>,
+    /// `--poll-interval <secs>`: period of the receive-side store-and-forward backstop Mailbox poll
+    /// (epic #200, issue #274). `None` lets the chat session pick a sensible default. Only has effect
+    /// when the receive gate is on (`--store-forward both|receive`).
+    pub poll_interval_secs: Option<u64>,
 }
 
 /// Parse the arguments following `chat` into a [`ChatArgs`].
@@ -89,6 +93,7 @@ pub fn parse_chat_args(args: Vec<String>) -> Result<ChatArgs, String> {
     let mut no_retries = false;
     let mut store_forward = StoreForwardMode::None;
     let mut notify_url: Option<String> = None;
+    let mut poll_interval_secs: Option<u64> = None;
     // Everything not consumed here is forwarded to the shared start-options parser.
     let mut rest: Vec<String> = Vec::with_capacity(args.len());
 
@@ -117,6 +122,13 @@ pub fn parse_chat_args(args: Vec<String>) -> Result<ChatArgs, String> {
             }
             "--notify" => {
                 notify_url = Some(it.next().ok_or("--notify requires a <url> value")?);
+            }
+            "--poll-interval" => {
+                let value = it.next().ok_or("--poll-interval requires a <secs> value")?;
+                let secs = value.parse::<u64>().map_err(|_| {
+                    format!("--poll-interval expects a whole number of seconds, got '{value}'")
+                })?;
+                poll_interval_secs = Some(secs);
             }
             // Logging flags are normally consumed before dispatch by `init_logger_from_args`. Tolerate
             // them here too (as no-ops) so they never reach `parse_start_options_from_args`, which
@@ -156,5 +168,6 @@ pub fn parse_chat_args(args: Vec<String>) -> Result<ChatArgs, String> {
         no_retries,
         store_forward,
         notify_url,
+        poll_interval_secs,
     })
 }

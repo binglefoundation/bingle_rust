@@ -12,6 +12,8 @@
 #[doc(hidden)]
 pub mod chat;
 #[doc(hidden)]
+pub mod chat_poll;
+#[doc(hidden)]
 pub mod chat_receive;
 #[doc(hidden)]
 pub mod chat_register;
@@ -21,3 +23,5 @@ pub mod chat_repl;
 pub mod chat_send;
 #[doc(hidden)]
 pub mod chat_state;
+#[doc(hidden)]
+pub mod logging;

@@ -1,5 +1,6 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::time::Duration;
 
 use serde_json::Value as JsonValue;
 
@@ -8,6 +9,11 @@ use crate::ddb::client::DdbClient;
 use crate::messages::marshal::to_json_value;
 use crate::messages::types::RelayCall;
 use crate::messages::{Message, RelayMessage};
+
+/// How long to wait for a relay to answer a `Call` (issue #278). A relay that knows the target
+/// answers promptly, so this matches the DTLS connect timeout rather than the generic response
+/// timeout: when the target is offline, a send gives up in seconds instead of a minute and a half.
+const RELAY_CALL_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// RelayClient: opens a relay channel to a target id via a given relay NSK.
 ///
@@ -86,11 +92,12 @@ impl RelayClient {
 
         // Send to the relay and await response
         let relay_endpoint = NetworkEndpoint::new_direct(relay_addr);
-        let resp = self.api()?.send_message_to_network_with_response(
+        let resp = self.api()?.send_message_to_network_with_response_timeout(
             &relay_endpoint,
             &relay_id,
             json,
             None,
+            RELAY_CALL_TIMEOUT,
         )?;
 
         // Parse channel from the RelayResponse

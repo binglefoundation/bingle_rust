@@ -3,8 +3,7 @@
 
 use crate::api::notify::envelope::{fresh_nonce, now_secs};
 use crate::api::notify::{
-    AlertPoster, HttpAlertPoster, HttpRegisterPoster, RegisterPoster, build_register_request,
-    encode_apns_token, post_giveup_alerts,
+    AlertPoster, RegisterPoster, build_register_request, encode_apns_token, post_giveup_alerts,
 };
 use crate::api::sidewinder::MailboxConfig;
 use crate::api::{
@@ -16,12 +15,17 @@ use algo_ops::{AlgoChainConfig, AlgoOps};
 use bingle_core::api::bingle_api::{BingleError, SendFailureKind};
 use bingle_core::blockchain::algo_bingle::AlgoBingle;
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
-use std::sync::{Arc, Mutex};
+use std::collections::HashMap;
+use std::sync::Arc;
 
+// The state shared by every clone of the handle (issue #283).
+mod local_state;
 // Store-and-forward posting (the Mailbox accessor, gate accessors, and the post-on-delivery-fail
 // hook, epic #200 / #214). A child module so it still reads this implementation's private state.
 mod store_and_forward;
+
+#[doc(hidden)]
+pub use local_state::LocalState;
 
 /// Configuration for the local API implementation.
 /// Includes the blockchain provider configuration and required ids.
@@ -216,52 +220,24 @@ pub fn keypair_status_from_facts(
     }
 }
 
-/// Basic local implementation stub. For now it only supports keypair generation.
+/// The local API: persisted keypair, contacts and message history, plus the send-side
+/// store-and-forward and notify behaviour.
+///
+/// A cheap, cloneable **handle**: clones share one [`LocalState`], so a client can keep one clone
+/// behind its own lock and hand another to a background worker such as the pending-message sender
+/// (issue #283), which then reads and updates the same store without taking the client's lock. All
+/// state is interior-mutable, so every operation is safe through any clone.
+#[derive(Clone)]
 pub struct BingleApiLocalImpl {
-    keypair: Mutex<Option<Keypair>>, // interior mutability to allow &self methods to ensure keypair exists
-    algo_ops: Mutex<Option<AlgoOps>>, // cache constructed AlgoOps for current keypair
-    config: LocalApiConfig,
-    // Contacts storage: id => (handle, source, is_blocked)
-    contacts: Mutex<HashMap<String, (String, ContactSource, bool)>>,
-    // Messages storage: append-only log of messages
-    messages: Mutex<Vec<Message>>,
-    // Cache of the account's registered handle, set whenever a status resolves one. Lets
-    // offline operations (queue_message) obtain the sender handle without a live blockchain
-    // read once the account is registered (issue #18, A1).
-    own_handle: Mutex<Option<String>>,
-    // The app id the memoized `own_handle` was established on. The ACTIVE short-circuit only trusts
-    // the memo when this matches the configured app: after an app upgrade (same keypair, new
-    // app_id) the memo is stale for the new app, so status re-resolves from chain and drives the
-    // one-time local migration. `None` (e.g. state written before this field existed) is likewise
-    // not trusted, so existing users migrate on upgrade.
-    own_handle_app_id: Mutex<Option<u64>>,
-    // Session cache: an app id we have confirmed (this process) is not superseded, so the ACTIVE
-    // memo path does not re-read the successor pointer on every poll (issue #18/#31).
-    live_app_confirmed: Mutex<Option<u64>>,
-    // Last successfully computed status, returned when a later read finds the blockchain
-    // unreachable so an already-known account stays usable during an outage (issue #18, A2).
-    last_status: Mutex<Option<KeypairStatus>>,
-    // Cached result of the last network_available() probe with the time it was taken, so the
-    // send hot-path does not hit the Algorand node on every message (issue #31).
-    last_network_check: Mutex<Option<(bool, std::time::Instant)>>,
-    // Best-effort sender for the give-up nudge to the notify gateway (bingle_notify #11). Defaults
-    // to the real HTTP poster; a seam so tests can observe the nudge without a live gateway.
-    alert_poster: Arc<dyn AlertPoster>,
-    // Synchronous sender for the `/register` envelope (bingle_notify #i). Defaults to the real HTTP
-    // poster; a seam so tests can observe the registration without a live gateway.
-    register_poster: Arc<dyn RegisterPoster>,
-    // Message timestamps we have already nudged for, so the unreachable/give-up nudge fires at most
-    // once per message even though update_message_status is called on every retry (bingle_notify
-    // #11/#17). In-memory only: a restart may re-nudge a still-pending message, which is acceptable
-    // (it only re-wakes an offline recipient so the pending retries can land).
-    nudged_messages: Mutex<HashSet<i64>>,
-    // (message timestamp, recipient handle) pairs already posted to the recipient's Sidewinder
-    // Mailbox, so store-and-forward posts each message to each recipient at most once even though
-    // update_message_status fires on every retry (store-and-forward epic #200, story #214). Keyed
-    // per recipient so a multi-recipient message whose post to one recipient failed retries only the
-    // failed recipient without double-posting the others. Persisted (see save/load) so a restart does
-    // not re-post an already-forwarded message.
-    forwarded_messages: Mutex<HashSet<(i64, String)>>,
+    state: Arc<LocalState>,
+}
+
+impl std::ops::Deref for BingleApiLocalImpl {
+    type Target = LocalState;
+
+    fn deref(&self) -> &LocalState {
+        &self.state
+    }
 }
 
 /// How long a `network_available` probe result is reused before re-probing.
@@ -273,34 +249,26 @@ impl BingleApiLocalImpl {
     /// Starts with no keypair, an empty contact store and message queue, and the default HTTP
     /// notify posters. Generate or import a keypair before calling the on-chain operations.
     pub fn new(config: LocalApiConfig) -> Self {
+        let state = LocalState::new(config);
         Self {
-            keypair: Mutex::new(None),
-            algo_ops: Mutex::new(None),
-            config,
-            contacts: Mutex::new(HashMap::new()),
-            messages: Mutex::new(Vec::new()),
-            own_handle: Mutex::new(None),
-            own_handle_app_id: Mutex::new(None),
-            live_app_confirmed: Mutex::new(None),
-            last_status: Mutex::new(None),
-            last_network_check: Mutex::new(None),
-            alert_poster: Arc::new(HttpAlertPoster::new()),
-            register_poster: Arc::new(HttpRegisterPoster::new()),
-            nudged_messages: Mutex::new(HashSet::new()),
-            forwarded_messages: Mutex::new(HashSet::new()),
+            state: Arc::new(state),
         }
     }
 
     /// Override the `/register` sender (bingle_notify #i). Intended for tests, which inject a
     /// recording poster to observe the registration without a live gateway.
     pub fn set_register_poster(&mut self, poster: Arc<dyn RegisterPoster>) {
-        self.register_poster = poster;
+        if let Ok(mut guard) = self.register_poster.write() {
+            *guard = poster;
+        }
     }
 
     /// Override the give-up nudge sender (bingle_notify #11). Intended for tests, which inject a
     /// recording poster to observe the `/alert` without a live gateway.
     pub fn set_alert_poster(&mut self, poster: Arc<dyn AlertPoster>) {
-        self.alert_poster = poster;
+        if let Ok(mut guard) = self.alert_poster.write() {
+            *guard = poster;
+        }
     }
 
     /// The account's registered handle as recorded in local state (memoized once the account is
@@ -330,10 +298,10 @@ impl BingleApiLocalImpl {
     /// [`post_giveup_alerts`](crate::api::notify::post_giveup_alerts). Never blocks or fails
     /// delivery: a missing handle, signing failure, or transport error is logged and swallowed.
     fn notify_giveup(&self, recipient_handles: &[String]) {
-        if !self.config.notify_on_giveup {
+        if !self.config().notify_on_giveup {
             return;
         }
-        let Some(gateway_url) = self.config.notify_gateway_url.as_deref() else {
+        let Some(gateway_url) = self.config().notify_gateway_url.clone() else {
             return;
         };
         if recipient_handles.is_empty() {
@@ -365,8 +333,8 @@ impl BingleApiLocalImpl {
         };
 
         post_giveup_alerts(
-            self.alert_poster.as_ref(),
-            gateway_url,
+            self.alert_poster().as_ref(),
+            &gateway_url,
             &ops,
             &iss,
             recipient_handles,
@@ -418,7 +386,7 @@ impl BingleApiLocalImpl {
             }
             // Scope the memo to the app it was resolved on so it is not trusted after an upgrade.
             if let Ok(mut g) = self.own_handle_app_id.lock() {
-                *g = Some(self.config.app_id);
+                *g = Some(self.config().app_id);
             }
         }
         if let Ok(mut guard) = self.last_status.lock() {
@@ -484,6 +452,230 @@ pub fn status_or_last_known(
     Err(err)
 }
 
+/// `&self` cores for the store's mutating operations. The [`BingleLocalApi`] trait declares these
+/// with a `&mut self` receiver, but the store is entirely interior-mutable (every field is a
+/// `Mutex`), so the actual work needs only a shared reference. Exposing `&self` cores lets a caller
+/// that holds the store behind an `Arc<BingleApiLocalImpl>` — the `chat` session shares one store
+/// between the interactive loop and its background Mailbox poller — mutate it without a coarse outer
+/// lock. The trait methods delegate here; behaviour is unchanged (`register_keypair` is already
+/// `&self` for the same reason).
+impl BingleApiLocalImpl {
+    /// `&self` core of [`BingleLocalApi::add_contact`].
+    pub fn add_contact_shared(
+        &self,
+        handle: String,
+        id: String,
+        source: ContactSource,
+    ) -> Result<(), BingleError> {
+        tracing::info!(
+            "[BingleLocalApi] Adding contact: handle={}, id={}, source={:?}",
+            handle,
+            id,
+            source
+        );
+        // Validate inputs
+        if handle.trim().is_empty() {
+            return Err(BingleError::Other("handle cannot be empty".to_string()));
+        }
+        if id.trim().is_empty() {
+            return Err(BingleError::Other("id cannot be empty".to_string()));
+        }
+
+        let mut map = match self.contacts.lock() {
+            Ok(g) => g,
+            Err(e) => {
+                let msg = format!("mutex poisoned: {}", e);
+                tracing::error!("[add_contact] Failed to lock contacts: {}", msg);
+                return Err(BingleError::Other(msg));
+            }
+        };
+        if map.contains_key(&id) {
+            return Err(BingleError::Other("contact already exists".to_string()));
+        }
+        map.insert(id, (handle, source, false));
+        Ok(())
+    }
+
+    /// `&self` core of [`BingleLocalApi::add_message`].
+    pub fn add_message_shared(
+        &self,
+        sender_handle: String,
+        recipient_handles: Vec<String>,
+        timestamp: i64,
+        text: String,
+        cipher_suite: Option<String>,
+    ) -> Result<(), BingleError> {
+        tracing::debug!(
+            "[BingleLocalApi] Adding message from: {} to: {:?}",
+            sender_handle,
+            recipient_handles
+        );
+        // Basic input validation
+        if sender_handle.trim().is_empty() {
+            return Err(BingleError::Other(
+                "sender_handle cannot be empty".to_string(),
+            ));
+        }
+        if recipient_handles.is_empty() {
+            return Err(BingleError::Other(
+                "recipient_handles cannot be empty".to_string(),
+            ));
+        }
+        if recipient_handles.iter().any(|h| h.trim().is_empty()) {
+            return Err(BingleError::Other(
+                "recipient_handles cannot contain empty handles".to_string(),
+            ));
+        }
+        if text.trim().is_empty() {
+            return Err(BingleError::Other("text cannot be empty".to_string()));
+        }
+
+        let msg = Message {
+            sender_handle,
+            recipient_handles,
+            timestamp,
+            text,
+            cipher_suite,
+            progress: Some(1.0),
+            failure_reason: None,
+            failure_kind: None,
+            sent_time: None,
+            delivered_time: None,
+            signature: None,
+        };
+        let mut guard = match self.messages.lock() {
+            Ok(g) => g,
+            Err(e) => {
+                let msg = format!("mutex poisoned: {}", e);
+                tracing::error!("[add_message] Failed to lock messages: {}", msg);
+                return Err(BingleError::Other(msg));
+            }
+        };
+        guard.push(msg);
+        Ok(())
+    }
+
+    /// `&self` core of [`BingleLocalApi::update_message_status`].
+    pub fn update_message_status_shared(
+        &self,
+        timestamp: i64,
+        progress: f32,
+        failure_reason: Option<String>,
+        failure_kind: Option<SendFailureKind>,
+    ) -> Result<(), BingleError> {
+        let mut guard = match self.messages.lock() {
+            Ok(g) => g,
+            Err(e) => {
+                let msg = format!("mutex poisoned: {}", e);
+                tracing::error!("[update_message_status] Failed to lock messages: {}", msg);
+                return Err(BingleError::Other(msg));
+            }
+        };
+
+        // Fire the notify nudge whenever a send reports a failure — the recipient is unreachable and
+        // still retrying (progress < 1.0), or the send has terminally given up (progress >= 1.0).
+        // Waking an offline recipient with a content-free push lets the pending retries land, so the
+        // nudge must fire while the message is still unreachable, not only on give-up (which, for a
+        // transient "keep retrying" failure, never happens) — bingle_notify #11/#17. A successful
+        // send (progress 1.0, no failure_reason) never nudges. Dedup happens below.
+        let failed_recipients = {
+            if let Some(msg) = guard.iter_mut().find(|m| m.timestamp == timestamp) {
+                msg.progress = Some(progress);
+                if failure_reason.is_some() || progress >= 1.0 {
+                    msg.failure_reason = failure_reason;
+                    // Keep the typed cause in lockstep with the reason: set on failure, cleared on
+                    // a successful/terminal send with no reason (issue #99).
+                    msg.failure_kind = failure_kind;
+                }
+                if msg.failure_reason.is_some() {
+                    Some((
+                        msg.timestamp,
+                        msg.recipient_handles.clone(),
+                        msg.text.clone(),
+                    ))
+                } else {
+                    None
+                }
+            } else {
+                return Err(BingleError::Other(format!(
+                    "Message with timestamp {} not found",
+                    timestamp
+                )));
+            }
+        };
+        // Release the messages lock before nudging: notify_giveup takes other locks (keypair /
+        // algo_ops) and hands off to the poster, which must not run under the messages lock.
+        drop(guard);
+        if let Some((ts, recipients, text)) = failed_recipients {
+            // Nudge at most once per message: HashSet::insert returns true only the first time this
+            // timestamp is seen, so repeated retries of the same unreachable message don't re-nudge.
+            let first_nudge = match self.nudged_messages.lock() {
+                Ok(mut nudged) => nudged.insert(ts),
+                Err(e) => {
+                    tracing::error!(
+                        "[update_message_status] Failed to lock nudged_messages: {}",
+                        e
+                    );
+                    false
+                }
+            };
+            if first_nudge {
+                self.notify_giveup(&recipients);
+            }
+            // Store-and-forward post-on-delivery-fail (#214): post the sealed message to each
+            // recipient's Sidewinder Mailbox so it survives until they reconnect. Runs on each failed
+            // retry but is idempotent per recipient, so it posts once per recipient and retries only
+            // recipients whose post has not yet succeeded. Gated + best-effort; never affects delivery.
+            let fully_forwarded = self.forward_message_to_mailbox(ts, &recipients, &text);
+            if fully_forwarded {
+                // The message is now safely in every recipient's Mailbox, so stop retrying direct
+                // Bingle delivery: mark it complete and clear the transient failure. The recipient
+                // reads it from the Mailbox on reconnect (#215).
+                if let Ok(mut guard) = self.messages.lock() {
+                    if let Some(m) = guard.iter_mut().find(|m| m.timestamp == ts) {
+                        m.progress = Some(1.0);
+                        m.failure_reason = None;
+                        m.failure_kind = None;
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// `&self` core of [`BingleLocalApi::import_keypair`].
+    pub fn import_keypair_shared(&self, passphrase: String) -> Result<Keypair, BingleError> {
+        tracing::info!("[BingleLocalApi] Importing keypair from passphrase");
+        // Validate the mnemonic and derive the account id. The passphrase itself is never logged.
+        let id = AlgoOps::address_from_passphrase(&passphrase)
+            .map_err(|e| BingleError::Other(e.to_string()))?;
+        let kp = Keypair { id, passphrase };
+        tracing::info!("[BingleLocalApi] Imported keypair with id: {}", kp.id);
+        if let Ok(mut guard) = self.keypair.lock() {
+            *guard = Some(kp.clone());
+        }
+        // The imported account's on-chain state is unknown (it may already be registered), so
+        // clear the memoized ACTIVE handle/status and let keypair_status re-resolve from chain.
+        if let Ok(mut g) = self.own_handle.lock() {
+            *g = None;
+        }
+        if let Ok(mut g) = self.own_handle_app_id.lock() {
+            *g = None;
+        }
+        if let Ok(mut g) = self.live_app_confirmed.lock() {
+            *g = None;
+        }
+        if let Ok(mut g) = self.last_status.lock() {
+            *g = None;
+        }
+        // Invalidate cached AlgoOps since keypair changed
+        if let Ok(mut ops_guard) = self.algo_ops.lock() {
+            *ops_guard = None;
+        }
+        Ok(kp)
+    }
+}
+
 impl BingleLocalApi for BingleApiLocalImpl {
     fn generate_keypair(&mut self) -> Result<Keypair, BingleError> {
         tracing::info!("[BingleLocalApi] Generating new keypair");
@@ -515,34 +707,7 @@ impl BingleLocalApi for BingleApiLocalImpl {
     }
 
     fn import_keypair(&mut self, passphrase: String) -> Result<Keypair, BingleError> {
-        tracing::info!("[BingleLocalApi] Importing keypair from passphrase");
-        // Validate the mnemonic and derive the account id. The passphrase itself is never logged.
-        let id = AlgoOps::address_from_passphrase(&passphrase)
-            .map_err(|e| BingleError::Other(e.to_string()))?;
-        let kp = Keypair { id, passphrase };
-        tracing::info!("[BingleLocalApi] Imported keypair with id: {}", kp.id);
-        if let Ok(mut guard) = self.keypair.lock() {
-            *guard = Some(kp.clone());
-        }
-        // The imported account's on-chain state is unknown (it may already be registered), so
-        // clear the memoized ACTIVE handle/status and let keypair_status re-resolve from chain.
-        if let Ok(mut g) = self.own_handle.lock() {
-            *g = None;
-        }
-        if let Ok(mut g) = self.own_handle_app_id.lock() {
-            *g = None;
-        }
-        if let Ok(mut g) = self.live_app_confirmed.lock() {
-            *g = None;
-        }
-        if let Ok(mut g) = self.last_status.lock() {
-            *g = None;
-        }
-        // Invalidate cached AlgoOps since keypair changed
-        if let Ok(mut ops_guard) = self.algo_ops.lock() {
-            *ops_guard = None;
-        }
-        Ok(kp)
+        self.import_keypair_shared(passphrase)
     }
 
     fn register_keypair(&self, handle: String) -> Result<bool, BingleError> {
@@ -551,8 +716,8 @@ impl BingleLocalApi for BingleApiLocalImpl {
             handle
         );
         // Validate config
-        let app_id = self.config.app_id;
-        let asset_id = self.config.asset_id;
+        let app_id = self.config().app_id;
+        let asset_id = self.config().asset_id;
         if app_id == 0 {
             return Err(BingleError::Other("app_id not set in config".to_string()));
         }
@@ -595,12 +760,12 @@ impl BingleLocalApi for BingleApiLocalImpl {
         let token_hex = encode_apns_token(&token)?;
 
         // A registration needs somewhere to send it.
-        let Some(gateway_url) = self.config.notify_gateway_url.as_deref() else {
+        let Some(gateway_url) = self.config().notify_gateway_url.clone() else {
             return Err(BingleError::Other(
                 "notify_gateway_url is not configured; cannot register APNs token".to_string(),
             ));
         };
-        let env = self.config.notify_env.clone();
+        let env = self.config().notify_env.clone();
 
         // The envelope issuer is the local handle; the signer binds to the active keypair (no
         // network). Either missing means we cannot produce a valid envelope.
@@ -618,16 +783,16 @@ impl BingleLocalApi for BingleApiLocalImpl {
             env,
             gateway_url
         );
-        self.register_poster.post_register(gateway_url, req)
+        self.register_poster().post_register(&gateway_url, req)
     }
 
     fn ensure_local_migrated(&self) -> Result<Option<String>, BingleError> {
-        let app_id = self.config.app_id;
+        let app_id = self.config().app_id;
         if app_id == 0 {
             return Err(BingleError::Other("app_id not set in config".to_string()));
         }
         let ops = self.get_algo_ops()?;
-        let asset_id = self.config.asset_id;
+        let asset_id = self.config().asset_id;
         let bgl = AlgoBingle::new(ops, app_id, asset_id);
         match bgl.ensure_local_migrated(app_id) {
             Ok(Some(txid)) => {
@@ -698,21 +863,25 @@ impl BingleLocalApi for BingleApiLocalImpl {
             "[BingleLocalApi] get_algo_ops: constructing new AlgoOps with config: \
             client_api_url={}, client_api_port={}, indexer_api_url={}, indexer_api_port={}, \
             token={}, token_key={}, app_id={:?}, asset_id={:?}",
-            self.config.algo_config.client_api_url,
-            self.config.algo_config.client_api_port,
-            self.config.algo_config.indexer_api_url,
-            self.config.algo_config.indexer_api_port,
-            self.config.algo_config.token.as_deref().unwrap_or("<none>"),
-            self.config
+            self.config().algo_config.client_api_url,
+            self.config().algo_config.client_api_port,
+            self.config().algo_config.indexer_api_url,
+            self.config().algo_config.indexer_api_port,
+            self.config()
+                .algo_config
+                .token
+                .as_deref()
+                .unwrap_or("<none>"),
+            self.config()
                 .algo_config
                 .token_key
                 .as_deref()
                 .unwrap_or("<none>"),
-            self.config.algo_config.app_id,
-            self.config.algo_config.asset_id,
+            self.config().algo_config.app_id,
+            self.config().algo_config.asset_id,
         );
         let ops =
-            AlgoOps::new_for_algorand(Some(pass), None, Some(self.config.algo_config.clone()));
+            AlgoOps::new_for_algorand(Some(pass), None, Some(self.config().algo_config.clone()));
         let mut cache_guard = match self.algo_ops.lock() {
             Ok(g) => g,
             Err(e) => {
@@ -734,33 +903,7 @@ impl BingleLocalApi for BingleApiLocalImpl {
         id: String,
         source: ContactSource,
     ) -> Result<(), BingleError> {
-        tracing::info!(
-            "[BingleLocalApi] Adding contact: handle={}, id={}, source={:?}",
-            handle,
-            id,
-            source
-        );
-        // Validate inputs
-        if handle.trim().is_empty() {
-            return Err(BingleError::Other("handle cannot be empty".to_string()));
-        }
-        if id.trim().is_empty() {
-            return Err(BingleError::Other("id cannot be empty".to_string()));
-        }
-
-        let mut map = match self.contacts.lock() {
-            Ok(g) => g,
-            Err(e) => {
-                let msg = format!("mutex poisoned: {}", e);
-                tracing::error!("[add_contact] Failed to lock contacts: {}", msg);
-                return Err(BingleError::Other(msg));
-            }
-        };
-        if map.contains_key(&id) {
-            return Err(BingleError::Other("contact already exists".to_string()));
-        }
-        map.insert(id, (handle, source, false));
-        Ok(())
+        self.add_contact_shared(handle, id, source)
     }
 
     fn block_contact(&mut self, id: String) -> Result<(), BingleError> {
@@ -850,54 +993,13 @@ impl BingleLocalApi for BingleApiLocalImpl {
         text: String,
         cipher_suite: Option<String>,
     ) -> Result<(), BingleError> {
-        tracing::debug!(
-            "[BingleLocalApi] Adding message from: {} to: {:?}",
-            sender_handle,
-            recipient_handles
-        );
-        // Basic input validation
-        if sender_handle.trim().is_empty() {
-            return Err(BingleError::Other(
-                "sender_handle cannot be empty".to_string(),
-            ));
-        }
-        if recipient_handles.is_empty() {
-            return Err(BingleError::Other(
-                "recipient_handles cannot be empty".to_string(),
-            ));
-        }
-        if recipient_handles.iter().any(|h| h.trim().is_empty()) {
-            return Err(BingleError::Other(
-                "recipient_handles cannot contain empty handles".to_string(),
-            ));
-        }
-        if text.trim().is_empty() {
-            return Err(BingleError::Other("text cannot be empty".to_string()));
-        }
-
-        let msg = Message {
+        self.add_message_shared(
             sender_handle,
             recipient_handles,
             timestamp,
             text,
             cipher_suite,
-            progress: Some(1.0),
-            failure_reason: None,
-            failure_kind: None,
-            sent_time: None,
-            delivered_time: None,
-            signature: None,
-        };
-        let mut guard = match self.messages.lock() {
-            Ok(g) => g,
-            Err(e) => {
-                let msg = format!("mutex poisoned: {}", e);
-                tracing::error!("[add_message] Failed to lock messages: {}", msg);
-                return Err(BingleError::Other(msg));
-            }
-        };
-        guard.push(msg);
-        Ok(())
+        )
     }
 
     fn queue_message(
@@ -965,84 +1067,7 @@ impl BingleLocalApi for BingleApiLocalImpl {
         failure_reason: Option<String>,
         failure_kind: Option<SendFailureKind>,
     ) -> Result<(), BingleError> {
-        let mut guard = match self.messages.lock() {
-            Ok(g) => g,
-            Err(e) => {
-                let msg = format!("mutex poisoned: {}", e);
-                tracing::error!("[update_message_status] Failed to lock messages: {}", msg);
-                return Err(BingleError::Other(msg));
-            }
-        };
-
-        // Fire the notify nudge whenever a send reports a failure — the recipient is unreachable and
-        // still retrying (progress < 1.0), or the send has terminally given up (progress >= 1.0).
-        // Waking an offline recipient with a content-free push lets the pending retries land, so the
-        // nudge must fire while the message is still unreachable, not only on give-up (which, for a
-        // transient "keep retrying" failure, never happens) — bingle_notify #11/#17. A successful
-        // send (progress 1.0, no failure_reason) never nudges. Dedup happens below.
-        let failed_recipients = {
-            if let Some(msg) = guard.iter_mut().find(|m| m.timestamp == timestamp) {
-                msg.progress = Some(progress);
-                if failure_reason.is_some() || progress >= 1.0 {
-                    msg.failure_reason = failure_reason;
-                    // Keep the typed cause in lockstep with the reason: set on failure, cleared on
-                    // a successful/terminal send with no reason (issue #99).
-                    msg.failure_kind = failure_kind;
-                }
-                if msg.failure_reason.is_some() {
-                    Some((
-                        msg.timestamp,
-                        msg.recipient_handles.clone(),
-                        msg.text.clone(),
-                    ))
-                } else {
-                    None
-                }
-            } else {
-                return Err(BingleError::Other(format!(
-                    "Message with timestamp {} not found",
-                    timestamp
-                )));
-            }
-        };
-        // Release the messages lock before nudging: notify_giveup takes other locks (keypair /
-        // algo_ops) and hands off to the poster, which must not run under the messages lock.
-        drop(guard);
-        if let Some((ts, recipients, text)) = failed_recipients {
-            // Nudge at most once per message: HashSet::insert returns true only the first time this
-            // timestamp is seen, so repeated retries of the same unreachable message don't re-nudge.
-            let first_nudge = match self.nudged_messages.lock() {
-                Ok(mut nudged) => nudged.insert(ts),
-                Err(e) => {
-                    tracing::error!(
-                        "[update_message_status] Failed to lock nudged_messages: {}",
-                        e
-                    );
-                    false
-                }
-            };
-            if first_nudge {
-                self.notify_giveup(&recipients);
-            }
-            // Store-and-forward post-on-delivery-fail (#214): post the sealed message to each
-            // recipient's Sidewinder Mailbox so it survives until they reconnect. Runs on each failed
-            // retry but is idempotent per recipient, so it posts once per recipient and retries only
-            // recipients whose post has not yet succeeded. Gated + best-effort; never affects delivery.
-            let fully_forwarded = self.forward_message_to_mailbox(ts, &recipients, &text);
-            if fully_forwarded {
-                // The message is now safely in every recipient's Mailbox, so stop retrying direct
-                // Bingle delivery: mark it complete and clear the transient failure. The recipient
-                // reads it from the Mailbox on reconnect (#215).
-                if let Ok(mut guard) = self.messages.lock() {
-                    if let Some(m) = guard.iter_mut().find(|m| m.timestamp == ts) {
-                        m.progress = Some(1.0);
-                        m.failure_reason = None;
-                        m.failure_kind = None;
-                    }
-                }
-            }
-        }
-        Ok(())
+        self.update_message_status_shared(timestamp, progress, failure_reason, failure_kind)
     }
 
     fn get_pending_messages(&self) -> Result<Vec<Message>, BingleError> {
@@ -1082,8 +1107,10 @@ impl BingleLocalApi for BingleApiLocalImpl {
         // The gates are read per-operation from `config` (see the store_and_forward child module), so
         // swapping them here takes effect on the next send/poll — the keypair, contacts, history and
         // live connections are separate fields and are untouched (story #242).
-        self.config.store_and_forward_send = send;
-        self.config.store_and_forward_receive = receive;
+        if let Ok(mut config) = self.config.write() {
+            config.store_and_forward_send = send;
+            config.store_and_forward_receive = receive;
+        }
         tracing::info!(
             "[BingleLocalApi] store-and-forward gates set: send={send} receive={receive}"
         );
@@ -1091,23 +1118,22 @@ impl BingleLocalApi for BingleApiLocalImpl {
 
     fn set_notify(&mut self, enabled: bool, gateway_url: Option<String>) {
         // notify_on_giveup + notify_gateway_url are read per-give-up, so this applies live (story #242).
-        self.config.notify_on_giveup = enabled;
-        self.config.notify_gateway_url = gateway_url;
         tracing::info!(
             "[BingleLocalApi] notify set: enabled={enabled} gateway={}",
-            self.config
-                .notify_gateway_url
-                .as_deref()
-                .unwrap_or("<none>")
+            gateway_url.as_deref().unwrap_or("<none>")
         );
+        if let Ok(mut config) = self.config.write() {
+            config.notify_on_giveup = enabled;
+            config.notify_gateway_url = gateway_url;
+        }
     }
 
     fn messaging_settings(&self) -> MessagingSettings {
         MessagingSettings {
-            store_and_forward_send: self.config.store_and_forward_send,
-            store_and_forward_receive: self.config.store_and_forward_receive,
-            notify_on_giveup: self.config.notify_on_giveup,
-            notify_gateway_url: self.config.notify_gateway_url.clone(),
+            store_and_forward_send: self.config().store_and_forward_send,
+            store_and_forward_receive: self.config().store_and_forward_receive,
+            notify_on_giveup: self.config().notify_on_giveup,
+            notify_gateway_url: self.config().notify_gateway_url.clone(),
         }
     }
 
@@ -1228,17 +1254,30 @@ impl BingleLocalApi for BingleApiLocalImpl {
             return Err(BingleError::Other(msg));
         }
 
-        let file = match std::fs::File::create(path) {
+        // Write a uniquely named temp file beside the target, then rename it over the target. The
+        // rename is atomic, so a reader never sees a half-written file and two threads saving at
+        // once (the pending-message sender and the client, issue #283) each land a whole snapshot.
+        static SAVE_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let seq = SAVE_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let tmp_path = format!("{path}.tmp.{}.{seq}", std::process::id());
+        let file = match std::fs::File::create(&tmp_path) {
             Ok(f) => f,
             Err(e) => {
                 let msg = e.to_string();
-                tracing::error!("[save] Failed to create file '{}': {}", path, msg);
+                tracing::error!("[save] Failed to create file '{}': {}", tmp_path, msg);
                 return Err(BingleError::Other(msg));
             }
         };
         if let Err(e) = serde_json::to_writer_pretty(file, &state) {
             let msg = e.to_string();
-            tracing::error!("[save] Failed to write JSON to '{}': {}", path, msg);
+            tracing::error!("[save] Failed to write JSON to '{}': {}", tmp_path, msg);
+            let _ = std::fs::remove_file(&tmp_path);
+            return Err(BingleError::Other(msg));
+        }
+        if let Err(e) = std::fs::rename(&tmp_path, path) {
+            let msg = e.to_string();
+            tracing::error!("[save] Failed to replace '{}': {}", path, msg);
+            let _ = std::fs::remove_file(&tmp_path);
             return Err(BingleError::Other(msg));
         }
         tracing::info!("[BingleLocalApi] State saved successfully to: {}", path);
@@ -1424,7 +1463,7 @@ impl BingleLocalApi for BingleApiLocalImpl {
 
         let algorand_id = kp.id.clone();
 
-        let configured_app_id = self.config.app_id;
+        let configured_app_id = self.config().app_id;
 
         // Serve the memoized ACTIVE handle without a blockchain read — but only when the memo was
         // established for the *currently configured* app. This keeps steady-state polling read-free
@@ -1450,7 +1489,7 @@ impl BingleLocalApi for BingleApiLocalImpl {
                 && !already_live
                 && let Ok(ops) = self.get_algo_ops()
             {
-                let bgl = AlgoBingle::new(ops, configured_app_id, self.config.asset_id);
+                let bgl = AlgoBingle::new(ops, configured_app_id, self.config().asset_id);
                 match bgl.successor_app(configured_app_id) {
                     Ok(Some(successor)) => {
                         tracing::info!(
@@ -1499,7 +1538,7 @@ impl BingleLocalApi for BingleApiLocalImpl {
         if configured_app_id > 0 {
             match self.get_algo_ops() {
                 Ok(ops) => {
-                    let bgl = AlgoBingle::new(ops, configured_app_id, self.config.asset_id);
+                    let bgl = AlgoBingle::new(ops, configured_app_id, self.config().asset_id);
                     match bgl.successor_app(configured_app_id) {
                         Ok(Some(successor)) => {
                             tracing::info!(
@@ -1555,7 +1594,7 @@ impl BingleLocalApi for BingleApiLocalImpl {
         };
 
         // 3) Check if the account has opted in to the Bingle$ asset
-        let asset_id = self.config.asset_id;
+        let asset_id = self.config().asset_id;
         let has_asset = if asset_id > 0 {
             match ops.is_account_opted_in_to_asset(&algorand_id, asset_id) {
                 Ok(v) => v,
@@ -1575,7 +1614,7 @@ impl BingleLocalApi for BingleApiLocalImpl {
 
         // If the account holds the Bingle$ asset, look up its handle from on-chain local state
         let handle = if has_asset {
-            let app_id = self.config.app_id;
+            let app_id = self.config().app_id;
             if app_id > 0 {
                 let local_state = match ops.local_state_for_account(app_id, &algorand_id) {
                     Ok(s) => s,
@@ -1641,7 +1680,7 @@ impl BingleLocalApi for BingleApiLocalImpl {
         let required_target_algos = if has_asset && handle.is_some() {
             REQUIRED_ALGO
         } else {
-            let bgl = AlgoBingle::new(ops.clone(), self.config.app_id, self.config.asset_id);
+            let bgl = AlgoBingle::new(ops.clone(), self.config().app_id, self.config().asset_id);
             match bgl.required_funding() {
                 Ok(target) => {
                     tracing::info!(

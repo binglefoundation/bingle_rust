@@ -331,3 +331,154 @@ fn queued_message_gains_failure_reason_then_clears_on_success() {
 
     jsi.stop().unwrap();
 }
+
+// ── Shared pending-message sender (issue #283): `send_pending_messages` on ─────────────────────
+
+fn mock_api(progress_steps: Vec<u8>, fail_first: usize) -> Arc<MockBingleApi> {
+    Arc::new(MockBingleApi {
+        progress_steps,
+        on_listening: Mutex::new(None),
+        send_fail_count: Arc::new(std::sync::atomic::AtomicUsize::new(fail_first)),
+    })
+}
+
+/// Persist a pending outbound message on `local` (a clone shares the JSI's store).
+fn queue_pending(local: &BingleApiLocalImpl, timestamp: i64) {
+    local
+        .add_message_shared(
+            "testuser".to_string(),
+            vec!["recipient".to_string()],
+            timestamp,
+            "Hello".to_string(),
+            None,
+        )
+        .unwrap();
+    local
+        .update_message_status_shared(timestamp, 0.0, None, None)
+        .unwrap();
+}
+
+/// Poll `local` (not through the JSI, so no JSI lock is taken) until the message satisfies `done`.
+fn wait_for(
+    local: &BingleApiLocalImpl,
+    timestamp: i64,
+    timeout: Duration,
+    done: impl Fn(&bingle_local::api::bingle_local_api::Message) -> bool,
+) -> bool {
+    let deadline = std::time::Instant::now() + timeout;
+    while std::time::Instant::now() < deadline {
+        if let Some(m) = local
+            .get_messages()
+            .unwrap()
+            .into_iter()
+            .find(|m| m.timestamp == timestamp)
+            && done(&m)
+        {
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    false
+}
+
+#[test]
+fn shared_sender_delivers_a_pending_message_with_progress() {
+    let local = BingleApiLocalImpl::new(LocalApiConfig::default());
+    let jsi = BingleJsiApiImpl::init_for_tests_with_pending_sender(
+        mock_api(vec![10, 50, 90], 0),
+        local.clone(),
+    );
+    let timestamp = 7001i64;
+    queue_pending(&local, timestamp);
+
+    jsi.start().unwrap();
+    jsi.api_for_tests()
+        .notify_listening(true, bingle_core::engine::NatType::Restricted);
+
+    assert!(
+        wait_for(&local, timestamp, Duration::from_secs(5), |m| m.progress
+            == Some(1.0)),
+        "the shared sender should deliver the pending message"
+    );
+    jsi.stop().unwrap();
+}
+
+#[test]
+fn shared_sender_waits_until_listening() {
+    let local = BingleApiLocalImpl::new(LocalApiConfig::default());
+    let jsi =
+        BingleJsiApiImpl::init_for_tests_with_pending_sender(mock_api(vec![], 0), local.clone());
+    let timestamp = 7002i64;
+    queue_pending(&local, timestamp);
+
+    jsi.start().unwrap();
+    assert!(
+        !wait_for(&local, timestamp, Duration::from_millis(600), |m| m
+            .progress
+            == Some(1.0)),
+        "nothing is sent before the node is listening"
+    );
+
+    jsi.api_for_tests()
+        .notify_listening(true, bingle_core::engine::NatType::Restricted);
+    assert!(wait_for(&local, timestamp, Duration::from_secs(5), |m| m
+        .progress
+        == Some(1.0)));
+    jsi.stop().unwrap();
+}
+
+#[test]
+fn shared_sender_keeps_a_failed_message_pending_then_delivers_it() {
+    // First attempt fails transiently: pending with the human-readable reason and typed kind; the
+    // retry after RETRY_BACKOFF delivers it and clears both (parity with the legacy loop, #43/#99).
+    let local = BingleApiLocalImpl::new(LocalApiConfig::default());
+    let jsi =
+        BingleJsiApiImpl::init_for_tests_with_pending_sender(mock_api(vec![], 1), local.clone());
+    let timestamp = 7003i64;
+    queue_pending(&local, timestamp);
+
+    jsi.start().unwrap();
+    jsi.api_for_tests()
+        .notify_listening(true, bingle_core::engine::NatType::Restricted);
+
+    assert!(
+        wait_for(&local, timestamp, Duration::from_secs(5), |m| {
+            m.progress.is_some_and(|p| p < 1.0)
+                && m.failure_reason.as_deref() == Some("Recipient unreachable — will keep retrying")
+                && m.failure_kind
+                    == Some(bingle_core::api::bingle_api::SendFailureKind::PeerUnreachable)
+        }),
+        "a transient failure keeps the message pending with a typed reason"
+    );
+    assert!(
+        wait_for(&local, timestamp, Duration::from_secs(15), |m| {
+            m.progress == Some(1.0) && m.failure_reason.is_none() && m.failure_kind.is_none()
+        }),
+        "the retry delivers the message and clears the failure"
+    );
+    jsi.stop().unwrap();
+}
+
+#[test]
+fn shared_sender_does_not_need_the_local_api_lock() {
+    // The legacy loop records outcomes under the JSI's local_api mutex; the shared sender uses its
+    // own handle, so a send completes and is recorded while that mutex is held elsewhere.
+    let local = BingleApiLocalImpl::new(LocalApiConfig::default());
+    let jsi =
+        BingleJsiApiImpl::init_for_tests_with_pending_sender(mock_api(vec![], 0), local.clone());
+    let timestamp = 7004i64;
+    queue_pending(&local, timestamp);
+    jsi.start().unwrap();
+
+    let local_api = jsi.local_api_for_tests().expect("local api");
+    let held = local_api.lock().unwrap();
+    jsi.api_for_tests()
+        .notify_listening(true, bingle_core::engine::NatType::Restricted);
+    assert!(
+        wait_for(&local, timestamp, Duration::from_secs(5), |m| m.progress
+            == Some(1.0)),
+        "delivered while the local_api lock is held"
+    );
+    drop(held);
+    jsi.stop().unwrap();
+}

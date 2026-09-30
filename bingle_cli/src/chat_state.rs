@@ -10,8 +10,9 @@
 //! Later subtasks of the chat epic (#56) drive the transport and interactive I/O; this subtask is
 //! the storage bridge only.
 
-use std::collections::HashMap;
-use std::path::Path;
+use std::collections::{HashMap, HashSet};
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use bingle_core::api::bingle_api::{BingleError, SendFailureKind, StartOptions};
@@ -19,6 +20,7 @@ use bingle_core::blockchain::algo_bingle::AlgoBingle;
 use bingle_local::api::MailboxConfig;
 use bingle_local::api::bingle_local_api::{BingleLocalApi, ContactSource, Message, REQUIRED_ALGO};
 use bingle_local::api::bingle_local_api_impl::{BingleApiLocalImpl, LocalApiConfig};
+use bingle_local::api::pending_sender::LocalOutboundStore;
 
 use crate::chat::ChatArgs;
 use crate::chat_register::AccountStatus;
@@ -39,8 +41,15 @@ pub enum RegisterError {
 /// Holds the concrete [`BingleApiLocalImpl`] so mutations (new contacts, message history) can be
 /// written back to the same file via [`save_state`](ChatState::save_state).
 pub struct ChatState {
-    /// Owned local store: keypair, contacts and messages loaded from (and saved back to) the file.
-    local: BingleApiLocalImpl,
+    /// The local store (keypair, contacts and messages) loaded from — and saved back to — the file.
+    ///
+    /// Held behind an [`Arc`] so the background Mailbox poller (issue #274) can share the one store
+    /// and run [`poll_mailbox`](Self::poll_mailbox) / [`save_state`](Self::save_state) off the
+    /// session lock — a poll's network wait can be up to 120s, and holding the session lock across it
+    /// froze the REPL and blocked Ctrl-C/SIGTERM shutdown (issue #276). The store is fully
+    /// interior-mutable, so the `&mut self`-declared trait mutations are reached via their `&self`
+    /// cores (`*_shared`).
+    local: Arc<BingleApiLocalImpl>,
     /// Path to persist to on [`save_state`](ChatState::save_state); `None` when no `--state_file`
     /// was given (state is in-memory only for this run).
     state_file: Option<String>,
@@ -151,11 +160,37 @@ impl ChatState {
         // account status. Callers that need a definitely-registered handle go through that flow.
 
         Ok(ChatState {
-            local,
+            // All `&mut self` setup (the state-file `load` above) is done; wrap the store so it can be
+            // shared with the background poller (issue #274) from here on.
+            local: Arc::new(local),
             state_file,
             opts,
             contacts,
         })
+    }
+
+    /// A shared handle to the local store, for the background Mailbox poller (issue #274). The poller
+    /// runs [`poll_mailbox`](Self::poll_mailbox) / [`save_state`](Self::save_state)-equivalent calls on
+    /// this handle off the session lock, so a slow poll never freezes the REPL or blocks shutdown
+    /// (issue #276). See [`poll_shared`](crate::chat_poll::poll_shared).
+    pub fn local_handle(&self) -> Arc<BingleApiLocalImpl> {
+        Arc::clone(&self.local)
+    }
+
+    /// A handle on this session's store for the shared pending-message sender (issue #283). It shares
+    /// the one local store, saving to the `--state_file` after each update, so the sender sends and
+    /// records outcomes — including the store-and-forward post a failure triggers — without the
+    /// session lock.
+    pub fn outbound_store(&self) -> LocalOutboundStore {
+        LocalOutboundStore::new(
+            BingleApiLocalImpl::clone(&self.local),
+            self.state_file.as_ref().map(PathBuf::from),
+        )
+    }
+
+    /// The configured `--state_file` path (if any), so the poller can persist reads on its own handle.
+    pub fn state_file_path(&self) -> Option<String> {
+        self.state_file.clone()
     }
 
     /// Persist the current local state back to the `--state_file`. A no-op (returns `Ok`) when no
@@ -180,8 +215,10 @@ impl ChatState {
         text: &str,
         cipher_suite: Option<String>,
     ) -> Result<Message, String> {
+        // The store is shared via `Arc`, so the `&mut self`-declared trait mutations are reached
+        // through their `&self` cores (`*_shared`); see [`ChatState::local`].
         self.local
-            .add_message(
+            .add_message_shared(
                 sender_handle.to_string(),
                 recipient_handles,
                 timestamp,
@@ -214,7 +251,7 @@ impl ChatState {
     /// [`save_state`](ChatState::save_state).
     pub fn add_received_contact(&mut self, handle: &str, id: &str) -> Result<(), String> {
         self.local
-            .add_contact(handle.to_string(), id.to_string(), ContactSource::Received)
+            .add_contact_shared(handle.to_string(), id.to_string(), ContactSource::Received)
             .map_err(|e| e.to_string())?;
         self.contacts.insert(handle.to_string(), id.to_string());
         Ok(())
@@ -228,17 +265,30 @@ impl ChatState {
     /// Persist an outbound message as **pending** (`progress = 0.0`) and return its timestamp, which
     /// keys later [`mark_delivered`](ChatState::mark_delivered) /
     /// [`mark_send_failed`](ChatState::mark_send_failed) updates. Persisting before the send attempt
-    /// means a failed send survives in the state file for retry. Saves the state file.
+    /// means a failed send survives in the state file for retry. The timestamp is unique among
+    /// stored messages. Saves the state file.
     pub fn queue_outbound(&mut self, recipient_handle: &str, text: &str) -> Result<i64, String> {
-        let timestamp = SystemTime::now()
+        let mut timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_millis() as i64)
             .map_err(|e| e.to_string())?;
+        // The timestamp keys the message, so two messages queued in the same millisecond must not
+        // share one: bump past any already taken.
+        let taken: HashSet<i64> = self
+            .local
+            .get_messages()
+            .map_err(|e| e.to_string())?
+            .iter()
+            .map(|m| m.timestamp)
+            .collect();
+        while taken.contains(&timestamp) {
+            timestamp += 1;
+        }
         let sender = self.opts.handle.clone();
         // add_message records it delivered (progress 1.0); immediately mark it pending so the retry
         // path owns its lifecycle.
         self.local
-            .add_message(
+            .add_message_shared(
                 sender,
                 vec![recipient_handle.to_string()],
                 timestamp,
@@ -247,7 +297,7 @@ impl ChatState {
             )
             .map_err(|e| e.to_string())?;
         self.local
-            .update_message_status(timestamp, 0.0, None, None)
+            .update_message_status_shared(timestamp, 0.0, None, None)
             .map_err(|e| e.to_string())?;
         self.save_state()?;
         Ok(timestamp)
@@ -256,7 +306,7 @@ impl ChatState {
     /// Mark a previously queued outbound message (by `timestamp`) delivered, and save.
     pub fn mark_delivered(&mut self, timestamp: i64) -> Result<(), String> {
         self.local
-            .update_message_status(timestamp, 1.0, None, None)
+            .update_message_status_shared(timestamp, 1.0, None, None)
             .map_err(|e| e.to_string())?;
         self.save_state()
     }
@@ -273,7 +323,12 @@ impl ChatState {
     ) -> Result<(), String> {
         let progress = if permanent { 1.0 } else { 0.0 };
         self.local
-            .update_message_status(timestamp, progress, Some(reason.to_string()), failure_kind)
+            .update_message_status_shared(
+                timestamp,
+                progress,
+                Some(reason.to_string()),
+                failure_kind,
+            )
             .map_err(|e| e.to_string())?;
         self.save_state()
     }
@@ -281,6 +336,44 @@ impl ChatState {
     /// Outbound messages still awaiting delivery (`progress < 1.0`).
     pub fn pending_outbound(&self) -> Result<Vec<Message>, String> {
         self.local.get_pending_messages().map_err(|e| e.to_string())
+    }
+
+    /// Whether the store-and-forward SEND gate is on for this session (issue #272). When it is, a
+    /// failed direct send is routed to the recipient's Sidewinder Mailbox (bingle_local's
+    /// post-on-give-up, #214) rather than being kept only for direct retry.
+    pub fn store_and_forward_send_enabled(&self) -> bool {
+        self.local.store_and_forward_send()
+    }
+
+    /// Whether the message at `timestamp` has been handed off — delivered directly or posted to the
+    /// recipient's Sidewinder Mailbox — i.e. it is complete (`progress == 1.0`) and carries no
+    /// failure. The send path uses this after recording a failed direct send to tell a
+    /// store-and-forward handoff (the forward succeeded) apart from a still-failing send (issue #272).
+    pub fn is_handed_off(&self, timestamp: i64) -> bool {
+        self.local
+            .get_messages()
+            .ok()
+            .into_iter()
+            .flatten()
+            .find(|m| m.timestamp == timestamp)
+            .map(|m| m.progress == Some(1.0) && m.failure_reason.is_none())
+            .unwrap_or(false)
+    }
+
+    /// Whether the store-and-forward RECEIVE gate is on for this session (issue #274). When it is, the
+    /// chat session polls this account's Sidewinder Mailbox (bingle_local read-on-reconnect, #215) on
+    /// connect and on a backstop cycle, so messages held while offline are picked up.
+    pub fn store_and_forward_receive_enabled(&self) -> bool {
+        self.local.store_and_forward_receive()
+    }
+
+    /// Drain this account's Sidewinder Mailbox once, decrypting and storing each held message on the
+    /// local history, and return the batch read this poll (sorted by sent time). A no-op returning an
+    /// empty vector when the receive gate is off or no Sidewinder node is configured. Best-effort: a
+    /// node/keypair problem is logged by bingle_local and surfaces here as an empty batch, never an
+    /// error that would tear down the session. The caller persists via [`save_state`](Self::save_state).
+    pub fn poll_mailbox(&self) -> Result<Vec<Message>, String> {
+        self.local.poll_mailbox().map_err(|e| e.to_string())
     }
 
     /// Whether the local store currently holds a keypair.
@@ -292,7 +385,7 @@ impl ChatState {
     /// the first-run flow when the state file has no keypair. Never logs the passphrase.
     pub fn import_keypair(&mut self, passphrase: &str) -> Result<(), String> {
         self.local
-            .import_keypair(passphrase.to_string())
+            .import_keypair_shared(passphrase.to_string())
             .map(|_keypair| ())
             .map_err(|e| e.to_string())
     }
@@ -384,6 +477,27 @@ impl ChatState {
             })?;
         // Persist the registered keypair + handle so later runs need no --passphrase/--handle.
         self.save_state().map_err(RegisterError::Other)
+    }
+
+    /// Test seam: build a `ChatState` directly from an already-configured local store and options,
+    /// bypassing the `--state_file` bridge (and its `validate_store_and_forward`). Lets a test drive
+    /// the send/forward path with an arbitrary Mailbox config and no state file (issue #272).
+    #[doc(hidden)]
+    pub fn from_parts_for_tests(local: BingleApiLocalImpl, opts: StartOptions) -> ChatState {
+        ChatState {
+            local: Arc::new(local),
+            state_file: None,
+            opts,
+            contacts: HashMap::new(),
+        }
+    }
+
+    /// Test seam: record a `(timestamp, handle)` as already posted to a Mailbox, so a test can drive
+    /// the fully-forwarded handoff without a live Sidewinder node (delegates to the bingle_local
+    /// seam of the same name). Issue #272.
+    #[doc(hidden)]
+    pub fn mark_forwarded_for_tests(&self, timestamp: i64, handle: &str) {
+        self.local.mark_forwarded_for_tests(timestamp, handle);
     }
 }
 

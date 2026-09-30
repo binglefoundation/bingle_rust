@@ -73,6 +73,7 @@ impl Dtls for MockDtls {
         None
     }
     fn set_handle_peer_certificate(&self, _handler: Option<HandlePeerCertificate>) {}
+    fn set_public_endpoint(&self, _addr: Option<std::net::SocketAddr>) {}
     fn with_handle_peer_certificate(self, _handler: HandlePeerCertificate) -> Self
     where
         Self: Sized,
@@ -272,6 +273,7 @@ pub fn start_sets_issuer_and_passes_to_dtls_send() {
             None
         }
         fn set_handle_peer_certificate(&self, _handler: Option<HandlePeerCertificate>) {}
+        fn set_public_endpoint(&self, _addr: Option<std::net::SocketAddr>) {}
         fn with_handle_peer_certificate(self, _handler: HandlePeerCertificate) -> Self
         where
             Self: Sized,

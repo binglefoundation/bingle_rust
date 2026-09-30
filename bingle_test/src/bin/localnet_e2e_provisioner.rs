@@ -13,7 +13,11 @@
 //!     of testnet's `echo-testnet-1`;
 //!   * a funded, already-registered **sender** account for the app to import;
 //!   * a registered-but-offline **fixture** account (handle on chain, never started, so it has no
-//!     AdvertRecord) for the `RecipientNotAdvertised` failure-cause test.
+//!     AdvertRecord) for the `RecipientNotAdvertised` failure-cause test;
+//!   * optionally, a one-node **Sidewinder** Mailbox network (issue #284), started through
+//!     `scripts/e2e_sidewinder_localnet.sh` with the sender, echo and offline accounts enrolled, so the
+//!     store-and-forward suites have a Mailbox to post to. `BINGLE_E2E_SIDEWINDER=1` requires it (CI),
+//!     `0` skips it, and unset starts it when `sw-node` is installed.
 //!
 //! It writes the app/asset ids into a `bingle_cli`-compatible node file, the STUN list into a STUN
 //! file, and all the derived `BINGLE_E2E_*` values into an env file that `run_e2e_ios.sh` sources.
@@ -52,8 +56,88 @@ const OFFLINE_HANDLE: &str = "e2e-offline";
 const OFFLINE_ADDRESS: &str = "QASXBML72DKIJEJ5GLMEBBX33KCKW3TSJW7ETFOTLEREQCDMW5BXCLXSQU";
 const OFFLINE_PASSPHRASE: &str = "group avocado audit dentist baby index pipe attack enough stairs fame position column media copper athlete resource noodle forward wage middle into fitness ability dragon";
 
+// Sidewinder Mailbox node (issue #284), run by the repo's one-node LocalNet script.
+const SIDEWINDER_SCRIPT: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../scripts/e2e_sidewinder_localnet.sh"
+);
+const SIDEWINDER_WORK: &str = "/tmp/bingle_e2e_sidewinder";
+const SIDEWINDER_API_PORT: u16 = 1080;
+const SIDEWINDER_TOKEN: &str = "bingle-localnet-token";
+
 fn env_or(key: &str, default: &str) -> String {
     std::env::var(key).unwrap_or_else(|_| default.to_string())
+}
+
+/// Run the Sidewinder script with `action` (`up` or `down`) and the e2e settings.
+fn run_sidewinder_script(
+    action: &str,
+    extra_callers: &str,
+) -> std::io::Result<std::process::Output> {
+    std::process::Command::new("sh")
+        .arg(SIDEWINDER_SCRIPT)
+        .arg(action)
+        .env("WORK", SIDEWINDER_WORK)
+        .env("API_PORT", SIDEWINDER_API_PORT.to_string())
+        .env("AUTH_TOKEN", SIDEWINDER_TOKEN)
+        .env("EXTRA_CALLERS", extra_callers)
+        .output()
+}
+
+/// Start the one-node Sidewinder Mailbox network (issue #284) with `callers` enrolled, and return
+/// its client API URL as reached from the app (`api_host`). Returns `None` when it is not wanted:
+/// `BINGLE_E2E_SIDEWINDER=0`, or unset with no `sw-node` installed. Exits when it is required
+/// (`BINGLE_E2E_SIDEWINDER=1`) but cannot start. The node runs as its own process; the e2e run
+/// scripts stop it with the script's `down`.
+fn start_sidewinder(callers: &[&str], api_host: &str) -> Option<String> {
+    let mode = std::env::var("BINGLE_E2E_SIDEWINDER").unwrap_or_default();
+    if mode == "0" {
+        tracing::info!("[provision] Sidewinder disabled (BINGLE_E2E_SIDEWINDER=0)");
+        return None;
+    }
+    let required = mode == "1";
+    let sw_node = env_or("SW_NODE", "sw-node");
+    let installed = std::process::Command::new(&sw_node)
+        .arg("--version")
+        .output()
+        .is_ok_and(|o| o.status.success());
+    if !installed {
+        if required {
+            eprintln!(
+                "Error: BINGLE_E2E_SIDEWINDER=1 but '{sw_node}' is not installed \
+                 (cargo install sidewinder-node)"
+            );
+            std::process::exit(1);
+        }
+        tracing::info!("[provision] sw-node not installed; skipping the Sidewinder node");
+        return None;
+    }
+
+    // Clear any node left from an earlier run, then start a fresh one.
+    let _ = run_sidewinder_script("down", "");
+    tracing::info!("[provision] starting the Sidewinder node ({SIDEWINDER_WORK})");
+    let out = run_sidewinder_script("up", &callers.join(" "));
+    match out {
+        Ok(o) if o.status.success() => {}
+        Ok(o) => {
+            eprintln!(
+                "Error: Sidewinder node did not start:\n{}",
+                String::from_utf8_lossy(&o.stderr)
+            );
+            if required {
+                std::process::exit(1);
+            }
+            return None;
+        }
+        Err(e) => {
+            eprintln!("Error: could not run {SIDEWINDER_SCRIPT}: {e}");
+            if required {
+                std::process::exit(1);
+            }
+            return None;
+        }
+    }
+    Some(format!("{api_host}:{SIDEWINDER_API_PORT}"))
 }
 
 /// Install an OnMessage handler that echoes `Echo: <text>` back to the sender, mirroring
@@ -236,6 +320,25 @@ fn main() {
     let stun_text = format!("{}\n{}\n", stun_list[0], stun_list[1]);
     std::fs::write(&stun_file, stun_text).expect("write stun file");
 
+    // The Sidewinder Mailbox (issue #284), reached from the app at the same host as algod: the
+    // emulator's host alias, or loopback.
+    let sidewinder_host = match emulator_host {
+        Some(h) => format!("http://{h}"),
+        None => "http://127.0.0.1".to_string(),
+    };
+    let sidewinder_url = start_sidewinder(
+        &[SENDER_ADDRESS, ECHO_ADDRESS, OFFLINE_ADDRESS],
+        &sidewinder_host,
+    );
+    let sidewinder_env = match &sidewinder_url {
+        Some(url) => format!(
+            "export BINGLE_E2E_STORE_FORWARD=1\n\
+             export BINGLE_E2E_SIDEWINDER_URL={url}\n\
+             export BINGLE_E2E_SIDEWINDER_TOKEN={SIDEWINDER_TOKEN}\n"
+        ),
+        None => String::new(),
+    };
+
     // Write the env file last — it is the readiness signal the script waits on.
     let env_body = format!(
         "# Written by localnet_e2e_provisioner (issue #123). Source this to get BINGLE_E2E_* creds.\n\
@@ -244,13 +347,15 @@ fn main() {
          export BINGLE_E2E_HANDLE={SENDER_HANDLE}\n\
          export BINGLE_E2E_PASSPHRASE='{SENDER_PASSPHRASE}'\n\
          export BINGLE_E2E_ECHO_TO={ECHO_HANDLE}\n\
-         export BINGLE_E2E_OFFLINE_HANDLE={OFFLINE_HANDLE}\n"
+         export BINGLE_E2E_OFFLINE_HANDLE={OFFLINE_HANDLE}\n\
+         {sidewinder_env}"
     );
     std::fs::write(&env_file, env_body).expect("write env file");
 
     tracing::info!(
         "[provision] ready: app_id={app_id} asset_id={asset_id} sender='{SENDER_HANDLE}' \
-         echo='{ECHO_HANDLE}' offline='{OFFLINE_HANDLE}'"
+         echo='{ECHO_HANDLE}' offline='{OFFLINE_HANDLE}' sidewinder={}",
+        sidewinder_url.as_deref().unwrap_or("off")
     );
     println!("PROVISIONER READY (env file: {env_file}). Ctrl-C / SIGTERM to stop.");
 

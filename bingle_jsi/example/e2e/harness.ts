@@ -150,3 +150,42 @@ export async function callExpectingError(command: Command): Promise<string> {
   }
   return output;
 }
+
+/**
+ * Apply the sender selection from the environment to an `init` config (issue #283). With
+ * `BINGLE_E2E_SEND_PENDING_MESSAGES=1` the config gets `send_pending_messages: true`, so a suite runs
+ * against the shared bingle_local pending-message sender instead of the legacy processing loop.
+ * Unset, the config is returned unchanged (legacy loop), so every network suite can run either way.
+ */
+export function withSenderSelection<T extends object>(config: T): T & {send_pending_messages?: boolean} {
+  return process.env.BINGLE_E2E_SEND_PENDING_MESSAGES === '1'
+    ? {...config, send_pending_messages: true}
+    : config;
+}
+
+/** The store-and-forward `init` fields a suite adds when a Mailbox is available. */
+export interface StoreForwardConfig {
+  store_and_forward_send: boolean;
+  store_and_forward_receive: boolean;
+  sidewinder_node_url: string | null;
+  sidewinder_token: string | null;
+}
+
+/**
+ * Store-and-forward `init` fields from the environment (issue #284), or `null` when no Mailbox is
+ * available. `BINGLE_E2E_STORE_FORWARD=1` turns both gates on; `BINGLE_E2E_SIDEWINDER_URL` /
+ * `BINGLE_E2E_SIDEWINDER_TOKEN` select the bearer transport — the localnet provisioner writes all
+ * three when it starts its Sidewinder node. On testnet, leave the URL/token unset to use on-chain
+ * discovery from the node file's app id.
+ */
+export function storeForwardConfig(): StoreForwardConfig | null {
+  if (process.env.BINGLE_E2E_STORE_FORWARD !== '1') {
+    return null;
+  }
+  return {
+    store_and_forward_send: true,
+    store_and_forward_receive: true,
+    sidewinder_node_url: process.env.BINGLE_E2E_SIDEWINDER_URL || null,
+    sidewinder_token: process.env.BINGLE_E2E_SIDEWINDER_TOKEN || null,
+  };
+}

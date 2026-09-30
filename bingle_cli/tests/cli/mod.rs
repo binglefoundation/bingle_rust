@@ -3,6 +3,8 @@
 pub mod app_support;
 #[path = "chat_args.rs"]
 pub mod chat_args;
+#[path = "chat_poll.rs"]
+pub mod chat_poll;
 #[path = "chat_receive.rs"]
 pub mod chat_receive;
 #[path = "chat_register.rs"]
@@ -15,6 +17,8 @@ pub mod chat_send;
 pub mod chat_state;
 #[path = "echo_mode.rs"]
 pub mod echo_mode;
+#[path = "logging.rs"]
+pub mod logging;
 #[path = "run_args.rs"]
 pub mod run_args;
 #[path = "shutdown.rs"]

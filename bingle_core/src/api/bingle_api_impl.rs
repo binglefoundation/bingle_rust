@@ -74,6 +74,25 @@ where
     }
 }
 
+/// Emit a prominent, operator-facing banner when a relay refuses to start because of an on-chain
+/// misconfiguration (account not opted in, or not permitted to relay). The distinctive
+/// `RELAY STARTUP ABORTED` marker and multi-line layout make the cause obvious in aggregated logs
+/// (for example AWS CloudWatch), where a single error line is easily lost behind the generic ECS
+/// deployment-circuit-breaker failure that a crash-looping task produces. `remedy` is the
+/// operator's next action (already formatted, may span multiple lines).
+fn log_relay_startup_abort(headline: &str, addr: &str, app_id: u64, remedy: &str) {
+    tracing::error!(
+        "\n\
+        ========================================================================\n\
+        RELAY STARTUP ABORTED — {headline}\n\
+        ------------------------------------------------------------------------\n\
+        \x20 account : {addr}\n\
+        \x20 app_id  : {app_id}\n\
+        {remedy}\n\
+        ========================================================================"
+    );
+}
+
 // Simple bidirectional cache for handle <-> user_id with per-entry timestamps
 // Not exposed publicly; guarded by the encompassing Mutex in BingleApiImpl
 struct HandleCacheBi {
@@ -492,7 +511,9 @@ impl BingleApiImpl {
         match self.engine.access(|e| e.send_to_peer(nsk, &bytes)) {
             Ok(_) => Ok(true),
             Err(err) => {
-                warn!("[BingleApiImpl] Engine send_to_peer failed: {}", err);
+                // The single report of a failed send; an unreachable peer is expected, so not a
+                // warning (issue #278).
+                tracing::info!("[BingleApiImpl] Engine send_to_peer failed: {}", err);
                 if err.contains("rejecting") {
                     Ok(false)
                 } else {
@@ -636,10 +657,13 @@ impl BingleApi for BingleApiImpl {
                         // Allowed, continue
                     }
                     Ok(Some(false)) => {
-                        tracing::error!(
-                            "[BingleApiImpl::start] Account {} is not allowed to relay in dApp {}",
-                            addr,
-                            app_id
+                        log_relay_startup_abort(
+                            "account is opted in but not permitted to relay",
+                            &addr,
+                            app_id,
+                            &format!(
+                                "An app admin must set the allow_relay flag for this account on app {app_id}."
+                            ),
                         );
                         return Err(BingleError::Other(format!(
                             "Account {} is not allowed to relay",
@@ -647,10 +671,13 @@ impl BingleApi for BingleApiImpl {
                         )));
                     }
                     Ok(None) => {
-                        tracing::error!(
-                            "[BingleApiImpl::start] Account {} is not opted-in to dApp {}",
-                            addr,
-                            app_id
+                        log_relay_startup_abort(
+                            "account is not opted in to the configured dApp",
+                            &addr,
+                            app_id,
+                            "Opt in and migrate this account's state once, from a host holding its passphrase:\n  \
+                             bingle_cli migrate --passphrase <mnemonic> --node-file <node_file>\n\
+                             (or `bingle_cli register ...` for a brand-new account).",
                         );
                         return Err(BingleError::Other(format!(
                             "Account {} is not opted-in to dApp",
@@ -1229,7 +1256,7 @@ impl BingleApi for BingleApiImpl {
                             }
                         }
                         Err(err) => {
-                            tracing::warn!(
+                            tracing::info!(
                                 "[BingleApiImpl::send_message_to_network] relay Call failed: {}",
                                 err
                             );
@@ -1434,7 +1461,8 @@ impl BingleApi for BingleApiImpl {
             } else {
                 "send failed".to_string()
             };
-            tracing::warn!(
+            // The caller classifies and reports the failure (issue #278).
+            tracing::info!(
                 "[BingleApiImpl::send_message_to_network_with_response][exit] nsk={} user_id={} msg={} Err({})",
                 network_source_key,
                 user_id,

@@ -124,7 +124,7 @@ fi
 # Generated node file for this run: a copy of the committed staging node file. We deploy a fresh,
 # STANDALONE app + asset into it (below) so every run starts against a clean decentralized
 # database (DDB) with no stale relays (bingle_rust #105) — and so it runs ALONGSIDE the enduring
-# manual-test app (768197837 in the committed file) without touching it. The committed
+# manual-test app (771828003 in the committed file) without touching it. The committed
 # nodely_staging_testnet_node.json is never mutated; we write the freshly deployed ids into this
 # copy, and every downstream step and container uses the copy.
 GEN_NODE_FILE="$PWD/tmp/testnet_node_generated.json"

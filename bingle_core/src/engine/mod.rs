@@ -350,6 +350,8 @@ impl Engine {
         } else {
             tracing::error!("[Engine] last_public_addr_shared lock poisoned; dropping update");
         }
+        // The DTLS layer breaks simultaneous-connect ties on this address (issue #288).
+        self.packet_transport.dtls().set_public_endpoint(addr);
     }
 
     /// Return the appropriate TURN handler for current role (client vs relay)
@@ -1110,7 +1112,8 @@ impl Engine {
         if let Some(key) = to.get_key() {
             match &res {
                 Ok(_) => tracing::info!("[Engine::send_to_peer] sent to key={:?}", key),
-                Err(e) => tracing::warn!(
+                // Reported by the caller; an unreachable peer is not a fault here (issue #278).
+                Err(e) => tracing::debug!(
                     "[Engine::send_to_peer] send failed key={:?} error={}",
                     key,
                     e
@@ -1450,8 +1453,10 @@ impl Engine {
                                             }
                                         }
                                         else {
-                                            tracing::warn!("[Engine::install_dtls_handler][cb] no waiter found for responseTag={}", tag_str);
-                                            return Err("no waiter found for responseTag".to_string());
+                                            // A response arriving after its waiter timed out: drop it
+                                            // (issue #278). It was already ACKed by the transport.
+                                            tracing::debug!("[Engine::install_dtls_handler][cb] no waiter found for responseTag={}; dropping late response", tag_str);
+                                            return Ok(None);
                                         }
                                     }
                                     else {

@@ -20,7 +20,14 @@ set -euo pipefail
 #     emulator mode (relays/STUN advertised at 10.0.2.2, reached by the emulator via its qemu gateway
 #     and by the host echo peer via a loopback alias), and sources the derived creds. No secrets and
 #     no internet/DNS needed (all IP-based). Adds a loopback alias via sudo (prompts once on macOS).
+#     With `sw-node` installed (`cargo install sidewinder-node`) it also starts a one-node Sidewinder Mailbox for the store-and-forward
+#     cases (#284); BINGLE_E2E_SIDEWINDER=0 skips it.
 #     Run: BINGLE_E2E_BACKEND=localnet bash bingle_jsi/example/scripts/run_e2e_android.sh
+#
+# Sender selection (issue #283): BINGLE_E2E_SEND_PENDING_MESSAGES=1 runs the network suites with the
+# shared pending-message sender instead of the legacy loop; pending_sender.test.ts always uses it.
+# BINGLE_E2E_STORE_FORWARD=1 also turns on the store-and-forward send gate in that suite (see
+# run_e2e_ios.sh). Both are read from the environment, so export them before running this script.
 #
 # Prerequisites: Android SDK + NDK, a JDK 17, an AVD matching .detoxrc.js (`emulator -list-avds`),
 # Node, Rust with Android targets. Set JAVA_HOME to a JDK 17 (RN 0.84 requires 17) or the script
@@ -55,6 +62,11 @@ cleanup() {
   [[ -n "$PROVISIONER_PID" ]] && kill "$PROVISIONER_PID" 2>/dev/null || true
   [[ -n "$METRO_BG_PID" ]] && kill "$METRO_BG_PID" 2>/dev/null || true
   [[ -n "$LO0_ALIAS_IP" ]] && sudo ifconfig lo0 -alias "$LO0_ALIAS_IP" 2>/dev/null || true
+  # The localnet provisioner may have started a Sidewinder Mailbox node (#284); it runs as its own
+  # process, so stop it too.
+  if [[ "${BINGLE_E2E_BACKEND:-}" == "localnet" ]]; then
+    WORK=/tmp/bingle_e2e_sidewinder sh "$ROOT_DIR/scripts/e2e_sidewinder_localnet.sh" down >/dev/null 2>&1 || true
+  fi
 }
 trap cleanup EXIT
 

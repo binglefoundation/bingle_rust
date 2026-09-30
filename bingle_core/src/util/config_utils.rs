@@ -224,3 +224,31 @@ pub fn resolve_app_asset_ids(
 
     Ok((final_app, final_asset))
 }
+
+/// Load the optional node file and resolve the app/asset ids in one step: parse the node file (if
+/// given) for its chain config plus embedded ids, then apply [`resolve_app_asset_ids`] precedence
+/// (node file or the command-line ids, else the `APP_ID` / `ASSET_ID` env; erroring if both a flag
+/// and the node file set one). Returns the resolved `(config, app_id, asset_id)`.
+///
+/// With no node file the default chain config is used, so the ids must come from the flags or env.
+/// Composes the two steps the CLI's one-shot on-chain subcommands share (see `setup_chain_ops`).
+///
+/// # Errors
+///
+/// Propagates a node-file parse error, or a [`resolve_app_asset_ids`] conflict / missing-id error.
+pub fn load_config_and_resolve_ids(
+    node_file: Option<&str>,
+    cli_app_id: Option<u64>,
+    cli_asset_id: Option<u64>,
+) -> Result<(AlgoChainConfig, u64, u64), String> {
+    let (cfg, node_app_id, node_asset_id) = match node_file {
+        Some(path) => {
+            let (_net, cfg, node_app_id, node_asset_id) = parse_node_file_with_ids(path)?;
+            (cfg, node_app_id, node_asset_id)
+        }
+        None => (AlgoChainConfig::default(), None, None),
+    };
+    let (app_id, asset_id) =
+        resolve_app_asset_ids(node_app_id, node_asset_id, cli_app_id, cli_asset_id)?;
+    Ok((cfg, app_id, asset_id))
+}

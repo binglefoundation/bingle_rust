@@ -17,7 +17,8 @@ use bingle_core::ddb::{AdvertRecord, InetSocketAddress};
 use bingle_core::engine::BingleAccess;
 use bingle_core::util::cli_utils::{args_request_auto_migrate, parse_start_options_from_args};
 use bingle_core::util::config_utils::{
-    parse_algos_decimal_to_microalgos, parse_node_file_with_ids, resolve_app_asset_ids,
+    load_config_and_resolve_ids, parse_algos_decimal_to_microalgos, parse_node_file_with_ids,
+    resolve_app_asset_ids,
 };
 use bingle_core::util::logging::{BingleFormatter, HandleLayer, LogMode};
 use chrono::Utc;
@@ -128,14 +129,10 @@ fn init_logger_from_args(args: &mut Vec<String>) {
             i += 1;
         }
     }
-    // With all logging flags stripped, the first remaining arg is the subcommand. `chat` is an
-    // interactive REPL, so it defaults to WARN to keep the prompt clean (use `--info`/`--debug` to
-    // restore verbose logs); every other subcommand keeps the INFO default.
-    let default_level = if args.first().map(String::as_str) == Some("chat") {
-        LevelFilter::WARN
-    } else {
-        LevelFilter::INFO
-    };
+    // With all logging flags stripped, the first remaining arg is the subcommand, which decides the
+    // default level when the user passed no explicit --log-* flag (see logging::default_log_level:
+    // chat and checkrelays default to WARN, everything else to INFO).
+    let default_level = bingle_cli::logging::default_log_level(args.first().map(String::as_str));
     let level = chosen.unwrap_or(default_level);
     let mode = chosen_mode.unwrap_or(LogMode::Plain);
     let fmt_layer = tracing_subscriber::fmt::layer().event_format(BingleFormatter { mode });
@@ -182,6 +179,7 @@ fn main() {
         "run" => cmd_run(args),
         "chat" => cmd_chat(args),
         "register" => cmd_register(args),
+        "migrate" => cmd_migrate(args),
         "buybingle" => cmd_buybingle(args),
         "sellbingle" => cmd_sellbingle(args),
         "checkrelays" => cmd_checkrelays(args),
@@ -197,12 +195,13 @@ fn print_usage_and_exit(code: i32) -> ! {
     // One string literal per output line (adjacent literals are concatenated at compile time), so the
     // usage block stays readable in source; each line keeps its trailing `\n` except the last.
     let usage = concat!(
-        "Usage: bingle_cli <run|chat|register|buybingle|sellbingle|checkrelays> [options]\n",
+        "Usage: bingle_cli <run|chat|register|migrate|buybingle|sellbingle|checkrelays> [options]\n",
         "  Common options (for all commands): -h|--help | -V|--version | --log-warn|--warn|-q | --log-info|--info | --log-debug|--debug|-v | --log-trace|--vv|-vv | --log-mode <Plain|ANSI|AWS|JS> | --stun-servers <list> | --stun-servers-file <file>\n",
-        "  Note: chat defaults to WARN-level logs to keep the prompt clean; use --info or --debug to see more.\n",
+        "  Note: chat and checkrelays default to WARN-level logs so their output isn't buried under engine tracing; use --info or --debug to see more (or --log-level error for just the result).\n",
         "  bingle_cli run [--handle <handle>|<handle>] [--passphrase <text>] [--relay] [--static-ip <ip:port>] [--stun-servers <list>] [--stun-servers-file <file>] [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--sentinel-file <path>] [--echo] [--auto-migrate] [--log-mode <Plain|ANSI|AWS|JS>]\n",
         "  bingle_cli chat [--handle <handle>|<handle>] [--passphrase <text>] [--to <handle> | --to-id <id>] [--state_file <file>] [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--stun-servers <list>] [--stun-servers-file <file>] [--no-retries] [--store-forward <both|send|receive|none>] [--notify <url>] [--info|--debug]\n",
         "  bingle_cli register --handle <handle> --passphrase <text> --app-id <id> --asset-id <id> --price-units <n> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>] [--log-mode <Plain|ANSI|AWS|JS>]\n",
+        "  bingle_cli migrate --passphrase <text> [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--log-mode <Plain|ANSI|AWS|JS>]  (opt-in + migrate local state to the app from a blessed ancestor; handle is copied on-chain)\n",
         "  bingle_cli buybingle [<price_algos>] --passphrase <text> --app-id <id> --asset-id <id> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>] [--log-mode <Plain|ANSI|AWS|JS>]  (omit <price_algos> to pay the on-chain price)\n",
         "  bingle_cli sellbingle <amount_units> <price_algos> --passphrase <text> --app-id <id> --asset-id <id> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>] [--log-mode <Plain|ANSI|AWS|JS>]\n",
         "  bingle_cli checkrelays --passphrase <text> [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--interval-ms <n>] [--stun-servers <list>] [--stun-servers-file <file>] [--log-mode <Plain|ANSI|AWS|JS>]",
@@ -722,17 +721,19 @@ fn cmd_chat(args: Vec<String>) {
     run_chat_startup(&mut state, cli_handle.as_deref(), cli_passphrase.as_deref());
 
     // Start the engine and run the interactive REPL (send / receive / switch) until exit.
+    let poll_interval = bingle_cli::chat_poll::resolve_poll_interval(chat_args.poll_interval_secs);
     run_chat_session(
         state,
         chat_args.to.clone(),
         chat_args.to_id.clone(),
         !chat_args.no_retries,
+        poll_interval,
     );
 }
 
-/// How often the background worker checks for a pending outbound message to (re)attempt. A message
-/// is only eligible once its per-message backoff has elapsed, so this poll is just the scheduler
-/// tick, not the retry interval (that is `bingle_local::api::send_retry::RETRY_BACKOFF`).
+/// How often the shared pending-message sender looks for a message to retry when nothing wakes it.
+/// A message is only eligible once its per-message backoff has elapsed, so this is just the
+/// scheduler tick, not the retry interval (that is `bingle_local::api::send_retry::RETRY_BACKOFF`).
 const RETRY_POLL_INTERVAL: Duration = Duration::from_secs(1);
 
 /// How long the chat REPL waits for the node to reach the listening state before showing the prompt
@@ -740,28 +741,19 @@ const RETRY_POLL_INTERVAL: Duration = Duration::from_secs(1);
 /// still queued and retried by the background worker.
 const LISTENING_WAIT_TIMEOUT: Duration = Duration::from_secs(45);
 
-/// `MessageSender` backed by the live engine: sends by handle or id.
-struct EngineSender {
-    api: Arc<BingleApiImpl>,
-}
-
-impl bingle_cli::chat_send::MessageSender for EngineSender {
-    fn send_text(
-        &self,
-        target: &bingle_cli::chat_send::SendTarget,
-        message: &serde_json::Value,
-    ) -> Result<bool, bingle_core::api::bingle_api::BingleError> {
-        use bingle_cli::chat_send::SendTarget;
-        // Return the typed error unchanged so the send-failure cause survives to the classifier
-        // (issue #99).
-        match target {
-            SendTarget::Handle(handle) => {
-                self.api
-                    .send_message_to_handle(handle, message.clone(), None)
-            }
-            SendTarget::Id(id) => self.api.send_message_to_id(id, message.clone(), None),
-        }
+/// On exit, let an in-flight send finish and hand whatever is still queued to the recipients'
+/// Mailboxes, printing what happened to each message (issue #282).
+fn finish_pending(sender: &PendingSender, store: &LocalOutboundStore) {
+    let queued = store.pending_messages().map(|p| p.len()).unwrap_or(0);
+    if queued > 0 {
+        println!("finishing {queued} queued message(s)… (Ctrl-C again to quit now)");
+        let _ = std::io::stdout().flush();
     }
+    let report = sender.shutdown(EXIT_FLUSH_DEADLINE);
+    for line in shutdown_lines(&report) {
+        println!("{line}");
+    }
+    let _ = std::io::stdout().flush();
 }
 
 /// Print `prompt` with no trailing newline and flush, so the cursor sits after it.
@@ -775,11 +767,15 @@ fn reprint_prompt(prompt: &str) {
 /// current recipient (persisted + retried via the pending-message model); `/prefix` switches the
 /// recipient (resolved to its canonical handle via `handle_lookup_partial`); `!exit` or Ctrl-D exits
 /// cleanly (Ctrl-C likewise, via the signal handler). Mirrors `cmd_run`'s start loop.
+///
+/// When the store-and-forward receive gate is on, a background poller drains this account's Sidewinder
+/// Mailbox on connect and then every `poll_interval`, surfacing messages held while offline (#274).
 fn run_chat_session(
     state: ChatState,
     to: Option<String>,
     to_id: Option<String>,
     retries_enabled: bool,
+    poll_interval: Duration,
 ) {
     let opts = state.opts.clone();
     // Shared with the engine callback and the retry worker: all mutate the one ChatState.
@@ -791,14 +787,65 @@ fn run_chat_session(
     // listening on the network. The REPL waits on this before showing the prompt so the user cannot
     // send (and lose) a message before there is a return path (issue #91).
     let listening_gate = Arc::new((std::sync::Mutex::new(false), std::sync::Condvar::new()));
+    // Whether the node is listening right now: the shared sender only sends while it is.
+    let listening_now = Arc::new(std::sync::atomic::AtomicBool::new(false));
+
+    // Shared background sender (issue #283): the same pending-message sender the React Native client
+    // uses. It attempts each queued message as soon as the REPL wakes it, retries transient failures
+    // with per-message backoff (unless --no-retries), and hands failed messages to the recipient's
+    // Mailbox when the store-and-forward send gate is on. It runs off the REPL thread and off the
+    // session lock, so the prompt returns immediately even when the recipient is offline. Outcomes
+    // print above the current prompt, which is then redrawn. Started before the receive callback is
+    // installed, so hearing from a peer can end its offline window (issue #278); nothing is sent
+    // until the node is listening.
+    let outbound = match shared.lock() {
+        Ok(guard) => guard.outbound_store(),
+        Err(_) => {
+            warn!("chat: state lock poisoned");
+            return;
+        }
+    };
+    // Kept for the exit flush's "finishing N queued messages" line (issue #282).
+    let exit_store = outbound.clone();
+    // Set once shutdown starts, so a second Ctrl-C during the exit flush quits at once (issue #282).
+    let shutting_down = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let pending_sender = Arc::new({
+        let report_prompt = prompt_line.clone();
+        let ready_listening = listening_now.clone();
+        PendingSender::start(
+            Arc::new(outbound),
+            Arc::new(ChatDelivery::new(api.clone())),
+            PendingSenderOptions {
+                tick: RETRY_POLL_INTERVAL,
+                retries_enabled,
+                ..PendingSenderOptions::new()
+            },
+            Arc::new(move || ready_listening.load(std::sync::atomic::Ordering::SeqCst)),
+            Arc::new(move |report| {
+                if let Some(line) = report_line(&report) {
+                    println!("\n{line}");
+                    let prompt = report_prompt.lock().map(|g| g.clone()).unwrap_or_default();
+                    reprint_prompt(&prompt);
+                }
+            }),
+        )
+    });
 
     {
         let shared_for_msg = shared.clone();
         let prompt_for_msg = prompt_line.clone();
+        let sender_for_msg = pending_sender.clone();
         let listening_gate_cb = listening_gate.clone();
+        let listening_now_cb = listening_now.clone();
         api.access(|api_mut| {
             let on_message: Arc<OnMessageHandler> =
                 Arc::new(move |sender, sender_handle, message| {
+                    // Hearing from a peer means it is online: end any offline window so the next
+                    // send to it is attempted direct (issue #278).
+                    sender_for_msg.peer_seen(&sender);
+                    if !sender_handle.is_empty() {
+                        sender_for_msg.peer_seen(&sender_handle);
+                    }
                     let received = {
                         let mut guard = match shared_for_msg.lock() {
                             Ok(g) => g,
@@ -834,6 +881,7 @@ fn run_chat_session(
 
             let on_listening: Arc<OnListeningHandler> = Arc::new(move |listening, _nat_type| {
                 tracing::debug!("chat: listening={}", listening);
+                listening_now_cb.store(listening, std::sync::atomic::Ordering::SeqCst);
                 // Signal the readiness gate once (and only once) the node is listening, so the REPL
                 // can stop waiting and show the prompt (issue #91).
                 if listening
@@ -872,56 +920,85 @@ fn run_chat_session(
 
     // Ctrl-C / SIGTERM: the main thread blocks on stdin, so the signal handler itself performs the
     // clean shutdown (stop + final save) and exits.
+    //
+    // The final save runs on the shared local store handle, NOT the session lock. A background poll can
+    // hold the session state for the length of its network wait (up to 120s, issue #274); the handler
+    // used to block on that lock, so Ctrl-C/SIGTERM could not exit until the poll finished — leaving
+    // `kill -9` as the only way out (issue #276). `save` (`&self`) touches only the store's own
+    // short-lived internal locks and never waits on the network, so the handler now always exits
+    // promptly.
+    //
+    // Before stopping the engine, the handler flushes what is still queued to the recipients'
+    // Mailboxes (issue #282). The flush runs on its own thread so the handler returns at once: a
+    // second Ctrl-C then finds shutdown under way and exits immediately.
     {
         let api_sig = api.clone();
-        let shared_sig = shared.clone();
+        let sender_sig = pending_sender.clone();
+        let store_sig = exit_store.clone();
+        let shutting_down_sig = shutting_down.clone();
+        let (handler_local, handler_state_file) = match shared.lock() {
+            Ok(guard) => (Some(guard.local_handle()), guard.state_file_path()),
+            Err(_) => (None, None),
+        };
         if let Err(e) = ctrlc::set_handler(move || {
-            tracing::info!("chat: received signal; shutting down");
-            api_sig.access(|api_mut| api_mut.stop());
-            if let Ok(guard) = shared_sig.lock() {
-                let _ = guard.save_state();
+            if shutting_down_sig.swap(true, std::sync::atomic::Ordering::SeqCst) {
+                std::process::exit(130);
             }
-            std::process::exit(0);
+            tracing::info!("chat: received signal; shutting down");
+            let api_sig = api_sig.clone();
+            let sender_sig = sender_sig.clone();
+            let store_sig = store_sig.clone();
+            let handler_local = handler_local.clone();
+            let handler_state_file = handler_state_file.clone();
+            std::thread::spawn(move || {
+                finish_pending(&sender_sig, &store_sig);
+                api_sig.access(|api_mut| api_mut.stop());
+                if let Some(local) = &handler_local {
+                    bingle_cli::chat_poll::save_shared(local, handler_state_file.as_deref());
+                }
+                std::process::exit(0);
+            });
         }) {
             warn!("chat: failed to install signal handler: {}", e);
         }
     }
 
-    // Background retry worker: keep re-attempting pending outbound messages (transient failures are
-    // retried indefinitely with per-message backoff, mirroring the RN client). Not started under
-    // --no-retries, where a failed send is reported once and never queued.
-    if retries_enabled {
-        let retry_api = api.clone();
-        let retry_shared = shared.clone();
-        let retry_prompt = prompt_line.clone();
+    // Background store-and-forward receive poller (issue #274): when the receive gate is on, drain
+    // this account's Sidewinder Mailbox now (it may have been offline) and then every `poll_interval`,
+    // so messages held while offline are picked up and shown like real-time ones. `poll_once` is a
+    // no-op when the gate is off, but we only spawn the thread when it is on to avoid an idle wake-up.
+    // Take a clone of the shared local store handle (and the state-file path) up front, so the poller
+    // runs off the session lock. Holding the session lock across a poll — whose network wait can be up
+    // to 120s — froze the REPL and, worse, blocked Ctrl-C/SIGTERM shutdown behind the in-flight poll
+    // (issue #276). The store is interior-mutable, so a poll and a concurrent interactive send are safe.
+    let (receive_enabled, poll_local, poll_state_file) = match shared.lock() {
+        Ok(guard) => (
+            guard.store_and_forward_receive_enabled(),
+            Some(guard.local_handle()),
+            guard.state_file_path(),
+        ),
+        Err(_) => (false, None, None),
+    };
+    if let (true, Some(poll_local)) = (receive_enabled, poll_local) {
+        let poll_prompt = prompt_line.clone();
+        let poll_sender = pending_sender.clone();
         std::thread::spawn(move || {
-            let sender = EngineSender { api: retry_api };
-            let mut retry_after: std::collections::HashMap<i64, std::time::Instant> =
-                std::collections::HashMap::new();
+            tracing::info!("chat: mailbox poller started (every {:?})", poll_interval);
             loop {
-                std::thread::sleep(RETRY_POLL_INTERVAL);
-                let outcome = match retry_shared.lock() {
-                    Ok(mut guard) => bingle_cli::chat_send::retry_pending(
-                        &sender,
-                        &mut guard,
-                        &mut retry_after,
-                        std::time::Instant::now(),
-                    ),
-                    Err(_) => continue,
-                };
-                let Some(outcome) = outcome else {
-                    continue; // nothing eligible right now
-                };
-                match outcome.outcome {
-                    SendOutcome::Delivered => println!("\n✓ delivered to {}", outcome.recipient),
-                    SendOutcome::Failed(reason) => {
-                        println!("\n! send to {} failed: {}", outcome.recipient, reason)
+                let read =
+                    bingle_cli::chat_poll::poll_shared(&poll_local, poll_state_file.as_deref());
+                if !read.is_empty() {
+                    // Print each held message above the current prompt, then redraw it — the same
+                    // presentation as a real-time message.
+                    for msg in &read {
+                        // A Mailbox message shows the sender is back online (issue #278).
+                        poll_sender.peer_seen(&msg.sender_handle);
+                        println!("\n{}: {}", msg.sender_handle, msg.text);
                     }
-                    // Transient: still retrying, stays quiet (the first failure already printed).
-                    SendOutcome::Retrying(_) => continue,
+                    let prompt = poll_prompt.lock().map(|g| g.clone()).unwrap_or_default();
+                    reprint_prompt(&prompt);
                 }
-                let prompt = retry_prompt.lock().map(|g| g.clone()).unwrap_or_default();
-                reprint_prompt(&prompt);
+                std::thread::sleep(poll_interval);
             }
         });
     }
@@ -963,8 +1040,7 @@ fn run_chat_session(
         let _ = std::io::stdout().flush();
     }
 
-    // Interactive loop on the main thread (engine + retry worker run on their own threads).
-    let sender = EngineSender { api: api.clone() };
+    // Interactive loop on the main thread (engine, sender and poller run on their own threads).
     let mut recipient = CurrentRecipient::from_args(to.as_deref(), to_id.as_deref());
     let stdin = std::io::stdin();
     loop {
@@ -1014,31 +1090,15 @@ fn run_chat_session(
             ChatInput::Send { text } => match recipient.target() {
                 None => println!("no recipient; use /<handle> to pick one, or start with --to"),
                 Some(target) => {
-                    let outcome = match shared.lock() {
-                        Ok(mut guard) => bingle_cli::chat_send::send_once(
-                            &sender,
-                            &mut guard,
-                            &target,
-                            &text,
-                            retries_enabled,
-                        ),
-                        Err(_) => {
-                            warn!("chat: state lock poisoned");
-                            continue;
-                        }
+                    // Persist as pending (a brief lock), then wake the sender; the outcome prints
+                    // when it is known.
+                    let queued = match shared.lock() {
+                        Ok(mut guard) => guard.queue_outbound(target.label(), &text),
+                        Err(_) => Err("state lock poisoned".to_string()),
                     };
-                    // On success print nothing: the terminal already echoed the typed line, which is
-                    // the transcript entry. Only surface failures.
-                    match outcome {
-                        SendOutcome::Delivered => {}
-                        SendOutcome::Retrying(reason) => println!(
-                            "! send to {} not delivered ({}); will keep retrying…",
-                            target.label(),
-                            reason
-                        ),
-                        SendOutcome::Failed(reason) => {
-                            println!("! send to {} failed: {}", target.label(), reason)
-                        }
+                    match queued {
+                        Ok(_) => pending_sender.wake(),
+                        Err(e) => println!("! send to {} failed: {}", target.label(), e),
                     }
                 }
             },
@@ -1046,6 +1106,10 @@ fn run_chat_session(
     }
 
     tracing::info!("chat: shutting down...");
+    // Flush what is still queued before the engine stops (issue #282); a Ctrl-C meanwhile quits.
+    if !shutting_down.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        finish_pending(&pending_sender, &exit_store);
+    }
     api.access(|api_mut| api_mut.stop());
     if let Ok(guard) = shared.lock()
         && let Err(e) = guard.save_state()
@@ -1156,10 +1220,13 @@ fn resolve_status_or_exit(state: &ChatState) -> chat_register::AccountStatus {
 use bingle_cli::chat::parse_chat_args;
 use bingle_cli::chat_register::{self, CredentialGap, StartupDecision, decide_startup};
 use bingle_cli::chat_repl::{ChatInput, CurrentRecipient, parse_input};
-use bingle_cli::chat_send::SendOutcome;
+use bingle_cli::chat_send::{ChatDelivery, EXIT_FLUSH_DEADLINE, report_line, shutdown_lines};
 use bingle_cli::chat_state::ChatState;
 use bingle_cli::chat_state::RegisterError;
 use bingle_core::api::network_endpoint::NetworkEndpoint;
+use bingle_local::api::pending_sender::{
+    LocalOutboundStore, OutboundStore, PendingSender, PendingSenderOptions,
+};
 use serde_json::json;
 use std::net::SocketAddr;
 use std::time::Duration;
@@ -1558,40 +1625,7 @@ fn cmd_register(args: Vec<String>) {
         }
     };
 
-    // Load node file (may also contain app_id/asset_id) and build config
-    let (cfg, node_app_id, node_asset_id): (AlgoChainConfig, Option<u64>, Option<u64>) =
-        match node_file {
-            Some(path) => match parse_node_file_with_ids(&path) {
-                Ok((_net, cfg, nid_app, nid_asset)) => (cfg, nid_app, nid_asset),
-                Err(e) => {
-                    warn!("{}", e);
-                    std::process::exit(2);
-                }
-            },
-            None => (AlgoChainConfig::default(), None, None),
-        };
-
-    // Resolve IDs with precedence: node file > CLI > env; error if node+CLI both set
-    let (app_id, asset_id) =
-        match resolve_app_asset_ids(node_app_id, node_asset_id, app_id, asset_id) {
-            Ok(v) => v,
-            Err(e) => {
-                warn!("{}", e);
-                std::process::exit(2);
-            }
-        };
-
-    // Build AlgoOps with provided passphrase; address is derived immediately in AlgoOps::new
-    let ops = AlgoOps::new_for_algorand(Some(passphrase.clone()), None, Some(cfg));
-    let address = match ops.address.as_ref() {
-        Some(a) => a.clone(),
-        None => {
-            warn!(
-                "Invalid passphrase: unable to derive address. Provide a valid Algorand mnemonic or supported secret format."
-            );
-            std::process::exit(2);
-        }
-    };
+    let (ops, app_id, asset_id, address) = setup_chain_ops(node_file, app_id, asset_id, passphrase);
 
     // Ensure the account is funded
     let bal_algos = loop {
@@ -1685,6 +1719,117 @@ fn cmd_register(args: Vec<String>) {
     }
 }
 
+/// Shared preamble for the one-shot on-chain subcommands (register / migrate / buybingle /
+/// sellbingle): load the optional node file, resolve the app/asset ids (node file or flags, else
+/// the `APP_ID`/`ASSET_ID` env — erroring if both a flag and the node file set one), build
+/// `AlgoOps` from the passphrase, and derive the sender address. Exits(2) with a clear message on a
+/// node-file / id-resolution / passphrase error. Returns `(ops, app_id, asset_id, address)`.
+fn setup_chain_ops(
+    node_file: Option<String>,
+    cli_app_id: Option<u64>,
+    cli_asset_id: Option<u64>,
+    passphrase: String,
+) -> (AlgoOps, u64, u64, String) {
+    let (cfg, app_id, asset_id) =
+        match load_config_and_resolve_ids(node_file.as_deref(), cli_app_id, cli_asset_id) {
+            Ok(v) => v,
+            Err(e) => {
+                warn!("{}", e);
+                std::process::exit(2);
+            }
+        };
+    let ops = AlgoOps::new_for_algorand(Some(passphrase), None, Some(cfg));
+    let address = ops.address.as_ref().cloned().unwrap_or_else(|| {
+        warn!(
+            "Invalid passphrase: unable to derive address. Provide a valid Algorand mnemonic or supported secret format."
+        );
+        std::process::exit(2);
+    });
+    (ops, app_id, asset_id, address)
+}
+
+fn cmd_migrate(args: Vec<String>) {
+    // One-shot local-state migration to the configured app: opt into the app (idempotent) and copy
+    // this account's local state (handle, allow flags, endpoints) from the nearest blessed ancestor,
+    // then exit. Unlike `run --auto-migrate` this needs no handle — `migrate_local` copies the Handle
+    // from the ancestor on-chain — and it does not start the node/protocol, so no Ctrl-C dance.
+    // Usage help: an explicit --help prints to stdout and exits 0; missing args is an error to stderr.
+    const USAGE: &str = "Usage: bingle_cli migrate --passphrase <text> [--node-file <file>] [--app-id <id>] [--asset-id <id>]\n  Opts in and migrates local state to the app from a blessed ancestor. app_id/asset_id come from --node-file or the flags (not both).";
+    if args.iter().any(|a| a == "--help" || a == "-h") {
+        println!("{USAGE}");
+        std::process::exit(0);
+    }
+
+    let mut app_id: Option<u64> = None;
+    let mut asset_id: Option<u64> = None;
+    let mut node_file: Option<String> = None;
+    let mut passphrase: Option<String> = None;
+
+    let mut it = args.into_iter();
+    while let Some(arg) = it.next() {
+        match arg.as_str() {
+            "--app-id" => app_id = Some(parse_u64(req_value(&mut it, "--app-id"), "--app-id")),
+            "--asset-id" => {
+                asset_id = Some(parse_u64(req_value(&mut it, "--asset-id"), "--asset-id"))
+            }
+            "--node-file" => node_file = Some(req_value(&mut it, "--node-file")),
+            "--passphrase" => passphrase = Some(req_value(&mut it, "--passphrase")),
+            // Accept common STUN options for consistency across commands; ignored for migrate.
+            "--stun-servers" => {
+                let _ = req_value(&mut it, "--stun-servers");
+            }
+            "--stun-servers-file" => {
+                let _ = req_value(&mut it, "--stun-servers-file");
+            }
+            other => {
+                warn!("Unknown option for migrate: {}", other);
+                std::process::exit(2);
+            }
+        }
+    }
+
+    let passphrase = match passphrase {
+        Some(p) => p,
+        None => {
+            warn!("migrate requires --passphrase <text>");
+            std::process::exit(2);
+        }
+    };
+
+    let (ops, app_id, asset_id, address) = setup_chain_ops(node_file, app_id, asset_id, passphrase);
+    tracing::info!("Migrating local state for {} to app {}", address, app_id);
+
+    let bingle = AlgoBingle::new(ops, app_id, asset_id);
+    loop {
+        match bingle.ensure_local_migrated(app_id) {
+            Ok(Some(txid)) => {
+                tracing::info!("migrated local state to app {} (tx: {})", app_id, txid);
+                break;
+            }
+            Ok(None) => {
+                // Either already migrated (holds a Handle on this app) or nothing on any blessed
+                // ancestor to copy (a fresh account, which must `register` instead).
+                tracing::info!(
+                    "nothing to migrate for app {} (already migrated, or no blessed ancestor holds this account's state — a fresh account must `register`)",
+                    app_id
+                );
+                break;
+            }
+            Err(e) => {
+                if let Some(ae) = e.downcast_ref::<AlgoError>()
+                    && ae.kind == AlgoErrorKind::HostUnreachable
+                {
+                    tracing::error!("Algorand node unreachable: {}. Retrying in 60s...", ae);
+                    std::thread::sleep(Duration::from_secs(60));
+                    continue;
+                }
+                warn!("migrate failed: {}", e);
+                std::process::exit(1);
+            }
+        }
+    }
+}
+
 fn cmd_buybingle(args: Vec<String>) {
     // Usage help: an explicit --help prints to stdout and exits 0; missing args is an error to stderr.
     const USAGE: &str = "Usage: bingle_cli buybingle [<price_algos>] --passphrase <text> --app-id <id> --asset-id <id> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>]\n  <price_algos> is optional: omit it to pay the current on-chain BinglePrice; if given it must equal that price.";
@@ -1752,35 +1897,7 @@ fn cmd_buybingle(args: Vec<String>) {
         }
     };
 
-    // Load node file (may also contain app_id/asset_id)
-    let (cfg, node_app_id, node_asset_id): (AlgoChainConfig, Option<u64>, Option<u64>) =
-        match node_file {
-            Some(path) => match parse_node_file_with_ids(&path) {
-                Ok((_net, cfg, nid_app, nid_asset)) => (cfg, nid_app, nid_asset),
-                Err(e) => {
-                    warn!("{}", e);
-                    std::process::exit(2);
-                }
-            },
-            None => (AlgoChainConfig::default(), None, None),
-        };
-
-    // Resolve IDs with precedence
-    let (app_id, asset_id) =
-        match resolve_app_asset_ids(node_app_id, node_asset_id, app_id, asset_id) {
-            Ok(v) => v,
-            Err(e) => {
-                warn!("{}", e);
-                std::process::exit(2);
-            }
-        };
-
-    // Ops
-    let ops = AlgoOps::new_for_algorand(Some(passphrase.clone()), None, Some(cfg));
-    let address = ops.address.as_ref().cloned().unwrap_or_else(|| {
-        warn!("Invalid passphrase: unable to derive address.");
-        std::process::exit(2);
-    });
+    let (ops, app_id, asset_id, address) = setup_chain_ops(node_file, app_id, asset_id, passphrase);
     let bal_algos = loop {
         match ops.account_balance() {
             Ok(Some(b)) => break b,
@@ -1949,35 +2066,7 @@ fn cmd_sellbingle(args: Vec<String>) {
         }
     };
 
-    // Load node file (may also contain app_id/asset_id)
-    let (cfg, node_app_id, node_asset_id): (AlgoChainConfig, Option<u64>, Option<u64>) =
-        match node_file {
-            Some(path) => match parse_node_file_with_ids(&path) {
-                Ok((_net, cfg, nid_app, nid_asset)) => (cfg, nid_app, nid_asset),
-                Err(e) => {
-                    warn!("{}", e);
-                    std::process::exit(2);
-                }
-            },
-            None => (AlgoChainConfig::default(), None, None),
-        };
-
-    // Resolve IDs with precedence
-    let (app_id, asset_id) =
-        match resolve_app_asset_ids(node_app_id, node_asset_id, app_id, asset_id) {
-            Ok(v) => v,
-            Err(e) => {
-                warn!("{}", e);
-                std::process::exit(2);
-            }
-        };
-
-    // Ops
-    let ops = AlgoOps::new_for_algorand(Some(passphrase.clone()), None, Some(cfg));
-    let address = ops.address.as_ref().cloned().unwrap_or_else(|| {
-        warn!("Invalid passphrase: unable to derive address.");
-        std::process::exit(2);
-    });
+    let (ops, app_id, asset_id, address) = setup_chain_ops(node_file, app_id, asset_id, passphrase);
     let bal_algos = loop {
         match ops.account_balance() {
             Ok(Some(b)) => break b,

@@ -44,6 +44,7 @@ recipient and persisting the conversation to a BingleLocal **state file**.
 bingle_cli chat [--handle <handle>|<handle>] [--passphrase <text>] \
   [--to <handle> | --to-id <id>] [--state_file <file>] [--node-file <file>] \
   [--app-id <id>] [--asset-id <id>] [--stun-servers <list>] [--stun-servers-file <file>] \
+  [--store-forward <both|send|receive|none>] [--notify <url>] [--poll-interval <secs>] \
   [--no-retries] [--info|--debug]
 ```
 
@@ -65,10 +66,45 @@ bingle_cli chat [--handle <handle>|<handle>] [--passphrase <text>] \
 - `--stun-servers-file <file>` / `--stun-servers <list>` — STUN servers for NAT traversal. The
   repository ships a ready-made `stunservers.txt`; pass `--stun-servers-file stunservers.txt` so
   peers behind NAT can connect.
+- `--store-forward <both|send|receive|none>` — enable store-and-forward via the Sidewinder Mailbox
+  (default `none`). `send` posts a message to the recipient's Mailbox when direct delivery gives up;
+  `receive` polls your own Mailbox for messages left while you were offline; `both` does both. See
+  [Store-and-forward](#store-and-forward-offline-delivery) below. Requires a reachable Mailbox — an
+  app id (on-chain discovery) or `SIDEWINDER_NODE_URL` + `SIDEWINDER_TOKEN` — or chat exits with an
+  error.
+- `--notify <url>` — bingle_notify gateway URL to nudge an offline recipient (a content-free push so
+  their client wakes and picks up the message). Off when omitted.
+- `--poll-interval <secs>` — period of the receive-side backstop Mailbox poll. Only has effect with
+  the receive gate on (`--store-forward both|receive`); defaults to 20s when omitted.
 - `--no-retries` — send each message once and report failure immediately, instead of queuing it for
-  background retry.
+  background retry. Not needed with store-and-forward send — see
+  [Store-and-forward](#store-and-forward-offline-delivery).
 - `--info` / `--debug` — chat logs at `WARN` by default to keep the prompt clean; raise the level to
   see connection/session detail.
+
+### Store-and-forward (offline delivery)
+
+By default chat delivers directly, peer to peer, and a message to an offline recipient is queued and
+retried until they come back. `--store-forward` adds a Sidewinder Mailbox as a durable relay so a
+message survives even if neither party is online at the same time.
+
+- **Send (`--store-forward send` or `both`)** — when a direct send can't reach the recipient, the
+  sealed message is posted to their Mailbox and reported as `↪ queued to their mailbox`; they read it
+  on their next poll. If the post itself can't complete, the message falls back to the normal
+  retry/queue (nothing is dropped).
+- **Receive (`--store-forward receive` or `both`)** — chat polls your own Mailbox on connect and then
+  every `--poll-interval` seconds, so anything left for you while you were offline is picked up and
+  shown like a real-time message. Real-time delivery normally beats the poll, so this is a safety net.
+
+**`--no-retries` is not needed with `--store-forward`.** With the send gate on, an offline send is
+handed off to the Mailbox on the first give-up rather than retried, so you get store-and-forward
+delivery without `--no-retries`. Leaving retries on is in fact safer: if the Mailbox post can't
+complete on the first attempt (e.g. the node is briefly unreachable), the message stays queued and
+keeps retrying both direct delivery and the forward until one lands. `--no-retries` only matters when
+store-and-forward send is **off**, where it stops a failed direct send from lingering in the queue.
+
+A full offline round-trip therefore uses `--store-forward both` on both ends: the sender's give-up
+posts to the recipient's Mailbox, and the recipient's poll drains it on reconnect.
 
 ### First-run registration flow
 

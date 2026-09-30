@@ -14,6 +14,7 @@ pub mod openssl_impl {
         SslContext, SslContextBuilder, SslFiletype, SslMethod, SslOptions, SslVerifyMode,
     };
     use std::collections::HashMap;
+    use std::net::SocketAddr;
     use std::pin::Pin;
     use std::sync::mpsc;
     use std::sync::{Arc, Mutex};
@@ -263,7 +264,7 @@ pub mod openssl_impl {
                     let cmd2 = cmd.clone();
                     tracing::debug!("[DtlsOpenSsl:{}] received peer command: {}", handle_tag, cmd2);
                     if !on_command(cmd) {
-                        tracing::warn!("[DtlsOpenSsl:{}] peer command handler returned false; terminating worker", handle_tag);
+                        tracing::debug!("[DtlsOpenSsl:{}] peer command handler returned false; terminating worker", handle_tag);
                         failed = true;
                         break;
                     }
@@ -280,6 +281,13 @@ pub mod openssl_impl {
     // Combined per-endpoint state: writer + verified issuer string + per-peer async queue
     const ASYNC_PEER_QUEUE_CAPACITY: usize = 8192;
 
+    /// How long an outbound send may take to establish its DTLS session: the connect handshake, or
+    /// (issue #288) waiting for a session the peer's inbound connect is still setting up.
+    const CONNECT_DEADLINE: std::time::Duration = std::time::Duration::from_secs(10);
+
+    /// How often a send waiting for a session being set up checks whether it is ready (issue #288).
+    const SESSION_READY_POLL: std::time::Duration = std::time::Duration::from_millis(20);
+
     #[derive(Clone)]
     struct PeerState {
         writer: Option<PeerWriter>,
@@ -288,6 +296,9 @@ pub mod openssl_impl {
         peer_handle: Option<PeerHandle>,
         is_connecting_peer: bool,
         handshake_logged: bool,
+        /// The session's real writer is installed, so it can carry application data. Set once an
+        /// outbound connect or an inbound accept completes (issue #288).
+        writer_ready: bool,
         cipher_suite: Option<String>,
         generation: u64,
     }
@@ -309,9 +320,18 @@ pub mod openssl_impl {
             peer_handle: None,
             is_connecting_peer: false,
             handshake_logged: false,
+            writer_ready: false,
             cipher_suite: None,
             generation,
         }
+    }
+
+    /// Simultaneous-connect tie-break (issue #288): when two peers dial each other at once, the one
+    /// with the lower public endpoint — compared by port, then IP — is the designated DTLS client
+    /// and keeps its outbound connect; the higher one yields and accepts. `own` must be this node's
+    /// public endpoint (not its bound socket), so both peers compare the same pair behind NAT.
+    pub fn is_designated_client(own: SocketAddr, remote: SocketAddr) -> bool {
+        (own.port(), own.ip()) < (remote.port(), remote.ip())
     }
 
     fn get_or_create_peer_state<'a>(
@@ -559,6 +579,7 @@ pub mod openssl_impl {
             if let Some(ps) = m.get_mut(&key) {
                 if ps.generation == owner_generation {
                     ps.writer = Some(PeerWriter::from_channel(writer_tx));
+                    ps.writer_ready = true;
                     tracing::debug!(
                         "[DtlsOpenSsl:::accept] installed real split writer for {}",
                         from
@@ -1004,6 +1025,10 @@ pub mod openssl_impl {
         sender: tokio::sync::mpsc::Sender<Vec<u8>>,
         receiver: tokio::sync::Mutex<tokio::sync::mpsc::Receiver<Vec<u8>>>,
         closed: AtomicBool,
+        // The waker of a reader parked in `poll_recv`, so `close` can wake it: closing the channel
+        // from another thread does not (issue #288 — an abandoned connect otherwise sat out its
+        // full 10s deadline).
+        parked_reader: std::sync::Mutex<Option<std::task::Waker>>,
     }
 
     impl AsyncPeerQueue {
@@ -1013,6 +1038,7 @@ pub mod openssl_impl {
                 sender,
                 receiver: tokio::sync::Mutex::new(receiver),
                 closed: AtomicBool::new(false),
+                parked_reader: std::sync::Mutex::new(None),
             }
         }
 
@@ -1042,17 +1068,29 @@ pub mod openssl_impl {
                 return Poll::Ready(None);
             }
 
-            let mut receiver = match self.receiver.try_lock() {
-                Ok(guard) => guard,
-                Err(_) => return Poll::Pending,
+            let polled = match self.receiver.try_lock() {
+                Ok(mut receiver) => receiver.poll_recv(cx),
+                Err(_) => Poll::Pending,
             };
-            receiver.poll_recv(cx)
+            if polled.is_pending() {
+                if let Ok(mut parked) = self.parked_reader.lock() {
+                    *parked = Some(cx.waker().clone());
+                }
+                // A close between the check above and parking must not be missed.
+                if self.closed.load(AtomicOrdering::SeqCst) {
+                    return Poll::Ready(None);
+                }
+            }
+            polled
         }
 
         pub(crate) fn close(&self) {
             self.closed.store(true, AtomicOrdering::SeqCst);
             if let Ok(mut receiver) = self.receiver.try_lock() {
                 receiver.close();
+            }
+            if let Some(waker) = self.parked_reader.lock().ok().and_then(|mut p| p.take()) {
+                waker.wake();
             }
         }
 
@@ -1075,6 +1113,16 @@ pub mod openssl_impl {
                 "[dtls muxconn][Write:write] legacy call {} bytes",
                 buf.len()
             );
+            // A stream whose peer state was closed — superseded, stopped, or a connect abandoned by
+            // the simultaneous-connect tie-break (issue #288) — must not put anything more on the
+            // wire. A retransmitted ClientHello from an abandoned connect would reach the peer after
+            // its session is up and be taken for a restart, tearing that session down.
+            if self.async_queue.is_closed() {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::NotConnected,
+                    "dtls peer state closed",
+                ));
+            }
             // Prefer direct inet address for logging; otherwise, show relay target if available.
             let peer_str = if let Some(addr) = self.peer.inet_socket_address() {
                 addr.to_string()
@@ -1253,6 +1301,7 @@ pub mod openssl_impl {
             None
         }
         fn set_handle_peer_certificate(&self, _handler: Option<HandlePeerCertificate>) {}
+        fn set_public_endpoint(&self, _addr: Option<SocketAddr>) {}
         fn with_handle_peer_certificate(self, _handler: HandlePeerCertificate) -> Self {
             self
         }
@@ -1395,6 +1444,9 @@ pub mod openssl_impl {
         pub(crate) dtls_async_runtime: Arc<tokio::runtime::Runtime>,
         pub(crate) handle: String,
         pub(crate) span: tracing::Span,
+        // This node's public endpoint, for the simultaneous-connect tie-break (issue #288). Shared
+        // with the accept handler; set through `Dtls::set_public_endpoint`.
+        public_endpoint: Arc<Mutex<Option<SocketAddr>>>,
     }
 
     impl DtlsOpenSsl {
@@ -1439,6 +1491,68 @@ pub mod openssl_impl {
                 dtls_async_runtime,
                 handle,
                 span,
+                public_endpoint: Arc::new(Mutex::new(None)),
+            }
+        }
+
+        /// After our outbound connect to `to` failed: if the peer state was taken over by an inbound
+        /// accept — the simultaneous-connect tie-break made us yield (issue #288) — wait until that
+        /// session's writer is ready (up to `deadline`) and send `data` through it. Returns `None`
+        /// when the connect was not taken over, so the caller reports its own failure.
+        fn send_over_taken_over_session(
+            &self,
+            key: &crate::api::bingle_api::NetworkEndpointKey,
+            to: &NetworkEndpoint,
+            owner_generation: u64,
+            data: &[u8],
+            deadline: std::time::Instant,
+        ) -> Option<Result<()>> {
+            let taken_over = self
+                .peer_states
+                .lock()
+                .ok()?
+                .get(key)
+                .is_some_and(|ps| ps.generation != owner_generation && !ps.is_connecting_peer);
+            if !taken_over {
+                return None;
+            }
+            tracing::debug!(
+                "[DtlsOpenSsl:::send] connect to {} yielded to the peer's inbound connect; waiting for the accepted session",
+                to
+            );
+            Some(self.send_when_session_ready(key, to, data, deadline))
+        }
+
+        /// Wait (up to `deadline`) until the session for `key` has its real writer, then send `data`
+        /// through it (issue #288).
+        fn send_when_session_ready(
+            &self,
+            key: &crate::api::bingle_api::NetworkEndpointKey,
+            to: &NetworkEndpoint,
+            data: &[u8],
+            deadline: std::time::Instant,
+        ) -> Result<()> {
+            loop {
+                let writer = self.peer_states.lock().ok().and_then(|m| {
+                    m.get(key)
+                        .filter(|ps| ps.writer_ready)
+                        .and_then(|ps| ps.writer.clone())
+                });
+                if let Some(writer) = writer {
+                    tracing::info!(
+                        "[DtlsOpenSsl:::send] sent to {} over the accepted session ({} bytes)",
+                        to,
+                        data.len()
+                    );
+                    return writer.send(data).map_err(|e| e.to_string());
+                }
+                if std::time::Instant::now() >= deadline {
+                    return Err(format!(
+                        "dtls accepted session to {} not ready before the deadline",
+                        to
+                    ));
+                }
+                std::thread::sleep(SESSION_READY_POLL);
             }
         }
 
@@ -1690,14 +1804,20 @@ pub mod openssl_impl {
         ///    - If a `ClientHello` arrives, the old session is terminated and a new one starts.
         ///    - Otherwise, the packet is simply enqueued for the existing session.
         ///
-        /// 3. **Outbound Connect in Progress (`is_connecting_peer`)**:
-        ///    - Implements **Simultaneous Connect Tie-Breaking** to avoid deadlocks where both
-        ///      sides are trying to connect and neither is accepting.
-        ///    - Compares local and remote socket addresses (port then IP).
-        ///    - The "lower" address is the designated client: it suppresses the inbound
-        ///      accept stream, waiting for its own outbound connect to succeed.
-        ///    - The "higher" address is the designated server: it aborts its outbound
-        ///      connect and allows the inbound accept stream to proceed.
+        /// 3. **Outbound Connect in Progress (`is_connecting_peer`)** — a `ClientHello` arriving
+        ///    while our own outbound handshake to the same peer is unfinished means both sides are
+        ///    dialling at once (issue #288). Fed to our client stream, that `ClientHello` would
+        ///    fail it with `unexpected message`, and the same on the other side. Instead,
+        ///    **Simultaneous Connect Tie-Breaking** picks one direction, via
+        ///    [`is_designated_client`]:
+        ///    - Compares this node's **public** endpoint (a relay's configured `host:port`, a
+        ///      client's STUN result; the bound socket only when unknown) with the packet source,
+        ///      port then IP, so both peers compare the same pair even behind NAT.
+        ///    - The "lower" endpoint is the designated client: it drops the inbound `ClientHello`
+        ///      and lets its own outbound connect finish; its retransmits make the peer yield.
+        ///    - The "higher" endpoint is the designated server: it abandons its outbound connect
+        ///      (a new peer-state generation) and accepts. Its pending send is delivered over the
+        ///      accepted session once that is ready (see `send`).
         ///
         /// 4. **Queue Management**: All inbound datagrams are pushed to the peer's `AsyncPeerQueue`,
         ///    which is read by the `CommonNetworkMuxConn` inside the `SslStream`.
@@ -1714,6 +1834,7 @@ pub mod openssl_impl {
             handle_new_session: Option<HandleNewSession>,
             peer_cert_handler: Option<HandlePeerCertificate>,
             reader_threads: Arc<Mutex<Vec<std::thread::JoinHandle<()>>>>,
+            public_endpoint: &Mutex<Option<SocketAddr>>,
             from: &NetworkEndpoint,
             data: &[u8],
             handle: String,
@@ -1757,7 +1878,7 @@ pub mod openssl_impl {
                 {}
             }
             // Find or create the async queue and worker handle for this peer.
-            let (async_q_arc, peer_handle) = {
+            let (async_q_arc, peer_handle, accept_generation) = {
                 let key = from.get_key().expect("direct endpoint key");
                 let mut pm = peers.lock().unwrap();
 
@@ -1767,6 +1888,42 @@ pub mod openssl_impl {
                     && data[3] == 0          // Epoch high byte
                     && data[4] == 0          // Epoch low byte
                     && data[13] == 0x01; // ClientHello
+
+                // Simultaneous connect (issue #288): our own outbound handshake to this peer is
+                // still running. Decide which direction wins, the same way on both sides.
+                if is_client_hello
+                    && let Some(ps) = pm.get(&key)
+                    && ps.is_connecting_peer
+                    && !ps.handshake_logged
+                {
+                    let own = public_endpoint
+                        .lock()
+                        .ok()
+                        .and_then(|g| *g)
+                        .unwrap_or(my_ip);
+                    let remote = from.inet_socket_address();
+                    if let Some(remote) = remote
+                        && is_designated_client(own, remote)
+                    {
+                        tracing::debug!(
+                            "[DtlsOpenSsl:::accept] simultaneous connect with {}: {} is the designated client; dropping inbound ClientHello",
+                            from,
+                            own
+                        );
+                        return;
+                    }
+                    let next_generation = next_peer_generation(ps.generation);
+                    tracing::info!(
+                        "[DtlsOpenSsl:::accept] simultaneous connect with {}: {} is the designated server; yielding outbound connect and accepting (generation={})",
+                        from,
+                        own,
+                        next_generation
+                    );
+                    if let Some(old) = pm.remove(&key) {
+                        close_peer_state(old);
+                    }
+                    pm.insert(key.clone(), new_peer_state(next_generation));
+                }
 
                 if is_client_hello
                     && pm
@@ -1789,7 +1946,32 @@ pub mod openssl_impl {
                 }
 
                 let ps = get_or_create_peer_state(&mut pm, &key);
-                (ps.async_queue.clone(), ps.peer_handle.clone())
+                // No session for this peer yet: claim the peer state for an inbound accept now,
+                // in the same critical section as the lookup, before the datagram is queued.
+                // Otherwise a local send could create an outbound connect on this queue in the gap
+                // and its client stream would read the peer's ClientHello (issue #288).
+                let accept_generation = if ps.writer.is_none() {
+                    let generation = next_peer_generation(ps.generation);
+                    ps.generation = generation;
+                    let (placeholder_tx, _placeholder_rx) = mpsc::channel::<Vec<u8>>();
+                    // A placeholder writer, so later packets from this peer are queued rather
+                    // than starting another stream; `run_accept_stream` installs the real one.
+                    ps.writer = Some(PeerWriter::from_channel(placeholder_tx));
+                    ps.handshake_logged = false;
+                    tracing::debug!(
+                        "[DtlsOpenSsl:::accept] reserved peer state for an accept, generation {} for {}",
+                        generation,
+                        from
+                    );
+                    Some(generation)
+                } else {
+                    None
+                };
+                (
+                    ps.async_queue.clone(),
+                    ps.peer_handle.clone(),
+                    accept_generation,
+                )
             };
 
             if peer_handle.is_none() {
@@ -1847,20 +2029,12 @@ pub mod openssl_impl {
                 );
             }
 
-            let create_stream = {
-                let key = from.get_key().expect("direct endpoint key");
-                let pm = peers.lock().unwrap();
-                let have_writer = pm.get(&key).map(|ps| ps.writer.is_some()).unwrap_or(false);
-                !have_writer // && !suppressed
-            };
-            if create_stream {
+            if let Some(accept_generation) = accept_generation {
                 tracing::debug!(
                     "[DtlsOpenSsl:::accept] creating new SslStream (accept_state) for [{} -> {:?}]",
                     from,
                     my_ip
                 );
-                #[allow(unused)]
-                {}
                 let mut ssl = openssl::ssl::Ssl::new(acceptor.context()).expect("ssl new");
                 ssl.set_accept_state();
                 let conn = CommonNetworkMuxConn {
@@ -1870,36 +2044,6 @@ pub mod openssl_impl {
                     read_remainder: Vec::new(),
                 };
                 let ssl_stream = TokioSslStream::new(ssl, conn).expect("ssl stream new");
-
-                // Install a placeholder writer immediately so that subsequent inbound packets
-                // from this peer see `have_writer == true` and are enqueued rather than
-                // triggering a duplicate stream creation.  The real writer is installed by
-                // `run_accept_stream` once the handshake completes.
-                let (placeholder_tx, _placeholder_rx) = mpsc::channel::<Vec<u8>>();
-                let placeholder_writer = PeerWriter::from_channel(placeholder_tx);
-                let mut accept_generation = 0u64;
-
-                if let Ok(mut m) = peers.lock() {
-                    let key = from.get_key().expect("direct endpoint key");
-                    let ps = get_or_create_peer_state(&mut m, &key);
-                    accept_generation = next_peer_generation(ps.generation);
-                    ps.generation = accept_generation;
-                    tracing::debug!(
-                        "[DtlsOpenSsl:::accept] create_stream, is_connecting_peer={}",
-                        ps.is_connecting_peer
-                    );
-                    ps.writer = Some(placeholder_writer);
-                    ps.handshake_logged = false;
-                    tracing::debug!(
-                        "[DtlsOpenSsl:::accept] assigned generation {} for {}",
-                        accept_generation,
-                        from
-                    );
-                    tracing::debug!(
-                        "[DtlsOpenSsl:::accept] installed placeholder writer for {}",
-                        from
-                    );
-                }
 
                 // Spawn a background thread that drives the DTLS accept handshake, extracts
                 // SSL state, splits the stream, and runs the post-handshake read loop.
@@ -1953,7 +2097,7 @@ pub mod openssl_impl {
             let peer_cert_handler = *self.handle_peer_certificate.lock().unwrap();
             let handle = self.handle.clone();
             let reader_threads = self.reader_threads.clone();
-            // Connecting peer suppression now tracked per-peer in PeerState.is_connecting_peer
+            let public_endpoint = self.public_endpoint.clone();
 
             // Install a DTLS packet handler that queues datagrams and sets up per-peer SslStreams on first packet.
             mux.clone()
@@ -1967,6 +2111,7 @@ pub mod openssl_impl {
                         handle_new_session.clone(),
                         peer_cert_handler,
                         reader_threads.clone(),
+                        &public_endpoint,
                         from,
                         data,
                         handle.clone(),
@@ -1995,7 +2140,7 @@ pub mod openssl_impl {
                 use std::sync::atomic::Ordering;
                 flag.store(true, Ordering::SeqCst);
             } else {
-                tracing::warn!("[DtlsOpenSsl:::stop] already stopped");
+                tracing::debug!("[DtlsOpenSsl:::stop] already stopped");
             }
 
             // Clear peer states and close their async queues to signal EOF to background reader threads
@@ -2028,7 +2173,7 @@ pub mod openssl_impl {
             if let Some(mux) = self.owned_udp_mux.lock().unwrap().take() {
                 mux.stop();
             } else {
-                tracing::warn!("[DtlsOpenSsl:::stop] no owned mux");
+                tracing::info!("[DtlsOpenSsl:::stop] no owned mux");
             }
             tracing::debug!("[DtlsOpenSsl:::stop] done");
             Ok(())
@@ -2067,21 +2212,37 @@ pub mod openssl_impl {
             let key_to = to.get_key().expect("direct endpoint key");
 
             // If there is an existing peer worker for `to`, enqueue directly through channel.
-            let peer_handle_to_use = {
+            // `accept_in_progress`: the peer dialled us and that handshake is still running, so its
+            // worker only has a placeholder writer (issue #288).
+            let (peer_handle_to_use, accept_in_progress) = {
                 let peers = &self.peer_states;
                 tracing::info!("[DtlsOpenSsl:::send] Locking peers");
                 if let Ok(map) = peers.lock() {
                     tracing::info!("[DtlsOpenSsl:::send] locked peers");
                     if let Some(ps) = map.get(&key_to) {
-                        ps.peer_handle.clone()
+                        (
+                            ps.peer_handle.clone(),
+                            ps.writer.is_some() && !ps.writer_ready && !ps.is_connecting_peer,
+                        )
                     } else {
-                        None
+                        (None, false)
                     }
                 } else {
                     tracing::error!("[DtlsOpenSsl:::send] peers lock poisoned");
-                    None
+                    (None, false)
                 }
             };
+
+            // The peer's inbound handshake is still running: a send through its worker now would hit
+            // the placeholder writer and be lost. Wait for that session instead (issue #288).
+            if accept_in_progress {
+                tracing::debug!(
+                    "[DtlsOpenSsl:::send] {} is mid-handshake inbound; waiting for the accepted session",
+                    to
+                );
+                let deadline = std::time::Instant::now() + CONNECT_DEADLINE;
+                return self.send_when_session_ready(&key_to, to, data, deadline);
+            }
 
             if let Some(peer_handle) = peer_handle_to_use {
                 if peer_handle.is_healthy() {
@@ -2129,6 +2290,22 @@ pub mod openssl_impl {
                     .map_err(|_| "peers lock poisoned".to_string())?;
 
                 let ps = get_or_create_peer_state(&mut map, &key_to);
+                // The peer dialled us between our lookup above and here: its accept holds this
+                // state. Taking it over would put our client stream on the accept's queue. Use
+                // that session instead (issue #288).
+                if ps.writer.is_some() && !ps.is_connecting_peer {
+                    drop(map);
+                    tracing::debug!(
+                        "[DtlsOpenSsl:::send] {} dialled us meanwhile; waiting for the accepted session",
+                        to
+                    );
+                    return self.send_when_session_ready(
+                        &key_to,
+                        to,
+                        data,
+                        std::time::Instant::now() + CONNECT_DEADLINE,
+                    );
+                }
                 let owner_generation = next_peer_generation(ps.generation);
                 ps.generation = owner_generation;
                 let async_q_arc = ps.async_queue.clone();
@@ -2197,15 +2374,16 @@ pub mod openssl_impl {
                 .map_err(|_| "newly created stream lock poisoned".to_string())?;
 
             tracing::info!(
-                "[DtlsOpenSsl:::send] starting DTLS connect/handshake to {} with 10s deadline",
-                to
+                "[DtlsOpenSsl:::send] starting DTLS connect/handshake to {} with {:?} deadline",
+                to,
+                CONNECT_DEADLINE
             );
             use std::time::Instant;
             let start = Instant::now();
             let runtime = self.dtls_async_runtime.clone();
 
             let io_result = runtime.block_on(async {
-                tokio::time::timeout(std::time::Duration::from_millis(10_000), async {
+                tokio::time::timeout(CONNECT_DEADLINE, async {
                     stream.write_all(data).await.map_err(|e| e.to_string())
                 })
                 .await
@@ -2265,6 +2443,18 @@ pub mod openssl_impl {
                             );
                         }
                     }
+                    // Simultaneous connect (issue #288): if we yielded this connect to the peer's
+                    // inbound one, deliver the data over that session once it is ready.
+                    let deadline = start + CONNECT_DEADLINE;
+                    if let Some(result) = self.send_over_taken_over_session(
+                        &key_to,
+                        to,
+                        owner_generation,
+                        data,
+                        deadline,
+                    ) {
+                        return result;
+                    }
                     tracing::warn!(
                         "[DtlsOpenSsl:::send] connect/write FAILURE to {}: {}",
                         to,
@@ -2290,7 +2480,9 @@ pub mod openssl_impl {
                             );
                         }
                     }
-                    tracing::warn!(
+                    // An unreachable peer is an expected condition; the caller reports the failure
+                    // (issue #278).
+                    tracing::debug!(
                         "[DtlsOpenSsl:::send] connect/write timeout to {} after {}ms",
                         to,
                         start.elapsed().as_millis()
@@ -2488,6 +2680,7 @@ pub mod openssl_impl {
                             ps.peer_handle = Some(peer_handle.clone());
                             ps.is_connecting_peer = false;
                             ps.handshake_logged = true;
+                            ps.writer_ready = true;
                         } else {
                             tracing::debug!(
                                 "[DtlsOpenSsl:::send] skip post-connect state update for {} due to generation mismatch (owner={}, current={})",
@@ -2544,6 +2737,11 @@ pub mod openssl_impl {
 
         fn get_handle_peer_certificate(&self) -> Option<HandlePeerCertificate> {
             *self.handle_peer_certificate.lock().unwrap()
+        }
+        fn set_public_endpoint(&self, addr: Option<SocketAddr>) {
+            if let Ok(mut g) = self.public_endpoint.lock() {
+                *g = addr;
+            }
         }
         fn set_handle_peer_certificate(&self, handler: Option<HandlePeerCertificate>) {
             *self.handle_peer_certificate.lock().unwrap() = handler;
