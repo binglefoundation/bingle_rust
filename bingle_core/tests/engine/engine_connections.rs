@@ -21,6 +21,7 @@ impl FakeDtls {
 }
 
 impl Dtls for FakeDtls {
+    fn set_public_endpoint(&self, _addr: Option<std::net::SocketAddr>) {}
     fn start(&self, _mux: std::sync::Arc<UdpNetworkMux>) -> bingle_core::dtls::Result<()> {
         Ok(())
     }

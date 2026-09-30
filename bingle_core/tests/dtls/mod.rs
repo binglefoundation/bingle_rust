@@ -9,6 +9,9 @@ pub mod dtls_external_openssl_server;
 #[path = "dtls_loopback_e2e.rs"]
 pub mod dtls_loopback_e2e;
 
+#[path = "dtls_simultaneous_connect.rs"]
+pub mod dtls_simultaneous_connect;
+
 #[path = "dtls_multi_client_loopback_e2e.rs"]
 pub mod dtls_multi_client_loopback_e2e;
 

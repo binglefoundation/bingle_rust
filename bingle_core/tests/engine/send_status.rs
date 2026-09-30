@@ -82,6 +82,7 @@ impl SucceedingDtls {
 }
 
 impl Dtls for SucceedingDtls {
+    fn set_public_endpoint(&self, _addr: Option<std::net::SocketAddr>) {}
     fn start(&self, _mux: std::sync::Arc<UdpNetworkMux>) -> bingle_core::dtls::Result<()> {
         Ok(())
     }
@@ -226,6 +227,7 @@ impl FailingDtls {
 }
 
 impl Dtls for FailingDtls {
+    fn set_public_endpoint(&self, _addr: Option<std::net::SocketAddr>) {}
     fn start(&self, _mux: std::sync::Arc<UdpNetworkMux>) -> bingle_core::dtls::Result<()> {
         Ok(())
     }

@@ -350,6 +350,8 @@ impl Engine {
         } else {
             tracing::error!("[Engine] last_public_addr_shared lock poisoned; dropping update");
         }
+        // The DTLS layer breaks simultaneous-connect ties on this address (issue #288).
+        self.packet_transport.dtls().set_public_endpoint(addr);
     }
 
     /// Return the appropriate TURN handler for current role (client vs relay)
