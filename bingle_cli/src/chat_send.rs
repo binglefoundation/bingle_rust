@@ -12,9 +12,12 @@
 //! ([`report_line`]).
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use bingle_core::api::bingle_api::{BingleApi, BingleError, ProgressCallback};
-use bingle_local::api::pending_sender::{MessageDelivery, SendOutcome, SendReport};
+use bingle_local::api::pending_sender::{
+    MessageDelivery, NotSentReason, SendOutcome, SendReport, ShutdownReport,
+};
 use serde_json::Value as JsonValue;
 
 /// Where to send: a handle (resolved by the engine) or a raw id/address.
@@ -71,6 +74,40 @@ impl<A: BingleApi> MessageDelivery for ChatDelivery<A> {
                 .send_message_to_handle(&recipient, message, progress)
         }
     }
+}
+
+/// How long `chat` waits on exit for an in-flight send and the Mailbox hand-off of whatever is still
+/// queued (issue #282): enough for a direct attempt to time out (about 10s) and a post to complete.
+pub const EXIT_FLUSH_DEADLINE: Duration = Duration::from_secs(15);
+
+/// The transcript lines for the exit flush (issue #282): one per message still queued at exit,
+/// saying whether it went to the recipient's Mailbox or stays queued for the next session.
+pub fn shutdown_lines(report: &ShutdownReport) -> Vec<String> {
+    let retry = "it will be retried next time you start chat";
+    let forwarded = report.forwarded.iter().map(|entry| {
+        format!(
+            "↪ {} is offline; queued to their mailbox — they'll get it when they reconnect",
+            entry.recipients.join(", ")
+        )
+    });
+    let not_sent = report.not_sent.iter().map(|(entry, reason)| {
+        let to = entry.recipients.join(", ");
+        match reason {
+            NotSentReason::StoreForwardOff => {
+                format!("! message to {to} not delivered (store-and-forward is off); {retry}")
+            }
+            NotSentReason::PostFailed => {
+                format!("! message to {to} could not be posted to the mailbox; {retry}")
+            }
+            NotSentReason::InFlight => {
+                format!("! message to {to} was still sending at exit; {retry}")
+            }
+            NotSentReason::DeadlineReached => {
+                format!("! message to {to} not delivered before exit; {retry}")
+            }
+        }
+    });
+    forwarded.chain(not_sent).collect()
 }
 
 /// The transcript line for a send outcome, or `None` to stay quiet.

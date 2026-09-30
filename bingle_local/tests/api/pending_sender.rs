@@ -9,8 +9,8 @@ use std::time::Duration;
 use bingle_core::api::bingle_api::{BingleError, ProgressCallback, SendFailureKind};
 use bingle_local::api::bingle_local_api::BingleLocalApi;
 use bingle_local::api::pending_sender::{
-    LocalOutboundStore, MessageDelivery, PendingSender, PendingSenderOptions, SendOutcome,
-    SendReport,
+    LocalOutboundStore, MessageDelivery, NotSentReason, PendingSender, PendingSenderOptions,
+    SendOutcome, SendReport, ShutdownEntry,
 };
 use bingle_local::api::{BingleApiLocalImpl, LocalApiConfig, MailboxConfig};
 use serde_json::Value as JsonValue;
@@ -568,4 +568,168 @@ fn the_offline_window_lapses_and_direct_is_tried_again() {
     let second = rx.recv_timeout(REPORT_TIMEOUT).expect("second report");
     assert_eq!(second.outcome, SendOutcome::Delivered);
     assert_eq!(delivery.calls().len(), 2);
+}
+
+// ── Shutdown flush (issue #282) ───────────────────────────────────────────────────────────────
+
+fn entry(timestamp: i64, recipient: &str) -> ShutdownEntry {
+    ShutdownEntry {
+        timestamp,
+        recipients: vec![recipient.to_string()],
+    }
+}
+
+#[test]
+fn shutdown_forwards_pending_messages_to_the_mailbox() {
+    // Not ready, so nothing is sent before shutdown; pre-marked posted (test seam) so the forward
+    // completes without a node.
+    let local = gated_store(Some(MailboxConfig::new("http://localhost:9", "tok")));
+    queue(&local, 1, &["bob"], "queued just before exit");
+    local.mark_forwarded_for_tests(1, "bob");
+    let delivery = MockDelivery::new();
+    let (sender, _rx) = start(
+        &local,
+        delivery.clone(),
+        fast_options(),
+        Arc::new(AtomicBool::new(false)),
+    );
+
+    let report = sender.shutdown(Duration::from_secs(5));
+    assert_eq!(report.forwarded, vec![entry(1, "bob")]);
+    assert!(report.not_sent.is_empty());
+    assert!(
+        delivery.calls().is_empty(),
+        "no direct attempt during the flush"
+    );
+    assert!(local.get_pending_messages().expect("pending").is_empty());
+}
+
+#[test]
+fn shutdown_reports_a_failed_post_and_leaves_the_message_pending() {
+    // Send gate on but no Mailbox configured: the post cannot complete.
+    let local = gated_store(None);
+    queue(&local, 1, &["bob"], "queued just before exit");
+    let (sender, _rx) = start(
+        &local,
+        MockDelivery::new(),
+        fast_options(),
+        Arc::new(AtomicBool::new(false)),
+    );
+
+    let report = sender.shutdown(Duration::from_secs(5));
+    assert!(report.forwarded.is_empty());
+    assert_eq!(
+        report.not_sent,
+        vec![(entry(1, "bob"), NotSentReason::PostFailed)]
+    );
+    assert_eq!(local.get_pending_messages().expect("pending").len(), 1);
+}
+
+#[test]
+fn shutdown_with_the_send_gate_off_leaves_messages_pending() {
+    let local = local_store(LocalApiConfig::default());
+    queue(&local, 1, &["bob"], "queued just before exit");
+    let (sender, _rx) = start(
+        &local,
+        MockDelivery::new(),
+        fast_options(),
+        Arc::new(AtomicBool::new(false)),
+    );
+
+    let report = sender.shutdown(Duration::from_secs(5));
+    assert!(report.forwarded.is_empty());
+    assert_eq!(
+        report.not_sent,
+        vec![(entry(1, "bob"), NotSentReason::StoreForwardOff)]
+    );
+    assert_eq!(local.get_pending_messages().expect("pending").len(), 1);
+}
+
+#[test]
+fn shutdown_waits_for_an_in_flight_send_before_flushing() {
+    // The first message's direct send is in flight when shutdown starts; it completes (delivered),
+    // so it is neither flushed nor delivered twice. The second, never attempted, is forwarded.
+    let local = gated_store(Some(MailboxConfig::new("http://localhost:9", "tok")));
+    queue(&local, 1, &["bob"], "in flight");
+    let release = Arc::new(AtomicBool::new(false));
+    let delivery = MockDelivery::new();
+    delivery.script("bob", vec![Scripted::BlockUntil(release.clone())]);
+    let (sender, _rx) = start(&local, delivery.clone(), fast_options(), ready());
+    for _ in 0..200 {
+        if !delivery.calls().is_empty() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert_eq!(delivery.calls().len(), 1, "first send in flight");
+    queue(&local, 2, &["carol"], "never attempted");
+    local.mark_forwarded_for_tests(2, "carol");
+
+    let releaser = std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(200));
+        release.store(true, Ordering::SeqCst);
+    });
+    let report = sender.shutdown(Duration::from_secs(5));
+    releaser.join().expect("releaser");
+
+    assert_eq!(
+        progress_of(&local, 1),
+        Some(1.0),
+        "the in-flight send completed"
+    );
+    assert_eq!(report.forwarded, vec![entry(2, "carol")]);
+    assert!(report.not_sent.is_empty());
+    assert_eq!(
+        delivery.calls().len(),
+        1,
+        "no second attempt at the in-flight message"
+    );
+}
+
+#[test]
+fn shutdown_leaves_a_send_still_in_flight_at_the_deadline_alone() {
+    let local = gated_store(Some(MailboxConfig::new("http://localhost:9", "tok")));
+    queue(&local, 1, &["bob"], "slow");
+    let release = Arc::new(AtomicBool::new(false));
+    let delivery = MockDelivery::new();
+    delivery.script("bob", vec![Scripted::BlockUntil(release.clone())]);
+    let (sender, _rx) = start(&local, delivery.clone(), fast_options(), ready());
+    for _ in 0..200 {
+        if !delivery.calls().is_empty() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+
+    let started = std::time::Instant::now();
+    let report = sender.shutdown(Duration::from_millis(300));
+    assert!(
+        started.elapsed() < Duration::from_secs(2),
+        "the deadline is respected"
+    );
+    assert_eq!(
+        report.not_sent,
+        vec![(entry(1, "bob"), NotSentReason::InFlight)]
+    );
+    release.store(true, Ordering::SeqCst);
+}
+
+#[test]
+fn shutdown_stops_handing_off_at_the_deadline() {
+    let local = gated_store(Some(MailboxConfig::new("http://localhost:9", "tok")));
+    queue(&local, 1, &["bob"], "queued");
+    local.mark_forwarded_for_tests(1, "bob");
+    let (sender, _rx) = start(
+        &local,
+        MockDelivery::new(),
+        fast_options(),
+        Arc::new(AtomicBool::new(false)),
+    );
+
+    let report = sender.shutdown(Duration::ZERO);
+    assert_eq!(
+        report.not_sent,
+        vec![(entry(1, "bob"), NotSentReason::DeadlineReached)]
+    );
+    assert_eq!(local.get_pending_messages().expect("pending").len(), 1);
 }

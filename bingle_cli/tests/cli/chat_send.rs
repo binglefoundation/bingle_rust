@@ -7,14 +7,15 @@ use std::sync::{Arc, Mutex, mpsc};
 use std::time::Duration;
 
 use bingle_cli::chat::parse_chat_args;
-use bingle_cli::chat_send::{SendTarget, is_account_id, report_line};
+use bingle_cli::chat_send::{SendTarget, is_account_id, report_line, shutdown_lines};
 use bingle_cli::chat_state::ChatState;
 use bingle_core::api::bingle_api::{BingleError, ProgressCallback, SendFailureKind, StartOptions};
 use bingle_local::api::MailboxConfig;
 use bingle_local::api::bingle_local_api::BingleLocalApi;
 use bingle_local::api::bingle_local_api_impl::{BingleApiLocalImpl, LocalApiConfig};
 use bingle_local::api::pending_sender::{
-    MessageDelivery, PendingSender, PendingSenderOptions, SendOutcome, SendReport,
+    MessageDelivery, NotSentReason, PendingSender, PendingSenderOptions, SendOutcome, SendReport,
+    ShutdownEntry, ShutdownReport,
 };
 use serde_json::Value;
 use tempfile::TempDir;
@@ -333,4 +334,64 @@ pub fn account_ids_are_told_apart_from_handles() {
 pub fn send_target_label_is_the_handle_or_id() {
     assert_eq!(SendTarget::Handle("bob".into()).label(), "bob");
     assert_eq!(SendTarget::Id("ABC".into()).label(), "ABC");
+}
+
+fn shutdown_entry(recipient: &str) -> ShutdownEntry {
+    ShutdownEntry {
+        timestamp: 1,
+        recipients: vec![recipient.to_string()],
+    }
+}
+
+#[test]
+pub fn shutdown_lines_report_each_message_left_at_exit() {
+    // Issue #282: one line per message still queued at exit.
+    let report = ShutdownReport {
+        forwarded: vec![shutdown_entry("bob")],
+        not_sent: vec![
+            (shutdown_entry("carol"), NotSentReason::StoreForwardOff),
+            (shutdown_entry("dave"), NotSentReason::PostFailed),
+            (shutdown_entry("erin"), NotSentReason::InFlight),
+            (shutdown_entry("frank"), NotSentReason::DeadlineReached),
+        ],
+    };
+    let retry = "it will be retried next time you start chat";
+    assert_eq!(
+        shutdown_lines(&report),
+        vec![
+            "↪ bob is offline; queued to their mailbox — they'll get it when they reconnect"
+                .to_string(),
+            format!("! message to carol not delivered (store-and-forward is off); {retry}"),
+            format!("! message to dave could not be posted to the mailbox; {retry}"),
+            format!("! message to erin was still sending at exit; {retry}"),
+            format!("! message to frank not delivered before exit; {retry}"),
+        ]
+    );
+}
+
+#[test]
+pub fn shutdown_lines_are_empty_when_nothing_was_queued() {
+    assert!(shutdown_lines(&ShutdownReport::default()).is_empty());
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn exit_flush_forwards_a_message_queued_just_before_exit() {
+    // Issue #282: the message is queued, and the session exits before any send; the exit flush
+    // hands it to the Mailbox (pre-marked posted via the test seam, so no node is needed).
+    let mut state = alice_state_gated(true, Some(MailboxConfig::new("http://localhost:9", "tok")));
+    let ts = state.queue_outbound("bob", "bye").expect("queue");
+    state.mark_forwarded_for_tests(ts, "bob");
+    let sender = PendingSender::start(
+        Arc::new(state.outbound_store()),
+        MockDelivery::new(Answer::Transient),
+        PendingSenderOptions::new(),
+        Arc::new(|| false),
+        Arc::new(|_| {}),
+    );
+
+    let report = sender.shutdown(Duration::from_secs(5));
+    assert_eq!(report.forwarded.len(), 1);
+    assert!(report.not_sent.is_empty());
+    assert!(state.pending_outbound().expect("pending").is_empty());
 }

@@ -741,6 +741,21 @@ const RETRY_POLL_INTERVAL: Duration = Duration::from_secs(1);
 /// still queued and retried by the background worker.
 const LISTENING_WAIT_TIMEOUT: Duration = Duration::from_secs(45);
 
+/// On exit, let an in-flight send finish and hand whatever is still queued to the recipients'
+/// Mailboxes, printing what happened to each message (issue #282).
+fn finish_pending(sender: &PendingSender, store: &LocalOutboundStore) {
+    let queued = store.pending_messages().map(|p| p.len()).unwrap_or(0);
+    if queued > 0 {
+        println!("finishing {queued} queued message(s)… (Ctrl-C again to quit now)");
+        let _ = std::io::stdout().flush();
+    }
+    let report = sender.shutdown(EXIT_FLUSH_DEADLINE);
+    for line in shutdown_lines(&report) {
+        println!("{line}");
+    }
+    let _ = std::io::stdout().flush();
+}
+
 /// Print `prompt` with no trailing newline and flush, so the cursor sits after it.
 fn reprint_prompt(prompt: &str) {
     print!("{prompt}");
@@ -790,6 +805,10 @@ fn run_chat_session(
             return;
         }
     };
+    // Kept for the exit flush's "finishing N queued messages" line (issue #282).
+    let exit_store = outbound.clone();
+    // Set once shutdown starts, so a second Ctrl-C during the exit flush quits at once (issue #282).
+    let shutting_down = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let pending_sender = Arc::new({
         let report_prompt = prompt_line.clone();
         let ready_listening = listening_now.clone();
@@ -908,19 +927,37 @@ fn run_chat_session(
     // `kill -9` as the only way out (issue #276). `save` (`&self`) touches only the store's own
     // short-lived internal locks and never waits on the network, so the handler now always exits
     // promptly.
+    //
+    // Before stopping the engine, the handler flushes what is still queued to the recipients'
+    // Mailboxes (issue #282). The flush runs on its own thread so the handler returns at once: a
+    // second Ctrl-C then finds shutdown under way and exits immediately.
     {
         let api_sig = api.clone();
+        let sender_sig = pending_sender.clone();
+        let store_sig = exit_store.clone();
+        let shutting_down_sig = shutting_down.clone();
         let (handler_local, handler_state_file) = match shared.lock() {
             Ok(guard) => (Some(guard.local_handle()), guard.state_file_path()),
             Err(_) => (None, None),
         };
         if let Err(e) = ctrlc::set_handler(move || {
-            tracing::info!("chat: received signal; shutting down");
-            api_sig.access(|api_mut| api_mut.stop());
-            if let Some(local) = &handler_local {
-                bingle_cli::chat_poll::save_shared(local, handler_state_file.as_deref());
+            if shutting_down_sig.swap(true, std::sync::atomic::Ordering::SeqCst) {
+                std::process::exit(130);
             }
-            std::process::exit(0);
+            tracing::info!("chat: received signal; shutting down");
+            let api_sig = api_sig.clone();
+            let sender_sig = sender_sig.clone();
+            let store_sig = store_sig.clone();
+            let handler_local = handler_local.clone();
+            let handler_state_file = handler_state_file.clone();
+            std::thread::spawn(move || {
+                finish_pending(&sender_sig, &store_sig);
+                api_sig.access(|api_mut| api_mut.stop());
+                if let Some(local) = &handler_local {
+                    bingle_cli::chat_poll::save_shared(local, handler_state_file.as_deref());
+                }
+                std::process::exit(0);
+            });
         }) {
             warn!("chat: failed to install signal handler: {}", e);
         }
@@ -1069,7 +1106,10 @@ fn run_chat_session(
     }
 
     tracing::info!("chat: shutting down...");
-    pending_sender.stop();
+    // Flush what is still queued before the engine stops (issue #282); a Ctrl-C meanwhile quits.
+    if !shutting_down.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        finish_pending(&pending_sender, &exit_store);
+    }
     api.access(|api_mut| api_mut.stop());
     if let Ok(guard) = shared.lock()
         && let Err(e) = guard.save_state()
@@ -1180,11 +1220,13 @@ fn resolve_status_or_exit(state: &ChatState) -> chat_register::AccountStatus {
 use bingle_cli::chat::parse_chat_args;
 use bingle_cli::chat_register::{self, CredentialGap, StartupDecision, decide_startup};
 use bingle_cli::chat_repl::{ChatInput, CurrentRecipient, parse_input};
-use bingle_cli::chat_send::{ChatDelivery, report_line};
+use bingle_cli::chat_send::{ChatDelivery, EXIT_FLUSH_DEADLINE, report_line, shutdown_lines};
 use bingle_cli::chat_state::ChatState;
 use bingle_cli::chat_state::RegisterError;
 use bingle_core::api::network_endpoint::NetworkEndpoint;
-use bingle_local::api::pending_sender::{PendingSender, PendingSenderOptions};
+use bingle_local::api::pending_sender::{
+    LocalOutboundStore, OutboundStore, PendingSender, PendingSenderOptions,
+};
 use serde_json::json;
 use std::net::SocketAddr;
 use std::time::Duration;

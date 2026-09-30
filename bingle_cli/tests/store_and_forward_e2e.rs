@@ -347,3 +347,113 @@ fn offline_send_survives_and_is_read_on_reconnect() {
         "delivered messages are dropped from the sidechain and not re-read"
     );
 }
+
+/// A delivery that always finds the peer unreachable. The exit-flush test never makes a direct
+/// attempt (the sender is not ready), so this only guards against one.
+struct UnreachablePeer;
+
+impl bingle_local::api::pending_sender::MessageDelivery for UnreachablePeer {
+    fn deliver(
+        &self,
+        _recipient: &str,
+        _message: serde_json::Value,
+        _progress: Option<std::sync::Arc<bingle_core::api::bingle_api::ProgressCallback>>,
+    ) -> Result<bool, bingle_core::api::bingle_api::BingleError> {
+        Err(bingle_core::api::bingle_api::BingleError::Send {
+            kind: bingle_core::api::bingle_api::SendFailureKind::PeerUnreachable,
+            detail: "peer offline".to_string(),
+        })
+    }
+}
+
+/// Issue #282: a message queued just before `chat` exits, with the peer offline, is handed to the
+/// peer's Mailbox by the exit flush (`PendingSender::shutdown`) and read on the peer's next start.
+#[test]
+fn exit_flush_posts_a_queued_message_to_the_offline_peers_mailbox() {
+    use bingle_local::api::pending_sender::{
+        LocalOutboundStore, PendingSender, PendingSenderOptions,
+    };
+    use std::sync::Arc;
+
+    let cluster = Cluster::up();
+    let e = &cluster.endpoints;
+    let cfg = test_util::localnet_config();
+
+    let sender_address = AlgoOps::address_from_passphrase(&e.sender_mnemonic).expect("sender addr");
+    let sender_ops = test_util::ops_from_mnemonic(&sender_address, &e.sender_mnemonic, cfg.clone());
+    let (app_id, asset_id) =
+        test_util::deploy_bingle_app_and_asset(&sender_ops, "Bingle$", 1_000_000);
+    test_util::register_client_on_blockchain(
+        &sender_address,
+        &e.sender_mnemonic,
+        "exit-sender",
+        app_id,
+        asset_id,
+        &sender_ops,
+        cfg.clone(),
+    );
+    test_util::register_client_on_blockchain(
+        &e.receiver_address,
+        &e.receiver_mnemonic,
+        "exit-receiver",
+        app_id,
+        asset_id,
+        &sender_ops,
+        cfg.clone(),
+    );
+
+    // ── sender: queue a message, then exit before any direct attempt ─────────────────────────────
+    let mut sender = BingleApiLocalImpl::new(local_config(
+        &e.api_url, &e.token, app_id, asset_id, true, false,
+    ));
+    sender
+        .import_keypair(e.sender_mnemonic.clone())
+        .expect("import sender keypair");
+    let ts = 1_726_700_000_000;
+    sender
+        .add_message(
+            "exit-sender".to_string(),
+            vec!["exit-receiver".to_string()],
+            ts,
+            "queued just before exit".to_string(),
+            None,
+        )
+        .expect("add message");
+    sender
+        .update_message_status(ts, 0.0, None, None)
+        .expect("mark pending");
+
+    let pending_sender = PendingSender::start(
+        Arc::new(LocalOutboundStore::new(sender.clone(), None)),
+        Arc::new(UnreachablePeer),
+        PendingSenderOptions::new(),
+        Arc::new(|| false),
+        Arc::new(|_| {}),
+    );
+    let report = pending_sender.shutdown(std::time::Duration::from_secs(60));
+    assert_eq!(
+        report.forwarded.len(),
+        1,
+        "the queued message is handed off: {report:?}"
+    );
+    assert!(
+        report.not_sent.is_empty(),
+        "nothing left behind: {report:?}"
+    );
+    assert!(
+        sender.get_pending_messages().expect("pending").is_empty(),
+        "no longer pending once in the Mailbox"
+    );
+
+    // ── receiver: next start reads it from the Mailbox ───────────────────────────────────────────
+    let mut receiver = BingleApiLocalImpl::new(local_config(
+        &e.api_url, &e.token, app_id, asset_id, false, true,
+    ));
+    receiver
+        .import_keypair(e.receiver_mnemonic.clone())
+        .expect("import receiver keypair");
+    let read = receiver.poll_mailbox().expect("poll");
+    assert_eq!(read.len(), 1);
+    assert_eq!(read[0].text, "queued just before exit");
+    assert_eq!(read[0].sender_handle, "exit-sender");
+}
