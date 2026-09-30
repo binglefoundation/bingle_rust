@@ -18,12 +18,16 @@
 //! gate on, sends to them inside the window skip the direct attempt — and its connect and relay
 //! timeouts — and go straight to their Mailbox. A delivered send, or the client reporting that it
 //! heard from the peer ([`PendingSender::peer_seen`]), ends the window early.
+//!
+//! On exit, a client calls [`PendingSender::shutdown`] rather than [`stop`](PendingSender::stop):
+//! it lets an in-flight send finish, then hands every message still pending to its recipients'
+//! Mailboxes, so a message queued just before exit is not left stranded (issue #282).
 
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, RecvTimeoutError};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
@@ -219,6 +223,43 @@ pub type ReadyCheck = dyn Fn() -> bool + Send + Sync;
 /// Called with each attempt's outcome, on the scheduler thread.
 pub type OutcomeCallback = dyn Fn(SendReport) + Send + Sync;
 
+/// A message named in a [`ShutdownReport`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ShutdownEntry {
+    /// The message's timestamp (its key in the store).
+    pub timestamp: i64,
+    /// The message's recipients.
+    pub recipients: Vec<String>,
+}
+
+/// Why [`PendingSender::shutdown`] left a message pending.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NotSentReason {
+    /// The store-and-forward send gate is off, so there is no Mailbox to hand it to.
+    StoreForwardOff,
+    /// The post to the Mailbox did not complete (node unreachable, recipient not resolvable, …).
+    PostFailed,
+    /// Its direct send was still running at the deadline, so it was left alone rather than risk
+    /// delivering it twice.
+    InFlight,
+    /// The deadline passed before it could be handed off.
+    DeadlineReached,
+}
+
+/// What [`PendingSender::shutdown`] did with the messages still pending at exit.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ShutdownReport {
+    /// Messages handed off to their recipients' Mailboxes.
+    pub forwarded: Vec<ShutdownEntry>,
+    /// Messages left pending (they stay in the store and are retried by the next sender), with why.
+    pub not_sent: Vec<(ShutdownEntry, NotSentReason)>,
+}
+
+/// The message the worker is sending, if any, with a condition variable signalled when it
+/// finishes. Set by the scheduler before a hand-off (so a message can never be both in flight and
+/// flushed), cleared by the worker once the outcome is recorded.
+type InFlight = (Mutex<Option<i64>>, Condvar);
+
 /// Scheduler input.
 enum Event {
     /// The worker finished a message.
@@ -238,6 +279,10 @@ pub struct PendingSender {
     scheduler: Mutex<Option<JoinHandle<()>>>,
     /// Recipients recently found unreachable, shared with the worker (issue #278).
     offline: Arc<Mutex<OfflineWindow>>,
+    /// The message being sent, shared with the scheduler and worker (issue #282).
+    in_flight: Arc<InFlight>,
+    /// The store, for the shutdown flush.
+    store: Arc<dyn OutboundStore>,
 }
 
 impl PendingSender {
@@ -255,6 +300,8 @@ impl PendingSender {
 
         let offline = Arc::new(Mutex::new(OfflineWindow::new(options.offline_window)));
         let worker_offline = Arc::clone(&offline);
+        let in_flight: Arc<InFlight> = Arc::new((Mutex::new(None), Condvar::new()));
+        let worker_in_flight = Arc::clone(&in_flight);
         let worker_store = Arc::clone(&store);
         let worker_events = event_tx.clone();
         let retries_enabled = options.retries_enabled;
@@ -270,6 +317,12 @@ impl PendingSender {
                         &msg,
                         retries_enabled,
                     );
+                    // The outcome is recorded: the message is no longer in flight.
+                    let (lock, finished) = &*worker_in_flight;
+                    if let Ok(mut current) = lock.lock() {
+                        *current = None;
+                    }
+                    finished.notify_all();
                     if worker_events
                         .send(Event::Done { timestamp, report })
                         .is_err()
@@ -284,11 +337,14 @@ impl PendingSender {
         }
 
         let scheduler_running = Arc::clone(&running);
+        let scheduler_in_flight = Arc::clone(&in_flight);
+        let scheduler_store = Arc::clone(&store);
         let scheduler = std::thread::Builder::new()
             .name("bingle-pending-scheduler".to_string())
             .spawn(move || {
                 run_scheduler(
-                    &*store,
+                    &*scheduler_store,
+                    &scheduler_in_flight,
                     options,
                     &*ready,
                     &*on_outcome,
@@ -310,7 +366,93 @@ impl PendingSender {
             running,
             scheduler: Mutex::new(scheduler),
             offline,
+            in_flight,
+            store,
         }
+    }
+
+    /// Stop, and flush what is still pending (issue #282). Call on exit instead of
+    /// [`stop`](Self::stop).
+    ///
+    /// Stops the scheduler, then waits (up to `deadline`) for a send already in flight to finish, so
+    /// no message is delivered twice. Then, with the store-and-forward send gate on, hands each
+    /// message still pending to its recipients' Mailboxes, skipping the direct attempt. Messages it
+    /// cannot hand off stay pending in the store, for the next sender to retry, and are reported
+    /// with the reason. Posts already started are not interrupted, so the call can run over
+    /// `deadline` by the time of one post.
+    pub fn shutdown(&self, deadline: Duration) -> ShutdownReport {
+        let until = Instant::now() + deadline;
+        self.stop();
+
+        let (lock, finished) = &*self.in_flight;
+        let still_in_flight = match lock.lock() {
+            Ok(mut current) => {
+                while current.is_some() {
+                    let now = Instant::now();
+                    if now >= until {
+                        break;
+                    }
+                    match finished.wait_timeout(current, until - now) {
+                        Ok((guard, _)) => current = guard,
+                        Err(e) => {
+                            current = e.into_inner().0;
+                            break;
+                        }
+                    }
+                }
+                *current
+            }
+            Err(_) => None,
+        };
+
+        let pending = match self.store.pending_messages() {
+            Ok(pending) => pending,
+            Err(e) => {
+                tracing::error!("[PendingSender] shutdown could not read pending messages: {e}");
+                Vec::new()
+            }
+        };
+        let forwarding = self.store.store_and_forward_send();
+        let mut report = ShutdownReport::default();
+        for msg in pending {
+            let entry = ShutdownEntry {
+                timestamp: msg.timestamp,
+                recipients: msg.recipient_handles.clone(),
+            };
+            let not_sent = if still_in_flight == Some(msg.timestamp) {
+                Some(NotSentReason::InFlight)
+            } else if !forwarding {
+                Some(NotSentReason::StoreForwardOff)
+            } else if Instant::now() >= until {
+                Some(NotSentReason::DeadlineReached)
+            } else {
+                // Record it as unreachable: that drives the post to the recipients' Mailboxes. It
+                // stays pending (retryable) if the post does not complete.
+                let failure = classify_send_error(&Err(BingleError::Send {
+                    kind: SendFailureKind::PeerUnreachable,
+                    detail: "not delivered before exit".to_string(),
+                }));
+                if let Some(failure) = failure {
+                    let _ = self.store.update_message_status(
+                        msg.timestamp,
+                        0.0,
+                        Some(failure.reason),
+                        Some(failure.kind),
+                    );
+                }
+                (!self.store.is_handed_off(msg.timestamp)).then_some(NotSentReason::PostFailed)
+            };
+            match not_sent {
+                None => report.forwarded.push(entry),
+                Some(reason) => report.not_sent.push((entry, reason)),
+            }
+        }
+        tracing::info!(
+            "[PendingSender] shutdown: {} forwarded, {} left pending",
+            report.forwarded.len(),
+            report.not_sent.len()
+        );
+        report
     }
 
     /// The client heard from `recipient` (a handle or id) — a real-time message or one read from
@@ -362,6 +504,7 @@ impl Drop for PendingSender {
 
 fn run_scheduler(
     store: &dyn OutboundStore,
+    in_flight_shared: &InFlight,
     options: PendingSenderOptions,
     ready: &ReadyCheck,
     on_outcome: &OutcomeCallback,
@@ -422,8 +565,15 @@ fn run_scheduler(
             if let Some(msg) = select_sendable_message(pending, &retry_after, Instant::now()) {
                 tracing::debug!("[PendingSender] sending message {}", msg.timestamp);
                 in_flight = Some((msg.timestamp, Instant::now()));
+                // Mark it in flight before the hand-off, so a shutdown flush cannot also send it.
+                if let Ok(mut current) = in_flight_shared.0.lock() {
+                    *current = Some(msg.timestamp);
+                }
                 if work.send(msg).is_err() {
                     tracing::error!("[PendingSender] worker gone; stopping");
+                    if let Ok(mut current) = in_flight_shared.0.lock() {
+                        *current = None;
+                    }
                     break;
                 }
             }
