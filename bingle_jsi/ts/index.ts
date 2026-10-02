@@ -11,6 +11,7 @@ import { NativeModules, Platform } from "react-native";
 import type {
   BingleJsiConfig,
   BingleJsiApi,
+  DeliveryRoute,
   FailureKind,
   MessagingSettings,
 } from "./NativeBingleJsi";
@@ -25,6 +26,7 @@ export type {
   HandleLookupPartialResult,
   Message,
   FailureKind,
+  DeliveryRoute,
   KeypairStatusResponse,
   NatTypeResponse,
   MessagingSettings,
@@ -187,6 +189,8 @@ export const BingleJsi = BingleJsiNative as {
       sent_time?: number | null;
       delivered_time?: number | null;
       signature?: string | null;
+      // How the message was delivered (issue #291); null while pending or failed.
+      delivery_route?: DeliveryRoute | null;
     }[]
   >;
   queueMessage(recipientHandles: string[], text: string): Promise<void>;
