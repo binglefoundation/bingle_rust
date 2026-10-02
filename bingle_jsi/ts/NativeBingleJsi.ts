@@ -88,6 +88,10 @@ export type FailureKind =
   | 'NotReady'
   | 'Unknown';
 
+/** How a stored message travelled between the two clients (issue #291). Mirrors the Rust
+ * `DeliveryRoute`: `Direct` is a live Bingle DTLS session, `StoreAndForward` a Sidewinder Mailbox. */
+export type DeliveryRoute = 'Direct' | 'StoreAndForward';
+
 export interface Message {
   sender_handle: string;
   recipient_handles: string[];
@@ -112,6 +116,11 @@ export interface Message {
   /** Base64 Ed25519 sender signature retained from the store-and-forward envelope, for later report
    * attachment (issue #94); null when no signed envelope was opened. */
   signature: string | null;
+  /** How the message was delivered (issue #291): set once a sent message completes or a received
+   * one is stored. Null while a send is pending, after it failed, and for a message stored by a
+   * release before the field existed. With several recipients it is `StoreAndForward` when any of
+   * them was reached through a Mailbox. */
+  delivery_route: DeliveryRoute | null;
 }
 
 export interface KeypairStatusResponse {

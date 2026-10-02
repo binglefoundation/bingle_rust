@@ -177,6 +177,7 @@ fn message_construction() {
         sent_time: None,
         delivered_time: None,
         signature: None,
+        delivery_route: None,
     };
     assert_eq!(msg.sender_handle, "alice");
     assert_eq!(msg.recipient_handles.len(), 2);
@@ -199,6 +200,7 @@ fn message_with_cipher_suite() {
         sent_time: None,
         delivered_time: None,
         signature: None,
+        delivery_route: None,
     };
     let cs = msg.cipher_suite.expect("cipher_suite should be Some");
     assert_eq!(cs, "TLS_AES_256_GCM_SHA384");

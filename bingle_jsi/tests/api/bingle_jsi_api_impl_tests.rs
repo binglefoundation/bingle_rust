@@ -866,12 +866,14 @@ fn pending_failure_reason_is_human_readable() {
 }
 
 /// The FFI bridge must carry every stored-message field to JS, including the store-and-forward
-/// fields added in issue #204 (`sent_time`, `delivered_time`, `signature`). This test fails if a
-/// future change adds a field to the local message but forgets to map it in the bridge.
+/// fields added in issue #204 (`sent_time`, `delivered_time`, `signature`) and the delivery route
+/// added in issue #291. This test fails if a future change adds a field to the local message but
+/// forgets to map it in the bridge.
 #[test]
 fn bridge_carries_store_and_forward_fields_to_jsi() {
     use bingle_jsi::api::bingle_jsi_api_impl::local_message_to_jsi;
-    use bingle_local::api::Message as LocalMessage;
+    use bingle_jsi::api::types::DeliveryRoute;
+    use bingle_local::api::{DeliveryRoute as LocalRoute, Message as LocalMessage};
 
     let local = LocalMessage {
         sender_handle: "alice".to_string(),
@@ -885,9 +887,10 @@ fn bridge_carries_store_and_forward_fields_to_jsi() {
         sent_time: Some(1_700_000_000_123),
         delivered_time: Some(1_700_000_050_000),
         signature: Some("AwMDAw==".to_string()),
+        delivery_route: Some(LocalRoute::StoreAndForward),
     };
 
-    let jsi = local_message_to_jsi(local);
+    let jsi = local_message_to_jsi(local.clone());
 
     // Store-and-forward fields survive the bridge to JS.
     assert_eq!(jsi.sent_time, Some(1_700_000_000_123));
@@ -898,6 +901,19 @@ fn bridge_carries_store_and_forward_fields_to_jsi() {
     assert_eq!(jsi.recipient_handles, vec!["bob".to_string()]);
     assert_eq!(jsi.timestamp, 1_700_000_050_000);
     assert_eq!(jsi.text, "hi from the mailbox");
+
+    // The delivery route (issue #291) survives the bridge in each of its states.
+    assert_eq!(jsi.delivery_route, Some(DeliveryRoute::StoreAndForward));
+    let direct = local_message_to_jsi(LocalMessage {
+        delivery_route: Some(LocalRoute::Direct),
+        ..local.clone()
+    });
+    assert_eq!(direct.delivery_route, Some(DeliveryRoute::Direct));
+    let pending = local_message_to_jsi(LocalMessage {
+        delivery_route: None,
+        ..local
+    });
+    assert_eq!(pending.delivery_route, None);
 }
 
 // ── store-and-forward backstop poller (issue #215) ──────────────────

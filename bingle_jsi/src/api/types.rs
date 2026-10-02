@@ -167,6 +167,16 @@ pub fn failure_kind_is_retryable(kind: FailureKind) -> bool {
     kind.to_core().is_retryable()
 }
 
+/// How a stored message travelled between the two clients (issue #291). Mirrors `bingle_local`'s
+/// `DeliveryRoute`.
+#[derive(uniffi::Enum, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeliveryRoute {
+    /// Over a live Bingle DTLS session between the two clients.
+    Direct,
+    /// Through a Sidewinder Mailbox: posted there by the sender and read by the recipient later.
+    StoreAndForward,
+}
+
 /// A stored message.
 #[derive(uniffi::Record, Debug, Clone)]
 pub struct Message {
@@ -193,6 +203,11 @@ pub struct Message {
     /// Base64-encoded Ed25519 sender signature retained from the store-and-forward envelope, for
     /// later attachment to a content report (issue #94). `None` when no signed envelope was opened.
     pub signature: Option<String>,
+    /// How the message was delivered (issue #291): set once a sent message completes or a received
+    /// one is stored. `None` while a send is pending, after it failed, and for a message stored by
+    /// a release before the field existed. With several recipients it is `StoreAndForward` when any
+    /// of them was reached through a Mailbox.
+    pub delivery_route: Option<DeliveryRoute>,
 }
 
 /// Keypair funding / registration status.

@@ -7,8 +7,8 @@ use crate::api::notify::{
 };
 use crate::api::sidewinder::MailboxConfig;
 use crate::api::{
-    BingleLocalApi, ChainRegistrationOps, Contact, ContactSource, Keypair, KeypairStatus, Message,
-    MessagingSettings, REQUIRED_ALGO, run_registration,
+    BingleLocalApi, ChainRegistrationOps, Contact, ContactSource, DeliveryRoute, Keypair,
+    KeypairStatus, Message, MessagingSettings, REQUIRED_ALGO, run_registration,
 };
 use algo_ops::error::AlgoErrorKind;
 use algo_ops::{AlgoChainConfig, AlgoOps};
@@ -542,6 +542,7 @@ impl BingleApiLocalImpl {
             sent_time: None,
             delivered_time: None,
             signature: None,
+            delivery_route: Some(DeliveryRoute::Direct),
         };
         let mut guard = match self.messages.lock() {
             Ok(g) => g,
@@ -563,6 +564,16 @@ impl BingleApiLocalImpl {
         failure_reason: Option<String>,
         failure_kind: Option<SendFailureKind>,
     ) -> Result<(), BingleError> {
+        // The route to record (issue #291): only a message completing without a failure has one;
+        // pending and failed sends carry none. Worked out before taking the messages lock, so that
+        // lock and the forwarded-set lock are never held together.
+        let delivery_route = (progress >= 1.0 && failure_reason.is_none()).then(|| {
+            if self.any_recipient_forwarded(timestamp) {
+                DeliveryRoute::StoreAndForward
+            } else {
+                DeliveryRoute::Direct
+            }
+        });
         let mut guard = match self.messages.lock() {
             Ok(g) => g,
             Err(e) => {
@@ -587,6 +598,7 @@ impl BingleApiLocalImpl {
                     // a successful/terminal send with no reason (issue #99).
                     msg.failure_kind = failure_kind;
                 }
+                msg.delivery_route = delivery_route;
                 if msg.failure_reason.is_some() {
                     Some((
                         msg.timestamp,
@@ -636,6 +648,7 @@ impl BingleApiLocalImpl {
                         m.progress = Some(1.0);
                         m.failure_reason = None;
                         m.failure_kind = None;
+                        m.delivery_route = Some(DeliveryRoute::StoreAndForward);
                     }
                 }
             }
@@ -1046,6 +1059,7 @@ impl BingleLocalApi for BingleApiLocalImpl {
             sent_time: None,
             delivered_time: None,
             signature: None,
+            delivery_route: None,
         };
 
         let mut guard = match self.messages.lock() {
