@@ -753,7 +753,7 @@ impl Engine {
         use std::sync::atomic::Ordering;
         // Decrement only while > 0, without underflowing.
         self.test_listen_drops
-            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |v| {
+            .try_update(Ordering::SeqCst, Ordering::SeqCst, |v| {
                 if v > 0 { Some(v - 1) } else { None }
             })
             .is_ok()
