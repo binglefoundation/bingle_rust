@@ -26,6 +26,9 @@ pub fn engine_basic_bingle_dtls_layer() {
     // Install server handlers that print and signal when a message arrives
     let delivered = Arc::new(AtomicBool::new(false));
     let delivered_flag = delivered.clone();
+    let received: Arc<std::sync::Mutex<Option<serde_json::Value>>> =
+        Arc::new(std::sync::Mutex::new(None));
+    let received_slot = received.clone();
     server.access_unsafe_for_tests(|s: &mut BingleApiImpl| {
         s.set_on_connect(Some(Arc::new(|sender, handle| {
             tracing::info!("[server][on_connect] sender={} handle={}", sender, handle);
@@ -39,6 +42,9 @@ pub fn engine_basic_bingle_dtls_layer() {
                 handle,
                 msg
             );
+            if let Ok(mut slot) = received_slot.lock() {
+                *slot = Some(msg.clone());
+            }
             delivered_flag.store(true, Ordering::SeqCst);
         })))
     });
@@ -135,6 +141,41 @@ pub fn engine_basic_bingle_dtls_layer() {
     assert_eq!(
         client_suite, server_suite,
         "both ends should record the same suite"
+    );
+
+    // The text message arrived signed by the client over the canonical fields (issue #94).
+    let message = received
+        .lock()
+        .ok()
+        .and_then(|slot| slot.clone())
+        .expect("received message");
+    let client_id = client
+        .access_unsafe_for_tests(|c: &mut BingleApiImpl| c.get_my_id())
+        .expect("client id Some");
+    let sender_key = algo_ops::address_to_byte_key(&client_id).expect("client key");
+    let recipient_key = algo_ops::address_to_byte_key(&uid).expect("server key");
+    let sent_time = message["sent_time"]
+        .as_i64()
+        .expect("sent_time on the wire");
+    let signature = base64::Engine::decode(
+        &base64::engine::general_purpose::STANDARD,
+        message["signature"]
+            .as_str()
+            .expect("signature on the wire"),
+    )
+    .expect("base64 signature");
+    let signed = bingle_core::crypto::sealed_envelope::canonical_signed_message(
+        &sender_key,
+        &recipient_key,
+        sent_time,
+        "hello from client",
+    );
+    let verifying_key =
+        ed25519_dalek::VerifyingKey::from_bytes(&sender_key).expect("client verifying key");
+    let signature = ed25519_dalek::Signature::from_slice(&signature).expect("64-byte signature");
+    assert!(
+        ed25519_dalek::Verifier::verify(&verifying_key, &signed, &signature).is_ok(),
+        "the received text message's signature verifies with the sender's key"
     );
 
     // Cleanup

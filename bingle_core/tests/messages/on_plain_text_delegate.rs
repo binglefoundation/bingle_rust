@@ -45,6 +45,8 @@ pub fn on_plain_text_calls_handler_implementation() {
         app: None,
         r#type: None,
         cipher_suite: None,
+        sent_time: None,
+        signature: None,
     };
     let msg = Message::PlainText(pt.clone());
 

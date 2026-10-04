@@ -505,6 +505,55 @@ impl BingleApiLocalImpl {
         text: String,
         cipher_suite: Option<String>,
     ) -> Result<(), BingleError> {
+        self.store_live_message(
+            sender_handle,
+            recipient_handles,
+            timestamp,
+            text,
+            cipher_suite,
+            None,
+            None,
+        )
+    }
+
+    /// `&self` core of [`BingleLocalApi::add_received_message`].
+    pub fn add_received_message_shared(
+        &self,
+        sender_handle: String,
+        recipient_handles: Vec<String>,
+        timestamp: i64,
+        message: &serde_json::Value,
+    ) -> Result<(), BingleError> {
+        let field = |key: &str| {
+            message
+                .get(key)
+                .and_then(|v| v.as_str())
+                .map(str::to_string)
+        };
+        let text = field("text").unwrap_or_else(|| message.to_string());
+        self.store_live_message(
+            sender_handle,
+            recipient_handles,
+            timestamp,
+            text,
+            field("cipher_suite"),
+            message.get("sent_time").and_then(|v| v.as_i64()),
+            field("signature"),
+        )
+    }
+
+    /// Validate and store a message that travelled over a live session, as complete and `Direct`.
+    #[allow(clippy::too_many_arguments)]
+    fn store_live_message(
+        &self,
+        sender_handle: String,
+        recipient_handles: Vec<String>,
+        timestamp: i64,
+        text: String,
+        cipher_suite: Option<String>,
+        sent_time: Option<i64>,
+        signature: Option<String>,
+    ) -> Result<(), BingleError> {
         tracing::debug!(
             "[BingleLocalApi] Adding message from: {} to: {:?}",
             sender_handle,
@@ -539,9 +588,9 @@ impl BingleApiLocalImpl {
             progress: Some(1.0),
             failure_reason: None,
             failure_kind: None,
-            sent_time: None,
+            sent_time,
             delivered_time: None,
-            signature: None,
+            signature,
             delivery_route: Some(DeliveryRoute::Direct),
         };
         let mut guard = match self.messages.lock() {
@@ -1013,6 +1062,16 @@ impl BingleLocalApi for BingleApiLocalImpl {
             text,
             cipher_suite,
         )
+    }
+
+    fn add_received_message(
+        &mut self,
+        sender_handle: String,
+        recipient_handles: Vec<String>,
+        timestamp: i64,
+        message: &serde_json::Value,
+    ) -> Result<(), BingleError> {
+        self.add_received_message_shared(sender_handle, recipient_handles, timestamp, message)
     }
 
     fn queue_message(

@@ -54,6 +54,28 @@ pub fn plaintext_message_prints_persists_and_adds_contact() {
 
 #[test]
 #[cfg(not(target_os = "ios"))]
+pub fn a_signed_message_keeps_its_signature_sent_time_and_cipher_suite() {
+    // Issue #94: the engine delivers a signed live text message with these fields.
+    let (mut state, _dir) = state_registered_as("alice", None);
+    let message = json!({
+        "text": "hello",
+        "cipher_suite": "TLS_AES_256_GCM_SHA384",
+        "sent_time": 1_700_000_000_456i64,
+        "signature": "AwMDAw==",
+    });
+
+    let received = receive_message(&mut state, "PEER_BOB", "bob", &message).expect("accepted");
+
+    assert_eq!(received.sent_time, Some(1_700_000_000_456));
+    assert_eq!(received.signature.as_deref(), Some("AwMDAw=="));
+    assert_eq!(
+        received.cipher_suite.as_deref(),
+        Some("TLS_AES_256_GCM_SHA384")
+    );
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn unknown_sender_handle_falls_back_to_id() {
     let (mut state, _dir) = state_registered_as("alice", None);
 

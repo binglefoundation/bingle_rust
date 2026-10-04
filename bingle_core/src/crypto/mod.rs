@@ -7,9 +7,12 @@
 //! - [`sealed_envelope`] — the versioned store-and-forward envelope with the inner Ed25519
 //!   signature, built on top of [`hpke_seal`]. Its `seal` / `open` keep the module path (rather
 //!   than being re-exported here) so they do not collide with [`hpke_seal::seal`].
+//! - [`live_signature`] — the sender's signature on a live text message, over the same canonical
+//!   field set as the envelope (issue #94).
 
 pub mod hpke_seal;
 pub mod key_convert;
+pub mod live_signature;
 pub mod sealed_envelope;
 
 pub use hpke_seal::{ENC_LEN, SealError, UnsealError, seal, unseal};

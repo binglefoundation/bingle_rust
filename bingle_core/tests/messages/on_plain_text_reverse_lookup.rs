@@ -62,6 +62,8 @@ fn on_plain_text_uses_reverse_lookup_success() {
         app: None,
         r#type: None,
         cipher_suite: None,
+        sent_time: None,
+        signature: None,
     };
     let msg = Message::PlainText(pt);
     let handler = DefaultHandler;
@@ -101,6 +103,8 @@ fn on_plain_text_reverse_lookup_not_found_logs_and_skips_callback() {
         app: None,
         r#type: None,
         cipher_suite: None,
+        sent_time: None,
+        signature: None,
     };
     let msg = Message::PlainText(pt);
     let handler = DefaultHandler;

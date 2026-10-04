@@ -32,6 +32,7 @@ enum Scripted {
 struct MockDelivery {
     scripts: Mutex<HashMap<String, VecDeque<Scripted>>>,
     calls: Mutex<Vec<String>>,
+    payloads: Mutex<Vec<JsonValue>>,
 }
 
 impl MockDelivery {
@@ -39,6 +40,7 @@ impl MockDelivery {
         Arc::new(Self {
             scripts: Mutex::new(HashMap::new()),
             calls: Mutex::new(Vec::new()),
+            payloads: Mutex::new(Vec::new()),
         })
     }
 
@@ -52,19 +54,24 @@ impl MockDelivery {
     fn calls(&self) -> Vec<String> {
         self.calls.lock().expect("calls").clone()
     }
+
+    fn payloads(&self) -> Vec<JsonValue> {
+        self.payloads.lock().expect("payloads").clone()
+    }
 }
 
 impl MessageDelivery for MockDelivery {
     fn deliver(
         &self,
         recipient: &str,
-        _message: JsonValue,
+        message: JsonValue,
         _progress: Option<Arc<ProgressCallback>>,
     ) -> Result<bool, BingleError> {
         self.calls
             .lock()
             .expect("calls")
             .push(recipient.to_string());
+        self.payloads.lock().expect("payloads").push(message);
         let next = self
             .scripts
             .lock()
@@ -183,6 +190,23 @@ fn delivers_a_pending_message_when_woken() {
     assert_eq!(progress_of(&local, ts), Some(1.0));
     assert_eq!(route_of(&local, ts), Some(DeliveryRoute::Direct));
     assert!(local.get_pending_messages().expect("pending").is_empty());
+}
+
+#[test]
+fn the_queued_timestamp_is_sent_as_the_sent_time() {
+    // The engine signs over this sent_time (issue #94), so it must be the queued timestamp that a
+    // Mailbox fallback also seals.
+    let local = local_store(LocalApiConfig::default());
+    let ts = queue(&local, 1_700_000_000_123, &["bob"], "hi");
+    let delivery = MockDelivery::new();
+    let (sender, rx) = start(&local, delivery.clone(), fast_options(), ready());
+    sender.wake();
+
+    rx.recv_timeout(REPORT_TIMEOUT).expect("report");
+    let payloads = delivery.payloads();
+    assert_eq!(payloads.len(), 1);
+    assert_eq!(payloads[0]["text"], "hi");
+    assert_eq!(payloads[0]["sent_time"], ts);
 }
 
 #[test]

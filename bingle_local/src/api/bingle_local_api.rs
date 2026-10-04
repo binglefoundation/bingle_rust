@@ -70,10 +70,11 @@ pub struct Message {
     /// this field existed still load.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub failure_kind: Option<SendFailureKind>,
-    /// Sender-stamped send time (epoch milliseconds), carried inside the Sidewinder store-and-forward
-    /// envelope when the message was opened from one (issue #204). `None` for a live message
-    /// delivered over the Bingle DTLS session (that path carries no sender-stamped time). Consumed by
-    /// sent-time ordering (issue #69). `serde(default)` so older message files still load.
+    /// Sender-stamped send time (epoch milliseconds), covered by the sender's
+    /// [`signature`](Message::signature): carried inside the Sidewinder store-and-forward envelope
+    /// (issue #204), or on a live message from a sender that signs (issue #94). `None` for a
+    /// message sent by this client, or from a client that predates signing. Consumed by sent-time
+    /// ordering (issue #69). `serde(default)` so older message files still load.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sent_time: Option<i64>,
     /// Receiver's local clock (epoch milliseconds) at the moment the message was fetched and opened
@@ -83,8 +84,10 @@ pub struct Message {
     /// files still load.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub delivered_time: Option<i64>,
-    /// Base64-encoded Ed25519 sender signature retained from the store-and-forward envelope, for
-    /// later attachment to a content report (issue #94). `None` when no signed envelope was opened.
+    /// Base64-encoded Ed25519 sender signature over
+    /// `canonical_signed_message(sender, recipient, sent_time, text)`, kept for later attachment to
+    /// a content report (issue #94): from the store-and-forward envelope, or from a live message.
+    /// `None` for a message sent by this client, or from a client that predates signing.
     /// `serde(default)` so older message files still load.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub signature: Option<String>,
@@ -255,6 +258,20 @@ pub trait BingleLocalApi: Send + Sync {
         timestamp: i64,
         text: String,
         cipher_suite: Option<String>,
+    ) -> Result<(), BingleError>;
+
+    /// Add a message received over a live session, taken from the engine's `message` JSON (the
+    /// `on_message` payload). Like [`add_message`](Self::add_message), it is recorded complete and
+    /// [`DeliveryRoute::Direct`]; in addition it keeps the sender's
+    /// [`sent_time`](Message::sent_time) and [`signature`](Message::signature) when the message
+    /// carries them (issue #94), along with its `cipher_suite`. A message from a client that
+    /// predates signing is stored without them.
+    fn add_received_message(
+        &mut self,
+        sender_handle: String,
+        recipient_handles: Vec<String>,
+        timestamp: i64,
+        message: &serde_json::Value,
     ) -> Result<(), BingleError>;
 
     /// Queue a message to be sent by the background processor.

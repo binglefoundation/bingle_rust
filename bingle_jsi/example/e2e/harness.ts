@@ -13,6 +13,7 @@
  */
 
 import assert from 'assert';
+import * as crypto from 'crypto';
 import * as fs from 'fs';
 import {execSync} from 'child_process';
 
@@ -203,4 +204,45 @@ export function assertNoStoreAndForwardFields(message: any, what: string): void 
     assert.ok(field in message, `${what} should have a ${field} key`);
     assert.strictEqual(message[field], null, `${what} should have a null ${field}`);
   }
+}
+
+/** The 32-byte Ed25519 public key inside an Algorand address (base32; key, then a 4-byte checksum). */
+export function algorandPublicKey(address: string): Buffer {
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+  let bits = 0;
+  let value = 0;
+  const bytes: number[] = [];
+  for (const ch of address) {
+    const index = alphabet.indexOf(ch);
+    assert.ok(index >= 0, `not an Algorand address: ${address}`);
+    value = (value << 5) | index;
+    bits += 5;
+    if (bits >= 8) {
+      bytes.push((value >>> (bits - 8)) & 0xff);
+      bits -= 8;
+    }
+  }
+  assert.strictEqual(bytes.length, 36, `not an Algorand address: ${address}`);
+  return Buffer.from(bytes.slice(0, 32));
+}
+
+/**
+ * Whether a received live message's `signature` verifies (issue #94): pure Ed25519 by the sender
+ * over `sender | recipient | sent_time (big-endian i64) | text`, the canonical field set shared with
+ * store-and-forward. The ids are Algorand addresses.
+ */
+export function liveSignatureVerifies(message: any, senderId: string, recipientId: string): boolean {
+  const sentTime = Buffer.alloc(8);
+  sentTime.writeBigInt64BE(BigInt(message.sent_time));
+  const signed = Buffer.concat([
+    algorandPublicKey(senderId),
+    algorandPublicKey(recipientId),
+    sentTime,
+    Buffer.from(message.text, 'utf8'),
+  ]);
+  const publicKey = crypto.createPublicKey({
+    key: {kty: 'OKP', crv: 'Ed25519', x: algorandPublicKey(senderId).toString('base64url')},
+    format: 'jwk',
+  });
+  return crypto.verify(null, signed, publicKey, Buffer.from(message.signature, 'base64'));
 }

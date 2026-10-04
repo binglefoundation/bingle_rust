@@ -690,15 +690,6 @@ impl BingleJsiApiImpl {
                             tracing::warn!("[BingleJsiApiImpl][init handler] Could not lock callback");
                         }
 
-                        let text = message
-                            .get("text")
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.to_string())
-                            .unwrap_or_else(|| message.to_string());
-                        let cipher_suite = message
-                            .get("cipher_suite")
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.to_string());
                         let mut m = msgs.lock().unwrap();
                         m.push(message.clone());
                         // Store message in local API if configured
@@ -715,12 +706,12 @@ impl BingleJsiApiImpl {
                                         return;
                                     }
                                 };
-                                if let Err(e) = guard.add_message(
+                                // Keeps the sender's signature and sent time (issue #94).
+                                if let Err(e) = guard.add_received_message(
                                     sender_handle.clone(),
                                     vec![recipient],
                                     timestamp,
-                                    text,
-                                    cipher_suite,
+                                    &message,
                                 ) {
                                     tracing::warn!("[on_message] failed to add message: {}", e);
                                 }
@@ -886,7 +877,10 @@ impl BingleJsiApiImpl {
                         let mut all_success = true;
                         let mut last_failure: Option<SendFailure> = None;
                         for handle in &msg.recipient_handles {
-                            let payload = serde_json::json!({ "text": msg.text });
+                            // The queued timestamp is the signed send time (issue #94), so a
+                            // Mailbox fallback seals the same time.
+                            let payload =
+                                serde_json::json!({ "text": msg.text, "sent_time": msg.timestamp });
                             tracing::info!(
                                 "BingleJsiApiImpl][send_message_to_handles] Sending message to handle: {:?}",
                                 handle

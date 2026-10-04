@@ -28,6 +28,15 @@ pub struct PlainTextMessage {
     pub r#type: Option<Option<String>>, // allow explicit null via Some(None)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cipher_suite: Option<String>,
+    /// Sender-stamped send time (epoch milliseconds), covered by `signature` (issue #94). Absent
+    /// from clients that predate signing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sent_time: Option<i64>,
+    /// Base64 Ed25519 signature by the sender over
+    /// `canonical_signed_message(sender, recipient, sent_time, text)` (issue #94). Kept by the
+    /// receiver for content reports; not verified on receipt.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signature: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
