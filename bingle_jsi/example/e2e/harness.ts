@@ -12,6 +12,7 @@
  * `waitFor().toHaveText()` (which is unreliable with synchronization disabled).
  */
 
+import assert from 'assert';
 import * as fs from 'fs';
 import {execSync} from 'child_process';
 
@@ -188,4 +189,18 @@ export function storeForwardConfig(): StoreForwardConfig | null {
     sidewinder_node_url: process.env.BINGLE_E2E_SIDEWINDER_URL || null,
     sidewinder_token: process.env.BINGLE_E2E_SIDEWINDER_TOKEN || null,
   };
+}
+
+/** The store-and-forward fields `getMessages` returns for every message (issues #204, #210). */
+export const STORE_AND_FORWARD_FIELDS = ['sent_time', 'delivered_time', 'signature'] as const;
+
+/**
+ * Assert a message that did not come through a Mailbox carries the store-and-forward fields as
+ * present but `null`, so the bridge is known to pass them (issue #210).
+ */
+export function assertNoStoreAndForwardFields(message: any, what: string): void {
+  for (const field of STORE_AND_FORWARD_FIELDS) {
+    assert.ok(field in message, `${what} should have a ${field} key`);
+    assert.strictEqual(message[field], null, `${what} should have a null ${field}`);
+  }
 }

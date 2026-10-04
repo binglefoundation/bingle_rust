@@ -28,6 +28,9 @@ ed25519-dalek = { version = "2", features = ["rand_core"] }
 # Depend on the main crate for real backend access to AlgoOps
 bingle_core = { path = "../bingle_core" }
 algo_ops = "0.8.4"
+# The Sidewinder Mailbox client, for the localnet e2e echo peer's store-and-forward reply (#210).
+# Optional and only under `localnet`: bingle_local's own tests use this crate without it.
+bingle_local = { path = "../bingle_local", optional = true }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 libc = "0.2"
@@ -37,7 +40,7 @@ chrono = { version = "0.4", features = ["serde"] }
 [features]
 # Reusable algokit-localnet integration harness (bingle_test::localnet). Enables the in-process
 # relay/client test hooks in bingle_core. Off by default so normal builds don't pull test-only APIs.
-localnet = ["bingle_core/test-hooks"]
+localnet = ["bingle_core/test-hooks", "dep:bingle_local"]
 
 [lints]
 workspace = true

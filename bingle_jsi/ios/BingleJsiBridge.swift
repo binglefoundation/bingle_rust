@@ -504,6 +504,10 @@ class BingleJsiBridge: RCTEventEmitter {
                         // How the message was delivered (issue #291), as the DeliveryRoute string
                         // (null while pending or failed).
                         "delivery_route": $0.deliveryRoute.map { BingleJsiBridge.deliveryRouteToString($0) } as Any,
+                        // Store-and-forward fields (issue #204), null for a live message (issue #210).
+                        "sent_time": $0.sentTime as Any,
+                        "delivered_time": $0.deliveredTime as Any,
+                        "signature": $0.signature as Any,
                     ] as [String: Any]
                 })
             } catch {
@@ -650,6 +654,35 @@ class BingleJsiBridge: RCTEventEmitter {
             } catch {
                 reject("BINGLE_ERROR", "\(error)", error)
             }
+        }
+    }
+
+    /// App lifecycle: the host app calls this when it comes to the foreground. Refreshes the relay
+    /// registration (issue #50) and polls the store-and-forward Mailbox, then keeps a backstop poll
+    /// running while foregrounded (issue #215). Not previously bridged to JS (issue #210).
+    @objc
+    func foregrounding(_ resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {
+        guard let api = apiInstance else {
+            resolve(nil)
+            return
+        }
+        DispatchQueue.global(qos: .userInitiated).async {
+            api.foregrounding()
+            resolve(nil)
+        }
+    }
+
+    /// App lifecycle: the host app calls this when it goes to the background. Stops the backstop
+    /// Mailbox poll (issue #215).
+    @objc
+    func backgrounding(_ resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {
+        guard let api = apiInstance else {
+            resolve(nil)
+            return
+        }
+        DispatchQueue.global(qos: .userInitiated).async {
+            api.backgrounding()
+            resolve(nil)
         }
     }
 
