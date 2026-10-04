@@ -338,7 +338,7 @@ final class BingleJsiBridgeTests: XCTestCase {
 
     func testKeypairStatus_resolvesWithExpectedFields() {
         mockApi.keypairStatusResult = KeypairStatusResponse(
-            status: .active, id: "test-id", handle: "test-handle", requiredAlgo: nil
+            status: .active, id: "test-id", handle: "test-handle", requiredAlgo: nil, stale: false
         )
         let expectation = self.expectation(description: "resolve called")
         var resolvedDict: [String: Any]?
@@ -625,6 +625,20 @@ final class BingleJsiBridgeTests: XCTestCase {
         XCTAssertEqual(second?["sender_handle"] as? String, "carol")
         // nil cipher_suite is mapped to NSNull/nil, not a String
         XCTAssertNil(second?["cipher_suite"] as? String)
+    }
+
+    // MARK: - Lifecycle
+
+    func testForegroundingAndBackgrounding_reachTheApi() {
+        let fg = expectation(description: "foregrounding resolves")
+        bridge.foregrounding({ _ in fg.fulfill() }, rejecter: { _, _, _ in XCTFail("unexpected rejection") })
+        waitForExpectations(timeout: 2.0)
+        XCTAssertEqual(mockApi.foregroundingCalls, 1)
+
+        let bg = expectation(description: "backgrounding resolves")
+        bridge.backgrounding({ _ in bg.fulfill() }, rejecter: { _, _, _ in XCTFail("unexpected rejection") })
+        waitForExpectations(timeout: 2.0)
+        XCTAssertEqual(mockApi.backgroundingCalls, 1)
     }
 
     func testGetMessages_includesStoreAndForwardFields() {

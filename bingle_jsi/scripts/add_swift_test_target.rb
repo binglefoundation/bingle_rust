@@ -1,7 +1,7 @@
 #!/usr/bin/env ruby
 # Adds the BingleJsiBridgeTests Swift unit test target to BingleJsiExample.xcodeproj.
 # Run this script once from the bingle_jsi/example/ios directory.
-# Usage: /opt/homebrew/Cellar/cocoapods/1.16.2_1/libexec/bin/ruby add_swift_test_target.rb
+# Usage: GEM_HOME=/opt/homebrew/Cellar/cocoapods/1.16.2_1/libexec ruby bingle_jsi/scripts/add_swift_test_target.rb
 
 require 'xcodeproj'
 
