@@ -16,6 +16,9 @@ mod message_carry_fields;
 #[path = "api/delivery_route.rs"]
 mod delivery_route;
 
+#[path = "api/cipher_suite.rs"]
+mod cipher_suite;
+
 #[path = "api/local_impl_keypair_status.rs"]
 mod local_impl_keypair_status;
 #[path = "api/local_impl_persistence.rs"]

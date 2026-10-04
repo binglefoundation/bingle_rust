@@ -7,7 +7,9 @@
 //! covered in `pending_sender`.
 
 use bingle_core::api::bingle_api::SendFailureKind;
-use bingle_core::crypto::sealed_envelope::OpenedMessage;
+use bingle_core::crypto::sealed_envelope::{
+    OpenedMessage, SUITE_HPKE_X25519_HKDF_SHA256_CHACHA20POLY1305,
+};
 use bingle_local::api::{
     BingleApiLocalImpl, BingleLocalApi, DeliveryRoute, LocalApiConfig, MailboxConfig, Message,
 };
@@ -70,6 +72,7 @@ fn a_message_read_from_the_mailbox_is_store_and_forward() {
         message_id: [0x09u8; 16],
         text: "hello from the mailbox".to_string(),
         signature: [0x03u8; 64],
+        suite_id: SUITE_HPKE_X25519_HKDF_SHA256_CHACHA20POLY1305,
     };
 
     let msg = Message::from_opened(

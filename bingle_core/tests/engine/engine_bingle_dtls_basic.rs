@@ -120,6 +120,23 @@ pub fn engine_basic_bingle_dtls_layer() {
         "server on_message handler was not invoked"
     );
 
+    // The dialling side records the suite negotiated for the session (issue #292), and it is the
+    // same suite the accepting side recorded for it.
+    let client_suite = client.engine_for_tests().dtls().get_cipher_suite(&dest);
+    let client_ep = NetworkEndpoint::new_direct(test_util::node_loopback_addr(&client));
+    let server_suite = server
+        .engine_for_tests()
+        .dtls()
+        .get_cipher_suite(&client_ep);
+    assert!(
+        client_suite.is_some(),
+        "the client should record the negotiated suite"
+    );
+    assert_eq!(
+        client_suite, server_suite,
+        "both ends should record the same suite"
+    );
+
     // Cleanup
     server.access_unsafe_for_tests(|s: &mut BingleApiImpl| s.stop());
     client.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.stop());
