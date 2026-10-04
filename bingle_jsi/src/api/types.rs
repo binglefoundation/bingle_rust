@@ -184,8 +184,10 @@ pub struct Message {
     pub recipient_handles: Vec<String>,
     pub timestamp: i64,
     pub text: String,
-    /// The cipher suite negotiated for the DTLS session on which this message was received.
-    /// Derived by the receiving client from the connection; not transmitted on the wire.
+    /// The cipher suite that protected the message in transit (issue #292): for a message received
+    /// over a live session, the suite negotiated for that DTLS session; for one read from a
+    /// Sidewinder Mailbox, the suite of its sealed envelope. Derived by the receiving client; not
+    /// transmitted on the wire.
     pub cipher_suite: Option<String>,
     pub progress: Option<f32>,
     /// Human-readable failure reason for display. Unchanged from before issue #99; kept so existing

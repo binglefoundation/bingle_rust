@@ -1,7 +1,9 @@
 //! Tests for carrying `sent_time` / `delivered` / `signature` onto the local message (issue #204).
 
 use base64::{Engine as _, engine::general_purpose};
-use bingle_core::crypto::sealed_envelope::OpenedMessage;
+use bingle_core::crypto::sealed_envelope::{
+    OpenedMessage, SUITE_HPKE_X25519_HKDF_SHA256_CHACHA20POLY1305,
+};
 use bingle_local::api::Message;
 
 fn sample_opened() -> OpenedMessage {
@@ -11,6 +13,7 @@ fn sample_opened() -> OpenedMessage {
         message_id: [0x09u8; 16],
         text: "hello from the mailbox".to_string(),
         signature: [0x03u8; 64],
+        suite_id: SUITE_HPKE_X25519_HKDF_SHA256_CHACHA20POLY1305,
     }
 }
 

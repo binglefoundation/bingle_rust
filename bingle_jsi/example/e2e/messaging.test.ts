@@ -152,5 +152,7 @@ describeOrSkip(`bingle_jsi messaging (${backend})`, () => {
       'Direct',
       `received echo should be Direct, got ${echo.delivery_route}`,
     );
+    // The echo arrives on the session this device dialled, which must record its suite (#292).
+    assert.ok(echo.cipher_suite, 'the received echo should report its DTLS cipher suite');
   });
 });

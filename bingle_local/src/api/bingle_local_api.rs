@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 use bingle_core::api::bingle_api::{BingleError, SendFailureKind};
-use bingle_core::crypto::sealed_envelope::OpenedMessage;
+use bingle_core::crypto::sealed_envelope::{OpenedMessage, suite_name};
 
 /// Enum describing how a contact was added to the local store.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -53,8 +53,10 @@ pub struct Message {
     pub timestamp: i64,
     /// The message body.
     pub text: String,
-    /// The cipher suite negotiated for the DTLS session on which this message was received.
-    /// Derived by the receiving client from the connection; not transmitted on the wire.
+    /// The cipher suite that protected the message in transit (issue #292): for a message received
+    /// over a live session, the suite negotiated for that DTLS session; for one read from a
+    /// Sidewinder Mailbox, the suite of its sealed envelope. Derived by the receiving client; not
+    /// transmitted on the wire.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cipher_suite: Option<String>,
     /// Delivery progress from 0.0 to 1.0, where 1.0 means completed, sent, or permanently failed.
@@ -102,7 +104,8 @@ impl Message {
     /// [`delivered_time`](Message::delivered_time) — the receiver's clock at fetch, which is not on
     /// either transport, so the caller passes it in. The arrival `timestamp` is set to
     /// `delivered_time`, `progress` to `1.0` (a received message is complete), and
-    /// [`delivery_route`](Message::delivery_route) to [`DeliveryRoute::StoreAndForward`].
+    /// [`delivery_route`](Message::delivery_route) to [`DeliveryRoute::StoreAndForward`], and
+    /// [`cipher_suite`](Message::cipher_suite) to the name of the envelope's suite (issue #292).
     ///
     /// `sender_handle` and `recipient_handles` are resolved by the caller: the envelope carries the
     /// sender's Ed25519 identity, and mapping that to a registered handle is a chain lookup outside
@@ -119,7 +122,8 @@ impl Message {
             recipient_handles,
             timestamp: delivered_time,
             text: opened.text.clone(),
-            cipher_suite: None,
+            // The Mailbox counterpart of the DTLS suite the engine injects into a live message.
+            cipher_suite: suite_name(opened.suite_id).map(str::to_string),
             progress: Some(1.0),
             failure_reason: None,
             failure_kind: None,

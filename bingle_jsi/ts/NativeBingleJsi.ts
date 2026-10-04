@@ -97,8 +97,10 @@ export interface Message {
   recipient_handles: string[];
   timestamp: number;
   text: string;
-  /** The cipher suite negotiated for the DTLS session on which this message was received.
-   * Derived by the receiving client from the connection; not transmitted on the wire. */
+  /** The cipher suite that protected the message in transit (issue #292): for a message received
+   * over a live session, the suite negotiated for that DTLS session; for one read from a Sidewinder
+   * Mailbox, the suite of its sealed envelope. Derived by the receiving client; not transmitted on
+   * the wire. */
   cipher_suite: string | null;
   /** Delivery progress (0.0 to 1.0) */
   progress: number;
