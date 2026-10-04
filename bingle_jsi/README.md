@@ -79,7 +79,7 @@ bingle_jsi/
 │   └── ios/
 │       └── BingleJsiBridgeTests/ # Swift XCTest target (Layer 2 tests)
 │           ├── MockBingleJsiApi.swift     # mock BingleJsiApiProtocol
-│           └── BingleJsiBridgeTests.swift # 17 test cases
+│           └── BingleJsiBridgeTests.swift # 26 test cases
 ├── android/
 │   ├── build.gradle              # Android library configuration
 │   ├── generated/                # (created by build_android.sh) Kotlin bindings
@@ -365,7 +365,7 @@ The test target (`BingleJsiBridgeTests`) lives in:
 ```
 bingle_jsi/example/ios/BingleJsiBridgeTests/
 ├── MockBingleJsiApi.swift      # mock implementing all protocol methods
-└── BingleJsiBridgeTests.swift  # 24 XCTest cases
+└── BingleJsiBridgeTests.swift  # 26 XCTest cases
 ```
 
 The mock records every call, exposes configurable return values, and can
@@ -400,23 +400,26 @@ Tests covered:
 | `testIsBlocked_resolvesWithFalseByDefault` | `false` resolved for unblocked contact |
 | `testIsBlocked_resolvesWithTrueForBlockedContact` | `true` resolved for blocked contact |
 | `testGetMessages_includesCipherSuite` | `cipher_suite` present (or nil) for each returned message |
+| `testGetMessages_includesStoreAndForwardFields` | `sent_time`, `delivered_time`, `signature` and `delivery_route` reach JS; keys present and null on a live message |
+| `testForegroundingAndBackgrounding_reachTheApi` | the lifecycle methods are bridged and call the API |
+
+(Not an exhaustive list; see the test file.)
 
 #### Prerequisites
 
-- macOS with Xcode installed
+These tests run on a local Mac only; iOS tests do not run in CI.
+
+- macOS with Xcode installed and an iPhone simulator available (`xcrun simctl list devices available`)
 - CocoaPods (`brew install cocoapods`)
-- An iOS 18.x simulator runtime available (`xcrun simctl list runtimes`)
-- The example workspace already pod-installed:
+- The XCFramework and Swift bindings built for the current Rust code. Rebuild after any change to
+  the `bingle_jsi` FFI types, or the tests compile against stale bindings:
+  ```bash
+  BINGLE_IOS_SIM_ONLY=1 bash bingle_jsi/scripts/build_ios.sh
+  ```
+- The example workspace pod-installed (the test target is in the Podfile):
   ```bash
   cd bingle_jsi/example/ios && pod install
   ```
-
-The XCFramework (`bingle_jsi/ios/BingleJsi.xcframework`) must exist.
-If it is missing, build it first:
-
-```bash
-bash bingle_jsi/scripts/build_ios.sh
-```
 
 #### Running the tests
 
@@ -427,30 +430,26 @@ Use the provided script from the project root:
 ```
 
 The script will:
-1. Boot the `iPhone 16` (iOS 18.6) simulator if it is not already running
-2. Run `xcodebuild test` against the `BingleJsiBridgeTests` scheme
+1. Pick a simulator: `BINGLE_IOS_TEST_DEVICE` (a UDID) if set, else an already booted iPhone,
+   else the first available iPhone; and boot it if needed
+2. Run `xcodebuild test` against the shared `BingleJsiBridgeTests` scheme
 3. Write the full `xcodebuild` log to `tmp/ios_bridge_tests.log`
 4. Print a pass/fail summary and exit with code 0 (pass) or 1 (fail)
 
 To run directly with `xcodebuild` (from `bingle_jsi/example/ios`):
 
 ```bash
-xcodebuild test \
-  -workspace BingleJsiExample.xcworkspace \
-  -scheme BingleJsiBridgeTests \
-  -destination 'platform=iOS Simulator,name=iPhone 16,OS=18.6' \
-  -sdk iphonesimulator \
-  -quiet
+xcodebuild test -workspace BingleJsiExample.xcworkspace -scheme BingleJsiBridgeTests -destination 'platform=iOS Simulator,id=<simulator UDID>' -sdk iphonesimulator -quiet
 ```
 
-The simulator runs headlessly — no display or UI interaction is required,
-so the tests are suitable for CI.
+The simulator runs headlessly; no display or UI interaction is required.
 
 #### Project setup scripts
 
-The Xcode test target was added to `BingleJsiExample.xcodeproj` using two
-Ruby scripts (invoked once; do not need to be re-run unless the project
-file is regenerated):
+The test target, its shared scheme
+(`xcshareddata/xcschemes/BingleJsiBridgeTests.xcscheme`) and its Podfile entry are committed, so a
+fresh checkout needs only `pod install`. The target was originally added with two Ruby scripts,
+which only need re-running if the project file is regenerated:
 
 | Script | Purpose |
 |--------|---------|
@@ -461,10 +460,7 @@ Both scripts use the `xcodeproj` gem bundled with CocoaPods and are
 invoked with:
 
 ```bash
-GEM_PATH=/opt/homebrew/Cellar/cocoapods/1.16.2_1/libexec \
-GEM_HOME=/opt/homebrew/Cellar/cocoapods/1.16.2_1/libexec \
-ruby -I /opt/homebrew/Cellar/cocoapods/1.16.2_1/libexec/gems/xcodeproj-1.27.0/lib \
-  bingle_jsi/scripts/<script>.rb
+GEM_HOME=/opt/homebrew/Cellar/cocoapods/1.16.2_1/libexec ruby bingle_jsi/scripts/<script>.rb
 ```
 
 ---

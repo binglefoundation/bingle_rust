@@ -61,7 +61,7 @@ class MockBingleJsiApi: BingleJsiApiProtocol {
     var contactsResult: [Contact] = []
     var messagesResult: [Message] = []
     var keypairStatusResult: KeypairStatusResponse = KeypairStatusResponse(
-        status: .active, id: "mock-id", handle: "mock-handle", requiredAlgo: nil
+        status: .active, id: "mock-id", handle: "mock-handle", requiredAlgo: nil, stale: false
     )
     var isBlockedResult: Bool = false
     var localHandle: String = "self"
@@ -166,7 +166,12 @@ class MockBingleJsiApi: BingleJsiApiProtocol {
             text: text,
             cipherSuite: nil,
             progress: 0.0,
-            failureReason: nil
+            failureReason: nil,
+            failureKind: nil,
+            sentTime: nil,
+            deliveredTime: nil,
+            signature: nil,
+            deliveryRoute: nil
         ))
     }
 
@@ -181,7 +186,12 @@ class MockBingleJsiApi: BingleJsiApiProtocol {
                 text: msg.text,
                 cipherSuite: msg.cipherSuite,
                 progress: progress,
-                failureReason: failureReason
+                failureReason: failureReason,
+                failureKind: msg.failureKind,
+                sentTime: msg.sentTime,
+                deliveredTime: msg.deliveredTime,
+                signature: msg.signature,
+                deliveryRoute: msg.deliveryRoute
             )
         }
     }
@@ -215,5 +225,53 @@ class MockBingleJsiApi: BingleJsiApiProtocol {
     func isStarted() -> Bool {
         isStartedCalled = true
         return isStartedResult
+    }
+
+    // MARK: - Lifecycle, settings, and push (not otherwise exercised by these tests)
+
+    var foregroundingCalls = 0
+    var backgroundingCalls = 0
+
+    func foregrounding() {
+        foregroundingCalls += 1
+    }
+
+    func backgrounding() {
+        backgroundingCalls += 1
+    }
+
+    func networkAvailable(forceRecheck: Bool) throws -> Bool {
+        return true
+    }
+
+    func importKeypair(passphrase: String) throws -> Keypair {
+        return keypairResult
+    }
+
+    func messagingSettings() throws -> MessagingSettings {
+        return MessagingSettings(
+            storeAndForwardSend: false,
+            storeAndForwardReceive: false,
+            notifyOnGiveup: false,
+            notifyGatewayUrl: nil
+        )
+    }
+
+    func setStoreAndForward(send: Bool, receive: Bool) throws {}
+
+    func setNotify(enabled: Bool, gatewayUrl: String?) throws {}
+
+    func registerApnsToken(token: Data) throws -> Bool {
+        return true
+    }
+
+    func setPushRegistrationCallback(callback: PushRegistrationCallback) {}
+
+    func requestPushRegistration() throws {}
+
+    func apnsRegistrationFailed(reason: String) {}
+
+    func signNotifyEnvelope(route: String, iss: String, audience: String, token: String, env: String, nonce: String, exp: Int64) throws -> String {
+        return ""
     }
 }
