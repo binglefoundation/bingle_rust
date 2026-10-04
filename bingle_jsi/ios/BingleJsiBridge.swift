@@ -657,6 +657,35 @@ class BingleJsiBridge: RCTEventEmitter {
         }
     }
 
+    /// App lifecycle: the host app calls this when it comes to the foreground. Refreshes the relay
+    /// registration (issue #50) and polls the store-and-forward Mailbox, then keeps a backstop poll
+    /// running while foregrounded (issue #215). Not previously bridged to JS (issue #210).
+    @objc
+    func foregrounding(_ resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {
+        guard let api = apiInstance else {
+            resolve(nil)
+            return
+        }
+        DispatchQueue.global(qos: .userInitiated).async {
+            api.foregrounding()
+            resolve(nil)
+        }
+    }
+
+    /// App lifecycle: the host app calls this when it goes to the background. Stops the backstop
+    /// Mailbox poll (issue #215).
+    @objc
+    func backgrounding(_ resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {
+        guard let api = apiInstance else {
+            resolve(nil)
+            return
+        }
+        DispatchQueue.global(qos: .userInitiated).async {
+            api.backgrounding()
+            resolve(nil)
+        }
+    }
+
     @objc
     func stop(_ resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {
         guard let api = apiInstance else {
