@@ -27,7 +27,7 @@ fn parse_channel_data_header(packet: &[u8]) -> Option<(u16, usize, usize)> {
 }
 
 fn build_channel_data(channel: u16, data: &[u8]) -> Option<Vec<u8>> {
-    if data.len() > std::u16::MAX as usize {
+    if data.len() > u16::MAX as usize {
         return None;
     }
     let mut out = Vec::with_capacity(4 + data.len() + 3);

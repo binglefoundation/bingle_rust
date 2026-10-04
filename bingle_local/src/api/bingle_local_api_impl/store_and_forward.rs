@@ -65,6 +65,21 @@ impl BingleApiLocalImpl {
             .unwrap_or_default()
     }
 
+    /// Whether the message at `timestamp` has been posted to at least one recipient's Mailbox, which
+    /// makes its delivery route store-and-forward (issue #291).
+    pub(crate) fn any_recipient_forwarded(&self, timestamp: i64) -> bool {
+        match self.forwarded_messages.lock() {
+            Ok(guard) => guard.iter().any(|(ts, _)| *ts == timestamp),
+            Err(e) => {
+                tracing::error!(
+                    "[any_recipient_forwarded] Failed to lock forwarded_messages: {}",
+                    e
+                );
+                false
+            }
+        }
+    }
+
     /// Test seam: the resolved Sidewinder Mailbox connection config, so a caller (e.g. the JSI `init`
     /// wiring, story #252) can assert which transport was selected — discovery + mutual TLS
     /// ([`MailboxConnection::Discovered`](crate::api::sidewinder::MailboxConnection::Discovered)) vs

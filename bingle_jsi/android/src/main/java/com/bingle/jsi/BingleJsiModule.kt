@@ -425,6 +425,8 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
                     if (m.failureReason != null) map.putString("failure_reason", m.failureReason) else map.putNull("failure_reason")
                     // Typed failure cause (issue #99); without this the kind never reaches JS.
                     if (m.failureKind != null) map.putString("failure_kind", failureKindToString(m.failureKind!!)) else map.putNull("failure_kind")
+                    // How the message was delivered (issue #291); null while pending or failed.
+                    if (m.deliveryRoute != null) map.putString("delivery_route", deliveryRouteToString(m.deliveryRoute!!)) else map.putNull("delivery_route")
                     arr.pushMap(map)
                 }
                 promise.resolve(arr)
@@ -693,6 +695,12 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
         FailureKind.NOT_READY -> "NotReady"
         FailureKind.UNKNOWN -> "Unknown"
     }
+}
+
+/** Serialize a [DeliveryRoute] to the string the TypeScript `DeliveryRoute` union expects (issue #291). */
+private fun deliveryRouteToString(route: DeliveryRoute): String = when (route) {
+    DeliveryRoute.DIRECT -> "Direct"
+    DeliveryRoute.STORE_AND_FORWARD -> "StoreAndForward"
 }
 
 /**

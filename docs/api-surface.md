@@ -72,8 +72,8 @@ Supported surface:
 
 - `api::bingle_local_api::BingleLocalApi` — the local API trait (primary entry point).
 - `api::bingle_local_api_impl::{BingleApiLocalImpl, LocalApiConfig}` — implementation and config.
-- Data types: `Contact`, `Message`, `Keypair`, `KeypairStatus`, `ContactSource`, and the
-  `REQUIRED_ALGO` constant.
+- Data types: `Contact`, `Message`, `DeliveryRoute`, `Keypair`, `KeypairStatus`, `ContactSource`,
+  and the `REQUIRED_ALGO` constant.
 - Registration: `api::registration::{RegistrationOps, ChainRegistrationOps, run_registration}`.
 - Notification posting traits and requests: `api::notify::{AlertPoster, RegisterPoster,
   AlertRequest, HttpAlertPoster, HttpRegisterPoster}`.

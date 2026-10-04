@@ -28,6 +28,15 @@ pub struct Contact {
     pub fields: HashMap<String, String>,
 }
 
+/// How a stored message travelled between the two clients (issue #291).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DeliveryRoute {
+    /// Over a live Bingle DTLS session between the two clients.
+    Direct,
+    /// Through a Sidewinder Mailbox: posted there by the sender and read by the recipient later.
+    StoreAndForward,
+}
+
 /// Message record stored locally.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Message {
@@ -77,6 +86,12 @@ pub struct Message {
     /// `serde(default)` so older message files still load.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub signature: Option<String>,
+    /// How the message was delivered (issue #291). Set once a sent message completes or a received
+    /// one is stored; `None` while a send is pending or after it failed. A message has one route:
+    /// with several recipients it is [`DeliveryRoute::StoreAndForward`] when any of them was reached
+    /// through a Mailbox. `serde(default)` so older message files still load (as `None`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub delivery_route: Option<DeliveryRoute>,
 }
 
 impl Message {
@@ -86,7 +101,8 @@ impl Message {
     /// [`signature`](Message::signature) (base64-encoded) from the envelope, and records
     /// [`delivered_time`](Message::delivered_time) — the receiver's clock at fetch, which is not on
     /// either transport, so the caller passes it in. The arrival `timestamp` is set to
-    /// `delivered_time`, and `progress` to `1.0` (a received message is complete).
+    /// `delivered_time`, `progress` to `1.0` (a received message is complete), and
+    /// [`delivery_route`](Message::delivery_route) to [`DeliveryRoute::StoreAndForward`].
     ///
     /// `sender_handle` and `recipient_handles` are resolved by the caller: the envelope carries the
     /// sender's Ed25519 identity, and mapping that to a registered handle is a chain lookup outside
@@ -110,6 +126,7 @@ impl Message {
             sent_time: Some(opened.sent_time),
             delivered_time: Some(delivered_time),
             signature: Some(general_purpose::STANDARD.encode(opened.signature)),
+            delivery_route: Some(DeliveryRoute::StoreAndForward),
         }
     }
 }
@@ -225,7 +242,8 @@ pub trait BingleLocalApi: Send + Sync {
     /// Get the list of unblocked contacts.
     fn get_contacts(&self) -> Result<Vec<Contact>, BingleError>;
 
-    /// Add a message to the local store.
+    /// Add a message received over a live session to the local store. It is recorded complete,
+    /// with [`delivery_route`](Message::delivery_route) set to [`DeliveryRoute::Direct`].
     fn add_message(
         &mut self,
         sender_handle: String,
@@ -244,7 +262,8 @@ pub trait BingleLocalApi: Send + Sync {
 
     /// Update the status of a message. `failure_kind` carries the typed cause (issue #99) alongside
     /// the human-readable `failure_reason`; pass `None` for both on success or when no typed cause
-    /// is available.
+    /// is available. Also keeps [`delivery_route`](Message::delivery_route) in step: set when the
+    /// message completes without a failure, `None` while it is pending or failed.
     fn update_message_status(
         &mut self,
         timestamp: i64,

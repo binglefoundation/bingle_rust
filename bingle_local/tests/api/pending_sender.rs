@@ -12,7 +12,7 @@ use bingle_local::api::pending_sender::{
     LocalOutboundStore, MessageDelivery, NotSentReason, PendingSender, PendingSenderOptions,
     SendOutcome, SendReport, ShutdownEntry,
 };
-use bingle_local::api::{BingleApiLocalImpl, LocalApiConfig, MailboxConfig};
+use bingle_local::api::{BingleApiLocalImpl, DeliveryRoute, LocalApiConfig, MailboxConfig};
 use serde_json::Value as JsonValue;
 
 const REPORT_TIMEOUT: Duration = Duration::from_secs(5);
@@ -127,6 +127,15 @@ fn progress_of(local: &BingleApiLocalImpl, timestamp: i64) -> Option<f32> {
         .and_then(|m| m.progress)
 }
 
+fn route_of(local: &BingleApiLocalImpl, timestamp: i64) -> Option<DeliveryRoute> {
+    local
+        .get_messages()
+        .expect("messages")
+        .into_iter()
+        .find(|m| m.timestamp == timestamp)
+        .and_then(|m| m.delivery_route)
+}
+
 fn fast_options() -> PendingSenderOptions {
     PendingSenderOptions {
         tick: Duration::from_millis(20),
@@ -172,6 +181,7 @@ fn delivers_a_pending_message_when_woken() {
     assert_eq!(report.recipients, vec!["bob".to_string()]);
     assert!(!report.previously_failed);
     assert_eq!(progress_of(&local, ts), Some(1.0));
+    assert_eq!(route_of(&local, ts), Some(DeliveryRoute::Direct));
     assert!(local.get_pending_messages().expect("pending").is_empty());
 }
 
@@ -210,6 +220,7 @@ fn permanent_failure_is_terminal() {
         "{report:?}"
     );
     assert_eq!(progress_of(&local, ts), Some(1.0));
+    assert_eq!(route_of(&local, ts), None, "a failed send has no route");
     assert!(local.get_pending_messages().expect("pending").is_empty());
 }
 
@@ -379,6 +390,7 @@ fn a_handed_off_failure_is_reported_forwarded() {
         "{report:?}"
     );
     assert!(local.get_pending_messages().expect("pending").is_empty());
+    assert_eq!(route_of(&local, ts), Some(DeliveryRoute::StoreAndForward));
 }
 
 #[test]

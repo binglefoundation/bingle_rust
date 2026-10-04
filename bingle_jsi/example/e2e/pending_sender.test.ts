@@ -154,6 +154,7 @@ describeOrSkip(`bingle_jsi shared pending-message sender (${backend})`, () => {
       'deliver',
     );
     assert.ok(sent.failure_kind == null, `delivered message has failure_kind ${sent.failure_kind}`);
+    assert.strictEqual(sent.delivery_route, 'Direct', `delivered message route ${sent.delivery_route}`);
     await waitForFeed(`Echo: ${text}`, ECHO_TIMEOUT);
   });
 
@@ -170,6 +171,7 @@ describeOrSkip(`bingle_jsi shared pending-message sender (${backend})`, () => {
     if (storeForward && failed.failure_kind == null) {
       // Handed off to the recipient's Mailbox: complete with no failure.
       assert.strictEqual(failed.progress, 1.0);
+      assert.strictEqual(failed.delivery_route, 'StoreAndForward');
       return;
     }
     const retryable = await call({
@@ -178,6 +180,7 @@ describeOrSkip(`bingle_jsi shared pending-message sender (${backend})`, () => {
     });
     assert.strictEqual(retryable, true, `expected a retryable cause, got ${failed.failure_kind}`);
     assert.ok((failed.progress ?? 1) < 1.0, 'a retryable failure stays pending');
+    assert.ok(failed.delivery_route == null, 'a pending send has no delivery route');
   });
 
   itWithOffline('keeps the local store responsive while a send is in flight', async () => {

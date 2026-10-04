@@ -12,9 +12,9 @@ use crate::api::callback::{
 };
 use crate::api::error::BingleJsiError;
 use crate::api::types::{
-    BingleJsiConfig, BingleMessage, Contact, ContactSource, FailureKind, HandleLookupPartialResult,
-    InetSocketAddress, Keypair, KeypairStatus, KeypairStatusResponse, Message, MessagingSettings,
-    NatType, NatTypeResponse, NetworkSourceKey, VersionInfo,
+    BingleJsiConfig, BingleMessage, Contact, ContactSource, DeliveryRoute, FailureKind,
+    HandleLookupPartialResult, InetSocketAddress, Keypair, KeypairStatus, KeypairStatusResponse,
+    Message, MessagingSettings, NatType, NatTypeResponse, NetworkSourceKey, VersionInfo,
 };
 use algo_ops::error::AlgoErrorKind;
 use bingle_core::api::bingle_api::{
@@ -335,8 +335,9 @@ fn parse_keypair_status(status: &str) -> KeypairStatus {
 /// Map a stored [`bingle_local::api::Message`] to the FFI [`Message`] surfaced to JS.
 ///
 /// Every field of the local record is carried across, including the store-and-forward fields
-/// (`sent_time`, `delivered_time`, `signature`) added in issue #204 — a dedicated test asserts none
-/// are dropped, so a future field addition that forgets the bridge fails CI.
+/// (`sent_time`, `delivered_time`, `signature`) added in issue #204 and the `delivery_route` added
+/// in issue #291 — a dedicated test asserts none are dropped, so a future field addition that
+/// forgets the bridge fails CI.
 #[doc(hidden)]
 pub fn local_message_to_jsi(m: bingle_local::api::Message) -> Message {
     Message {
@@ -351,6 +352,15 @@ pub fn local_message_to_jsi(m: bingle_local::api::Message) -> Message {
         sent_time: m.sent_time,
         delivered_time: m.delivered_time,
         signature: m.signature,
+        delivery_route: m.delivery_route.map(delivery_route_to_ffi),
+    }
+}
+
+/// Map the local `DeliveryRoute` to the FFI-exposed one (issue #291).
+fn delivery_route_to_ffi(route: bingle_local::api::DeliveryRoute) -> DeliveryRoute {
+    match route {
+        bingle_local::api::DeliveryRoute::Direct => DeliveryRoute::Direct,
+        bingle_local::api::DeliveryRoute::StoreAndForward => DeliveryRoute::StoreAndForward,
     }
 }
 
@@ -1856,6 +1866,7 @@ mod tests {
             sent_time: None,
             delivered_time: None,
             signature: None,
+            delivery_route: None,
         }
     }
 
