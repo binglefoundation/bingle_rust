@@ -133,7 +133,24 @@ describeOrSkip(`bingle_jsi messaging (${backend})`, () => {
       `delivered message should have no failure_kind, got ${sent.failure_kind}`,
     );
 
+    // Sent over the live session to an online peer, so its route is Direct (issue #291).
+    assert.strictEqual(
+      sent.delivery_route,
+      'Direct',
+      `delivered message should be Direct, got ${sent.delivery_route}`,
+    );
+
     // 2) The echo peer replies "Echo: <text>", surfaced via onMessage in the event feed.
     await waitForFeed(`Echo: ${text}`, ECHO_TIMEOUT);
+
+    // 3) The echo arrived over the live session too, so it is stored as Direct (issue #291).
+    const messages = await call({method: 'getMessages', args: []});
+    const echo = messages.find((x: any) => x.text === `Echo: ${text}`);
+    assert.ok(echo, `the echo "Echo: ${text}" should be stored`);
+    assert.strictEqual(
+      echo.delivery_route,
+      'Direct',
+      `received echo should be Direct, got ${echo.delivery_route}`,
+    );
   });
 });

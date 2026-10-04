@@ -154,7 +154,7 @@ describeOrSkip(`bingle_jsi shared pending-message sender (${backend})`, () => {
       'deliver',
     );
     assert.ok(sent.failure_kind == null, `delivered message has failure_kind ${sent.failure_kind}`);
-    assert.ok(sent.delivery_route != null, 'a delivered message records its delivery route');
+    assert.strictEqual(sent.delivery_route, 'Direct', `delivered message route ${sent.delivery_route}`);
     await waitForFeed(`Echo: ${text}`, ECHO_TIMEOUT);
   });
 

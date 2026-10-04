@@ -695,12 +695,12 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
         FailureKind.NOT_READY -> "NotReady"
         FailureKind.UNKNOWN -> "Unknown"
     }
+}
 
-    /** Serialize a [DeliveryRoute] to the string the TypeScript `DeliveryRoute` union expects (issue #291). */
-    private fun deliveryRouteToString(route: DeliveryRoute): String = when (route) {
-        DeliveryRoute.DIRECT -> "Direct"
-        DeliveryRoute.STORE_AND_FORWARD -> "StoreAndForward"
-    }
+/** Serialize a [DeliveryRoute] to the string the TypeScript `DeliveryRoute` union expects (issue #291). */
+private fun deliveryRouteToString(route: DeliveryRoute): String = when (route) {
+    DeliveryRoute.DIRECT -> "Direct"
+    DeliveryRoute.STORE_AND_FORWARD -> "StoreAndForward"
 }
 
 /**

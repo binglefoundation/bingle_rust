@@ -503,7 +503,7 @@ class BingleJsiBridge: RCTEventEmitter {
                         "failure_kind": $0.failureKind.map { self.failureKindToString($0) } as Any,
                         // How the message was delivered (issue #291), as the DeliveryRoute string
                         // (null while pending or failed).
-                        "delivery_route": $0.deliveryRoute.map { self.deliveryRouteToString($0) } as Any,
+                        "delivery_route": $0.deliveryRoute.map { BingleJsiBridge.deliveryRouteToString($0) } as Any,
                     ] as [String: Any]
                 })
             } catch {
@@ -784,7 +784,7 @@ class BingleJsiBridge: RCTEventEmitter {
 
     /// Serialize a `DeliveryRoute` to the string the TypeScript `DeliveryRoute` union expects
     /// (issue #291).
-    private func deliveryRouteToString(_ route: DeliveryRoute) -> String {
+    private static func deliveryRouteToString(_ route: DeliveryRoute) -> String {
         switch route {
         case .direct: return "Direct"
         case .storeAndForward: return "StoreAndForward"
