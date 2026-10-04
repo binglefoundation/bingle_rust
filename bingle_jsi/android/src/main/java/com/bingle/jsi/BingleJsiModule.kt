@@ -427,6 +427,12 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
                     if (m.failureKind != null) map.putString("failure_kind", failureKindToString(m.failureKind!!)) else map.putNull("failure_kind")
                     // How the message was delivered (issue #291); null while pending or failed.
                     if (m.deliveryRoute != null) map.putString("delivery_route", deliveryRouteToString(m.deliveryRoute!!)) else map.putNull("delivery_route")
+                    // Store-and-forward fields (issue #204), null for a live message (issue #210).
+                    val sentTime = m.sentTime
+                    if (sentTime != null) map.putDouble("sent_time", sentTime.toDouble()) else map.putNull("sent_time")
+                    val deliveredTime = m.deliveredTime
+                    if (deliveredTime != null) map.putDouble("delivered_time", deliveredTime.toDouble()) else map.putNull("delivered_time")
+                    if (m.signature != null) map.putString("signature", m.signature) else map.putNull("signature")
                     arr.pushMap(map)
                 }
                 promise.resolve(arr)

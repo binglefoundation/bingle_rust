@@ -14,7 +14,7 @@
  */
 import {describe, it, beforeAll} from '@jest/globals';
 import assert from 'assert';
-import {call, localStatePath} from './harness';
+import {assertNoStoreAndForwardFields, call, localStatePath} from './harness';
 
 const backend = process.env.BINGLE_E2E_BACKEND || 'testnet';
 
@@ -50,6 +50,8 @@ describe(`bingle_jsi introspection + local store (${backend})`, () => {
     assert.ok(added, 'the added message should be listed by getMessages');
     assert.strictEqual(added.text, text);
     assert.strictEqual(added.sender_handle, 'alice');
+    // Not from a Mailbox, so the store-and-forward fields are present and null (issue #210).
+    assertNoStoreAndForwardFields(added, 'a message stored with addMessage');
 
     // Progress updates are reflected on the stored message.
     await call({method: 'updateMessageStatus', args: [ts, 1.0, null]});

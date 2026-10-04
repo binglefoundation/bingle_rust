@@ -17,6 +17,7 @@
 import {describe, it, beforeAll, afterAll} from '@jest/globals';
 import assert from 'assert';
 import {
+  assertNoStoreAndForwardFields,
   call,
   textOf,
   sleep,
@@ -154,5 +155,7 @@ describeOrSkip(`bingle_jsi messaging (${backend})`, () => {
     );
     // The echo arrives on the session this device dialled, which must record its suite (#292).
     assert.ok(echo.cipher_suite, 'the received echo should report its DTLS cipher suite');
+    // A live message carries none of the store-and-forward fields (issue #210).
+    assertNoStoreAndForwardFields(echo, 'the received echo');
   });
 });

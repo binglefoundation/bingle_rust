@@ -504,6 +504,10 @@ class BingleJsiBridge: RCTEventEmitter {
                         // How the message was delivered (issue #291), as the DeliveryRoute string
                         // (null while pending or failed).
                         "delivery_route": $0.deliveryRoute.map { BingleJsiBridge.deliveryRouteToString($0) } as Any,
+                        // Store-and-forward fields (issue #204), null for a live message (issue #210).
+                        "sent_time": $0.sentTime as Any,
+                        "delivered_time": $0.deliveredTime as Any,
+                        "signature": $0.signature as Any,
                     ] as [String: Any]
                 })
             } catch {
