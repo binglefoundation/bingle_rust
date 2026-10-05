@@ -36,7 +36,7 @@ fn queue_pending(api: &mut BingleApiLocalImpl, timestamp: i64, recipients: &[&st
         None,
     )
     .expect("add message");
-    api.update_message_status(timestamp, 0.0, None, None)
+    api.update_message_status(&api.id_of_timestamp_for_tests(timestamp), 0.0, None, None)
         .expect("mark pending");
 }
 
@@ -92,7 +92,7 @@ fn a_pending_send_has_no_route() {
     assert_eq!(route_of(&api, 2), None);
 
     // Progress reported part-way through a send does not set one either.
-    api.update_message_status(2, 0.5, None, None)
+    api.update_message_status(&api.id_of_timestamp_for_tests(2), 0.5, None, None)
         .expect("progress");
     assert_eq!(route_of(&api, 2), None);
 }
@@ -102,7 +102,7 @@ fn a_send_completed_by_direct_delivery_is_direct() {
     let mut api = BingleApiLocalImpl::new(LocalApiConfig::default());
     queue_pending(&mut api, 3, &["alice"]);
 
-    api.update_message_status(3, 1.0, None, None)
+    api.update_message_status(&api.id_of_timestamp_for_tests(3), 1.0, None, None)
         .expect("delivered");
 
     assert_eq!(route_of(&api, 3), Some(DeliveryRoute::Direct));
@@ -115,7 +115,7 @@ fn a_failed_send_has_no_route() {
     // A transient failure: still pending.
     queue_pending(&mut api, 4, &["alice"]);
     api.update_message_status(
-        4,
+        &api.id_of_timestamp_for_tests(4),
         0.0,
         Some(UNREACHABLE.to_string()),
         Some(SendFailureKind::PeerUnreachable),
@@ -126,7 +126,7 @@ fn a_failed_send_has_no_route() {
     // A permanent failure: complete, but not delivered.
     queue_pending(&mut api, 5, &["nobody"]);
     api.update_message_status(
-        5,
+        &api.id_of_timestamp_for_tests(5),
         1.0,
         Some("No such handle".to_string()),
         Some(SendFailureKind::HandleNotFound),
@@ -140,11 +140,11 @@ fn a_failure_after_reported_completion_clears_the_route() {
     // The send path can report 100% progress before the send as a whole is found to have failed.
     let mut api = BingleApiLocalImpl::new(LocalApiConfig::default());
     queue_pending(&mut api, 6, &["alice"]);
-    api.update_message_status(6, 1.0, None, None)
+    api.update_message_status(&api.id_of_timestamp_for_tests(6), 1.0, None, None)
         .expect("progress 100%");
 
     api.update_message_status(
-        6,
+        &api.id_of_timestamp_for_tests(6),
         0.0,
         Some(UNREACHABLE.to_string()),
         Some(SendFailureKind::PeerUnreachable),
@@ -160,10 +160,10 @@ fn a_send_handed_off_to_the_mailbox_is_store_and_forward() {
     // the hand-off without a live node.
     let mut api = forwarding_store();
     queue_pending(&mut api, 7, &["alice"]);
-    api.mark_forwarded_for_tests(7, "alice");
+    api.mark_forwarded_for_tests(&api.id_of_timestamp_for_tests(7), "alice");
 
     api.update_message_status(
-        7,
+        &api.id_of_timestamp_for_tests(7),
         0.0,
         Some(UNREACHABLE.to_string()),
         Some(SendFailureKind::PeerUnreachable),
@@ -187,9 +187,9 @@ fn a_send_with_any_recipient_reached_through_a_mailbox_is_store_and_forward() {
     // direct to everyone. The message has one route, and a Mailbox was involved.
     let mut api = forwarding_store();
     queue_pending(&mut api, 8, &["alice", "bob"]);
-    api.mark_forwarded_for_tests(8, "bob");
+    api.mark_forwarded_for_tests(&api.id_of_timestamp_for_tests(8), "bob");
 
-    api.update_message_status(8, 1.0, None, None)
+    api.update_message_status(&api.id_of_timestamp_for_tests(8), 1.0, None, None)
         .expect("delivered");
 
     assert_eq!(route_of(&api, 8), Some(DeliveryRoute::StoreAndForward));
@@ -199,9 +199,9 @@ fn a_send_with_any_recipient_reached_through_a_mailbox_is_store_and_forward() {
 fn another_messages_forward_does_not_change_the_route() {
     let mut api = forwarding_store();
     queue_pending(&mut api, 9, &["alice"]);
-    api.mark_forwarded_for_tests(999, "alice");
+    api.mark_forwarded_for_tests("another-message", "alice");
 
-    api.update_message_status(9, 1.0, None, None)
+    api.update_message_status(&api.id_of_timestamp_for_tests(9), 1.0, None, None)
         .expect("delivered");
 
     assert_eq!(route_of(&api, 9), Some(DeliveryRoute::Direct));
@@ -218,9 +218,14 @@ fn the_route_survives_save_and_load() {
         api.add_message("alice".into(), vec!["me".into()], 1, "hi".into(), None)
             .expect("add message");
         queue_pending(&mut api, 2, &["alice"]);
-        api.mark_forwarded_for_tests(2, "alice");
-        api.update_message_status(2, 0.0, Some(UNREACHABLE.to_string()), None)
-            .expect("failure");
+        api.mark_forwarded_for_tests(&api.id_of_timestamp_for_tests(2), "alice");
+        api.update_message_status(
+            &api.id_of_timestamp_for_tests(2),
+            0.0,
+            Some(UNREACHABLE.to_string()),
+            None,
+        )
+        .expect("failure");
         queue_pending(&mut api, 3, &["alice"]);
         api.save(&path_str).expect("save state");
     }

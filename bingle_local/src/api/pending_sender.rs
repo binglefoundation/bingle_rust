@@ -53,7 +53,7 @@ pub trait OutboundStore: Send + Sync {
     /// network call.
     fn update_message_status(
         &self,
-        timestamp: i64,
+        id: &str,
         progress: f32,
         failure_reason: Option<String>,
         failure_kind: Option<SendFailureKind>,
@@ -62,9 +62,9 @@ pub trait OutboundStore: Send + Sync {
     /// Whether the store-and-forward SEND gate is on.
     fn store_and_forward_send(&self) -> bool;
 
-    /// Whether the message at `timestamp` is complete with no failure — delivered, or handed off
+    /// Whether the message with this id is complete with no failure — delivered, or handed off
     /// to the recipient's Mailbox.
-    fn is_handed_off(&self, timestamp: i64) -> bool;
+    fn is_handed_off(&self, id: &str) -> bool;
 }
 
 /// An [`OutboundStore`] over a [`BingleApiLocalImpl`] handle that also saves the state file after
@@ -90,17 +90,13 @@ impl OutboundStore for LocalOutboundStore {
 
     fn update_message_status(
         &self,
-        timestamp: i64,
+        id: &str,
         progress: f32,
         failure_reason: Option<String>,
         failure_kind: Option<SendFailureKind>,
     ) -> Result<(), BingleError> {
-        self.local.update_message_status_shared(
-            timestamp,
-            progress,
-            failure_reason,
-            failure_kind,
-        )?;
+        self.local
+            .update_message_status_shared(id, progress, failure_reason, failure_kind)?;
         if let Some(path) = &self.state_file
             && let Err(e) = self.local.save(path.to_string_lossy().as_ref())
         {
@@ -113,13 +109,13 @@ impl OutboundStore for LocalOutboundStore {
         self.local.store_and_forward_send()
     }
 
-    fn is_handed_off(&self, timestamp: i64) -> bool {
+    fn is_handed_off(&self, id: &str) -> bool {
         self.local
             .get_messages()
             .ok()
             .into_iter()
             .flatten()
-            .find(|m| m.timestamp == timestamp)
+            .find(|m| m.id == id)
             .map(|m| m.progress == Some(1.0) && m.failure_reason.is_none())
             .unwrap_or(false)
     }
@@ -170,8 +166,8 @@ pub enum SendOutcome {
 /// One attempt's outcome, passed to the [`PendingSender`]'s outcome callback.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SendReport {
-    /// The message's timestamp (its key in the store).
-    pub timestamp: i64,
+    /// The message's id (its key in the store, issue #209).
+    pub id: String,
     /// The message's recipients.
     pub recipients: Vec<String>,
     /// What happened.
@@ -226,8 +222,8 @@ pub type OutcomeCallback = dyn Fn(SendReport) + Send + Sync;
 /// A message named in a [`ShutdownReport`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ShutdownEntry {
-    /// The message's timestamp (its key in the store).
-    pub timestamp: i64,
+    /// The message's id (its key in the store, issue #209).
+    pub id: String,
     /// The message's recipients.
     pub recipients: Vec<String>,
 }
@@ -258,12 +254,12 @@ pub struct ShutdownReport {
 /// The message the worker is sending, if any, with a condition variable signalled when it
 /// finishes. Set by the scheduler before a hand-off (so a message can never be both in flight and
 /// flushed), cleared by the worker once the outcome is recorded.
-type InFlight = (Mutex<Option<i64>>, Condvar);
+type InFlight = (Mutex<Option<String>>, Condvar);
 
 /// Scheduler input.
 enum Event {
     /// The worker finished a message.
-    Done { timestamp: i64, report: SendReport },
+    Done { id: String, report: SendReport },
     /// New work may be available; look now rather than at the next tick.
     Wake,
     /// Shut down.
@@ -309,7 +305,7 @@ impl PendingSender {
             .name("bingle-pending-sender".to_string())
             .spawn(move || {
                 while let Ok(msg) = work_rx.recv() {
-                    let timestamp = msg.timestamp;
+                    let id = msg.id.clone();
                     let report = send_one(
                         &worker_store,
                         &*delivery,
@@ -323,10 +319,7 @@ impl PendingSender {
                         *current = None;
                     }
                     finished.notify_all();
-                    if worker_events
-                        .send(Event::Done { timestamp, report })
-                        .is_err()
-                    {
+                    if worker_events.send(Event::Done { id, report }).is_err() {
                         break; // scheduler gone
                     }
                 }
@@ -400,7 +393,7 @@ impl PendingSender {
                         }
                     }
                 }
-                *current
+                current.clone()
             }
             Err(_) => None,
         };
@@ -416,10 +409,10 @@ impl PendingSender {
         let mut report = ShutdownReport::default();
         for msg in pending {
             let entry = ShutdownEntry {
-                timestamp: msg.timestamp,
+                id: msg.id.clone(),
                 recipients: msg.recipient_handles.clone(),
             };
-            let not_sent = if still_in_flight == Some(msg.timestamp) {
+            let not_sent = if still_in_flight.as_deref() == Some(msg.id.as_str()) {
                 Some(NotSentReason::InFlight)
             } else if !forwarding {
                 Some(NotSentReason::StoreForwardOff)
@@ -434,13 +427,13 @@ impl PendingSender {
                 }));
                 if let Some(failure) = failure {
                     let _ = self.store.update_message_status(
-                        msg.timestamp,
+                        &msg.id,
                         0.0,
                         Some(failure.reason),
                         Some(failure.kind),
                     );
                 }
-                (!self.store.is_handed_off(msg.timestamp)).then_some(NotSentReason::PostFailed)
+                (!self.store.is_handed_off(&msg.id)).then_some(NotSentReason::PostFailed)
             };
             match not_sent {
                 None => report.forwarded.push(entry),
@@ -513,23 +506,23 @@ fn run_scheduler(
     running: &AtomicBool,
 ) {
     tracing::info!("[PendingSender] started");
-    let mut in_flight: Option<(i64, Instant)> = None;
+    let mut in_flight: Option<(String, Instant)> = None;
     let mut warned_stuck = false;
     // Per-message backoff deadlines, so a repeatedly failing recipient yields the head of the queue.
-    let mut retry_after: HashMap<i64, Instant> = HashMap::new();
+    let mut retry_after: HashMap<String, Instant> = HashMap::new();
 
     while running.load(Ordering::SeqCst) {
         match events.recv_timeout(options.tick) {
-            Ok(Event::Done { timestamp, report }) => {
+            Ok(Event::Done { id, report }) => {
                 match report.outcome {
                     SendOutcome::Retrying(_) => {
-                        retry_after.insert(timestamp, Instant::now() + RETRY_BACKOFF);
+                        retry_after.insert(id.clone(), Instant::now() + RETRY_BACKOFF);
                     }
                     _ => {
-                        retry_after.remove(&timestamp);
+                        retry_after.remove(&id);
                     }
                 }
-                if in_flight.is_some_and(|(t, _)| t == timestamp) {
+                if in_flight.as_ref().is_some_and(|(t, _)| *t == id) {
                     in_flight = None;
                     warned_stuck = false;
                 }
@@ -540,13 +533,13 @@ fn run_scheduler(
         }
 
         // Tolerate, but note, a send taking a long time. No second send is started meanwhile.
-        if let Some((timestamp, since)) = in_flight
+        if let Some((id, since)) = &in_flight
             && !warned_stuck
             && since.elapsed() > options.watchdog
         {
             tracing::warn!(
                 "[PendingSender] message {} send exceeded {:?}; holding further sends until it completes",
-                timestamp,
+                id,
                 options.watchdog
             );
             warned_stuck = true;
@@ -561,13 +554,13 @@ fn run_scheduler(
                 }
             };
             // Forget deadlines for messages no longer pending, so the map stays bounded.
-            retry_after.retain(|ts, _| pending.iter().any(|m| m.timestamp == *ts));
+            retry_after.retain(|id, _| pending.iter().any(|m| m.id == *id));
             if let Some(msg) = select_sendable_message(pending, &retry_after, Instant::now()) {
-                tracing::debug!("[PendingSender] sending message {}", msg.timestamp);
-                in_flight = Some((msg.timestamp, Instant::now()));
+                tracing::debug!("[PendingSender] sending message {}", msg.id);
+                in_flight = Some((msg.id.clone(), Instant::now()));
                 // Mark it in flight before the hand-off, so a shutdown flush cannot also send it.
                 if let Ok(mut current) = in_flight_shared.0.lock() {
-                    *current = Some(msg.timestamp);
+                    *current = Some(msg.id.clone());
                 }
                 if work.send(msg).is_err() {
                     tracing::error!("[PendingSender] worker gone; stopping");
@@ -598,7 +591,7 @@ fn send_one(
     msg: &Message,
     retries_enabled: bool,
 ) -> SendReport {
-    let timestamp = msg.timestamp;
+    let id = msg.id.as_str();
     let previously_failed = msg.failure_reason.is_some();
     let forwarding = store.store_and_forward_send();
 
@@ -622,9 +615,10 @@ fn send_one(
 
         // Surface the send path's progress on the message, as the React Native client expects.
         let progress_store = Arc::clone(store);
+        let progress_id = id.to_string();
         let progress: Arc<ProgressCallback> = Arc::new(move |percent: u8, _status: String| {
             let _ = progress_store.update_message_status(
-                timestamp,
+                &progress_id,
                 f32::from(percent) / 100.0,
                 None,
                 None,
@@ -673,7 +667,7 @@ fn send_one(
 
     let outcome = match last_failure {
         None => {
-            let _ = store.update_message_status(timestamp, 1.0, None, None);
+            let _ = store.update_message_status(id, 1.0, None, None);
             SendOutcome::Delivered
         }
         Some(failure) => {
@@ -681,19 +675,19 @@ fn send_one(
             let progress = if transient { 0.0 } else { 1.0 };
             tracing::debug!(
                 "[PendingSender] message {} send failed ({}, {:?}): {}",
-                timestamp,
+                id,
                 if transient { "transient" } else { "permanent" },
                 failure.kind,
                 failure.reason
             );
             // Recording the failure drives the store-and-forward post when the send gate is on.
             let _ = store.update_message_status(
-                timestamp,
+                id,
                 progress,
                 Some(failure.reason.clone()),
                 Some(failure.kind),
             );
-            if store.store_and_forward_send() && store.is_handed_off(timestamp) {
+            if store.store_and_forward_send() && store.is_handed_off(id) {
                 SendOutcome::Forwarded(failure.reason)
             } else if transient {
                 SendOutcome::Retrying(failure.reason)
@@ -703,7 +697,7 @@ fn send_one(
         }
     };
     SendReport {
-        timestamp,
+        id: id.to_string(),
         recipients: msg.recipient_handles.clone(),
         outcome,
         previously_failed,

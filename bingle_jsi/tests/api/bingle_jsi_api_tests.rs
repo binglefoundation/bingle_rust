@@ -212,6 +212,17 @@ impl BingleJsiApi for StubApi {
         })
     }
 
+    fn update_message_status_by_id(
+        &self,
+        _id: String,
+        _progress: f32,
+        _failure_reason: Option<String>,
+    ) -> Result<(), BingleJsiError> {
+        Err(BingleJsiError::NotImplemented {
+            reason: "update_message_status_by_id".to_string(),
+        })
+    }
+
     fn network_available(&self, _force_recheck: bool) -> Result<bool, BingleJsiError> {
         Err(BingleJsiError::NotImplemented {
             reason: "network_available".to_string(),

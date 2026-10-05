@@ -197,9 +197,14 @@ fn test_message_queue_with_mock_progress() {
                 None,
             )
             .unwrap();
-        guard
-            .update_message_status(timestamp, 0.0, None, None)
-            .unwrap();
+        let id = guard
+            .get_messages()
+            .unwrap()
+            .into_iter()
+            .find(|m| m.timestamp == timestamp)
+            .unwrap()
+            .id;
+        guard.update_message_status(&id, 0.0, None, None).unwrap();
     }
 
     // 2. Start the JSI (starts background loop)
@@ -272,9 +277,14 @@ fn queued_message_gains_failure_reason_then_clears_on_success() {
                 None,
             )
             .unwrap();
-        guard
-            .update_message_status(timestamp, 0.0, None, None)
-            .unwrap();
+        let id = guard
+            .get_messages()
+            .unwrap()
+            .into_iter()
+            .find(|m| m.timestamp == timestamp)
+            .unwrap()
+            .id;
+        guard.update_message_status(&id, 0.0, None, None).unwrap();
     }
 
     jsi.start().unwrap();
@@ -369,7 +379,7 @@ fn queue_pending(local: &BingleApiLocalImpl, timestamp: i64) {
         )
         .unwrap();
     local
-        .update_message_status_shared(timestamp, 0.0, None, None)
+        .update_message_status_shared(&local.id_of_timestamp_for_tests(timestamp), 0.0, None, None)
         .unwrap();
 }
 

@@ -579,6 +579,51 @@ fn remove_contact_removes_without_blocking() {
 }
 
 #[test]
+fn update_message_status_by_id_and_the_deprecated_timestamp_form_both_work() {
+    // Issue #209: messages are updated by id; the timestamp form is kept for apps that have not
+    // migrated.
+    let api = init_with_local_helper();
+    api.add_message(
+        "alice".to_string(),
+        vec!["bob".to_string()],
+        1000,
+        "by id".to_string(),
+        None,
+    )
+    .expect("add");
+    api.add_message(
+        "alice".to_string(),
+        vec!["bob".to_string()],
+        2000,
+        "by timestamp".to_string(),
+        None,
+    )
+    .expect("add");
+    let by_id = api
+        .get_messages()
+        .expect("messages")
+        .into_iter()
+        .find(|m| m.text == "by id")
+        .expect("stored");
+    assert!(!by_id.id.is_empty(), "getMessages carries the id");
+
+    api.update_message_status_by_id(by_id.id.clone(), 0.5, Some("retrying".to_string()))
+        .expect("update by id");
+    api.update_message_status(2000, 0.25, None)
+        .expect("update by timestamp");
+
+    let messages = api.get_messages().expect("messages");
+    let find = |text: &str| messages.iter().find(|m| m.text == text).expect("stored");
+    assert_eq!(find("by id").progress, Some(0.5));
+    assert_eq!(find("by id").failure_reason.as_deref(), Some("retrying"));
+    assert_eq!(find("by timestamp").progress, Some(0.25));
+    assert!(
+        api.update_message_status_by_id("no-such-id".to_string(), 1.0, None)
+            .is_err()
+    );
+}
+
+#[test]
 fn add_and_get_messages() {
     let api = init_with_local_helper();
     api.add_message(
@@ -876,6 +921,7 @@ fn bridge_carries_store_and_forward_fields_to_jsi() {
     use bingle_local::api::{DeliveryRoute as LocalRoute, Message as LocalMessage};
 
     let local = LocalMessage {
+        id: "0909".to_string(),
         sender_handle: "alice".to_string(),
         recipient_handles: vec!["bob".to_string()],
         timestamp: 1_700_000_050_000,
@@ -892,7 +938,8 @@ fn bridge_carries_store_and_forward_fields_to_jsi() {
 
     let jsi = local_message_to_jsi(local.clone());
 
-    // Store-and-forward fields survive the bridge to JS.
+    // The message id (issue #209) and the store-and-forward fields survive the bridge to JS.
+    assert_eq!(jsi.id, "0909");
     assert_eq!(jsi.sent_time, Some(1_700_000_000_123));
     assert_eq!(jsi.delivered_time, Some(1_700_000_050_000));
     assert_eq!(jsi.signature, Some("AwMDAw==".to_string()));

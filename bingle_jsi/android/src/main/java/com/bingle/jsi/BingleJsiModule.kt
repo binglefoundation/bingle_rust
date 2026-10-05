@@ -414,6 +414,8 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
                 val arr = Arguments.createArray()
                 messages.forEach { m ->
                     val map = Arguments.createMap()
+                    // Stable identifier (issue #209), the key for updateMessageStatusById.
+                    map.putString("id", m.id)
                     map.putString("sender_handle", m.senderHandle)
                     val handles = Arguments.createArray()
                     m.recipientHandles.forEach { handles.pushString(it) }
@@ -456,6 +458,24 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
                     recipientHandles.getString(i)?.let { handles.add(it) }
                 }
                 api.queueMessage(handles, text)
+                promise.resolve(null)
+            } catch (e: Exception) {
+                promise.reject("BINGLE_ERROR", e.message, e)
+            }
+        }.start()
+    }
+
+    /** Update the status of the message with this id (issue #209). Replaces the deprecated timestamp-keyed updateMessageStatus. */
+    @ReactMethod
+    fun updateMessageStatusById(id: String, progress: Double, failureReason: String?, promise: Promise) {
+        val api = apiInstance
+        if (api == null) {
+            promise.reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.")
+            return
+        }
+        Thread {
+            try {
+                api.updateMessageStatusById(id, progress.toFloat(), failureReason)
                 promise.resolve(null)
             } catch (e: Exception) {
                 promise.reject("BINGLE_ERROR", e.message, e)

@@ -93,7 +93,7 @@ fn start_sender(
 
 fn report(outcome: SendOutcome, previously_failed: bool) -> SendReport {
     SendReport {
-        timestamp: 1,
+        id: "m1".to_string(),
         recipients: vec!["bob".to_string()],
         outcome,
         previously_failed,
@@ -138,7 +138,7 @@ pub fn queued_message_is_delivered_and_saved() {
     sender.wake();
 
     let report = rx.recv_timeout(REPORT_TIMEOUT).expect("report");
-    assert_eq!(report.timestamp, ts);
+    assert_eq!(report.id, ts);
     assert_eq!(report.outcome, SendOutcome::Delivered);
     assert!(state.pending_outbound().expect("pending").is_empty());
 
@@ -150,7 +150,7 @@ pub fn queued_message_is_delivered_and_saved() {
         .get_messages()
         .expect("messages")
         .into_iter()
-        .find(|m| m.timestamp == ts)
+        .find(|m| m.id == ts)
         .expect("message saved");
     assert_eq!(stored.progress, Some(1.0));
 }
@@ -209,7 +209,7 @@ pub fn send_gate_on_failed_send_forwards_to_mailbox() {
     let ts = state
         .queue_outbound("bob", "hi while offline")
         .expect("queue");
-    state.mark_forwarded_for_tests(ts, "bob");
+    state.mark_forwarded_for_tests(&ts, "bob");
     let (_sender, rx) = start_sender(&state, MockDelivery::new(Answer::Transient), true);
 
     let report = rx.recv_timeout(REPORT_TIMEOUT).expect("report");
@@ -263,7 +263,7 @@ pub fn sending_does_not_need_the_session_lock() {
     let report = rx
         .recv_timeout(REPORT_TIMEOUT)
         .expect("report while locked");
-    assert_eq!(report.timestamp, ts);
+    assert_eq!(report.id, ts);
     assert_eq!(report.outcome, SendOutcome::Delivered);
     drop(held);
 }
@@ -338,7 +338,7 @@ pub fn send_target_label_is_the_handle_or_id() {
 
 fn shutdown_entry(recipient: &str) -> ShutdownEntry {
     ShutdownEntry {
-        timestamp: 1,
+        id: "m1".to_string(),
         recipients: vec![recipient.to_string()],
     }
 }
@@ -381,7 +381,7 @@ pub fn exit_flush_forwards_a_message_queued_just_before_exit() {
     // hands it to the Mailbox (pre-marked posted via the test seam, so no node is needed).
     let mut state = alice_state_gated(true, Some(MailboxConfig::new("http://localhost:9", "tok")));
     let ts = state.queue_outbound("bob", "bye").expect("queue");
-    state.mark_forwarded_for_tests(ts, "bob");
+    state.mark_forwarded_for_tests(&ts, "bob");
     let sender = PendingSender::start(
         Arc::new(state.outbound_store()),
         MockDelivery::new(Answer::Transient),

@@ -37,9 +37,43 @@ pub enum DeliveryRoute {
     StoreAndForward,
 }
 
+/// A fresh message id (issue #209): the hex of 16 random bytes, the same form as a Mailbox
+/// envelope's `message_id`.
+pub fn new_message_id() -> String {
+    let mut bytes = [0u8; 16];
+    // getrandom draws from the OS CSPRNG; on the astronomically unlikely failure fall back to a
+    // time-derived value rather than fail to store the message.
+    if getrandom::getrandom(&mut bytes).is_err() {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        bytes.copy_from_slice(&now.to_le_bytes());
+    }
+    hex_id(&bytes)
+}
+
+/// The id of a message stored before message ids existed (issue #209). Its `timestamp` was its
+/// unique key then, so the id is derived from it and stays the same every time the state is loaded.
+pub fn legacy_message_id(timestamp: i64) -> String {
+    format!("legacy-{timestamp}")
+}
+
+/// Lower-case hex of a message id's bytes.
+fn hex_id(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
 /// Message record stored locally.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Message {
+    /// The message's stable identifier (issue #209), the key for
+    /// [`update_message_status`](BingleLocalApi::update_message_status) and the senders' retry
+    /// state. A message read from a Mailbox keeps its envelope's `message_id` (in hex); one created
+    /// locally gets a fresh [`new_message_id`]. A message stored before ids existed is given
+    /// [`legacy_message_id`] on load. `serde(default)` so older message files still load.
+    #[serde(default)]
+    pub id: String,
     /// Handle of the account that sent the message.
     pub sender_handle: String,
     /// Handles of the recipients the message was addressed to.
@@ -47,10 +81,9 @@ pub struct Message {
     /// The time (epoch milliseconds) this client stored the message: its queue time for a message it
     /// sent, its arrival time for one it received.
     ///
-    /// No longer the ordering key: order by [`order_time`](Message::order_time) (issue #69). It is
-    /// still the key that identifies a message to
-    /// [`update_message_status`](BingleLocalApi::update_message_status) and the retry backoff, so
-    /// it is not yet `#[deprecated]`; moving identity to a stable id is issue #209.
+    /// Neither the ordering key (use [`order_time`](Message::order_time), issue #69) nor the
+    /// identity key (use [`id`](Message::id), issue #209); kept as the time the message was stored,
+    /// which `order_time` falls back to. Marked deprecated on the TypeScript `Message`.
     pub timestamp: i64,
     /// The message body.
     pub text: String,
@@ -132,6 +165,7 @@ impl Message {
         delivered_time: i64,
     ) -> Message {
         Message {
+            id: hex_id(&opened.message_id),
             sender_handle,
             recipient_handles,
             timestamp: delivered_time,
@@ -292,13 +326,13 @@ pub trait BingleLocalApi: Send + Sync {
         text: String,
     ) -> Result<(), BingleError>;
 
-    /// Update the status of a message. `failure_kind` carries the typed cause (issue #99) alongside
+    /// Update the status of the message with this [`id`](Message::id). `failure_kind` carries the typed cause (issue #99) alongside
     /// the human-readable `failure_reason`; pass `None` for both on success or when no typed cause
     /// is available. Also keeps [`delivery_route`](Message::delivery_route) in step: set when the
     /// message completes without a failure, `None` while it is pending or failed.
     fn update_message_status(
         &mut self,
-        timestamp: i64,
+        id: &str,
         progress: f32,
         failure_reason: Option<String>,
         failure_kind: Option<SendFailureKind>,

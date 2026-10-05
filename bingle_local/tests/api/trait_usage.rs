@@ -102,6 +102,7 @@ impl BingleLocalApi for DummyLocal {
         cipher_suite: Option<String>,
     ) -> Result<(), BingleError> {
         self.messages.push(Message {
+            id: format!("dummy-{}", self.messages.len()),
             sender_handle,
             recipient_handles,
             timestamp,
@@ -140,6 +141,7 @@ impl BingleLocalApi for DummyLocal {
     ) -> Result<(), BingleError> {
         let sender_handle = self.keypair_status()?.handle.unwrap_or_default();
         self.messages.push(Message {
+            id: format!("dummy-{}", self.messages.len()),
             sender_handle,
             recipient_handles,
             timestamp: 999,
@@ -158,12 +160,12 @@ impl BingleLocalApi for DummyLocal {
 
     fn update_message_status(
         &mut self,
-        timestamp: i64,
+        id: &str,
         progress: f32,
         failure_reason: Option<String>,
         failure_kind: Option<SendFailureKind>,
     ) -> Result<(), BingleError> {
-        if let Some(m) = self.messages.iter_mut().find(|m| m.timestamp == timestamp) {
+        if let Some(m) = self.messages.iter_mut().find(|m| m.id == id) {
             m.progress = Some(progress);
             m.failure_reason = failure_reason;
             m.failure_kind = failure_kind;

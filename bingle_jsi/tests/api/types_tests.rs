@@ -166,6 +166,7 @@ fn contact_empty_fields() {
 #[test]
 fn message_construction() {
     let msg = Message {
+        id: "m1".to_string(),
         sender_handle: "alice".to_string(),
         recipient_handles: vec!["bob".to_string(), "carol".to_string()],
         timestamp: 1700000000,
@@ -189,6 +190,7 @@ fn message_construction() {
 #[test]
 fn message_with_cipher_suite() {
     let msg = Message {
+        id: "m1".to_string(),
         sender_handle: "alice".to_string(),
         recipient_handles: vec!["bob".to_string()],
         timestamp: 1700000001,

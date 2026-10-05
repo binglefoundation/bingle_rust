@@ -22,6 +22,9 @@ mod cipher_suite;
 #[path = "api/message_order.rs"]
 mod message_order;
 
+#[path = "api/message_id.rs"]
+mod message_id;
+
 #[path = "api/local_impl_keypair_status.rs"]
 mod local_impl_keypair_status;
 #[path = "api/local_impl_persistence.rs"]
