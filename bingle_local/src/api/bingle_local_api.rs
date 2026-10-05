@@ -44,12 +44,13 @@ pub struct Message {
     pub sender_handle: String,
     /// Handles of the recipients the message was addressed to.
     pub recipient_handles: Vec<String>,
-    /// Arrival time (epoch milliseconds) recorded by this client when it stored the message.
+    /// The time (epoch milliseconds) this client stored the message: its queue time for a message it
+    /// sent, its arrival time for one it received.
     ///
-    /// To be superseded by [`sent_time`](Message::sent_time) and
-    /// [`delivered_time`](Message::delivered_time); it stays the ordering key until the sent-time
-    /// UX lands (issue #69), so it is not yet marked `#[deprecated]` (the workspace gate denies
-    /// deprecation warnings, and `select_sendable_message` still reads it).
+    /// No longer the ordering key: order by [`order_time`](Message::order_time) (issue #69). It is
+    /// still the key that identifies a message to
+    /// [`update_message_status`](BingleLocalApi::update_message_status) and the retry backoff, so
+    /// it is not yet `#[deprecated]`; moving identity to a stable id is issue #209.
     pub timestamp: i64,
     /// The message body.
     pub text: String,
@@ -100,6 +101,16 @@ pub struct Message {
 }
 
 impl Message {
+    /// The time to order this message by (issue #69): the sender's [`sent_time`](Message::sent_time)
+    /// when known, else the [`delivered_time`](Message::delivered_time) a Mailbox read stamped, else
+    /// [`timestamp`](Message::timestamp). For a message this client sent, `timestamp` is its queue
+    /// time, which is also the time it was signed with (issue #94).
+    pub fn order_time(&self) -> i64 {
+        self.sent_time
+            .or(self.delivered_time)
+            .unwrap_or(self.timestamp)
+    }
+
     /// Builds a received message record from an opened store-and-forward envelope (issue #204).
     ///
     /// Carries the sender-stamped [`sent_time`](Message::sent_time) and the retained
@@ -296,7 +307,8 @@ pub trait BingleLocalApi: Send + Sync {
     /// Get all messages that are pending (progress < 1.0).
     fn get_pending_messages(&self) -> Result<Vec<Message>, BingleError>;
 
-    /// Get the list of stored messages.
+    /// Get the stored messages, in [`order_time`](Message::order_time) order (by send time, issue
+    /// #69). Messages with equal times keep the order they were stored in.
     fn get_messages(&self) -> Result<Vec<Message>, BingleError>;
 
     /// Drain this user's Sidewinder Mailbox, decrypting and storing each held store-and-forward

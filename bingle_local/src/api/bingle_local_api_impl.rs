@@ -1168,7 +1168,10 @@ impl BingleLocalApi for BingleApiLocalImpl {
                 return Err(BingleError::Other(msg));
             }
         };
-        Ok(guard.clone())
+        // By send time (issue #69); a stable sort keeps the stored order for equal times.
+        let mut messages = guard.clone();
+        messages.sort_by_key(Message::order_time);
+        Ok(messages)
     }
 
     fn poll_mailbox(&self) -> Result<Vec<Message>, BingleError> {

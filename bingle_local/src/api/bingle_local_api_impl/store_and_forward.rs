@@ -300,9 +300,9 @@ impl BingleApiLocalImpl {
         // Our own handle is the recipient of everything in our Mailbox.
         let own_handle = self.sender_handle().ok();
 
-        // Accumulate into a structure kept ordered by sender-stamped sent time (#69). The key pairs
-        // the sent time (falling back to the local delivered/arrival time) with a read-sequence
-        // number, so messages with equal sent times keep their read order and none are dropped.
+        // Accumulate into a structure kept ordered by `Message::order_time` (#69). The key pairs that
+        // time with a read-sequence number, so messages with equal times keep their read order and
+        // none are dropped.
         let mut read: BTreeMap<(i64, u64), Message> = BTreeMap::new();
         let mut sequence: u64 = 0;
         loop {
@@ -359,8 +359,7 @@ impl BingleApiLocalImpl {
                     "[poll_mailbox] Failed to lock messages; the message is not stored"
                 );
             }
-            let sort_time = message.sent_time.unwrap_or(message.timestamp);
-            read.insert((sort_time, sequence), message);
+            read.insert((message.order_time(), sequence), message);
             sequence += 1;
         }
 
