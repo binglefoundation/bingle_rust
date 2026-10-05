@@ -193,15 +193,8 @@ async fn main() -> anyhow::Result<()> {
         api.access(|api_mut| {
             let on_message: Arc<OnMessageHandler> = Arc::new(move |sender, sender_handle, message| {
                 tracing::info!("Received message from {} ({}): {}", sender, sender_handle, message);
-                let text = message.get("text")
-                    .and_then(|v| v.as_str())
-                    .map(|s| s.to_string())
-                    .unwrap_or_else(|| message.to_string());
-                let cipher_suite = message.get("cipher_suite")
-                    .and_then(|v| v.as_str())
-                    .map(|s| s.to_string());
                 let mut m = msgs.lock().unwrap();
-                m.push(message);
+                m.push(message.clone());
                 // Store message in local API buffer so it is accessible via getMessages
                 if let Some(local_arc) = &local_api_for_closure {
                     if let Ok(mut guard) = local_arc.lock() {
@@ -216,12 +209,12 @@ async fn main() -> anyhow::Result<()> {
                                 return;
                             }
                         };
-                        if let Err(e) = guard.add_message(
+                        // Keeps the sender's signature and sent time (issue #94).
+                        if let Err(e) = guard.add_received_message(
                             sender_handle.clone(),
                             vec![recipient],
                             timestamp,
-                            text,
-                            cipher_suite,
+                            &message,
                         ) {
                             tracing::warn!("[on_message] failed to add message to local API: {}", e);
                         }

@@ -10,7 +10,7 @@
 //! Later subtasks of the chat epic (#56) drive the transport and interactive I/O; this subtask is
 //! the storage bridge only.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -205,25 +205,25 @@ impl ChatState {
         }
     }
 
-    /// Append a message to the persistent history and return the stored [`Message`] record. The
-    /// caller persists to disk via [`save_state`](ChatState::save_state).
+    /// Append a received message (the engine's `message` JSON) to the persistent history, keeping
+    /// its cipher suite and the sender's signature and sent time (issue #94), and return the stored
+    /// [`Message`] record. The caller persists to disk via [`save_state`](ChatState::save_state).
     pub fn record_message(
         &mut self,
         sender_handle: &str,
         recipient_handles: Vec<String>,
         timestamp: i64,
-        text: &str,
-        cipher_suite: Option<String>,
+        message: &serde_json::Value,
     ) -> Result<Message, String> {
         // The store is shared via `Arc`, so the `&mut self`-declared trait mutations are reached
         // through their `&self` cores (`*_shared`); see [`ChatState::local`].
-        self.local
-            .add_message_shared(
+        let id = self
+            .local
+            .add_received_message_shared(
                 sender_handle.to_string(),
                 recipient_handles,
                 timestamp,
-                text.to_string(),
-                cipher_suite,
+                message,
             )
             .map_err(|e| e.to_string())?;
         // Return the record as stored (add_message fills in progress/failure_reason), so callers
@@ -231,7 +231,8 @@ impl ChatState {
         self.local
             .get_messages()
             .map_err(|e| e.to_string())?
-            .pop()
+            .into_iter()
+            .find(|m| m.id == id)
             .ok_or_else(|| "message missing after add_message".to_string())
     }
 
@@ -257,37 +258,25 @@ impl ChatState {
         Ok(())
     }
 
-    /// The stored message history, newest-appended last.
+    /// The stored message history, in send-time order (issue #69).
     pub fn messages(&self) -> Result<Vec<Message>, String> {
         self.local.get_messages().map_err(|e| e.to_string())
     }
 
-    /// Persist an outbound message as **pending** (`progress = 0.0`) and return its timestamp, which
-    /// keys later [`mark_delivered`](ChatState::mark_delivered) /
+    /// Persist an outbound message as **pending** (`progress = 0.0`) and return its id, which keys
+    /// later [`mark_delivered`](ChatState::mark_delivered) /
     /// [`mark_send_failed`](ChatState::mark_send_failed) updates. Persisting before the send attempt
-    /// means a failed send survives in the state file for retry. The timestamp is unique among
-    /// stored messages. Saves the state file.
-    pub fn queue_outbound(&mut self, recipient_handle: &str, text: &str) -> Result<i64, String> {
-        let mut timestamp = SystemTime::now()
+    /// means a failed send survives in the state file for retry. Saves the state file.
+    pub fn queue_outbound(&mut self, recipient_handle: &str, text: &str) -> Result<String, String> {
+        let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_millis() as i64)
             .map_err(|e| e.to_string())?;
-        // The timestamp keys the message, so two messages queued in the same millisecond must not
-        // share one: bump past any already taken.
-        let taken: HashSet<i64> = self
-            .local
-            .get_messages()
-            .map_err(|e| e.to_string())?
-            .iter()
-            .map(|m| m.timestamp)
-            .collect();
-        while taken.contains(&timestamp) {
-            timestamp += 1;
-        }
         let sender = self.opts.handle.clone();
         // add_message records it delivered (progress 1.0); immediately mark it pending so the retry
         // path owns its lifecycle.
-        self.local
+        let id = self
+            .local
             .add_message_shared(
                 sender,
                 vec![recipient_handle.to_string()],
@@ -297,16 +286,16 @@ impl ChatState {
             )
             .map_err(|e| e.to_string())?;
         self.local
-            .update_message_status_shared(timestamp, 0.0, None, None)
+            .update_message_status_shared(&id, 0.0, None, None)
             .map_err(|e| e.to_string())?;
         self.save_state()?;
-        Ok(timestamp)
+        Ok(id)
     }
 
-    /// Mark a previously queued outbound message (by `timestamp`) delivered, and save.
-    pub fn mark_delivered(&mut self, timestamp: i64) -> Result<(), String> {
+    /// Mark a previously queued outbound message (by `id`) delivered, and save.
+    pub fn mark_delivered(&mut self, id: &str) -> Result<(), String> {
         self.local
-            .update_message_status_shared(timestamp, 1.0, None, None)
+            .update_message_status_shared(id, 1.0, None, None)
             .map_err(|e| e.to_string())?;
         self.save_state()
     }
@@ -316,19 +305,14 @@ impl ChatState {
     /// stays pending for retry). Saves the state file.
     pub fn mark_send_failed(
         &mut self,
-        timestamp: i64,
+        id: &str,
         reason: &str,
         failure_kind: Option<SendFailureKind>,
         permanent: bool,
     ) -> Result<(), String> {
         let progress = if permanent { 1.0 } else { 0.0 };
         self.local
-            .update_message_status_shared(
-                timestamp,
-                progress,
-                Some(reason.to_string()),
-                failure_kind,
-            )
+            .update_message_status_shared(id, progress, Some(reason.to_string()), failure_kind)
             .map_err(|e| e.to_string())?;
         self.save_state()
     }
@@ -345,17 +329,17 @@ impl ChatState {
         self.local.store_and_forward_send()
     }
 
-    /// Whether the message at `timestamp` has been handed off — delivered directly or posted to the
+    /// Whether the message with this id has been handed off — delivered directly or posted to the
     /// recipient's Sidewinder Mailbox — i.e. it is complete (`progress == 1.0`) and carries no
     /// failure. The send path uses this after recording a failed direct send to tell a
     /// store-and-forward handoff (the forward succeeded) apart from a still-failing send (issue #272).
-    pub fn is_handed_off(&self, timestamp: i64) -> bool {
+    pub fn is_handed_off(&self, id: &str) -> bool {
         self.local
             .get_messages()
             .ok()
             .into_iter()
             .flatten()
-            .find(|m| m.timestamp == timestamp)
+            .find(|m| m.id == id)
             .map(|m| m.progress == Some(1.0) && m.failure_reason.is_none())
             .unwrap_or(false)
     }
@@ -492,12 +476,12 @@ impl ChatState {
         }
     }
 
-    /// Test seam: record a `(timestamp, handle)` as already posted to a Mailbox, so a test can drive
-    /// the fully-forwarded handoff without a live Sidewinder node (delegates to the bingle_local
-    /// seam of the same name). Issue #272.
+    /// Test seam: record a `(message id, handle)` as already posted to a Mailbox, so a test can
+    /// drive the fully-forwarded handoff without a live Sidewinder node (delegates to the
+    /// bingle_local seam of the same name). Issue #272.
     #[doc(hidden)]
-    pub fn mark_forwarded_for_tests(&self, timestamp: i64, handle: &str) {
-        self.local.mark_forwarded_for_tests(timestamp, handle);
+    pub fn mark_forwarded_for_tests(&self, id: &str, handle: &str) {
+        self.local.mark_forwarded_for_tests(id, handle);
     }
 }
 

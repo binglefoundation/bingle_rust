@@ -10,20 +10,31 @@
 		0C80B921A6F3F58F76C31292 /* libPods-BingleJsiExample.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 5DCACB8F33CDC322A6C60F78 /* libPods-BingleJsiExample.a */; };
 		13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB51A68108700A75B9A /* Images.xcassets */; };
 		2B4045251725A829067C9EA1 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB81A68108700A75B9A /* PrivacyInfo.xcprivacy */; };
+		536FF9BEE756907A78D2E430 /* libPods-BingleJsiExample-BingleJsiBridgeTests.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 654FC8F3D92162DDC378A579 /* libPods-BingleJsiExample-BingleJsiBridgeTests.a */; };
 		761780ED2CA45674006654EE /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 761780EC2CA45674006654EE /* AppDelegate.swift */; };
 		81AB9BB82411601600AC10FF /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */; };
+		E2E018157C83CD901B04C4F8 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1F94EF002FCF6DE4D7F10084 /* Foundation.framework */; };
+		E51FDE48B7E0B742C32E829C /* BingleJsiBridgeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B836AF3314845558AD98FB80 /* BingleJsiBridgeTests.swift */; };
+		EB0C23B5A8995153FB1315D9 /* MockBingleJsiApi.swift in Sources */ = {isa = PBXBuildFile; fileRef = C61F6014CEDB00CC3E9D12DC /* MockBingleJsiApi.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		1041627891B1066A4858F272 /* Pods-BingleJsiExample-BingleJsiBridgeTests.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-BingleJsiExample-BingleJsiBridgeTests.debug.xcconfig"; path = "Target Support Files/Pods-BingleJsiExample-BingleJsiBridgeTests/Pods-BingleJsiExample-BingleJsiBridgeTests.debug.xcconfig"; sourceTree = "<group>"; };
 		13B07F961A680F5B00A75B9A /* BingleJsiExample.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = BingleJsiExample.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		13B07FB51A68108700A75B9A /* Images.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; name = Images.xcassets; path = BingleJsiExample/Images.xcassets; sourceTree = "<group>"; };
 		13B07FB61A68108700A75B9A /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = Info.plist; path = BingleJsiExample/Info.plist; sourceTree = "<group>"; };
 		13B07FB81A68108700A75B9A /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = PrivacyInfo.xcprivacy; path = BingleJsiExample/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		1F94EF002FCF6DE4D7F10084 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
 		3B4392A12AC88292D35C810B /* Pods-BingleJsiExample.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-BingleJsiExample.debug.xcconfig"; path = "Target Support Files/Pods-BingleJsiExample/Pods-BingleJsiExample.debug.xcconfig"; sourceTree = "<group>"; };
 		5709B34CF0A7D63546082F79 /* Pods-BingleJsiExample.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-BingleJsiExample.release.xcconfig"; path = "Target Support Files/Pods-BingleJsiExample/Pods-BingleJsiExample.release.xcconfig"; sourceTree = "<group>"; };
 		5DCACB8F33CDC322A6C60F78 /* libPods-BingleJsiExample.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-BingleJsiExample.a"; sourceTree = BUILT_PRODUCTS_DIR; };
+		654FC8F3D92162DDC378A579 /* libPods-BingleJsiExample-BingleJsiBridgeTests.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-BingleJsiExample-BingleJsiBridgeTests.a"; sourceTree = BUILT_PRODUCTS_DIR; };
+		67D3FB56F3EACCEB8D5D3F90 /* BingleJsiBridgeTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = BingleJsiBridgeTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		761780EC2CA45674006654EE /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppDelegate.swift; path = BingleJsiExample/AppDelegate.swift; sourceTree = "<group>"; };
 		81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = LaunchScreen.storyboard; path = BingleJsiExample/LaunchScreen.storyboard; sourceTree = "<group>"; };
+		B836AF3314845558AD98FB80 /* BingleJsiBridgeTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = BingleJsiBridgeTests.swift; sourceTree = "<group>"; };
+		C61F6014CEDB00CC3E9D12DC /* MockBingleJsiApi.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MockBingleJsiApi.swift; sourceTree = "<group>"; };
+		DA92B9C5DB389B8CD915D82B /* Pods-BingleJsiExample-BingleJsiBridgeTests.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-BingleJsiExample-BingleJsiBridgeTests.release.xcconfig"; path = "Target Support Files/Pods-BingleJsiExample-BingleJsiBridgeTests/Pods-BingleJsiExample-BingleJsiBridgeTests.release.xcconfig"; sourceTree = "<group>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
 
@@ -33,6 +44,15 @@
 			buildActionMask = 2147483647;
 			files = (
 				0C80B921A6F3F58F76C31292 /* libPods-BingleJsiExample.a in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A14CD7D0E44173D14766C70D /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				E2E018157C83CD901B04C4F8 /* Foundation.framework in Frameworks */,
+				536FF9BEE756907A78D2E430 /* libPods-BingleJsiExample-BingleJsiBridgeTests.a in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -56,6 +76,8 @@
 			children = (
 				ED297162215061F000B7C4FE /* JavaScriptCore.framework */,
 				5DCACB8F33CDC322A6C60F78 /* libPods-BingleJsiExample.a */,
+				84553568908CB3AC06B12A81 /* iOS */,
+				654FC8F3D92162DDC378A579 /* libPods-BingleJsiExample-BingleJsiBridgeTests.a */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
@@ -75,6 +97,7 @@
 				83CBBA001A601CBA00E9B192 /* Products */,
 				2D16E6871FA4F8E400B85C8A /* Frameworks */,
 				BBD78D7AC51CEA395F1C20DB /* Pods */,
+				9B48FF6647E5376F1522CDD1 /* BingleJsiBridgeTests */,
 			);
 			indentWidth = 2;
 			sourceTree = "<group>";
@@ -85,8 +108,27 @@
 			isa = PBXGroup;
 			children = (
 				13B07F961A680F5B00A75B9A /* BingleJsiExample.app */,
+				67D3FB56F3EACCEB8D5D3F90 /* BingleJsiBridgeTests.xctest */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		84553568908CB3AC06B12A81 /* iOS */ = {
+			isa = PBXGroup;
+			children = (
+				1F94EF002FCF6DE4D7F10084 /* Foundation.framework */,
+			);
+			name = iOS;
+			sourceTree = "<group>";
+		};
+		9B48FF6647E5376F1522CDD1 /* BingleJsiBridgeTests */ = {
+			isa = PBXGroup;
+			children = (
+				B836AF3314845558AD98FB80 /* BingleJsiBridgeTests.swift */,
+				C61F6014CEDB00CC3E9D12DC /* MockBingleJsiApi.swift */,
+			);
+			name = BingleJsiBridgeTests;
+			path = BingleJsiBridgeTests;
 			sourceTree = "<group>";
 		};
 		BBD78D7AC51CEA395F1C20DB /* Pods */ = {
@@ -94,6 +136,8 @@
 			children = (
 				3B4392A12AC88292D35C810B /* Pods-BingleJsiExample.debug.xcconfig */,
 				5709B34CF0A7D63546082F79 /* Pods-BingleJsiExample.release.xcconfig */,
+				DA92B9C5DB389B8CD915D82B /* Pods-BingleJsiExample-BingleJsiBridgeTests.release.xcconfig */,
+				1041627891B1066A4858F272 /* Pods-BingleJsiExample-BingleJsiBridgeTests.debug.xcconfig */,
 			);
 			path = Pods;
 			sourceTree = "<group>";
@@ -122,6 +166,26 @@
 			productReference = 13B07F961A680F5B00A75B9A /* BingleJsiExample.app */;
 			productType = "com.apple.product-type.application";
 		};
+		517983E7966DCE693584925E /* BingleJsiBridgeTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A9BEF6D5664ACCBC135C862F /* Build configuration list for PBXNativeTarget "BingleJsiBridgeTests" */;
+			buildPhases = (
+				05AAC37CDDE3AB7240C0FC6A /* [CP] Check Pods Manifest.lock */,
+				2DD39688B05766544A099AC3 /* Sources */,
+				A14CD7D0E44173D14766C70D /* Frameworks */,
+				90F03ABC7AFE7179544B8A2E /* Resources */,
+				1B3B23203502D190BA97C33D /* [CP] Embed Pods Frameworks */,
+				C33ABB3F160CF577FF0D6517 /* [CP] Copy Pods Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = BingleJsiBridgeTests;
+			productName = BingleJsiBridgeTests;
+			productReference = 67D3FB56F3EACCEB8D5D3F90 /* BingleJsiBridgeTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -149,6 +213,7 @@
 			projectRoot = "";
 			targets = (
 				13B07F861A680F5B00A75B9A /* BingleJsiExample */,
+				517983E7966DCE693584925E /* BingleJsiBridgeTests */,
 			);
 		};
 /* End PBXProject section */
@@ -161,6 +226,13 @@
 				81AB9BB82411601600AC10FF /* LaunchScreen.storyboard in Resources */,
 				13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */,
 				2B4045251725A829067C9EA1 /* PrivacyInfo.xcprivacy in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		90F03ABC7AFE7179544B8A2E /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -198,6 +270,62 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
 			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-BingleJsiExample/Pods-BingleJsiExample-frameworks.sh\"\n";
+			showEnvVarsInLog = 0;
+		};
+		05AAC37CDDE3AB7240C0FC6A /* [CP] Check Pods Manifest.lock */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"${PODS_PODFILE_DIR_PATH}/Podfile.lock",
+				"${PODS_ROOT}/Manifest.lock",
+			);
+			name = "[CP] Check Pods Manifest.lock";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(DERIVED_FILE_DIR)/Pods-BingleJsiExample-BingleJsiBridgeTests-checkManifestLockResult.txt",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "diff \"${PODS_PODFILE_DIR_PATH}/Podfile.lock\" \"${PODS_ROOT}/Manifest.lock\" > /dev/null\nif [ $? != 0 ] ; then\n    # print error to STDERR\n    echo \"error: The sandbox is not in sync with the Podfile.lock. Run 'pod install' or update your CocoaPods installation.\" >&2\n    exit 1\nfi\n# This output is used by Xcode 'outputs' to avoid re-running this script phase.\necho \"SUCCESS\" > \"${SCRIPT_OUTPUT_FILE_0}\"\n";
+			showEnvVarsInLog = 0;
+		};
+		1B3B23203502D190BA97C33D /* [CP] Embed Pods Frameworks */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+				"${PODS_ROOT}/Target Support Files/Pods-BingleJsiExample-BingleJsiBridgeTests/Pods-BingleJsiExample-BingleJsiBridgeTests-frameworks-${CONFIGURATION}-input-files.xcfilelist",
+			);
+			name = "[CP] Embed Pods Frameworks";
+			outputFileListPaths = (
+				"${PODS_ROOT}/Target Support Files/Pods-BingleJsiExample-BingleJsiBridgeTests/Pods-BingleJsiExample-BingleJsiBridgeTests-frameworks-${CONFIGURATION}-output-files.xcfilelist",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-BingleJsiExample-BingleJsiBridgeTests/Pods-BingleJsiExample-BingleJsiBridgeTests-frameworks.sh\"\n";
+			showEnvVarsInLog = 0;
+		};
+		C33ABB3F160CF577FF0D6517 /* [CP] Copy Pods Resources */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+				"${PODS_ROOT}/Target Support Files/Pods-BingleJsiExample-BingleJsiBridgeTests/Pods-BingleJsiExample-BingleJsiBridgeTests-resources-${CONFIGURATION}-input-files.xcfilelist",
+			);
+			name = "[CP] Copy Pods Resources";
+			outputFileListPaths = (
+				"${PODS_ROOT}/Target Support Files/Pods-BingleJsiExample-BingleJsiBridgeTests/Pods-BingleJsiExample-BingleJsiBridgeTests-resources-${CONFIGURATION}-output-files.xcfilelist",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-BingleJsiExample-BingleJsiBridgeTests/Pods-BingleJsiExample-BingleJsiBridgeTests-resources.sh\"\n";
 			showEnvVarsInLog = 0;
 		};
 		C38B50BA6285516D6DCD4F65 /* [CP] Check Pods Manifest.lock */ = {
@@ -247,6 +375,15 @@
 			buildActionMask = 2147483647;
 			files = (
 				761780ED2CA45674006654EE /* AppDelegate.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		2DD39688B05766544A099AC3 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				E51FDE48B7E0B742C32E829C /* BingleJsiBridgeTests.swift in Sources */,
+				EB0C23B5A8995153FB1315D9 /* MockBingleJsiApi.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -310,6 +447,24 @@
 				VERSIONING_SYSTEM = "apple-generic";
 			};
 			name = Release;
+		};
+		5151040D45445590F7A43E4C /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 1041627891B1066A4858F272 /* Pods-BingleJsiExample-BingleJsiBridgeTests.debug.xcconfig */;
+			buildSettings = {
+				BUNDLE_LOADER = "";
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGNING_ALLOWED = NO;
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.1;
+				PRODUCT_BUNDLE_IDENTIFIER = com.bingle.BingleJsiBridgeTests;
+				PRODUCT_NAME = BingleJsiBridgeTests;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "";
+			};
+			name = Debug;
 		};
 		83CBBA201A601CBA00E9B192 /* Debug */ = {
 			isa = XCBuildConfiguration;
@@ -467,6 +622,25 @@
 			};
 			name = Release;
 		};
+		F4EBC459397E65500C9C5D2F /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = DA92B9C5DB389B8CD915D82B /* Pods-BingleJsiExample-BingleJsiBridgeTests.release.xcconfig */;
+			buildSettings = {
+				BUNDLE_LOADER = "";
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGNING_ALLOWED = NO;
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.1;
+				PRODUCT_BUNDLE_IDENTIFIER = com.bingle.BingleJsiBridgeTests;
+				PRODUCT_NAME = BingleJsiBridgeTests;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -484,6 +658,15 @@
 			buildConfigurations = (
 				83CBBA201A601CBA00E9B192 /* Debug */,
 				83CBBA211A601CBA00E9B192 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A9BEF6D5664ACCBC135C862F /* Build configuration list for PBXNativeTarget "BingleJsiBridgeTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F4EBC459397E65500C9C5D2F /* Release */,
+				5151040D45445590F7A43E4C /* Debug */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

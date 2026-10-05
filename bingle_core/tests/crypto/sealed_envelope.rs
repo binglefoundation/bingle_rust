@@ -197,6 +197,25 @@ fn suite_name_derivable_from_sealed_message() {
 }
 
 #[test]
+fn unseal_reports_the_envelope_suite() {
+    // The reader learns the suite from the envelope, so it can report what protected the message
+    // (issue #292).
+    let bytes = sealed_envelope::seal(recipient_pub(), &sender_key(), SENT_TIME, TEXT).unwrap();
+
+    let opened = sealed_envelope::unseal(&recipient_key(), &bytes).expect("opens");
+
+    assert_eq!(
+        opened.suite_id,
+        SUITE_HPKE_X25519_HKDF_SHA256_CHACHA20POLY1305
+    );
+    assert_eq!(
+        SealedEnvelope::from_bytes(&bytes).expect("parses").suite_id,
+        opened.suite_id
+    );
+    assert!(suite_name(opened.suite_id).is_some());
+}
+
+#[test]
 fn canonical_signed_field_layout() {
     let sender_id = [0xAAu8; 32];
     let recipient_id = [0xBBu8; 32];

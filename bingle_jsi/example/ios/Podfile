@@ -23,6 +23,13 @@ target 'BingleJsiExample' do
     :app_path => "#{Pod::Config.instance.installation_root}/.."
   )
 
+  # Swift bridge unit tests (BingleJsiBridgeTests): a standalone test bundle that links the same pods
+  # as the app, so BingleJsiBridge.swift and the uniffi bindings are available. Run locally with
+  # bingle_jsi/scripts/run_ios_bridge_tests.sh; iOS tests do not run in CI.
+  target 'BingleJsiBridgeTests' do
+    inherit! :complete
+  end
+
   post_install do |installer|
     react_native_post_install(
       installer,

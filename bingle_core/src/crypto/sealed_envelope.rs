@@ -318,6 +318,9 @@ pub struct OpenedMessage {
     pub text: String,
     /// The retained Ed25519 signature, for later attachment to a report.
     pub signature: [u8; SIGNATURE_LEN],
+    /// The cipher suite the envelope was sealed with (see [`suite_name`]), so the reader can report
+    /// what protected the message (issue #292).
+    pub suite_id: u16,
 }
 
 /// Seals `text` for `recipient_ed25519_pub`, signing it with `sender_ed25519_key`, and returns the
@@ -382,6 +385,7 @@ pub fn unseal(
     bytes: &[u8],
 ) -> Result<OpenedMessage, EnvelopeOpenError> {
     let envelope = SealedEnvelope::from_bytes(bytes).map_err(EnvelopeOpenError::Parse)?;
+    let suite_id = envelope.suite_id;
     let inner = envelope.unseal(recipient_ed25519_key)?;
     let recipient_id = recipient_ed25519_key.verifying_key().to_bytes();
     inner.verify(&recipient_id)?;
@@ -391,6 +395,7 @@ pub fn unseal(
         message_id: inner.message_id,
         text: inner.text,
         signature: inner.signature,
+        suite_id,
     })
 }
 

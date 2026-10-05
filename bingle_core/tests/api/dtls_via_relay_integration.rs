@@ -302,6 +302,8 @@ pub fn dtls_send_via_relay_end_to_end() {
         r#type: None,
         text: "Via relay".to_string(),
         cipher_suite: None,
+        sent_time: None,
+        signature: None,
     });
     let test_msg_bytes = serde_json::to_vec(&test_msg).expect("serialize listenMsg");
 

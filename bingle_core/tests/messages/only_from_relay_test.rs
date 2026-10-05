@@ -8,7 +8,9 @@ pub fn test_only_from_relay_cases() {
         text: "hi".into(),
         app: None,
         r#type: None,
-        cipher_suite: None
+        cipher_suite: None,
+        sent_time: None,
+        signature: None
     })));
 
     // Relay messages

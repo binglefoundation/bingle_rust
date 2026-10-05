@@ -579,6 +579,51 @@ fn remove_contact_removes_without_blocking() {
 }
 
 #[test]
+fn update_message_status_by_id_and_the_deprecated_timestamp_form_both_work() {
+    // Issue #209: messages are updated by id; the timestamp form is kept for apps that have not
+    // migrated.
+    let api = init_with_local_helper();
+    api.add_message(
+        "alice".to_string(),
+        vec!["bob".to_string()],
+        1000,
+        "by id".to_string(),
+        None,
+    )
+    .expect("add");
+    api.add_message(
+        "alice".to_string(),
+        vec!["bob".to_string()],
+        2000,
+        "by timestamp".to_string(),
+        None,
+    )
+    .expect("add");
+    let by_id = api
+        .get_messages()
+        .expect("messages")
+        .into_iter()
+        .find(|m| m.text == "by id")
+        .expect("stored");
+    assert!(!by_id.id.is_empty(), "getMessages carries the id");
+
+    api.update_message_status_by_id(by_id.id.clone(), 0.5, Some("retrying".to_string()))
+        .expect("update by id");
+    api.update_message_status(2000, 0.25, None)
+        .expect("update by timestamp");
+
+    let messages = api.get_messages().expect("messages");
+    let find = |text: &str| messages.iter().find(|m| m.text == text).expect("stored");
+    assert_eq!(find("by id").progress, Some(0.5));
+    assert_eq!(find("by id").failure_reason.as_deref(), Some("retrying"));
+    assert_eq!(find("by timestamp").progress, Some(0.25));
+    assert!(
+        api.update_message_status_by_id("no-such-id".to_string(), 1.0, None)
+            .is_err()
+    );
+}
+
+#[test]
 fn add_and_get_messages() {
     let api = init_with_local_helper();
     api.add_message(
@@ -866,14 +911,17 @@ fn pending_failure_reason_is_human_readable() {
 }
 
 /// The FFI bridge must carry every stored-message field to JS, including the store-and-forward
-/// fields added in issue #204 (`sent_time`, `delivered_time`, `signature`). This test fails if a
-/// future change adds a field to the local message but forgets to map it in the bridge.
+/// fields added in issue #204 (`sent_time`, `delivered_time`, `signature`) and the delivery route
+/// added in issue #291. This test fails if a future change adds a field to the local message but
+/// forgets to map it in the bridge.
 #[test]
 fn bridge_carries_store_and_forward_fields_to_jsi() {
     use bingle_jsi::api::bingle_jsi_api_impl::local_message_to_jsi;
-    use bingle_local::api::Message as LocalMessage;
+    use bingle_jsi::api::types::DeliveryRoute;
+    use bingle_local::api::{DeliveryRoute as LocalRoute, Message as LocalMessage};
 
     let local = LocalMessage {
+        id: "0909".to_string(),
         sender_handle: "alice".to_string(),
         recipient_handles: vec!["bob".to_string()],
         timestamp: 1_700_000_050_000,
@@ -885,11 +933,13 @@ fn bridge_carries_store_and_forward_fields_to_jsi() {
         sent_time: Some(1_700_000_000_123),
         delivered_time: Some(1_700_000_050_000),
         signature: Some("AwMDAw==".to_string()),
+        delivery_route: Some(LocalRoute::StoreAndForward),
     };
 
-    let jsi = local_message_to_jsi(local);
+    let jsi = local_message_to_jsi(local.clone());
 
-    // Store-and-forward fields survive the bridge to JS.
+    // The message id (issue #209) and the store-and-forward fields survive the bridge to JS.
+    assert_eq!(jsi.id, "0909");
     assert_eq!(jsi.sent_time, Some(1_700_000_000_123));
     assert_eq!(jsi.delivered_time, Some(1_700_000_050_000));
     assert_eq!(jsi.signature, Some("AwMDAw==".to_string()));
@@ -898,6 +948,19 @@ fn bridge_carries_store_and_forward_fields_to_jsi() {
     assert_eq!(jsi.recipient_handles, vec!["bob".to_string()]);
     assert_eq!(jsi.timestamp, 1_700_000_050_000);
     assert_eq!(jsi.text, "hi from the mailbox");
+
+    // The delivery route (issue #291) survives the bridge in each of its states.
+    assert_eq!(jsi.delivery_route, Some(DeliveryRoute::StoreAndForward));
+    let direct = local_message_to_jsi(LocalMessage {
+        delivery_route: Some(LocalRoute::Direct),
+        ..local.clone()
+    });
+    assert_eq!(direct.delivery_route, Some(DeliveryRoute::Direct));
+    let pending = local_message_to_jsi(LocalMessage {
+        delivery_route: None,
+        ..local
+    });
+    assert_eq!(pending.delivery_route, None);
 }
 
 // ── store-and-forward backstop poller (issue #215) ──────────────────

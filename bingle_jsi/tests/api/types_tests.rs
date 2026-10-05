@@ -166,6 +166,7 @@ fn contact_empty_fields() {
 #[test]
 fn message_construction() {
     let msg = Message {
+        id: "m1".to_string(),
         sender_handle: "alice".to_string(),
         recipient_handles: vec!["bob".to_string(), "carol".to_string()],
         timestamp: 1700000000,
@@ -177,6 +178,7 @@ fn message_construction() {
         sent_time: None,
         delivered_time: None,
         signature: None,
+        delivery_route: None,
     };
     assert_eq!(msg.sender_handle, "alice");
     assert_eq!(msg.recipient_handles.len(), 2);
@@ -188,6 +190,7 @@ fn message_construction() {
 #[test]
 fn message_with_cipher_suite() {
     let msg = Message {
+        id: "m1".to_string(),
         sender_handle: "alice".to_string(),
         recipient_handles: vec!["bob".to_string()],
         timestamp: 1700000001,
@@ -199,6 +202,7 @@ fn message_with_cipher_suite() {
         sent_time: None,
         delivered_time: None,
         signature: None,
+        delivery_route: None,
     };
     let cs = msg.cipher_suite.expect("cipher_suite should be Some");
     assert_eq!(cs, "TLS_AES_256_GCM_SHA384");

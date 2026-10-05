@@ -106,10 +106,10 @@ fn give_up_posts_exactly_once_to_the_recipient_mailbox() {
     // Two failed status updates (as retries would drive): the post must happen exactly once.
     let fail = || Some("Recipient unreachable — will keep retrying".to_string());
     sender
-        .update_message_status(ts, 0.5, fail(), None)
+        .update_message_status(&sender.id_of_timestamp_for_tests(ts), 0.5, fail(), None)
         .expect("first failure");
     sender
-        .update_message_status(ts, 0.5, fail(), None)
+        .update_message_status(&sender.id_of_timestamp_for_tests(ts), 0.5, fail(), None)
         .expect("second failure (retry)");
 
     // The recipient's Mailbox now holds exactly one message.

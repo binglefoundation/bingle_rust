@@ -88,13 +88,24 @@ export type FailureKind =
   | 'NotReady'
   | 'Unknown';
 
+/** How a stored message travelled between the two clients (issue #291). Mirrors the Rust
+ * `DeliveryRoute`: `Direct` is a live Bingle DTLS session, `StoreAndForward` a Sidewinder Mailbox. */
+export type DeliveryRoute = 'Direct' | 'StoreAndForward';
+
 export interface Message {
+  /** Stable identifier (issue #209); pass it to `updateMessageStatusById`. A message read from a
+   * Mailbox keeps its envelope's message id; others get a fresh one. */
+  id: string;
   sender_handle: string;
   recipient_handles: string[];
+  /** @deprecated (issue #209) The time this client stored the message. Identify a message by `id`
+   * and order by send time as `getMessages` already does (`sent_time`, else `delivered_time`). */
   timestamp: number;
   text: string;
-  /** The cipher suite negotiated for the DTLS session on which this message was received.
-   * Derived by the receiving client from the connection; not transmitted on the wire. */
+  /** The cipher suite that protected the message in transit (issue #292): for a message received
+   * over a live session, the suite negotiated for that DTLS session; for one read from a Sidewinder
+   * Mailbox, the suite of its sealed envelope. Derived by the receiving client; not transmitted on
+   * the wire. */
   cipher_suite: string | null;
   /** Delivery progress (0.0 to 1.0) */
   progress: number;
@@ -103,15 +114,22 @@ export interface Message {
   /** Typed cause of the last failure (issue #99); null while pending or delivered. Derive whether
    * it is retryable with `failureKindIsRetryable`. */
   failure_kind: FailureKind | null;
-  /** Sender-stamped send time (epoch millis) from a Sidewinder store-and-forward envelope (issue
-   * #204); null for a live message delivered over the Bingle DTLS session. */
+  /** Sender-stamped send time (epoch millis), covered by `signature`: from a Sidewinder
+   * store-and-forward envelope (issue #204) or a signed live message (issue #94). Null for a message
+   * this client sent, or from a client that predates signing. */
   sent_time: number | null;
   /** Receiver's local clock (epoch millis) when the message was fetched from the Sidewinder Mailbox
    * (issue #204). Locally stamped, not on either transport; null for live messages. */
   delivered_time: number | null;
-  /** Base64 Ed25519 sender signature retained from the store-and-forward envelope, for later report
-   * attachment (issue #94); null when no signed envelope was opened. */
+  /** Base64 Ed25519 sender signature, kept for later report attachment (issue #94): from a
+   * store-and-forward envelope or a signed live message. Null for a message this client sent, or
+   * from a client that predates signing. */
   signature: string | null;
+  /** How the message was delivered (issue #291): set once a sent message completes or a received
+   * one is stored. Null while a send is pending, after it failed, and for a message stored by a
+   * release before the field existed. With several recipients it is `StoreAndForward` when any of
+   * them was reached through a Mailbox. */
+  delivery_route: DeliveryRoute | null;
 }
 
 export interface KeypairStatusResponse {
@@ -281,10 +299,19 @@ export interface BingleJsiApi {
     text: string,
     cipher_suite: string | null
   ): void;
+  /** Stored messages ordered by send time (issue #69): `sent_time` when known, else
+   * `delivered_time`, else `timestamp`; equal times keep their stored order. */
   getMessages(): Message[];
   queueMessage(recipientHandles: string[], text: string): void;
+  /** @deprecated (issue #209) Use `updateMessageStatusById`; messages are identified by `id`. */
   updateMessageStatus(
     timestamp: number,
+    progress: number,
+    failureReason: string | null
+  ): void;
+  /** Update the status of the message with this `id` (issue #209). */
+  updateMessageStatusById(
+    id: string,
     progress: number,
     failureReason: string | null
   ): void;

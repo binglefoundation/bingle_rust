@@ -414,6 +414,8 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
                 val arr = Arguments.createArray()
                 messages.forEach { m ->
                     val map = Arguments.createMap()
+                    // Stable identifier (issue #209), the key for updateMessageStatusById.
+                    map.putString("id", m.id)
                     map.putString("sender_handle", m.senderHandle)
                     val handles = Arguments.createArray()
                     m.recipientHandles.forEach { handles.pushString(it) }
@@ -425,6 +427,14 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
                     if (m.failureReason != null) map.putString("failure_reason", m.failureReason) else map.putNull("failure_reason")
                     // Typed failure cause (issue #99); without this the kind never reaches JS.
                     if (m.failureKind != null) map.putString("failure_kind", failureKindToString(m.failureKind!!)) else map.putNull("failure_kind")
+                    // How the message was delivered (issue #291); null while pending or failed.
+                    if (m.deliveryRoute != null) map.putString("delivery_route", deliveryRouteToString(m.deliveryRoute!!)) else map.putNull("delivery_route")
+                    // Store-and-forward fields (issue #204), null for a live message (issue #210).
+                    val sentTime = m.sentTime
+                    if (sentTime != null) map.putDouble("sent_time", sentTime.toDouble()) else map.putNull("sent_time")
+                    val deliveredTime = m.deliveredTime
+                    if (deliveredTime != null) map.putDouble("delivered_time", deliveredTime.toDouble()) else map.putNull("delivered_time")
+                    if (m.signature != null) map.putString("signature", m.signature) else map.putNull("signature")
                     arr.pushMap(map)
                 }
                 promise.resolve(arr)
@@ -448,6 +458,24 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
                     recipientHandles.getString(i)?.let { handles.add(it) }
                 }
                 api.queueMessage(handles, text)
+                promise.resolve(null)
+            } catch (e: Exception) {
+                promise.reject("BINGLE_ERROR", e.message, e)
+            }
+        }.start()
+    }
+
+    /** Update the status of the message with this id (issue #209). Replaces the deprecated timestamp-keyed updateMessageStatus. */
+    @ReactMethod
+    fun updateMessageStatusById(id: String, progress: Double, failureReason: String?, promise: Promise) {
+        val api = apiInstance
+        if (api == null) {
+            promise.reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.")
+            return
+        }
+        Thread {
+            try {
+                api.updateMessageStatusById(id, progress.toFloat(), failureReason)
                 promise.resolve(null)
             } catch (e: Exception) {
                 promise.reject("BINGLE_ERROR", e.message, e)
@@ -538,6 +566,46 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
         Thread {
             try {
                 api.start()
+                promise.resolve(null)
+            } catch (e: Exception) {
+                promise.reject("BINGLE_ERROR", e.message, e)
+            }
+        }.start()
+    }
+
+    /**
+     * App lifecycle: the host app calls this when it comes to the foreground. Refreshes the relay
+     * registration (issue #50) and polls the store-and-forward Mailbox, then keeps a backstop poll
+     * running while foregrounded (issue #215). Not previously bridged to JS (issue #210).
+     */
+    @ReactMethod
+    fun foregrounding(promise: Promise) {
+        val api = apiInstance
+        if (api == null) {
+            promise.resolve(null)
+            return
+        }
+        Thread {
+            try {
+                api.foregrounding()
+                promise.resolve(null)
+            } catch (e: Exception) {
+                promise.reject("BINGLE_ERROR", e.message, e)
+            }
+        }.start()
+    }
+
+    /** App lifecycle: the host app calls this when it goes to the background. Stops the backstop poll. */
+    @ReactMethod
+    fun backgrounding(promise: Promise) {
+        val api = apiInstance
+        if (api == null) {
+            promise.resolve(null)
+            return
+        }
+        Thread {
+            try {
+                api.backgrounding()
                 promise.resolve(null)
             } catch (e: Exception) {
                 promise.reject("BINGLE_ERROR", e.message, e)
@@ -693,6 +761,12 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
         FailureKind.NOT_READY -> "NotReady"
         FailureKind.UNKNOWN -> "Unknown"
     }
+}
+
+/** Serialize a [DeliveryRoute] to the string the TypeScript `DeliveryRoute` union expects (issue #291). */
+private fun deliveryRouteToString(route: DeliveryRoute): String = when (route) {
+    DeliveryRoute.DIRECT -> "Direct"
+    DeliveryRoute.STORE_AND_FORWARD -> "StoreAndForward"
 }
 
 /**

@@ -102,6 +102,7 @@ impl BingleLocalApi for DummyLocal {
         cipher_suite: Option<String>,
     ) -> Result<(), BingleError> {
         self.messages.push(Message {
+            id: format!("dummy-{}", self.messages.len()),
             sender_handle,
             recipient_handles,
             timestamp,
@@ -113,8 +114,24 @@ impl BingleLocalApi for DummyLocal {
             sent_time: None,
             delivered_time: None,
             signature: None,
+            delivery_route: None,
         });
         Ok(())
+    }
+
+    fn add_received_message(
+        &mut self,
+        sender_handle: String,
+        recipient_handles: Vec<String>,
+        timestamp: i64,
+        message: &serde_json::Value,
+    ) -> Result<(), BingleError> {
+        let text = message
+            .get("text")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string();
+        self.add_message(sender_handle, recipient_handles, timestamp, text, None)
     }
 
     fn queue_message(
@@ -124,6 +141,7 @@ impl BingleLocalApi for DummyLocal {
     ) -> Result<(), BingleError> {
         let sender_handle = self.keypair_status()?.handle.unwrap_or_default();
         self.messages.push(Message {
+            id: format!("dummy-{}", self.messages.len()),
             sender_handle,
             recipient_handles,
             timestamp: 999,
@@ -135,18 +153,19 @@ impl BingleLocalApi for DummyLocal {
             sent_time: None,
             delivered_time: None,
             signature: None,
+            delivery_route: None,
         });
         Ok(())
     }
 
     fn update_message_status(
         &mut self,
-        timestamp: i64,
+        id: &str,
         progress: f32,
         failure_reason: Option<String>,
         failure_kind: Option<SendFailureKind>,
     ) -> Result<(), BingleError> {
-        if let Some(m) = self.messages.iter_mut().find(|m| m.timestamp == timestamp) {
+        if let Some(m) = self.messages.iter_mut().find(|m| m.id == id) {
             m.progress = Some(progress);
             m.failure_reason = failure_reason;
             m.failure_kind = failure_kind;

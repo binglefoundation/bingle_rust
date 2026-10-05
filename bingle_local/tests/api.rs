@@ -13,6 +13,18 @@ mod local_impl_messages;
 #[path = "api/message_carry_fields.rs"]
 mod message_carry_fields;
 
+#[path = "api/delivery_route.rs"]
+mod delivery_route;
+
+#[path = "api/cipher_suite.rs"]
+mod cipher_suite;
+
+#[path = "api/message_order.rs"]
+mod message_order;
+
+#[path = "api/message_id.rs"]
+mod message_id;
+
 #[path = "api/local_impl_keypair_status.rs"]
 mod local_impl_keypair_status;
 #[path = "api/local_impl_persistence.rs"]

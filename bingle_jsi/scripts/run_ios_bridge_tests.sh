@@ -4,11 +4,17 @@
 # These tests exercise BingleJsiBridge.swift against a mock BingleJsiApiProtocol
 # implementation. No network, no passphrase, no real Bingle engine required.
 #
+# Local only: iOS tests do not run in CI.
+#
 # Prerequisites:
-#   - macOS with Xcode 15+ installed
-#   - iOS 18.6 simulator runtime available (xcrun simctl list runtimes)
-#   - CocoaPods pods already installed in bingle_jsi/example/ios/
+#   - macOS with Xcode installed and an iPhone simulator available (xcrun simctl list devices)
+#   - The simulator framework and Swift bindings built for the current Rust code:
+#       BINGLE_IOS_SIM_ONLY=1 bash bingle_jsi/scripts/build_ios.sh
+#   - CocoaPods pods installed in bingle_jsi/example/ios/
 #     (run `pod install` there if Pods/ is missing or Podfile.lock has changed)
+#
+# The simulator is chosen by UDID: BINGLE_IOS_TEST_DEVICE if set, else an already booted iPhone,
+# else the first available iPhone.
 #
 # Usage:
 #   ./bingle_jsi/scripts/run_ios_bridge_tests.sh          # from project root
@@ -21,8 +27,21 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 IOS_DIR="$PROJECT_ROOT/bingle_jsi/example/ios"
 WORKSPACE="$IOS_DIR/BingleJsiExample.xcworkspace"
 SCHEME="BingleJsiBridgeTests"
-DESTINATION="platform=iOS Simulator,name=iPhone 16,OS=18.6"
 LOG_FILE="$PROJECT_ROOT/tmp/ios_bridge_tests.log"
+
+# Pick a simulator: an explicit UDID, else a booted iPhone, else the first available iPhone.
+DEVICE_ID="${BINGLE_IOS_TEST_DEVICE:-}"
+if [ -z "$DEVICE_ID" ]; then
+    DEVICE_ID=$(xcrun simctl list devices available | grep -E '^ +iPhone.*\(Booted\)' | head -1 | sed -E 's/.*\(([A-F0-9-]{36})\).*/\1/')
+fi
+if [ -z "$DEVICE_ID" ]; then
+    DEVICE_ID=$(xcrun simctl list devices available | grep -E '^ +iPhone' | head -1 | sed -E 's/.*\(([A-F0-9-]{36})\).*/\1/')
+fi
+if [ -z "$DEVICE_ID" ]; then
+    echo "No iPhone simulator available (see: xcrun simctl list devices available)" >&2
+    exit 1
+fi
+DESTINATION="platform=iOS Simulator,id=$DEVICE_ID"
 
 mkdir -p "$PROJECT_ROOT/tmp"
 
@@ -33,17 +52,13 @@ echo "Destination: $DESTINATION"
 echo "Log        : $LOG_FILE"
 echo ""
 
-# Ensure the iPhone 16 iOS 18.6 simulator is booted before running tests.
-# xcodebuild can boot it automatically, but pre-booting avoids install timeouts.
-DEVICE_ID=$(xcrun simctl list devices available | awk '/-- iOS 18/{found=1} found && /iPhone 16 \(/{print; exit}' | sed 's/.*(\([A-F0-9-]*\)).*/\1/')
-if [ -n "$DEVICE_ID" ]; then
-    if xcrun simctl list devices | python3 -c "import sys; exit(0 if any('$DEVICE_ID' in l and 'Booted' in l for l in sys.stdin))" 2>/dev/null; then
-        echo "Simulator already booted ($DEVICE_ID)"
-    else
-        echo "Booting simulator $DEVICE_ID..."
-        xcrun simctl boot "$DEVICE_ID" 2>/dev/null || true
-        sleep 3
-    fi
+# Boot the simulator first: xcodebuild can boot it, but pre-booting avoids install timeouts.
+if xcrun simctl list devices | grep "$DEVICE_ID" | grep -q Booted; then
+    echo "Simulator already booted ($DEVICE_ID)"
+else
+    echo "Booting simulator $DEVICE_ID..."
+    xcrun simctl boot "$DEVICE_ID" 2>/dev/null || true
+    sleep 3
 fi
 
 echo ""

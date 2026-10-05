@@ -1,7 +1,9 @@
 //! Tests for carrying `sent_time` / `delivered` / `signature` onto the local message (issue #204).
 
 use base64::{Engine as _, engine::general_purpose};
-use bingle_core::crypto::sealed_envelope::OpenedMessage;
+use bingle_core::crypto::sealed_envelope::{
+    OpenedMessage, SUITE_HPKE_X25519_HKDF_SHA256_CHACHA20POLY1305,
+};
 use bingle_local::api::Message;
 
 fn sample_opened() -> OpenedMessage {
@@ -11,6 +13,7 @@ fn sample_opened() -> OpenedMessage {
         message_id: [0x09u8; 16],
         text: "hello from the mailbox".to_string(),
         signature: [0x03u8; 64],
+        suite_id: SUITE_HPKE_X25519_HKDF_SHA256_CHACHA20POLY1305,
     }
 }
 
@@ -79,4 +82,50 @@ fn none_carry_fields_are_omitted_and_round_trip() {
     assert!(carried_json.contains("signature"));
     let back: Message = serde_json::from_str(&carried_json).expect("round-trip");
     assert_eq!(back, carried);
+}
+
+#[test]
+fn a_received_live_message_keeps_the_senders_signature_and_sent_time() {
+    use bingle_local::api::{BingleApiLocalImpl, BingleLocalApi, DeliveryRoute, LocalApiConfig};
+    // The engine's on_message JSON for a signed live text message (issue #94).
+    let received = serde_json::json!({
+        "text": "hello live",
+        "cipher_suite": "TLS_AES_256_GCM_SHA384",
+        "sent_time": 1_700_000_000_456i64,
+        "signature": "AwMDAw==",
+    });
+    let mut api = BingleApiLocalImpl::new(LocalApiConfig::default());
+
+    api.add_received_message("alice".into(), vec!["me".into()], 9, &received)
+        .expect("store");
+
+    let stored = &api.get_messages().expect("messages")[0];
+    assert_eq!(stored.text, "hello live");
+    assert_eq!(
+        stored.cipher_suite.as_deref(),
+        Some("TLS_AES_256_GCM_SHA384")
+    );
+    assert_eq!(stored.sent_time, Some(1_700_000_000_456));
+    assert_eq!(stored.signature.as_deref(), Some("AwMDAw=="));
+    assert_eq!(stored.delivered_time, None);
+    assert_eq!(stored.delivery_route, Some(DeliveryRoute::Direct));
+}
+
+#[test]
+fn a_received_message_from_an_older_client_has_no_signature() {
+    use bingle_local::api::{BingleApiLocalImpl, BingleLocalApi, LocalApiConfig};
+    let mut api = BingleApiLocalImpl::new(LocalApiConfig::default());
+
+    api.add_received_message(
+        "alice".into(),
+        vec!["me".into()],
+        9,
+        &serde_json::json!({ "text": "unsigned" }),
+    )
+    .expect("store");
+
+    let stored = &api.get_messages().expect("messages")[0];
+    assert_eq!(stored.text, "unsigned");
+    assert_eq!(stored.sent_time, None);
+    assert_eq!(stored.signature, None);
 }

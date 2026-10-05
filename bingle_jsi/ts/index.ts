@@ -11,6 +11,7 @@ import { NativeModules, Platform } from "react-native";
 import type {
   BingleJsiConfig,
   BingleJsiApi,
+  DeliveryRoute,
   FailureKind,
   MessagingSettings,
 } from "./NativeBingleJsi";
@@ -25,6 +26,7 @@ export type {
   HandleLookupPartialResult,
   Message,
   FailureKind,
+  DeliveryRoute,
   KeypairStatusResponse,
   NatTypeResponse,
   MessagingSettings,
@@ -173,8 +175,11 @@ export const BingleJsi = BingleJsiNative as {
   ): Promise<void>;
   getMessages(): Promise<
     {
+      // Stable identifier (issue #209); pass it to `updateMessageStatusById`.
+      id: string;
       sender_handle: string;
       recipient_handles: string[];
+      /** @deprecated (issue #209) Identify a message by `id`; order by send time as getMessages does. */
       timestamp: number;
       text: string;
       cipher_suite: string | null;
@@ -187,10 +192,15 @@ export const BingleJsi = BingleJsiNative as {
       sent_time?: number | null;
       delivered_time?: number | null;
       signature?: string | null;
+      // How the message was delivered (issue #291); null while pending or failed.
+      delivery_route?: DeliveryRoute | null;
     }[]
   >;
   queueMessage(recipientHandles: string[], text: string): Promise<void>;
+  /** @deprecated (issue #209) Use `updateMessageStatusById`; messages are identified by `id`. */
   updateMessageStatus(timestamp: number, progress: number, failureReason: string | null): Promise<void>;
+  /** Update the status of the message with this `id` (issue #209). */
+  updateMessageStatusById(id: string, progress: number, failureReason: string | null): Promise<void>;
   keypairStatus(): Promise<{
     status: string;
     id: string | null;
@@ -224,4 +234,9 @@ export const BingleJsi = BingleJsiNative as {
   start(): Promise<void>;
   stop(): Promise<void>;
   isStarted(): Promise<boolean>;
+  // App lifecycle (call from the host app's AppState listener). foregrounding refreshes the relay
+  // registration and polls the store-and-forward Mailbox, keeping a backstop poll running while
+  // foregrounded; backgrounding stops that poll (issues #50, #215).
+  foregrounding(): Promise<void>;
+  backgrounding(): Promise<void>;
 };

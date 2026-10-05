@@ -34,10 +34,15 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 use std::time::Duration;
 
+use algo_ops::AlgoOps;
+use base64::{Engine as _, engine::general_purpose};
 use bingle_core::api::bingle_api::{BingleApi, OnMessageHandler};
 use bingle_core::api::bingle_api_impl::BingleApiImpl;
+use bingle_core::crypto::sealed_envelope::{InnerPayload, SealedEnvelope};
 use bingle_core::engine::BingleAccessUnsafeForTests;
+use bingle_local::api::{Mailbox, MailboxConfig};
 use bingle_test::localnet::{provision, relay_test_util, setup_localnet, test_util};
+use ed25519_dalek::SigningKey;
 
 // Sender account the app imports (funded + pre-registered so start() sees it as registered, exactly
 // like the testnet `BINGLE_E2E_HANDLE`/`BINGLE_E2E_PASSPHRASE` sender).
@@ -140,9 +145,53 @@ fn start_sidewinder(callers: &[&str], api_host: &str) -> Option<String> {
     Some(format!("{api_host}:{SIDEWINDER_API_PORT}"))
 }
 
+/// A message starting with this asks the echo peer to reply through the sender's Mailbox instead of
+/// live (issue #210), so an e2e suite can read a store-and-forward message on the device.
+const MAILBOX_ECHO_PREFIX: &str = "mailbox-echo ";
+
+/// What the echo peer needs to post a store-and-forward reply: its account and the Mailbox node.
+struct MailboxReplier {
+    echo_ops: AlgoOps,
+    echo_private_key: [u8; 32],
+    mailbox: MailboxConfig,
+}
+
+impl MailboxReplier {
+    /// Seal `text` to `recipient` (an account address), post it to their Mailbox, and return the
+    /// sealed `sent_time` and base64 signature, which the device must read back unchanged.
+    fn post(&self, recipient: &str, text: &str) -> Result<(i64, String), String> {
+        let recipient_pub = algo_ops::address_to_byte_key(recipient).map_err(|e| e.to_string())?;
+        let sent_time = bingle_core::util::time::now_millis();
+        // Build the signed payload here so its signature is known. Ed25519 is deterministic and the
+        // message id is not signed, so this is the signature the device recovers on opening.
+        let mut message_id = [0u8; 16];
+        message_id[..8].copy_from_slice(&sent_time.to_be_bytes());
+        let inner = InnerPayload::new_signed(
+            &SigningKey::from_bytes(&self.echo_private_key),
+            &recipient_pub,
+            sent_time,
+            message_id,
+            text.to_string(),
+        );
+        let sealed = SealedEnvelope::seal(recipient_pub, &inner)
+            .map_err(|e| e.to_string())?
+            .to_bytes();
+        let mut mailbox =
+            Mailbox::new(self.echo_ops.clone(), self.mailbox.clone()).map_err(|e| e.to_string())?;
+        mailbox
+            .post(recipient, &sealed)
+            .map_err(|e| e.to_string())?;
+        Ok((sent_time, general_purpose::STANDARD.encode(inner.signature)))
+    }
+}
+
 /// Install an OnMessage handler that echoes `Echo: <text>` back to the sender, mirroring
 /// `bingle_cli run --echo` and the CLI localnet e2e's in-process peer.
-fn install_echo_handler(api: &Arc<BingleApiImpl>) {
+///
+/// With a Mailbox available, a message `mailbox-echo <text>` is instead answered through the
+/// sender's Mailbox with `<text>`, followed by a live `Mailboxed sent_time=<ms> signature=<b64>`
+/// giving the values the device should read back (issue #210).
+fn install_echo_handler(api: &Arc<BingleApiImpl>, replier: Option<Arc<MailboxReplier>>) {
     let echo_api = api.clone();
     let handler: Arc<OnMessageHandler> = Arc::new(move |sender, sender_handle, message| {
         let text = message
@@ -150,6 +199,27 @@ fn install_echo_handler(api: &Arc<BingleApiImpl>) {
             .and_then(|v| v.as_str())
             .unwrap_or_default()
             .to_string();
+        if let (Some(body), Some(replier)) = (text.strip_prefix(MAILBOX_ECHO_PREFIX), &replier) {
+            tracing::info!("[echo peer] from {sender} ({sender_handle}): Mailbox reply {body:?}");
+            // A Mailbox post waits for the transaction to finalise; keep it off the receive path.
+            let (echo_api, replier, body) = (echo_api.clone(), replier.clone(), body.to_string());
+            std::thread::spawn(move || {
+                let reply = match replier.post(&sender, &body) {
+                    Ok((sent_time, signature)) => {
+                        format!("Mailboxed sent_time={sent_time} signature={signature}")
+                    }
+                    Err(e) => {
+                        tracing::warn!("[echo peer] Mailbox reply to {sender} failed: {e}");
+                        format!("Mailbox reply failed: {e}")
+                    }
+                };
+                let live = serde_json::json!({ "text": reply });
+                if let Err(e) = echo_api.send_message_to_id(&sender, live, None) {
+                    tracing::warn!("[echo peer] send back to {sender} failed: {e:?}");
+                }
+            });
+            return;
+        }
         tracing::info!("[echo peer] from {sender} ({sender_handle}): {text:?}; echoing back");
         let reply = serde_json::json!({ "text": format!("Echo: {}", text) });
         if let Err(e) = echo_api.send_message_to_id(&sender, reply, None) {
@@ -287,7 +357,6 @@ fn main() {
         app_id,
         cfg.clone(),
     );
-    install_echo_handler(&echo);
     if !test_util::wait_for_registered(&echo, Duration::from_secs(180)) {
         eprintln!("Error: echo peer did not reach Registered state within 180s");
         std::process::exit(1);
@@ -330,6 +399,17 @@ fn main() {
         &[SENDER_ADDRESS, ECHO_ADDRESS, OFFLINE_ADDRESS],
         &sidewinder_host,
     );
+    // The echo peer answers `mailbox-echo` messages through the Mailbox when one is running.
+    let replier = sidewinder_url.as_ref().map(|url| {
+        Arc::new(MailboxReplier {
+            echo_ops: test_util::ops_from_mnemonic(ECHO_ADDRESS, ECHO_PASSPHRASE, cfg.clone()),
+            echo_private_key: AlgoOps::seed_from_passphrase(ECHO_PASSPHRASE)
+                .expect("echo private key"),
+            mailbox: MailboxConfig::new(url.clone(), SIDEWINDER_TOKEN),
+        })
+    });
+    install_echo_handler(&echo, replier);
+
     let sidewinder_env = match &sidewinder_url {
         Some(url) => format!(
             "export BINGLE_E2E_STORE_FORWARD=1\n\

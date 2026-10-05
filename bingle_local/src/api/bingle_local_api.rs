@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 use bingle_core::api::bingle_api::{BingleError, SendFailureKind};
-use bingle_core::crypto::sealed_envelope::OpenedMessage;
+use bingle_core::crypto::sealed_envelope::{OpenedMessage, suite_name};
 
 /// Enum describing how a contact was added to the local store.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -28,24 +28,69 @@ pub struct Contact {
     pub fields: HashMap<String, String>,
 }
 
+/// How a stored message travelled between the two clients (issue #291).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DeliveryRoute {
+    /// Over a live Bingle DTLS session between the two clients.
+    Direct,
+    /// Through a Sidewinder Mailbox: posted there by the sender and read by the recipient later.
+    StoreAndForward,
+}
+
+/// A fresh message id (issue #209): the hex of 16 random bytes, the same form as a Mailbox
+/// envelope's `message_id`.
+pub fn new_message_id() -> String {
+    let mut bytes = [0u8; 16];
+    // getrandom draws from the OS CSPRNG; on the astronomically unlikely failure fall back to a
+    // time-derived value rather than fail to store the message.
+    if getrandom::getrandom(&mut bytes).is_err() {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        bytes.copy_from_slice(&now.to_le_bytes());
+    }
+    hex_id(&bytes)
+}
+
+/// The id of a message stored before message ids existed (issue #209). Its `timestamp` was its
+/// unique key then, so the id is derived from it and stays the same every time the state is loaded.
+pub fn legacy_message_id(timestamp: i64) -> String {
+    format!("legacy-{timestamp}")
+}
+
+/// Lower-case hex of a message id's bytes.
+fn hex_id(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
 /// Message record stored locally.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Message {
+    /// The message's stable identifier (issue #209), the key for
+    /// [`update_message_status`](BingleLocalApi::update_message_status) and the senders' retry
+    /// state. A message read from a Mailbox keeps its envelope's `message_id` (in hex); one created
+    /// locally gets a fresh [`new_message_id`]. A message stored before ids existed is given
+    /// [`legacy_message_id`] on load. `serde(default)` so older message files still load.
+    #[serde(default)]
+    pub id: String,
     /// Handle of the account that sent the message.
     pub sender_handle: String,
     /// Handles of the recipients the message was addressed to.
     pub recipient_handles: Vec<String>,
-    /// Arrival time (epoch milliseconds) recorded by this client when it stored the message.
+    /// The time (epoch milliseconds) this client stored the message: its queue time for a message it
+    /// sent, its arrival time for one it received.
     ///
-    /// To be superseded by [`sent_time`](Message::sent_time) and
-    /// [`delivered_time`](Message::delivered_time); it stays the ordering key until the sent-time
-    /// UX lands (issue #69), so it is not yet marked `#[deprecated]` (the workspace gate denies
-    /// deprecation warnings, and `select_sendable_message` still reads it).
+    /// Neither the ordering key (use [`order_time`](Message::order_time), issue #69) nor the
+    /// identity key (use [`id`](Message::id), issue #209); kept as the time the message was stored,
+    /// which `order_time` falls back to. Marked deprecated on the TypeScript `Message`.
     pub timestamp: i64,
     /// The message body.
     pub text: String,
-    /// The cipher suite negotiated for the DTLS session on which this message was received.
-    /// Derived by the receiving client from the connection; not transmitted on the wire.
+    /// The cipher suite that protected the message in transit (issue #292): for a message received
+    /// over a live session, the suite negotiated for that DTLS session; for one read from a
+    /// Sidewinder Mailbox, the suite of its sealed envelope. Derived by the receiving client; not
+    /// transmitted on the wire.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cipher_suite: Option<String>,
     /// Delivery progress from 0.0 to 1.0, where 1.0 means completed, sent, or permanently failed.
@@ -59,10 +104,11 @@ pub struct Message {
     /// this field existed still load.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub failure_kind: Option<SendFailureKind>,
-    /// Sender-stamped send time (epoch milliseconds), carried inside the Sidewinder store-and-forward
-    /// envelope when the message was opened from one (issue #204). `None` for a live message
-    /// delivered over the Bingle DTLS session (that path carries no sender-stamped time). Consumed by
-    /// sent-time ordering (issue #69). `serde(default)` so older message files still load.
+    /// Sender-stamped send time (epoch milliseconds), covered by the sender's
+    /// [`signature`](Message::signature): carried inside the Sidewinder store-and-forward envelope
+    /// (issue #204), or on a live message from a sender that signs (issue #94). `None` for a
+    /// message sent by this client, or from a client that predates signing. Consumed by sent-time
+    /// ordering (issue #69). `serde(default)` so older message files still load.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sent_time: Option<i64>,
     /// Receiver's local clock (epoch milliseconds) at the moment the message was fetched and opened
@@ -72,21 +118,41 @@ pub struct Message {
     /// files still load.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub delivered_time: Option<i64>,
-    /// Base64-encoded Ed25519 sender signature retained from the store-and-forward envelope, for
-    /// later attachment to a content report (issue #94). `None` when no signed envelope was opened.
+    /// Base64-encoded Ed25519 sender signature over
+    /// `canonical_signed_message(sender, recipient, sent_time, text)`, kept for later attachment to
+    /// a content report (issue #94): from the store-and-forward envelope, or from a live message.
+    /// `None` for a message sent by this client, or from a client that predates signing.
     /// `serde(default)` so older message files still load.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub signature: Option<String>,
+    /// How the message was delivered (issue #291). Set once a sent message completes or a received
+    /// one is stored; `None` while a send is pending or after it failed. A message has one route:
+    /// with several recipients it is [`DeliveryRoute::StoreAndForward`] when any of them was reached
+    /// through a Mailbox. `serde(default)` so older message files still load (as `None`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub delivery_route: Option<DeliveryRoute>,
 }
 
 impl Message {
+    /// The time to order this message by (issue #69): the sender's [`sent_time`](Message::sent_time)
+    /// when known, else the [`delivered_time`](Message::delivered_time) a Mailbox read stamped, else
+    /// [`timestamp`](Message::timestamp). For a message this client sent, `timestamp` is its queue
+    /// time, which is also the time it was signed with (issue #94).
+    pub fn order_time(&self) -> i64 {
+        self.sent_time
+            .or(self.delivered_time)
+            .unwrap_or(self.timestamp)
+    }
+
     /// Builds a received message record from an opened store-and-forward envelope (issue #204).
     ///
     /// Carries the sender-stamped [`sent_time`](Message::sent_time) and the retained
     /// [`signature`](Message::signature) (base64-encoded) from the envelope, and records
     /// [`delivered_time`](Message::delivered_time) — the receiver's clock at fetch, which is not on
     /// either transport, so the caller passes it in. The arrival `timestamp` is set to
-    /// `delivered_time`, and `progress` to `1.0` (a received message is complete).
+    /// `delivered_time`, `progress` to `1.0` (a received message is complete), and
+    /// [`delivery_route`](Message::delivery_route) to [`DeliveryRoute::StoreAndForward`], and
+    /// [`cipher_suite`](Message::cipher_suite) to the name of the envelope's suite (issue #292).
     ///
     /// `sender_handle` and `recipient_handles` are resolved by the caller: the envelope carries the
     /// sender's Ed25519 identity, and mapping that to a registered handle is a chain lookup outside
@@ -99,17 +165,20 @@ impl Message {
         delivered_time: i64,
     ) -> Message {
         Message {
+            id: hex_id(&opened.message_id),
             sender_handle,
             recipient_handles,
             timestamp: delivered_time,
             text: opened.text.clone(),
-            cipher_suite: None,
+            // The Mailbox counterpart of the DTLS suite the engine injects into a live message.
+            cipher_suite: suite_name(opened.suite_id).map(str::to_string),
             progress: Some(1.0),
             failure_reason: None,
             failure_kind: None,
             sent_time: Some(opened.sent_time),
             delivered_time: Some(delivered_time),
             signature: Some(general_purpose::STANDARD.encode(opened.signature)),
+            delivery_route: Some(DeliveryRoute::StoreAndForward),
         }
     }
 }
@@ -225,7 +294,8 @@ pub trait BingleLocalApi: Send + Sync {
     /// Get the list of unblocked contacts.
     fn get_contacts(&self) -> Result<Vec<Contact>, BingleError>;
 
-    /// Add a message to the local store.
+    /// Add a message received over a live session to the local store. It is recorded complete,
+    /// with [`delivery_route`](Message::delivery_route) set to [`DeliveryRoute::Direct`].
     fn add_message(
         &mut self,
         sender_handle: String,
@@ -235,6 +305,20 @@ pub trait BingleLocalApi: Send + Sync {
         cipher_suite: Option<String>,
     ) -> Result<(), BingleError>;
 
+    /// Add a message received over a live session, taken from the engine's `message` JSON (the
+    /// `on_message` payload). Like [`add_message`](Self::add_message), it is recorded complete and
+    /// [`DeliveryRoute::Direct`]; in addition it keeps the sender's
+    /// [`sent_time`](Message::sent_time) and [`signature`](Message::signature) when the message
+    /// carries them (issue #94), along with its `cipher_suite`. A message from a client that
+    /// predates signing is stored without them.
+    fn add_received_message(
+        &mut self,
+        sender_handle: String,
+        recipient_handles: Vec<String>,
+        timestamp: i64,
+        message: &serde_json::Value,
+    ) -> Result<(), BingleError>;
+
     /// Queue a message to be sent by the background processor.
     fn queue_message(
         &mut self,
@@ -242,12 +326,13 @@ pub trait BingleLocalApi: Send + Sync {
         text: String,
     ) -> Result<(), BingleError>;
 
-    /// Update the status of a message. `failure_kind` carries the typed cause (issue #99) alongside
+    /// Update the status of the message with this [`id`](Message::id). `failure_kind` carries the typed cause (issue #99) alongside
     /// the human-readable `failure_reason`; pass `None` for both on success or when no typed cause
-    /// is available.
+    /// is available. Also keeps [`delivery_route`](Message::delivery_route) in step: set when the
+    /// message completes without a failure, `None` while it is pending or failed.
     fn update_message_status(
         &mut self,
-        timestamp: i64,
+        id: &str,
         progress: f32,
         failure_reason: Option<String>,
         failure_kind: Option<SendFailureKind>,
@@ -256,7 +341,8 @@ pub trait BingleLocalApi: Send + Sync {
     /// Get all messages that are pending (progress < 1.0).
     fn get_pending_messages(&self) -> Result<Vec<Message>, BingleError>;
 
-    /// Get the list of stored messages.
+    /// Get the stored messages, in [`order_time`](Message::order_time) order (by send time, issue
+    /// #69). Messages with equal times keep the order they were stored in.
     fn get_messages(&self) -> Result<Vec<Message>, BingleError>;
 
     /// Drain this user's Sidewinder Mailbox, decrypting and storing each held store-and-forward

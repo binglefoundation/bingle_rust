@@ -12,7 +12,7 @@ use bingle_local::api::pending_sender::{
     LocalOutboundStore, MessageDelivery, NotSentReason, PendingSender, PendingSenderOptions,
     SendOutcome, SendReport, ShutdownEntry,
 };
-use bingle_local::api::{BingleApiLocalImpl, LocalApiConfig, MailboxConfig};
+use bingle_local::api::{BingleApiLocalImpl, DeliveryRoute, LocalApiConfig, MailboxConfig};
 use serde_json::Value as JsonValue;
 
 const REPORT_TIMEOUT: Duration = Duration::from_secs(5);
@@ -32,6 +32,7 @@ enum Scripted {
 struct MockDelivery {
     scripts: Mutex<HashMap<String, VecDeque<Scripted>>>,
     calls: Mutex<Vec<String>>,
+    payloads: Mutex<Vec<JsonValue>>,
 }
 
 impl MockDelivery {
@@ -39,6 +40,7 @@ impl MockDelivery {
         Arc::new(Self {
             scripts: Mutex::new(HashMap::new()),
             calls: Mutex::new(Vec::new()),
+            payloads: Mutex::new(Vec::new()),
         })
     }
 
@@ -52,19 +54,24 @@ impl MockDelivery {
     fn calls(&self) -> Vec<String> {
         self.calls.lock().expect("calls").clone()
     }
+
+    fn payloads(&self) -> Vec<JsonValue> {
+        self.payloads.lock().expect("payloads").clone()
+    }
 }
 
 impl MessageDelivery for MockDelivery {
     fn deliver(
         &self,
         recipient: &str,
-        _message: JsonValue,
+        message: JsonValue,
         _progress: Option<Arc<ProgressCallback>>,
     ) -> Result<bool, BingleError> {
         self.calls
             .lock()
             .expect("calls")
             .push(recipient.to_string());
+        self.payloads.lock().expect("payloads").push(message);
         let next = self
             .scripts
             .lock()
@@ -113,7 +120,7 @@ fn queue(local: &BingleApiLocalImpl, timestamp: i64, recipients: &[&str], text: 
         )
         .expect("add");
     local
-        .update_message_status_shared(timestamp, 0.0, None, None)
+        .update_message_status_shared(&local.id_of_timestamp_for_tests(timestamp), 0.0, None, None)
         .expect("pending");
     timestamp
 }
@@ -125,6 +132,15 @@ fn progress_of(local: &BingleApiLocalImpl, timestamp: i64) -> Option<f32> {
         .into_iter()
         .find(|m| m.timestamp == timestamp)
         .and_then(|m| m.progress)
+}
+
+fn route_of(local: &BingleApiLocalImpl, timestamp: i64) -> Option<DeliveryRoute> {
+    local
+        .get_messages()
+        .expect("messages")
+        .into_iter()
+        .find(|m| m.timestamp == timestamp)
+        .and_then(|m| m.delivery_route)
 }
 
 fn fast_options() -> PendingSenderOptions {
@@ -167,12 +183,30 @@ fn delivers_a_pending_message_when_woken() {
     sender.wake();
 
     let report = rx.recv_timeout(REPORT_TIMEOUT).expect("report");
-    assert_eq!(report.timestamp, ts);
+    assert_eq!(report.id, local.id_of_timestamp_for_tests(ts));
     assert_eq!(report.outcome, SendOutcome::Delivered);
     assert_eq!(report.recipients, vec!["bob".to_string()]);
     assert!(!report.previously_failed);
     assert_eq!(progress_of(&local, ts), Some(1.0));
+    assert_eq!(route_of(&local, ts), Some(DeliveryRoute::Direct));
     assert!(local.get_pending_messages().expect("pending").is_empty());
+}
+
+#[test]
+fn the_queued_timestamp_is_sent_as_the_sent_time() {
+    // The engine signs over this sent_time (issue #94), so it must be the queued timestamp that a
+    // Mailbox fallback also seals.
+    let local = local_store(LocalApiConfig::default());
+    let ts = queue(&local, 1_700_000_000_123, &["bob"], "hi");
+    let delivery = MockDelivery::new();
+    let (sender, rx) = start(&local, delivery.clone(), fast_options(), ready());
+    sender.wake();
+
+    rx.recv_timeout(REPORT_TIMEOUT).expect("report");
+    let payloads = delivery.payloads();
+    assert_eq!(payloads.len(), 1);
+    assert_eq!(payloads[0]["text"], "hi");
+    assert_eq!(payloads[0]["sent_time"], ts);
 }
 
 #[test]
@@ -210,6 +244,7 @@ fn permanent_failure_is_terminal() {
         "{report:?}"
     );
     assert_eq!(progress_of(&local, ts), Some(1.0));
+    assert_eq!(route_of(&local, ts), None, "a failed send has no route");
     assert!(local.get_pending_messages().expect("pending").is_empty());
 }
 
@@ -314,13 +349,13 @@ fn a_panicking_send_does_not_kill_the_worker() {
     let (_sender, rx) = start(&local, delivery, fast_options(), ready());
 
     let first = rx.recv_timeout(REPORT_TIMEOUT).expect("first report");
-    assert_eq!(first.timestamp, 1);
+    assert_eq!(first.id, local.id_of_timestamp_for_tests(1));
     assert!(
         matches!(first.outcome, SendOutcome::Retrying(_)),
         "{first:?}"
     );
     let second = rx.recv_timeout(REPORT_TIMEOUT).expect("second report");
-    assert_eq!(second.timestamp, 2);
+    assert_eq!(second.id, local.id_of_timestamp_for_tests(2));
     assert_eq!(second.outcome, SendOutcome::Delivered);
 }
 
@@ -334,9 +369,9 @@ fn a_failing_recipient_does_not_starve_newer_messages() {
     let (_sender, rx) = start(&local, delivery, fast_options(), ready());
 
     let first = rx.recv_timeout(REPORT_TIMEOUT).expect("first");
-    assert_eq!(first.timestamp, 1);
+    assert_eq!(first.id, local.id_of_timestamp_for_tests(1));
     let second = rx.recv_timeout(REPORT_TIMEOUT).expect("second");
-    assert_eq!(second.timestamp, 2);
+    assert_eq!(second.id, local.id_of_timestamp_for_tests(2));
     assert_eq!(second.outcome, SendOutcome::Delivered);
 }
 
@@ -346,7 +381,7 @@ fn previously_failed_is_reported_on_a_later_success() {
     let ts = queue(&local, 1, &["bob"], "hi");
     local
         .update_message_status_shared(
-            ts,
+            &local.id_of_timestamp_for_tests(ts),
             0.0,
             Some("Recipient unreachable".to_string()),
             Some(SendFailureKind::PeerUnreachable),
@@ -368,7 +403,7 @@ fn a_handed_off_failure_is_reported_forwarded() {
         ..LocalApiConfig::default()
     });
     let ts = queue(&local, 1, &["bob"], "hi");
-    local.mark_forwarded_for_tests(ts, "bob");
+    local.mark_forwarded_for_tests(&local.id_of_timestamp_for_tests(ts), "bob");
     let delivery = MockDelivery::new();
     delivery.script("bob", vec![Scripted::Transient]);
     let (_sender, rx) = start(&local, delivery, fast_options(), ready());
@@ -379,6 +414,7 @@ fn a_handed_off_failure_is_reported_forwarded() {
         "{report:?}"
     );
     assert!(local.get_pending_messages().expect("pending").is_empty());
+    assert_eq!(route_of(&local, ts), Some(DeliveryRoute::StoreAndForward));
 }
 
 #[test]
@@ -475,7 +511,7 @@ fn with_the_send_gate_on_an_offline_recipient_gets_no_direct_attempt() {
     queue(&local, 2, &["bob"], "second");
     sender.wake();
     let second = rx.recv_timeout(REPORT_TIMEOUT).expect("second report");
-    assert_eq!(second.timestamp, 2);
+    assert_eq!(second.id, local.id_of_timestamp_for_tests(2));
     assert!(
         matches!(second.outcome, SendOutcome::Retrying(_)),
         "{second:?}"
@@ -498,10 +534,10 @@ fn with_the_send_gate_on_an_offline_recipient_is_forwarded_to_their_mailbox() {
 
     // Pre-mark the second message posted (test seam), so the forward completes without a node.
     queue(&local, 2, &["bob"], "second");
-    local.mark_forwarded_for_tests(2, "bob");
+    local.mark_forwarded_for_tests(&local.id_of_timestamp_for_tests(2), "bob");
     sender.wake();
     let second = rx.recv_timeout(REPORT_TIMEOUT).expect("second report");
-    assert_eq!(second.timestamp, 2);
+    assert_eq!(second.id, local.id_of_timestamp_for_tests(2));
     assert!(
         matches!(second.outcome, SendOutcome::Forwarded(_)),
         "{second:?}"
@@ -543,7 +579,7 @@ fn peer_seen_ends_the_offline_window() {
     queue(&local, 2, &["bob"], "second");
     sender.wake();
     let second = rx.recv_timeout(REPORT_TIMEOUT).expect("second report");
-    assert_eq!(second.timestamp, 2);
+    assert_eq!(second.id, local.id_of_timestamp_for_tests(2));
     assert_eq!(second.outcome, SendOutcome::Delivered);
     assert_eq!(delivery.calls().len(), 2);
 }
@@ -572,9 +608,9 @@ fn the_offline_window_lapses_and_direct_is_tried_again() {
 
 // ── Shutdown flush (issue #282) ───────────────────────────────────────────────────────────────
 
-fn entry(timestamp: i64, recipient: &str) -> ShutdownEntry {
+fn entry(local: &BingleApiLocalImpl, timestamp: i64, recipient: &str) -> ShutdownEntry {
     ShutdownEntry {
-        timestamp,
+        id: local.id_of_timestamp_for_tests(timestamp),
         recipients: vec![recipient.to_string()],
     }
 }
@@ -585,7 +621,7 @@ fn shutdown_forwards_pending_messages_to_the_mailbox() {
     // completes without a node.
     let local = gated_store(Some(MailboxConfig::new("http://localhost:9", "tok")));
     queue(&local, 1, &["bob"], "queued just before exit");
-    local.mark_forwarded_for_tests(1, "bob");
+    local.mark_forwarded_for_tests(&local.id_of_timestamp_for_tests(1), "bob");
     let delivery = MockDelivery::new();
     let (sender, _rx) = start(
         &local,
@@ -595,7 +631,7 @@ fn shutdown_forwards_pending_messages_to_the_mailbox() {
     );
 
     let report = sender.shutdown(Duration::from_secs(5));
-    assert_eq!(report.forwarded, vec![entry(1, "bob")]);
+    assert_eq!(report.forwarded, vec![entry(&local, 1, "bob")]);
     assert!(report.not_sent.is_empty());
     assert!(
         delivery.calls().is_empty(),
@@ -620,7 +656,7 @@ fn shutdown_reports_a_failed_post_and_leaves_the_message_pending() {
     assert!(report.forwarded.is_empty());
     assert_eq!(
         report.not_sent,
-        vec![(entry(1, "bob"), NotSentReason::PostFailed)]
+        vec![(entry(&local, 1, "bob"), NotSentReason::PostFailed)]
     );
     assert_eq!(local.get_pending_messages().expect("pending").len(), 1);
 }
@@ -640,7 +676,7 @@ fn shutdown_with_the_send_gate_off_leaves_messages_pending() {
     assert!(report.forwarded.is_empty());
     assert_eq!(
         report.not_sent,
-        vec![(entry(1, "bob"), NotSentReason::StoreForwardOff)]
+        vec![(entry(&local, 1, "bob"), NotSentReason::StoreForwardOff)]
     );
     assert_eq!(local.get_pending_messages().expect("pending").len(), 1);
 }
@@ -663,7 +699,7 @@ fn shutdown_waits_for_an_in_flight_send_before_flushing() {
     }
     assert_eq!(delivery.calls().len(), 1, "first send in flight");
     queue(&local, 2, &["carol"], "never attempted");
-    local.mark_forwarded_for_tests(2, "carol");
+    local.mark_forwarded_for_tests(&local.id_of_timestamp_for_tests(2), "carol");
 
     let releaser = std::thread::spawn(move || {
         std::thread::sleep(Duration::from_millis(200));
@@ -677,7 +713,7 @@ fn shutdown_waits_for_an_in_flight_send_before_flushing() {
         Some(1.0),
         "the in-flight send completed"
     );
-    assert_eq!(report.forwarded, vec![entry(2, "carol")]);
+    assert_eq!(report.forwarded, vec![entry(&local, 2, "carol")]);
     assert!(report.not_sent.is_empty());
     assert_eq!(
         delivery.calls().len(),
@@ -709,7 +745,7 @@ fn shutdown_leaves_a_send_still_in_flight_at_the_deadline_alone() {
     );
     assert_eq!(
         report.not_sent,
-        vec![(entry(1, "bob"), NotSentReason::InFlight)]
+        vec![(entry(&local, 1, "bob"), NotSentReason::InFlight)]
     );
     release.store(true, Ordering::SeqCst);
 }
@@ -718,7 +754,7 @@ fn shutdown_leaves_a_send_still_in_flight_at_the_deadline_alone() {
 fn shutdown_stops_handing_off_at_the_deadline() {
     let local = gated_store(Some(MailboxConfig::new("http://localhost:9", "tok")));
     queue(&local, 1, &["bob"], "queued");
-    local.mark_forwarded_for_tests(1, "bob");
+    local.mark_forwarded_for_tests(&local.id_of_timestamp_for_tests(1), "bob");
     let (sender, _rx) = start(
         &local,
         MockDelivery::new(),
@@ -729,7 +765,7 @@ fn shutdown_stops_handing_off_at_the_deadline() {
     let report = sender.shutdown(Duration::ZERO);
     assert_eq!(
         report.not_sent,
-        vec![(entry(1, "bob"), NotSentReason::DeadlineReached)]
+        vec![(entry(&local, 1, "bob"), NotSentReason::DeadlineReached)]
     );
     assert_eq!(local.get_pending_messages().expect("pending").len(), 1);
 }

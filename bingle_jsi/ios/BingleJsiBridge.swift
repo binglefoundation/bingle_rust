@@ -490,6 +490,8 @@ class BingleJsiBridge: RCTEventEmitter {
                 let messages = try api.getMessages()
                 resolve(messages.map {
                     [
+                        // Stable identifier (issue #209), the key for updateMessageStatusById.
+                        "id": $0.id,
                         "sender_handle": $0.senderHandle,
                         "recipient_handles": $0.recipientHandles,
                         "timestamp": $0.timestamp,
@@ -501,6 +503,13 @@ class BingleJsiBridge: RCTEventEmitter {
                         // Rust/uniffi but never reaches JS. Serialized as the FailureKind string
                         // (null while pending/delivered); derive retryability with failureKindIsRetryable.
                         "failure_kind": $0.failureKind.map { self.failureKindToString($0) } as Any,
+                        // How the message was delivered (issue #291), as the DeliveryRoute string
+                        // (null while pending or failed).
+                        "delivery_route": $0.deliveryRoute.map { BingleJsiBridge.deliveryRouteToString($0) } as Any,
+                        // Store-and-forward fields (issue #204), null for a live message (issue #210).
+                        "sent_time": $0.sentTime as Any,
+                        "delivered_time": $0.deliveredTime as Any,
+                        "signature": $0.signature as Any,
                     ] as [String: Any]
                 })
             } catch {
@@ -534,6 +543,24 @@ class BingleJsiBridge: RCTEventEmitter {
         DispatchQueue.global(qos: .userInitiated).async {
             do {
                 try api.updateMessageStatus(timestamp: Int64(timestamp), progress: Float(progress), failureReason: failureReason)
+                resolve(nil)
+            } catch {
+                reject("BINGLE_ERROR", "\(error)", error)
+            }
+        }
+    }
+
+    /// Update the status of the message with this id (issue #209). Replaces the deprecated
+    /// timestamp-keyed updateMessageStatus.
+    @objc
+    func updateMessageStatusById(_ id: String, progress: Double, failureReason: String?, resolver resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {
+        guard let api = apiInstance else {
+            reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.", nil)
+            return
+        }
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                try api.updateMessageStatusById(id: id, progress: Float(progress), failureReason: failureReason)
                 resolve(nil)
             } catch {
                 reject("BINGLE_ERROR", "\(error)", error)
@@ -647,6 +674,35 @@ class BingleJsiBridge: RCTEventEmitter {
             } catch {
                 reject("BINGLE_ERROR", "\(error)", error)
             }
+        }
+    }
+
+    /// App lifecycle: the host app calls this when it comes to the foreground. Refreshes the relay
+    /// registration (issue #50) and polls the store-and-forward Mailbox, then keeps a backstop poll
+    /// running while foregrounded (issue #215). Not previously bridged to JS (issue #210).
+    @objc
+    func foregrounding(_ resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {
+        guard let api = apiInstance else {
+            resolve(nil)
+            return
+        }
+        DispatchQueue.global(qos: .userInitiated).async {
+            api.foregrounding()
+            resolve(nil)
+        }
+    }
+
+    /// App lifecycle: the host app calls this when it goes to the background. Stops the backstop
+    /// Mailbox poll (issue #215).
+    @objc
+    func backgrounding(_ resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {
+        guard let api = apiInstance else {
+            resolve(nil)
+            return
+        }
+        DispatchQueue.global(qos: .userInitiated).async {
+            api.backgrounding()
+            resolve(nil)
         }
     }
 
@@ -776,6 +832,15 @@ class BingleJsiBridge: RCTEventEmitter {
         case .protocolError: return "ProtocolError"
         case .notReady: return "NotReady"
         case .unknown: return "Unknown"
+        }
+    }
+
+    /// Serialize a `DeliveryRoute` to the string the TypeScript `DeliveryRoute` union expects
+    /// (issue #291).
+    private static func deliveryRouteToString(_ route: DeliveryRoute) -> String {
+        switch route {
+        case .direct: return "Direct"
+        case .storeAndForward: return "StoreAndForward"
         }
     }
 }

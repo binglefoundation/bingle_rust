@@ -32,15 +32,20 @@ fn test_add_message_and_update_status() {
     assert_eq!(msgs[0].progress, Some(1.0));
 
     // Update status
-    api.update_message_status(timestamp, 0.5, Some("Sending...".to_string()), None)
-        .expect("update_message_status");
+    api.update_message_status(
+        &api.id_of_timestamp_for_tests(timestamp),
+        0.5,
+        Some("Sending...".to_string()),
+        None,
+    )
+    .expect("update_message_status");
 
     let msgs = api.get_messages().expect("get_messages");
     assert_eq!(msgs[0].progress, Some(0.5));
     assert_eq!(msgs[0].failure_reason, Some("Sending...".to_string()));
 
     // Update to success
-    api.update_message_status(timestamp, 1.0, None, None)
+    api.update_message_status(&api.id_of_timestamp_for_tests(timestamp), 1.0, None, None)
         .expect("update_message_status");
 
     let msgs = api.get_messages().expect("get_messages");
@@ -63,7 +68,7 @@ fn test_update_status_persists_typed_failure_kind() {
     .expect("add_message");
 
     api.update_message_status(
-        timestamp,
+        &api.id_of_timestamp_for_tests(timestamp),
         0.0,
         Some("Recipient is not connected right now".to_string()),
         Some(SendFailureKind::RecipientNotAdvertised),
@@ -77,7 +82,7 @@ fn test_update_status_persists_typed_failure_kind() {
     );
 
     // A successful terminal update clears both the reason and the typed kind.
-    api.update_message_status(timestamp, 1.0, None, None)
+    api.update_message_status(&api.id_of_timestamp_for_tests(timestamp), 1.0, None, None)
         .expect("update_message_status");
     let msgs = api.get_messages().expect("get_messages");
     assert_eq!(msgs[0].failure_kind, None);
@@ -97,7 +102,8 @@ fn test_get_pending_messages() {
     assert_eq!(api.get_pending_messages().unwrap().len(), 0);
 
     // Force one to be pending
-    api.update_message_status(1, 0.2, None, None).unwrap();
+    api.update_message_status(&api.id_of_timestamp_for_tests(1), 0.2, None, None)
+        .unwrap();
 
     let pending = api.get_pending_messages().unwrap();
     assert_eq!(pending.len(), 1);

@@ -338,7 +338,7 @@ final class BingleJsiBridgeTests: XCTestCase {
 
     func testKeypairStatus_resolvesWithExpectedFields() {
         mockApi.keypairStatusResult = KeypairStatusResponse(
-            status: .active, id: "test-id", handle: "test-handle", requiredAlgo: nil
+            status: .active, id: "test-id", handle: "test-handle", requiredAlgo: nil, stale: false
         )
         let expectation = self.expectation(description: "resolve called")
         var resolvedDict: [String: Any]?
@@ -573,22 +573,34 @@ final class BingleJsiBridgeTests: XCTestCase {
     func testGetMessages_includesCipherSuite() {
         mockApi.messagesResult = [
             Message(
+                id: "msg-1",
                 senderHandle: "alice",
                 recipientHandles: ["bob"],
                 timestamp: 1700000000,
                 text: "hi",
                 cipherSuite: "TLS_AES_256_GCM_SHA384",
                 progress: 1.0,
-                failureReason: nil
+                failureReason: nil,
+                failureKind: nil,
+                sentTime: nil,
+                deliveredTime: nil,
+                signature: nil,
+                deliveryRoute: nil
             ),
             Message(
+                id: "msg-2",
                 senderHandle: "carol",
                 recipientHandles: ["bob"],
                 timestamp: 1700000001,
                 text: "hey",
                 cipherSuite: nil,
                 progress: 1.0,
-                failureReason: nil
+                failureReason: nil,
+                failureKind: nil,
+                sentTime: nil,
+                deliveredTime: nil,
+                signature: nil,
+                deliveryRoute: nil
             ),
         ]
         let expectation = self.expectation(description: "resolve called")
@@ -615,5 +627,97 @@ final class BingleJsiBridgeTests: XCTestCase {
         XCTAssertEqual(second?["sender_handle"] as? String, "carol")
         // nil cipher_suite is mapped to NSNull/nil, not a String
         XCTAssertNil(second?["cipher_suite"] as? String)
+    }
+
+    // MARK: - Message id (issue #209)
+
+    func testUpdateMessageStatusById_reachesTheApi() {
+        let done = expectation(description: "updateMessageStatusById resolves")
+        bridge.updateMessageStatusById("abc123", progress: 0.5, failureReason: "retrying",
+                                       resolver: { _ in done.fulfill() },
+                                       rejecter: { _, _, _ in XCTFail("unexpected rejection") })
+        waitForExpectations(timeout: 2.0)
+        XCTAssertEqual(mockApi.updateMessageStatusByIdCalls.count, 1)
+        XCTAssertEqual(mockApi.updateMessageStatusByIdCalls.first?.id, "abc123")
+        XCTAssertEqual(mockApi.updateMessageStatusByIdCalls.first?.progress, 0.5)
+        XCTAssertEqual(mockApi.updateMessageStatusByIdCalls.first?.failureReason, "retrying")
+    }
+
+    // MARK: - Lifecycle
+
+    func testForegroundingAndBackgrounding_reachTheApi() {
+        let fg = expectation(description: "foregrounding resolves")
+        bridge.foregrounding({ _ in fg.fulfill() }, rejecter: { _, _, _ in XCTFail("unexpected rejection") })
+        waitForExpectations(timeout: 2.0)
+        XCTAssertEqual(mockApi.foregroundingCalls, 1)
+
+        let bg = expectation(description: "backgrounding resolves")
+        bridge.backgrounding({ _ in bg.fulfill() }, rejecter: { _, _, _ in XCTFail("unexpected rejection") })
+        waitForExpectations(timeout: 2.0)
+        XCTAssertEqual(mockApi.backgroundingCalls, 1)
+    }
+
+    func testGetMessages_includesStoreAndForwardFields() {
+        mockApi.messagesResult = [
+            Message(
+                id: "msg-3",
+                senderHandle: "alice",
+                recipientHandles: ["bob"],
+                timestamp: 1700000050000,
+                text: "from the mailbox",
+                cipherSuite: "HPKE[DHKEM(X25519, HKDF-SHA256), HKDF-SHA256, ChaCha20-Poly1305]",
+                progress: 1.0,
+                failureReason: nil,
+                failureKind: nil,
+                sentTime: 1700000000123,
+                deliveredTime: 1700000050000,
+                signature: "AwMDAw==",
+                deliveryRoute: .storeAndForward
+            ),
+            Message(
+                id: "msg-4",
+                senderHandle: "carol",
+                recipientHandles: ["bob"],
+                timestamp: 1700000060000,
+                text: "live",
+                cipherSuite: nil,
+                progress: 1.0,
+                failureReason: nil,
+                failureKind: nil,
+                sentTime: nil,
+                deliveredTime: nil,
+                signature: nil,
+                deliveryRoute: .direct
+            ),
+        ]
+        let expectation = self.expectation(description: "resolve called")
+        var resolvedArray: [[String: Any]]?
+
+        bridge.getMessages(
+            { value in
+                resolvedArray = value as? [[String: Any]]
+                expectation.fulfill()
+            },
+            rejecter: { _, _, _ in XCTFail("unexpected rejection") }
+        )
+
+        waitForExpectations(timeout: 2.0)
+        XCTAssertEqual(resolvedArray?.count, 2)
+
+        // A Mailbox message carries the store-and-forward fields through to JS (issue #210).
+        let mailbox = resolvedArray?[0]
+        XCTAssertNotNil(mailbox?["id"] as? String, "every message carries its id (issue #209)")
+        XCTAssertEqual(mailbox?["sent_time"] as? Int64, 1700000000123)
+        XCTAssertEqual(mailbox?["delivered_time"] as? Int64, 1700000050000)
+        XCTAssertEqual(mailbox?["signature"] as? String, "AwMDAw==")
+        XCTAssertEqual(mailbox?["delivery_route"] as? String, "StoreAndForward")
+
+        // A live message has the keys, with no values.
+        let live = resolvedArray?[1]
+        for key in ["sent_time", "delivered_time", "signature"] {
+            XCTAssertNotNil(live?.index(forKey: key), "\(key) should be present")
+            XCTAssertNil(live?[key] as? Int64)
+            XCTAssertNil(live?[key] as? String)
+        }
     }
 }

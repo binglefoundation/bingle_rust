@@ -167,15 +167,32 @@ pub fn failure_kind_is_retryable(kind: FailureKind) -> bool {
     kind.to_core().is_retryable()
 }
 
+/// How a stored message travelled between the two clients (issue #291). Mirrors `bingle_local`'s
+/// `DeliveryRoute`.
+#[derive(uniffi::Enum, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeliveryRoute {
+    /// Over a live Bingle DTLS session between the two clients.
+    Direct,
+    /// Through a Sidewinder Mailbox: posted there by the sender and read by the recipient later.
+    StoreAndForward,
+}
+
 /// A stored message.
 #[derive(uniffi::Record, Debug, Clone)]
 pub struct Message {
+    /// The message's stable identifier (issue #209): pass it to `update_message_status_by_id`. A
+    /// message read from a Mailbox keeps its envelope's message id; others get a fresh one.
+    pub id: String,
     pub sender_handle: String,
     pub recipient_handles: Vec<String>,
+    /// The time this client stored the message. Deprecated as a key (issue #209): identify a
+    /// message by `id`, and order by send time as `getMessages` does.
     pub timestamp: i64,
     pub text: String,
-    /// The cipher suite negotiated for the DTLS session on which this message was received.
-    /// Derived by the receiving client from the connection; not transmitted on the wire.
+    /// The cipher suite that protected the message in transit (issue #292): for a message received
+    /// over a live session, the suite negotiated for that DTLS session; for one read from a
+    /// Sidewinder Mailbox, the suite of its sealed envelope. Derived by the receiving client; not
+    /// transmitted on the wire.
     pub cipher_suite: Option<String>,
     pub progress: Option<f32>,
     /// Human-readable failure reason for display. Unchanged from before issue #99; kept so existing
@@ -184,15 +201,22 @@ pub struct Message {
     /// Typed failure cause (issue #99) for reliable processing. `None` while pending or delivered.
     /// Derive whether it is retryable with [`failure_kind_is_retryable`].
     pub failure_kind: Option<FailureKind>,
-    /// Sender-stamped send time (epoch milliseconds) from a Sidewinder store-and-forward envelope
-    /// (issue #204). `None` for a live message delivered over the Bingle DTLS session.
+    /// Sender-stamped send time (epoch milliseconds), covered by `signature`: from a Sidewinder
+    /// store-and-forward envelope (issue #204) or a signed live message (issue #94). `None` for a
+    /// message this client sent, or from a client that predates signing.
     pub sent_time: Option<i64>,
     /// Receiver's local clock (epoch milliseconds) when the message was fetched from the Sidewinder
     /// Mailbox (issue #204). Locally stamped; not on either transport. `None` for live messages.
     pub delivered_time: Option<i64>,
-    /// Base64-encoded Ed25519 sender signature retained from the store-and-forward envelope, for
-    /// later attachment to a content report (issue #94). `None` when no signed envelope was opened.
+    /// Base64-encoded Ed25519 sender signature, kept for later attachment to a content report
+    /// (issue #94): from a store-and-forward envelope or a signed live message. `None` for a
+    /// message this client sent, or from a client that predates signing.
     pub signature: Option<String>,
+    /// How the message was delivered (issue #291): set once a sent message completes or a received
+    /// one is stored. `None` while a send is pending, after it failed, and for a message stored by
+    /// a release before the field existed. With several recipients it is `StoreAndForward` when any
+    /// of them was reached through a Mailbox.
+    pub delivery_route: Option<DeliveryRoute>,
 }
 
 /// Keypair funding / registration status.

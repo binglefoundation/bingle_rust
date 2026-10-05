@@ -86,6 +86,15 @@ impl BingleLocalApi for ControllableLocalApi {
         Ok(())
     }
 
+    fn add_received_message(
+        &mut self,
+        _sender_handle: String,
+        _recipient_handles: Vec<String>,
+        _timestamp: i64,
+        _message: &serde_json::Value,
+    ) -> Result<(), BingleError> {
+        Ok(())
+    }
     fn queue_message(
         &mut self,
         _recipient_handles: Vec<String>,
@@ -95,7 +104,7 @@ impl BingleLocalApi for ControllableLocalApi {
     }
     fn update_message_status(
         &mut self,
-        _timestamp: i64,
+        _id: &str,
         _progress: f32,
         _failure_reason: Option<String>,
         _failure_kind: Option<SendFailureKind>,

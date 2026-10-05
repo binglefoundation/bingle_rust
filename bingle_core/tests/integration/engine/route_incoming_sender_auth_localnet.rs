@@ -445,6 +445,8 @@ fn fire_plain_text(handler: &HandleMessage, router: Arc<Router>, issuer: &str) {
         app: None,
         r#type: None,
         cipher_suite: None,
+        sent_time: None,
+        signature: None,
     };
     let bytes = serde_json::to_vec(&Message::PlainText(msg)).expect("serialize PlainTextMessage");
     Router::with_current_router(router, || {

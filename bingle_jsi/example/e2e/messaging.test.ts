@@ -18,6 +18,7 @@ import {describe, it, beforeAll, afterAll} from '@jest/globals';
 import assert from 'assert';
 import {
   call,
+  liveSignatureVerifies,
   textOf,
   sleep,
   resolveNetworkInputs,
@@ -133,7 +134,37 @@ describeOrSkip(`bingle_jsi messaging (${backend})`, () => {
       `delivered message should have no failure_kind, got ${sent.failure_kind}`,
     );
 
+    // Sent over the live session to an online peer, so its route is Direct (issue #291).
+    assert.strictEqual(
+      sent.delivery_route,
+      'Direct',
+      `delivered message should be Direct, got ${sent.delivery_route}`,
+    );
+
     // 2) The echo peer replies "Echo: <text>", surfaced via onMessage in the event feed.
     await waitForFeed(`Echo: ${text}`, ECHO_TIMEOUT);
+
+    // 3) The echo arrived over the live session too, so it is stored as Direct (issue #291).
+    const messages = await call({method: 'getMessages', args: []});
+    const echo = messages.find((x: any) => x.text === `Echo: ${text}`);
+    assert.ok(echo, `the echo "Echo: ${text}" should be stored`);
+    assert.strictEqual(
+      echo.delivery_route,
+      'Direct',
+      `received echo should be Direct, got ${echo.delivery_route}`,
+    );
+    // The echo arrives on the session this device dialled, which must record its suite (#292).
+    assert.ok(echo.cipher_suite, 'the received echo should report its DTLS cipher suite');
+    // The echo peer signs its live reply (issue #94): the device keeps the sender's sent time and
+    // signature, and the signature verifies over the canonical fields with the echo peer's key.
+    assert.strictEqual(typeof echo.sent_time, 'number', 'the echo should carry its sent_time');
+    assert.strictEqual(typeof echo.signature, 'string', 'the echo should carry its signature');
+    assert.strictEqual(echo.delivered_time, null, 'a live message has no Mailbox delivered_time');
+    const echoId = await call({method: 'handleLookup', args: [echoTo]});
+    const ownId = (await call({method: 'keypairStatus', args: []})).id;
+    assert.ok(
+      liveSignatureVerifies(echo, echoId, ownId),
+      "the echo's signature should verify with the echo peer's key",
+    );
   });
 });

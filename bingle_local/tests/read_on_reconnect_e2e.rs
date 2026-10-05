@@ -21,6 +21,7 @@
 //! `SIDEWINDER_NODE_URL=... SIDEWINDER_TOKEN=... SIDEWINDER_ACCOUNT_MNEMONIC="..." cargo test -p bingle_local --test read_on_reconnect_e2e -- --nocapture`
 
 use algo_ops::AlgoOps;
+use base64::{Engine as _, engine::general_purpose};
 use bingle_local::api::sidewinder::{Mailbox, MailboxConfig};
 use bingle_local::api::{BingleApiLocalImpl, BingleLocalApi, LocalApiConfig};
 
@@ -77,6 +78,11 @@ fn poll_reads_decrypts_and_drops_a_mailbox_message() {
         text,
     )
     .expect("seal");
+    // The signature the reader must recover: the one sealed inside this envelope (issue #210).
+    let expected_signature =
+        bingle_core::crypto::sealed_envelope::unseal_with_private_key(private_key, &sealed)
+            .expect("open own envelope")
+            .signature;
     poster.post(&address, &sealed).expect("post to own mailbox");
 
     // A recipient client configured to read store-and-forward messages.
@@ -103,6 +109,19 @@ fn poll_reads_decrypts_and_drops_a_mailbox_message() {
     assert!(
         read[0].delivered_time.is_some(),
         "a delivered time is stamped"
+    );
+    let stored_signature = general_purpose::STANDARD
+        .decode(
+            read[0]
+                .signature
+                .as_deref()
+                .expect("the sender signature is retained"),
+        )
+        .expect("the signature is base64");
+    assert_eq!(
+        stored_signature,
+        expected_signature.to_vec(),
+        "the retained signature is the 64-byte signature the sender sealed"
     );
     assert!(
         recipient

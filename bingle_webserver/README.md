@@ -139,6 +139,11 @@ All four failure fields are omitted for a message that is pending or delivered. 
 and `failure_retryable` are additive — existing readers of `failure_reason`/`failure_kind` are
 unaffected.
 
+Each message also carries `delivery_route` once it has been delivered: `"Direct"` for a message sent
+or received over a live session, `"StoreAndForward"` for one posted to, or read from, a Sidewinder
+Mailbox. The field is omitted while a send is pending or after it failed, and for messages stored by
+a release before it existed.
+
 ```json
 [
   {

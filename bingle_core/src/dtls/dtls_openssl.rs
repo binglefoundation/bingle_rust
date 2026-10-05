@@ -2411,6 +2411,9 @@ pub mod openssl_impl {
                             );
                         } else {
                             ps.handshake_logged = true;
+                            // Record the suite on the dialling side too, as `accept` does, so a
+                            // sender can report what protected its message (issue #292).
+                            ps.cipher_suite = Some(selected.clone());
                         }
                     }
                     tracing::info!(
