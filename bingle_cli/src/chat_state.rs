@@ -205,25 +205,24 @@ impl ChatState {
         }
     }
 
-    /// Append a message to the persistent history and return the stored [`Message`] record. The
-    /// caller persists to disk via [`save_state`](ChatState::save_state).
+    /// Append a received message (the engine's `message` JSON) to the persistent history, keeping
+    /// its cipher suite and the sender's signature and sent time (issue #94), and return the stored
+    /// [`Message`] record. The caller persists to disk via [`save_state`](ChatState::save_state).
     pub fn record_message(
         &mut self,
         sender_handle: &str,
         recipient_handles: Vec<String>,
         timestamp: i64,
-        text: &str,
-        cipher_suite: Option<String>,
+        message: &serde_json::Value,
     ) -> Result<Message, String> {
         // The store is shared via `Arc`, so the `&mut self`-declared trait mutations are reached
         // through their `&self` cores (`*_shared`); see [`ChatState::local`].
         self.local
-            .add_message_shared(
+            .add_received_message_shared(
                 sender_handle.to_string(),
                 recipient_handles,
                 timestamp,
-                text.to_string(),
-                cipher_suite,
+                message,
             )
             .map_err(|e| e.to_string())?;
         // Return the record as stored (add_message fills in progress/failure_reason), so callers

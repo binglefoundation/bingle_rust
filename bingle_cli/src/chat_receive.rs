@@ -30,7 +30,8 @@ pub fn receive_message(
     sender_handle: &str,
     message: &Value,
 ) -> Option<Message> {
-    let text = message.get("text").and_then(|v| v.as_str())?;
+    // A text message: anything without a string `text` is ignored.
+    message.get("text")?.as_str()?;
     // Only plaintext messages: an app/type field marks a protocol message (ping, etc.), not chat.
     let is_plain = message.get("app").is_none_or(|v| v.is_null())
         && message.get("type").is_none_or(|v| v.is_null());
@@ -57,14 +58,14 @@ pub fn receive_message(
     }
 
     let recipient = state.opts.handle.clone();
-    let stored =
-        match state.record_message(display_handle, vec![recipient], now_millis(), text, None) {
-            Ok(msg) => msg,
-            Err(e) => {
-                tracing::warn!("chat: could not persist incoming message: {}", e);
-                return None;
-            }
-        };
+    let stored = match state.record_message(display_handle, vec![recipient], now_millis(), message)
+    {
+        Ok(msg) => msg,
+        Err(e) => {
+            tracing::warn!("chat: could not persist incoming message: {}", e);
+            return None;
+        }
+    };
     if let Err(e) = state.save_state() {
         tracing::warn!("chat: could not save state after message: {}", e);
     }

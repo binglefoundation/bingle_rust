@@ -51,6 +51,8 @@ pub fn all_message_samples() -> Vec<(&'static str, Message)> {
                 app: None,
                 r#type: None,
                 cipher_suite: None,
+                sent_time: None,
+                signature: None,
             }),
         ),
         // Relay::Call

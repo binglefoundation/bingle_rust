@@ -109,14 +109,16 @@ export interface Message {
   /** Typed cause of the last failure (issue #99); null while pending or delivered. Derive whether
    * it is retryable with `failureKindIsRetryable`. */
   failure_kind: FailureKind | null;
-  /** Sender-stamped send time (epoch millis) from a Sidewinder store-and-forward envelope (issue
-   * #204); null for a live message delivered over the Bingle DTLS session. */
+  /** Sender-stamped send time (epoch millis), covered by `signature`: from a Sidewinder
+   * store-and-forward envelope (issue #204) or a signed live message (issue #94). Null for a message
+   * this client sent, or from a client that predates signing. */
   sent_time: number | null;
   /** Receiver's local clock (epoch millis) when the message was fetched from the Sidewinder Mailbox
    * (issue #204). Locally stamped, not on either transport; null for live messages. */
   delivered_time: number | null;
-  /** Base64 Ed25519 sender signature retained from the store-and-forward envelope, for later report
-   * attachment (issue #94); null when no signed envelope was opened. */
+  /** Base64 Ed25519 sender signature, kept for later report attachment (issue #94): from a
+   * store-and-forward envelope or a signed live message. Null for a message this client sent, or
+   * from a client that predates signing. */
   signature: string | null;
   /** How the message was delivered (issue #291): set once a sent message completes or a received
    * one is stored. Null while a send is pending, after it failed, and for a message stored by a

@@ -16,6 +16,8 @@ struct MockBingleApi {
     // Number of initial send_message_to_handle calls to fail with a transient error before
     // succeeding. 0 (default) = always succeed. Used to drive the drain-loop failure_reason path.
     pub send_fail_count: Arc<std::sync::atomic::AtomicUsize>,
+    // Every payload passed to send_message_to_handle, in order.
+    pub payloads: Mutex<Vec<serde_json::Value>>,
 }
 
 impl BingleApiInternal for MockBingleApi {
@@ -70,10 +72,13 @@ impl BingleApi for MockBingleApi {
     fn send_message_to_handle(
         &self,
         _handle: &Handle,
-        _payload: serde_json::Value,
+        payload: serde_json::Value,
         progress_callback: Option<Arc<ProgressCallback>>,
     ) -> Result<bool, BingleError> {
         use std::sync::atomic::Ordering;
+        if let Ok(mut payloads) = self.payloads.lock() {
+            payloads.push(payload);
+        }
         // Simulate an unreachable peer for the first `send_fail_count` attempts (transient), then
         // deliver. Lets a test observe the failure_reason being set and later cleared (#43).
         if self.send_fail_count.load(Ordering::SeqCst) > 0 {
@@ -151,6 +156,7 @@ fn test_handle_lookup_partial_maps_canonical_handle() {
         progress_steps: vec![],
         on_listening: Mutex::new(None),
         send_fail_count: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+        payloads: Mutex::new(Vec::new()),
     });
 
     let jsi = BingleJsiApiImpl::init_for_tests(mock_api, None);
@@ -169,13 +175,14 @@ fn test_message_queue_with_mock_progress() {
         progress_steps: vec![10, 50, 90],
         on_listening: Mutex::new(None),
         send_fail_count: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+        payloads: Mutex::new(Vec::new()),
     });
 
     let local_api: Arc<Mutex<Box<dyn BingleLocalApi>>> = Arc::new(Mutex::new(Box::new(
         BingleApiLocalImpl::new(LocalApiConfig::default()),
     )));
 
-    let jsi = BingleJsiApiImpl::init_for_tests(mock_api, Some(local_api.clone()));
+    let jsi = BingleJsiApiImpl::init_for_tests(mock_api.clone(), Some(local_api.clone()));
 
     // 1. Manually add a message and make it pending
     let timestamp = 999i64;
@@ -225,6 +232,12 @@ fn test_message_queue_with_mock_progress() {
     assert!(reached_0_5, "Message never reached 50% progress");
     assert!(reached_1_0, "Message never reached 100% progress");
 
+    // The legacy loop sends the queued timestamp as the signed send time (issue #94).
+    let payloads = mock_api.payloads.lock().unwrap().clone();
+    assert!(!payloads.is_empty(), "the message was sent");
+    assert_eq!(payloads[0]["text"], "Hello");
+    assert_eq!(payloads[0]["sent_time"], timestamp);
+
     jsi.stop().unwrap();
 }
 
@@ -239,6 +252,7 @@ fn queued_message_gains_failure_reason_then_clears_on_success() {
         progress_steps: vec![],
         on_listening: Mutex::new(None),
         send_fail_count: Arc::new(AtomicUsize::new(1)),
+        payloads: Mutex::new(Vec::new()),
     });
 
     let local_api: Arc<Mutex<Box<dyn BingleLocalApi>>> = Arc::new(Mutex::new(Box::new(
@@ -339,6 +353,7 @@ fn mock_api(progress_steps: Vec<u8>, fail_first: usize) -> Arc<MockBingleApi> {
         progress_steps,
         on_listening: Mutex::new(None),
         send_fail_count: Arc::new(std::sync::atomic::AtomicUsize::new(fail_first)),
+        payloads: Mutex::new(Vec::new()),
     })
 }
 

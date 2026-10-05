@@ -14,6 +14,7 @@ use crate::api::bingle_api::{
 };
 use crate::api::pki::generate_pki_from_ops;
 use crate::blockchain::algo_bingle::AccountsCache;
+use crate::crypto::live_signature;
 use crate::dtls::Dtls;
 use crate::engine::{BingleAccess, Engine, EngineState};
 use crate::protocol::ISSUER_SUFFIX;
@@ -474,6 +475,33 @@ impl BingleApiImpl {
 
     fn ensure_dtls(&self) {
         // No longer needed as Engine always has a DTLS instance.
+    }
+
+    /// Sign `message` for `recipient` if it is a text message (issue #94); see
+    /// [`live_signature::sign_text_message`]. Sends unsigned, with a warning, when the account key
+    /// or the recipient's key is unavailable, rather than failing the send.
+    fn sign_text_message(&self, recipient: &UserId, mut message: JsonValue) -> JsonValue {
+        let Some(signing_key) = self.engine.access(|e| e.get_signing_key()) else {
+            warn!("[BingleApiImpl::sign_text_message] no account key; sending unsigned");
+            return message;
+        };
+        let recipient_id = match algo_ops::address_to_byte_key(recipient) {
+            Ok(id) => id,
+            Err(e) => {
+                warn!(
+                    "[BingleApiImpl::sign_text_message] recipient {} has no key ({}); sending unsigned",
+                    recipient, e
+                );
+                return message;
+            }
+        };
+        live_signature::sign_text_message(
+            &mut message,
+            &signing_key,
+            &recipient_id,
+            crate::util::time::now_millis(),
+        );
+        message
     }
 
     fn send_over_dtls(
@@ -1271,6 +1299,7 @@ impl BingleApi for BingleApiImpl {
                     }
                 }
             }
+            let message = self.sign_text_message(user_id, message);
             tracing::info!(
                 "[BingleApiImpl::send_message_to_network] send_over_dtls {:?}, {}",
                 effective_nsk,

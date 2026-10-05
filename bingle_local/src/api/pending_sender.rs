@@ -631,7 +631,13 @@ fn send_one(
             );
         });
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            delivery.deliver(recipient, json!({ "text": msg.text }), Some(progress))
+            // The queued timestamp is the signed send time (issue #94), so a Mailbox fallback seals
+            // the same time.
+            delivery.deliver(
+                recipient,
+                json!({ "text": msg.text, "sent_time": msg.timestamp }),
+                Some(progress),
+            )
         }))
         .unwrap_or_else(|_| {
             tracing::error!("[PendingSender] send to {recipient} panicked");

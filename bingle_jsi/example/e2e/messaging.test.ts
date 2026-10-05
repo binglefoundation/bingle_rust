@@ -17,8 +17,8 @@
 import {describe, it, beforeAll, afterAll} from '@jest/globals';
 import assert from 'assert';
 import {
-  assertNoStoreAndForwardFields,
   call,
+  liveSignatureVerifies,
   textOf,
   sleep,
   resolveNetworkInputs,
@@ -155,7 +155,16 @@ describeOrSkip(`bingle_jsi messaging (${backend})`, () => {
     );
     // The echo arrives on the session this device dialled, which must record its suite (#292).
     assert.ok(echo.cipher_suite, 'the received echo should report its DTLS cipher suite');
-    // A live message carries none of the store-and-forward fields (issue #210).
-    assertNoStoreAndForwardFields(echo, 'the received echo');
+    // The echo peer signs its live reply (issue #94): the device keeps the sender's sent time and
+    // signature, and the signature verifies over the canonical fields with the echo peer's key.
+    assert.strictEqual(typeof echo.sent_time, 'number', 'the echo should carry its sent_time');
+    assert.strictEqual(typeof echo.signature, 'string', 'the echo should carry its signature');
+    assert.strictEqual(echo.delivered_time, null, 'a live message has no Mailbox delivered_time');
+    const echoId = await call({method: 'handleLookup', args: [echoTo]});
+    const ownId = (await call({method: 'keypairStatus', args: []})).id;
+    assert.ok(
+      liveSignatureVerifies(echo, echoId, ownId),
+      "the echo's signature should verify with the echo peer's key",
+    );
   });
 });
