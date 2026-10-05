@@ -226,11 +226,14 @@ impl ChatState {
             )
             .map_err(|e| e.to_string())?;
         // Return the record as stored (add_message fills in progress/failure_reason), so callers
-        // display exactly what was persisted rather than reconstructing it.
+        // display exactly what was persisted rather than reconstructing it. Found by its key, not
+        // position: get_messages is in send-time order (#69), so the newest arrival need not be last.
         self.local
             .get_messages()
             .map_err(|e| e.to_string())?
-            .pop()
+            .into_iter()
+            .rev()
+            .find(|m| m.timestamp == timestamp && m.sender_handle == sender_handle)
             .ok_or_else(|| "message missing after add_message".to_string())
     }
 
@@ -256,7 +259,7 @@ impl ChatState {
         Ok(())
     }
 
-    /// The stored message history, newest-appended last.
+    /// The stored message history, in send-time order (issue #69).
     pub fn messages(&self) -> Result<Vec<Message>, String> {
         self.local.get_messages().map_err(|e| e.to_string())
     }

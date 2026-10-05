@@ -581,7 +581,7 @@ The full API is defined in `src/api/bingle_jsi_api.rs`. Key methods:
 | `isBlocked(id)` | Check if contact is blocked |
 | `getContacts()` | List unblocked contacts |
 | `addMessage(sender, recipients, ts, text)` | Store a message locally |
-| `getMessages()` | List stored messages. Each has a `delivery_route`: `"Direct"` (sent or received over a live session), `"StoreAndForward"` (posted to, or read from, a Sidewinder Mailbox), or `null` while a send is pending or after it failed |
+| `getMessages()` | List stored messages, ordered by send time (`sent_time`, else `delivered_time`, else `timestamp`). Each has a `delivery_route`: `"Direct"` (sent or received over a live session), `"StoreAndForward"` (posted to, or read from, a Sidewinder Mailbox), or `null` while a send is pending or after it failed |
 | `keypairStatus()` | Check keypair funding status |
 | `save(path)` / `load(path)` | Persist/restore local state |
 | `setMessageCallback(callback)` | Register incoming message callback |

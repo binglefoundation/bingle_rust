@@ -294,6 +294,8 @@ export interface BingleJsiApi {
     text: string,
     cipher_suite: string | null
   ): void;
+  /** Stored messages ordered by send time (issue #69): `sent_time` when known, else
+   * `delivered_time`, else `timestamp`; equal times keep their stored order. */
   getMessages(): Message[];
   queueMessage(recipientHandles: string[], text: string): void;
   updateMessageStatus(

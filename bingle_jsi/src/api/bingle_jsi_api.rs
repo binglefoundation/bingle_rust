@@ -171,7 +171,8 @@ pub trait BingleJsiApi: Send + Sync {
         cipher_suite: Option<String>,
     ) -> Result<(), BingleJsiError>;
 
-    /// Get the list of stored messages.
+    /// Get the stored messages, ordered by send time (issue #69): the sender's `sent_time` when known,
+    /// else the Mailbox `delivered_time`, else `timestamp`. Equal times keep their stored order.
     fn get_messages(&self) -> Result<Vec<Message>, BingleJsiError>;
 
     /// Queue a message to be sent by the background processor.

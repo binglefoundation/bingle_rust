@@ -76,6 +76,39 @@ pub fn a_signed_message_keeps_its_signature_sent_time_and_cipher_suite() {
 
 #[test]
 #[cfg(not(target_os = "ios"))]
+pub fn returns_the_message_just_received_even_if_it_was_sent_earlier() {
+    // History is in send-time order (issue #69), so a message sent earlier than one already stored
+    // is not last; the receive path must still return the message it just stored.
+    let (mut state, _dir) = state_registered_as("alice", None);
+    receive_message(
+        &mut state,
+        "PEER_BOB",
+        "bob",
+        &json!({ "text": "newer", "sent_time": 2_000 }),
+    )
+    .expect("accepted");
+
+    let received = receive_message(
+        &mut state,
+        "PEER_CAROL",
+        "carol",
+        &json!({ "text": "older", "sent_time": 1_000 }),
+    )
+    .expect("accepted");
+
+    assert_eq!(received.text, "older");
+    assert_eq!(received.sender_handle, "carol");
+    let texts: Vec<String> = state
+        .messages()
+        .expect("messages")
+        .into_iter()
+        .map(|m| m.text)
+        .collect();
+    assert_eq!(texts, vec!["older", "newer"]);
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn unknown_sender_handle_falls_back_to_id() {
     let (mut state, _dir) = state_registered_as("alice", None);
 

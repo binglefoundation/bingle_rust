@@ -158,7 +158,7 @@ pub fn select_sendable_message(
     retry_after: &HashMap<i64, Instant>,
     now: Instant,
 ) -> Option<Message> {
-    pending.sort_by_key(|m| m.timestamp);
+    pending.sort_by_key(Message::order_time);
     pending.into_iter().find(|m| {
         retry_after
             .get(&m.timestamp)
