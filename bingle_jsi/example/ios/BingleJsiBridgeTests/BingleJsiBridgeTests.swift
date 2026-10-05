@@ -573,6 +573,7 @@ final class BingleJsiBridgeTests: XCTestCase {
     func testGetMessages_includesCipherSuite() {
         mockApi.messagesResult = [
             Message(
+                id: "msg-1",
                 senderHandle: "alice",
                 recipientHandles: ["bob"],
                 timestamp: 1700000000,
@@ -587,6 +588,7 @@ final class BingleJsiBridgeTests: XCTestCase {
                 deliveryRoute: nil
             ),
             Message(
+                id: "msg-2",
                 senderHandle: "carol",
                 recipientHandles: ["bob"],
                 timestamp: 1700000001,
@@ -627,6 +629,20 @@ final class BingleJsiBridgeTests: XCTestCase {
         XCTAssertNil(second?["cipher_suite"] as? String)
     }
 
+    // MARK: - Message id (issue #209)
+
+    func testUpdateMessageStatusById_reachesTheApi() {
+        let done = expectation(description: "updateMessageStatusById resolves")
+        bridge.updateMessageStatusById("abc123", progress: 0.5, failureReason: "retrying",
+                                       resolver: { _ in done.fulfill() },
+                                       rejecter: { _, _, _ in XCTFail("unexpected rejection") })
+        waitForExpectations(timeout: 2.0)
+        XCTAssertEqual(mockApi.updateMessageStatusByIdCalls.count, 1)
+        XCTAssertEqual(mockApi.updateMessageStatusByIdCalls.first?.id, "abc123")
+        XCTAssertEqual(mockApi.updateMessageStatusByIdCalls.first?.progress, 0.5)
+        XCTAssertEqual(mockApi.updateMessageStatusByIdCalls.first?.failureReason, "retrying")
+    }
+
     // MARK: - Lifecycle
 
     func testForegroundingAndBackgrounding_reachTheApi() {
@@ -644,6 +660,7 @@ final class BingleJsiBridgeTests: XCTestCase {
     func testGetMessages_includesStoreAndForwardFields() {
         mockApi.messagesResult = [
             Message(
+                id: "msg-3",
                 senderHandle: "alice",
                 recipientHandles: ["bob"],
                 timestamp: 1700000050000,
@@ -658,6 +675,7 @@ final class BingleJsiBridgeTests: XCTestCase {
                 deliveryRoute: .storeAndForward
             ),
             Message(
+                id: "msg-4",
                 senderHandle: "carol",
                 recipientHandles: ["bob"],
                 timestamp: 1700000060000,
@@ -688,6 +706,7 @@ final class BingleJsiBridgeTests: XCTestCase {
 
         // A Mailbox message carries the store-and-forward fields through to JS (issue #210).
         let mailbox = resolvedArray?[0]
+        XCTAssertNotNil(mailbox?["id"] as? String, "every message carries its id (issue #209)")
         XCTAssertEqual(mailbox?["sent_time"] as? Int64, 1700000000123)
         XCTAssertEqual(mailbox?["delivered_time"] as? Int64, 1700000050000)
         XCTAssertEqual(mailbox?["signature"] as? String, "AwMDAw==")

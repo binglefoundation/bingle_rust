@@ -160,6 +160,7 @@ class MockBingleJsiApi: BingleJsiApiProtocol {
     func queueMessage(recipientHandles: [String], text: String) throws {
         queueMessageCalls.append(QueueMessageCall(recipientHandles: recipientHandles, text: text))
         messagesResult.append(Message(
+            id: "queued-\(nextQueueTimestamp)",
             senderHandle: localHandle,
             recipientHandles: recipientHandles,
             timestamp: nextQueueTimestamp,
@@ -175,11 +176,18 @@ class MockBingleJsiApi: BingleJsiApiProtocol {
         ))
     }
 
+    var updateMessageStatusByIdCalls: [(id: String, progress: Float, failureReason: String?)] = []
+
+    func updateMessageStatusById(id: String, progress: Float, failureReason: String?) throws {
+        updateMessageStatusByIdCalls.append((id: id, progress: progress, failureReason: failureReason))
+    }
+
     func updateMessageStatus(timestamp: Int64, progress: Float, failureReason: String?) throws {
         updateMessageStatusCalls.append(UpdateMessageStatusCall(timestamp: timestamp, progress: progress, failureReason: failureReason))
         messagesResult = messagesResult.map { msg in
             guard msg.timestamp == timestamp else { return msg }
             return Message(
+                id: msg.id,
                 senderHandle: msg.senderHandle,
                 recipientHandles: msg.recipientHandles,
                 timestamp: msg.timestamp,

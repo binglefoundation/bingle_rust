@@ -47,18 +47,18 @@ pub struct LocalState {
     // Synchronous sender for the `/register` envelope (bingle_notify #i). Defaults to the real HTTP
     // poster; a seam so tests can observe the registration without a live gateway.
     pub(super) register_poster: RwLock<Arc<dyn RegisterPoster>>,
-    // Message timestamps we have already nudged for, so the unreachable/give-up nudge fires at most
+    // Ids of messages we have already nudged for, so the unreachable/give-up nudge fires at most
     // once per message even though update_message_status is called on every retry (bingle_notify
     // #11/#17). In-memory only: a restart may re-nudge a still-pending message, which is acceptable
     // (it only re-wakes an offline recipient so the pending retries can land).
-    pub(super) nudged_messages: Mutex<HashSet<i64>>,
-    // (message timestamp, recipient handle) pairs already posted to the recipient's Sidewinder
+    pub(super) nudged_messages: Mutex<HashSet<String>>,
+    // (message id, recipient handle) pairs already posted to the recipient's Sidewinder
     // Mailbox, so store-and-forward posts each message to each recipient at most once even though
     // update_message_status fires on every retry (store-and-forward epic #200, story #214). Keyed
     // per recipient so a multi-recipient message whose post to one recipient failed retries only the
     // failed recipient without double-posting the others. Persisted (see save/load) so a restart does
     // not re-post an already-forwarded message.
-    pub(super) forwarded_messages: Mutex<HashSet<(i64, String)>>,
+    pub(super) forwarded_messages: Mutex<HashSet<(String, String)>>,
 }
 
 impl LocalState {

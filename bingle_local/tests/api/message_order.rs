@@ -14,6 +14,7 @@ use serde_json::json;
 
 fn message(timestamp: i64, sent_time: Option<i64>, delivered_time: Option<i64>) -> Message {
     Message {
+        id: "test-id".to_string(),
         sender_handle: "alice".to_string(),
         recipient_handles: vec!["me".to_string()],
         timestamp,

@@ -182,19 +182,19 @@ pub fn should_forward_send(send_gate: bool, sidewinder_configured: bool) -> bool
     send_gate && sidewinder_configured
 }
 
-/// The recipients of a message (identified by its `timestamp`) that have not yet been posted to a
-/// Mailbox, given the set of `(timestamp, handle)` pairs already forwarded. This is the
+/// The recipients of a message (identified by its id) that have not yet been posted to a Mailbox,
+/// given the set of `(message id, handle)` pairs already forwarded. This is the
 /// per-recipient idempotency filter for post-on-delivery-fail (#214): a recipient already posted is
 /// skipped, so a retry or restart re-posts only recipients whose post has not yet succeeded. Pure,
 /// so the once-per-recipient guarantee is unit-tested without a node.
 pub fn pending_forward_recipients(
-    timestamp: i64,
+    message_id: &str,
     recipient_handles: &[String],
-    forwarded: &std::collections::HashSet<(i64, String)>,
+    forwarded: &std::collections::HashSet<(String, String)>,
 ) -> Vec<String> {
     recipient_handles
         .iter()
-        .filter(|handle| !forwarded.contains(&(timestamp, (*handle).clone())))
+        .filter(|handle| !forwarded.contains(&(message_id.to_string(), (*handle).clone())))
         .cloned()
         .collect()
 }

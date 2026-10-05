@@ -47,29 +47,44 @@ impl BingleApiLocalImpl {
         self.config().store_and_forward_receive
     }
 
-    /// Test seam: record a `(timestamp, handle)` as already posted to a Mailbox, so the
+    /// Test seam: record a `(message id, handle)` as already posted to a Mailbox, so the
     /// store-and-forward idempotency and persistence (#214) can be exercised without a live node.
     #[doc(hidden)]
-    pub fn mark_forwarded_for_tests(&self, timestamp: i64, handle: &str) {
+    pub fn mark_forwarded_for_tests(&self, message_id: &str, handle: &str) {
         if let Ok(mut g) = self.forwarded_messages.lock() {
-            g.insert((timestamp, handle.to_string()));
+            g.insert((message_id.to_string(), handle.to_string()));
         }
     }
 
-    /// Test seam: the set of `(timestamp, handle)` pairs already posted to a Mailbox.
+    /// Test seam: the id of the message stored at `timestamp`, for tests that address messages by
+    /// the timestamp they stored them with (issue #209). Panics if there is none.
     #[doc(hidden)]
-    pub fn forwarded_for_tests(&self) -> HashSet<(i64, String)> {
+    pub fn id_of_timestamp_for_tests(&self, timestamp: i64) -> String {
+        self.messages
+            .lock()
+            .ok()
+            .and_then(|g| {
+                g.iter()
+                    .find(|m| m.timestamp == timestamp)
+                    .map(|m| m.id.clone())
+            })
+            .unwrap_or_else(|| panic!("no message stored at timestamp {timestamp}"))
+    }
+
+    /// Test seam: the set of `(message id, handle)` pairs already posted to a Mailbox.
+    #[doc(hidden)]
+    pub fn forwarded_for_tests(&self) -> HashSet<(String, String)> {
         self.forwarded_messages
             .lock()
             .map(|g| g.clone())
             .unwrap_or_default()
     }
 
-    /// Whether the message at `timestamp` has been posted to at least one recipient's Mailbox, which
+    /// Whether the message with this id has been posted to at least one recipient's Mailbox, which
     /// makes its delivery route store-and-forward (issue #291).
-    pub(crate) fn any_recipient_forwarded(&self, timestamp: i64) -> bool {
+    pub(crate) fn any_recipient_forwarded(&self, message_id: &str) -> bool {
         match self.forwarded_messages.lock() {
-            Ok(guard) => guard.iter().any(|(ts, _)| *ts == timestamp),
+            Ok(guard) => guard.iter().any(|(id, _)| id == message_id),
             Err(e) => {
                 tracing::error!(
                     "[any_recipient_forwarded] Failed to lock forwarded_messages: {}",
@@ -95,18 +110,20 @@ impl BingleApiLocalImpl {
     ///
     /// Best-effort and never affects delivery: gated on the send toggle and a configured Sidewinder
     /// node, it seals the message to each recipient's identity key and `FIFO_APPEND`s it to their
-    /// Mailbox. Idempotent per recipient — a `(timestamp, handle)` already recorded in
+    /// Mailbox. Idempotent per recipient — a `(message id, handle)` already recorded in
     /// `forwarded_messages` (persisted) is skipped, so a retry or restart does not double-post, and a
     /// recipient whose post failed is retried on the next call without re-posting the others. A
     /// missing keypair, an unresolvable handle, a seal failure, or a transport error is logged and
-    /// skipped. `timestamp` is the message's send time, sealed in as the sender-stamped `sent_time`.
+    /// skipped. `sent_time` is the message's send time (its queue timestamp), sealed in as the
+    /// sender-stamped `sent_time`.
     ///
     /// Returns `true` when the message is now posted for **every** recipient (fully handed off to the
     /// sidechain), so the caller can stop retrying direct Bingle delivery; `false` while any recipient
     /// still needs a (retryable) post, or when the gate is off / the node is unconfigured.
     pub(crate) fn forward_message_to_mailbox(
         &self,
-        timestamp: i64,
+        message_id: &str,
+        sent_time: i64,
         recipient_handles: &[String],
         text: &str,
     ) -> bool {
@@ -120,7 +137,7 @@ impl BingleApiLocalImpl {
         // Recipients of this message not yet posted to a Mailbox.
         let pending: Vec<String> = match self.forwarded_messages.lock() {
             Ok(guard) => {
-                sidewinder::pending_forward_recipients(timestamp, recipient_handles, &guard)
+                sidewinder::pending_forward_recipients(message_id, recipient_handles, &guard)
             }
             Err(e) => {
                 tracing::error!(
@@ -203,7 +220,7 @@ impl BingleApiLocalImpl {
             let sealed = match bingle_core::crypto::sealed_envelope::seal_from_private_key(
                 private_key,
                 recipient_pub,
-                timestamp,
+                sent_time,
                 text,
             ) {
                 Ok(bytes) => bytes,
@@ -217,10 +234,10 @@ impl BingleApiLocalImpl {
             match mailbox.post(&address, &sealed) {
                 Ok(()) => {
                     if let Ok(mut guard) = self.forwarded_messages.lock() {
-                        guard.insert((timestamp, handle.clone()));
+                        guard.insert((message_id.to_string(), handle.clone()));
                     }
                     tracing::info!(
-                        "[forward_to_mailbox] posted message {timestamp} to '{handle}' Mailbox"
+                        "[forward_to_mailbox] posted message {message_id} to '{handle}' Mailbox"
                     );
                 }
                 Err(e) => {
@@ -235,7 +252,7 @@ impl BingleApiLocalImpl {
         match self.forwarded_messages.lock() {
             Ok(guard) => recipient_handles
                 .iter()
-                .all(|h| guard.contains(&(timestamp, h.clone()))),
+                .all(|h| guard.contains(&(message_id.to_string(), h.clone()))),
             Err(_) => false,
         }
     }

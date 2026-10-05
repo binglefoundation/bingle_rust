@@ -8,7 +8,8 @@ use crate::api::notify::{
 use crate::api::sidewinder::MailboxConfig;
 use crate::api::{
     BingleLocalApi, ChainRegistrationOps, Contact, ContactSource, DeliveryRoute, Keypair,
-    KeypairStatus, Message, MessagingSettings, REQUIRED_ALGO, run_registration,
+    KeypairStatus, Message, MessagingSettings, REQUIRED_ALGO, legacy_message_id, new_message_id,
+    run_registration,
 };
 use algo_ops::error::AlgoErrorKind;
 use algo_ops::{AlgoChainConfig, AlgoOps};
@@ -496,7 +497,8 @@ impl BingleApiLocalImpl {
         Ok(())
     }
 
-    /// `&self` core of [`BingleLocalApi::add_message`].
+    /// `&self` core of [`BingleLocalApi::add_message`]. Returns the stored message's new
+    /// [`id`](Message::id).
     pub fn add_message_shared(
         &self,
         sender_handle: String,
@@ -504,7 +506,7 @@ impl BingleApiLocalImpl {
         timestamp: i64,
         text: String,
         cipher_suite: Option<String>,
-    ) -> Result<(), BingleError> {
+    ) -> Result<String, BingleError> {
         self.store_live_message(
             sender_handle,
             recipient_handles,
@@ -516,14 +518,15 @@ impl BingleApiLocalImpl {
         )
     }
 
-    /// `&self` core of [`BingleLocalApi::add_received_message`].
+    /// `&self` core of [`BingleLocalApi::add_received_message`]. Returns the stored message's new
+    /// [`id`](Message::id).
     pub fn add_received_message_shared(
         &self,
         sender_handle: String,
         recipient_handles: Vec<String>,
         timestamp: i64,
         message: &serde_json::Value,
-    ) -> Result<(), BingleError> {
+    ) -> Result<String, BingleError> {
         let field = |key: &str| {
             message
                 .get(key)
@@ -542,7 +545,8 @@ impl BingleApiLocalImpl {
         )
     }
 
-    /// Validate and store a message that travelled over a live session, as complete and `Direct`.
+    /// Validate and store a message that travelled over a live session, as complete and `Direct`,
+    /// and return its new id.
     #[allow(clippy::too_many_arguments)]
     fn store_live_message(
         &self,
@@ -553,7 +557,7 @@ impl BingleApiLocalImpl {
         cipher_suite: Option<String>,
         sent_time: Option<i64>,
         signature: Option<String>,
-    ) -> Result<(), BingleError> {
+    ) -> Result<String, BingleError> {
         tracing::debug!(
             "[BingleLocalApi] Adding message from: {} to: {:?}",
             sender_handle,
@@ -579,7 +583,9 @@ impl BingleApiLocalImpl {
             return Err(BingleError::Other("text cannot be empty".to_string()));
         }
 
+        let id = new_message_id();
         let msg = Message {
+            id: id.clone(),
             sender_handle,
             recipient_handles,
             timestamp,
@@ -602,13 +608,13 @@ impl BingleApiLocalImpl {
             }
         };
         guard.push(msg);
-        Ok(())
+        Ok(id)
     }
 
     /// `&self` core of [`BingleLocalApi::update_message_status`].
     pub fn update_message_status_shared(
         &self,
-        timestamp: i64,
+        id: &str,
         progress: f32,
         failure_reason: Option<String>,
         failure_kind: Option<SendFailureKind>,
@@ -617,7 +623,7 @@ impl BingleApiLocalImpl {
         // pending and failed sends carry none. Worked out before taking the messages lock, so that
         // lock and the forwarded-set lock are never held together.
         let delivery_route = (progress >= 1.0 && failure_reason.is_none()).then(|| {
-            if self.any_recipient_forwarded(timestamp) {
+            if self.any_recipient_forwarded(id) {
                 DeliveryRoute::StoreAndForward
             } else {
                 DeliveryRoute::Direct
@@ -639,7 +645,7 @@ impl BingleApiLocalImpl {
         // transient "keep retrying" failure, never happens) — bingle_notify #11/#17. A successful
         // send (progress 1.0, no failure_reason) never nudges. Dedup happens below.
         let failed_recipients = {
-            if let Some(msg) = guard.iter_mut().find(|m| m.timestamp == timestamp) {
+            if let Some(msg) = guard.iter_mut().find(|m| m.id == id) {
                 msg.progress = Some(progress);
                 if failure_reason.is_some() || progress >= 1.0 {
                     msg.failure_reason = failure_reason;
@@ -650,6 +656,7 @@ impl BingleApiLocalImpl {
                 msg.delivery_route = delivery_route;
                 if msg.failure_reason.is_some() {
                     Some((
+                        msg.id.clone(),
                         msg.timestamp,
                         msg.recipient_handles.clone(),
                         msg.text.clone(),
@@ -659,19 +666,19 @@ impl BingleApiLocalImpl {
                 }
             } else {
                 return Err(BingleError::Other(format!(
-                    "Message with timestamp {} not found",
-                    timestamp
+                    "Message with id {} not found",
+                    id
                 )));
             }
         };
         // Release the messages lock before nudging: notify_giveup takes other locks (keypair /
         // algo_ops) and hands off to the poster, which must not run under the messages lock.
         drop(guard);
-        if let Some((ts, recipients, text)) = failed_recipients {
+        if let Some((id, sent_time, recipients, text)) = failed_recipients {
             // Nudge at most once per message: HashSet::insert returns true only the first time this
-            // timestamp is seen, so repeated retries of the same unreachable message don't re-nudge.
+            // message is seen, so repeated retries of the same unreachable message don't re-nudge.
             let first_nudge = match self.nudged_messages.lock() {
-                Ok(mut nudged) => nudged.insert(ts),
+                Ok(mut nudged) => nudged.insert(id.clone()),
                 Err(e) => {
                     tracing::error!(
                         "[update_message_status] Failed to lock nudged_messages: {}",
@@ -687,13 +694,14 @@ impl BingleApiLocalImpl {
             // recipient's Sidewinder Mailbox so it survives until they reconnect. Runs on each failed
             // retry but is idempotent per recipient, so it posts once per recipient and retries only
             // recipients whose post has not yet succeeded. Gated + best-effort; never affects delivery.
-            let fully_forwarded = self.forward_message_to_mailbox(ts, &recipients, &text);
+            let fully_forwarded =
+                self.forward_message_to_mailbox(&id, sent_time, &recipients, &text);
             if fully_forwarded {
                 // The message is now safely in every recipient's Mailbox, so stop retrying direct
                 // Bingle delivery: mark it complete and clear the transient failure. The recipient
                 // reads it from the Mailbox on reconnect (#215).
                 if let Ok(mut guard) = self.messages.lock() {
-                    if let Some(m) = guard.iter_mut().find(|m| m.timestamp == ts) {
+                    if let Some(m) = guard.iter_mut().find(|m| m.id == id) {
                         m.progress = Some(1.0);
                         m.failure_reason = None;
                         m.failure_kind = None;
@@ -1062,6 +1070,7 @@ impl BingleLocalApi for BingleApiLocalImpl {
             text,
             cipher_suite,
         )
+        .map(|_| ())
     }
 
     fn add_received_message(
@@ -1072,6 +1081,7 @@ impl BingleLocalApi for BingleApiLocalImpl {
         message: &serde_json::Value,
     ) -> Result<(), BingleError> {
         self.add_received_message_shared(sender_handle, recipient_handles, timestamp, message)
+            .map(|_| ())
     }
 
     fn queue_message(
@@ -1107,6 +1117,7 @@ impl BingleLocalApi for BingleApiLocalImpl {
             .as_millis() as i64;
 
         let msg = Message {
+            id: new_message_id(),
             sender_handle,
             recipient_handles,
             timestamp,
@@ -1135,12 +1146,12 @@ impl BingleLocalApi for BingleApiLocalImpl {
 
     fn update_message_status(
         &mut self,
-        timestamp: i64,
+        id: &str,
         progress: f32,
         failure_reason: Option<String>,
         failure_kind: Option<SendFailureKind>,
     ) -> Result<(), BingleError> {
-        self.update_message_status_shared(timestamp, progress, failure_reason, failure_kind)
+        self.update_message_status_shared(id, progress, failure_reason, failure_kind)
     }
 
     fn get_pending_messages(&self) -> Result<Vec<Message>, BingleError> {
@@ -1225,7 +1236,7 @@ impl BingleLocalApi for BingleApiLocalImpl {
         }
         #[derive(Debug, Clone, Serialize, Deserialize)]
         struct ForwardedEntry {
-            timestamp: i64,
+            message_id: String,
             handle: String,
         }
         #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1242,7 +1253,7 @@ impl BingleLocalApi for BingleApiLocalImpl {
             // an upgrading user migrates instead of falsely reading as ACTIVE on the new app).
             #[serde(default)]
             own_handle_app_id: Option<u64>,
-            // (message timestamp, recipient handle) pairs already posted to a Sidewinder Mailbox, so
+            // (message id, recipient handle) pairs already posted to a Sidewinder Mailbox, so
             // store-and-forward does not re-post after a restart (store-and-forward epic #200, #214).
             #[serde(default)]
             forwarded_messages: Vec<ForwardedEntry>,
@@ -1297,8 +1308,8 @@ impl BingleLocalApi for BingleApiLocalImpl {
             .lock()
             .map(|g| {
                 g.iter()
-                    .map(|(timestamp, handle)| ForwardedEntry {
-                        timestamp: *timestamp,
+                    .map(|(message_id, handle)| ForwardedEntry {
+                        message_id: message_id.clone(),
                         handle: handle.clone(),
                     })
                     .collect()
@@ -1371,7 +1382,11 @@ impl BingleLocalApi for BingleApiLocalImpl {
         }
         #[derive(Debug, Clone, Serialize, Deserialize)]
         struct ForwardedEntry {
-            timestamp: i64,
+            // Absent in state written before message ids (issue #209), which keyed by timestamp.
+            #[serde(default)]
+            message_id: Option<String>,
+            #[serde(default)]
+            timestamp: Option<i64>,
             handle: String,
         }
         #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1430,8 +1445,13 @@ impl BingleLocalApi for BingleApiLocalImpl {
             tracing::error!("[load] Failed to lock contacts: mutex poisoned");
             return Err(BingleError::Other("mutex poisoned".to_string()));
         }
+        // A message stored before ids existed gets its legacy id (issue #209), stable across loads.
+        let mut messages = state.messages;
+        for m in messages.iter_mut().filter(|m| m.id.is_empty()) {
+            m.id = legacy_message_id(m.timestamp);
+        }
         if let Ok(mut msgs) = self.messages.lock() {
-            *msgs = state.messages;
+            *msgs = messages;
         } else {
             tracing::error!("[load] Failed to lock messages: mutex poisoned");
             return Err(BingleError::Other("mutex poisoned".to_string()));
@@ -1451,7 +1471,12 @@ impl BingleLocalApi for BingleApiLocalImpl {
             *fwd = state
                 .forwarded_messages
                 .into_iter()
-                .map(|e| (e.timestamp, e.handle))
+                .filter_map(|e| {
+                    // An entry from before message ids names its message by timestamp, which maps
+                    // to that message's legacy id.
+                    let id = e.message_id.or(e.timestamp.map(legacy_message_id))?;
+                    Some((id, e.handle))
+                })
                 .collect();
         }
         if let Ok(mut ls) = self.last_status.lock() {

@@ -93,8 +93,13 @@ export type FailureKind =
 export type DeliveryRoute = 'Direct' | 'StoreAndForward';
 
 export interface Message {
+  /** Stable identifier (issue #209); pass it to `updateMessageStatusById`. A message read from a
+   * Mailbox keeps its envelope's message id; others get a fresh one. */
+  id: string;
   sender_handle: string;
   recipient_handles: string[];
+  /** @deprecated (issue #209) The time this client stored the message. Identify a message by `id`
+   * and order by send time as `getMessages` already does (`sent_time`, else `delivered_time`). */
   timestamp: number;
   text: string;
   /** The cipher suite that protected the message in transit (issue #292): for a message received
@@ -298,8 +303,15 @@ export interface BingleJsiApi {
    * `delivered_time`, else `timestamp`; equal times keep their stored order. */
   getMessages(): Message[];
   queueMessage(recipientHandles: string[], text: string): void;
+  /** @deprecated (issue #209) Use `updateMessageStatusById`; messages are identified by `id`. */
   updateMessageStatus(
     timestamp: number,
+    progress: number,
+    failureReason: string | null
+  ): void;
+  /** Update the status of the message with this `id` (issue #209). */
+  updateMessageStatusById(
+    id: string,
     progress: number,
     failureReason: string | null
   ): void;

@@ -182,10 +182,20 @@ pub trait BingleJsiApi: Send + Sync {
         text: String,
     ) -> Result<(), BingleJsiError>;
 
-    /// Update the status of a message.
+    /// Update the status of the message stored at `timestamp`. Deprecated (issue #209): use
+    /// [`update_message_status_by_id`](Self::update_message_status_by_id). Kept so apps that key
+    /// messages by timestamp keep working until they migrate.
     fn update_message_status(
         &self,
         timestamp: i64,
+        progress: f32,
+        failure_reason: Option<String>,
+    ) -> Result<(), BingleJsiError>;
+
+    /// Update the status of the message with this `id` (issue #209).
+    fn update_message_status_by_id(
+        &self,
+        id: String,
         progress: f32,
         failure_reason: Option<String>,
     ) -> Result<(), BingleJsiError>;

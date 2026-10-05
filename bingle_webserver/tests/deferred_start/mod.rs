@@ -104,7 +104,7 @@ impl BingleLocalApi for ControllableLocalApi {
     }
     fn update_message_status(
         &mut self,
-        _timestamp: i64,
+        _id: &str,
         _progress: f32,
         _failure_reason: Option<String>,
         _failure_kind: Option<SendFailureKind>,

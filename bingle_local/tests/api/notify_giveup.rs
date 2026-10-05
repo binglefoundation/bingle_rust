@@ -173,8 +173,13 @@ fn giveup_with_flag_off_sends_nothing() {
         None,
     )
     .expect("add message");
-    api.update_message_status(42, 1.0, Some("permanent".into()), None)
-        .expect("update");
+    api.update_message_status(
+        &api.id_of_timestamp_for_tests(42),
+        1.0,
+        Some("permanent".into()),
+        None,
+    )
+    .expect("update");
     assert!(poster.calls().is_empty(), "flag off must send no alert");
 }
 
@@ -191,8 +196,13 @@ fn giveup_with_no_url_sends_nothing() {
         None,
     )
     .expect("add message");
-    api.update_message_status(42, 1.0, Some("permanent".into()), None)
-        .expect("update");
+    api.update_message_status(
+        &api.id_of_timestamp_for_tests(42),
+        1.0,
+        Some("permanent".into()),
+        None,
+    )
+    .expect("update");
     assert!(poster.calls().is_empty(), "no URL must send no alert");
 }
 
@@ -216,7 +226,7 @@ fn nudge_fires_once_on_first_unreachable_not_per_retry() {
     // this is the case give-up-only nudging never reached, since an unreachable message retries
     // forever and never gives up.
     api.update_message_status(
-        7,
+        &api.id_of_timestamp_for_tests(7),
         0.0,
         Some("Recipient unreachable — will keep retrying".into()),
         None,
@@ -235,7 +245,7 @@ fn nudge_fires_once_on_first_unreachable_not_per_retry() {
 
     // A later retry of the same message must not re-nudge.
     api.update_message_status(
-        7,
+        &api.id_of_timestamp_for_tests(7),
         0.0,
         Some("Recipient unreachable — will keep retrying".into()),
         None,
@@ -248,8 +258,13 @@ fn nudge_fires_once_on_first_unreachable_not_per_retry() {
     );
 
     // A subsequent give-up must not re-nudge either — the message was already nudged once.
-    api.update_message_status(7, 1.0, Some("permanent".into()), None)
-        .expect("terminal update");
+    api.update_message_status(
+        &api.id_of_timestamp_for_tests(7),
+        1.0,
+        Some("permanent".into()),
+        None,
+    )
+    .expect("terminal update");
     assert_eq!(
         poster.calls().len(),
         1,
@@ -291,7 +306,7 @@ fn unreachable_with_flag_off_sends_nothing() {
     )
     .expect("add message");
     api.update_message_status(
-        11,
+        &api.id_of_timestamp_for_tests(11),
         0.0,
         Some("Recipient unreachable — will keep retrying".into()),
         None,
@@ -316,8 +331,13 @@ fn giveup_fires_once_per_recipient() {
         None,
     )
     .expect("add message");
-    api.update_message_status(9, 1.0, Some("permanent".into()), None)
-        .expect("terminal update");
+    api.update_message_status(
+        &api.id_of_timestamp_for_tests(9),
+        1.0,
+        Some("permanent".into()),
+        None,
+    )
+    .expect("terminal update");
     let audiences: Vec<String> = poster
         .calls()
         .into_iter()
@@ -341,7 +361,7 @@ fn successful_send_does_not_nudge() {
         None,
     )
     .expect("add message");
-    api.update_message_status(3, 1.0, None, None)
+    api.update_message_status(&api.id_of_timestamp_for_tests(3), 1.0, None, None)
         .expect("update");
     assert!(
         poster.calls().is_empty(),
@@ -364,7 +384,12 @@ fn giveup_nudge_does_not_affect_delivery_outcome() {
         None,
     )
     .expect("add message");
-    let result = api.update_message_status(5, 1.0, Some("permanent".into()), None);
+    let result = api.update_message_status(
+        &api.id_of_timestamp_for_tests(5),
+        1.0,
+        Some("permanent".into()),
+        None,
+    );
     assert!(result.is_ok(), "the nudge must never fail delivery");
     assert_eq!(poster.calls().len(), 1, "the nudge was exercised");
 

@@ -180,8 +180,13 @@ pub enum DeliveryRoute {
 /// A stored message.
 #[derive(uniffi::Record, Debug, Clone)]
 pub struct Message {
+    /// The message's stable identifier (issue #209): pass it to `update_message_status_by_id`. A
+    /// message read from a Mailbox keeps its envelope's message id; others get a fresh one.
+    pub id: String,
     pub sender_handle: String,
     pub recipient_handles: Vec<String>,
+    /// The time this client stored the message. Deprecated as a key (issue #209): identify a
+    /// message by `id`, and order by send time as `getMessages` does.
     pub timestamp: i64,
     pub text: String,
     /// The cipher suite that protected the message in transit (issue #292): for a message received

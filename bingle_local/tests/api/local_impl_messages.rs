@@ -73,6 +73,7 @@ fn get_messages_returns_clone() {
     let mut msgs: Vec<Message> = api.get_messages().unwrap();
     // mutate the returned vector
     msgs.push(Message {
+        id: "test-id".to_string(),
         sender_handle: "z".into(),
         recipient_handles: vec!["y".into()],
         timestamp: 9,

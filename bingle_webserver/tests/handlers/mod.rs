@@ -446,9 +446,16 @@ async fn test_get_messages_exposes_failure_category_and_retryable() {
                 None,
             )
             .expect("add transient");
+        let id = guard
+            .get_messages()
+            .expect("messages")
+            .into_iter()
+            .find(|m| m.timestamp == 1000)
+            .expect("stored")
+            .id;
         guard
             .update_message_status(
-                1000,
+                &id,
                 0.5,
                 Some("Recipient is not connected right now — will keep retrying".into()),
                 Some(SendFailureKind::RecipientNotAdvertised),
@@ -465,9 +472,16 @@ async fn test_get_messages_exposes_failure_category_and_retryable() {
                 None,
             )
             .expect("add permanent");
+        let id = guard
+            .get_messages()
+            .expect("messages")
+            .into_iter()
+            .find(|m| m.timestamp == 2000)
+            .expect("stored")
+            .id;
         guard
             .update_message_status(
-                2000,
+                &id,
                 1.0,
                 Some("That handle is not registered".into()),
                 Some(SendFailureKind::HandleNotFound),

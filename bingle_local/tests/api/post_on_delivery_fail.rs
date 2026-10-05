@@ -32,12 +32,12 @@ fn should_forward_send_requires_gate_and_configuration() {
 #[test]
 fn pending_recipients_excludes_already_forwarded() {
     let recipients = vec!["alice".to_string(), "bob".to_string(), "carol".to_string()];
-    let mut forwarded: HashSet<(i64, String)> = HashSet::new();
-    forwarded.insert((100, "bob".to_string()));
+    let mut forwarded: HashSet<(String, String)> = HashSet::new();
+    forwarded.insert(("m100".to_string(), "bob".to_string()));
     // A different message's forward to alice must not mask this message's alice.
-    forwarded.insert((999, "alice".to_string()));
+    forwarded.insert(("m999".to_string(), "alice".to_string()));
 
-    let pending = pending_forward_recipients(100, &recipients, &forwarded);
+    let pending = pending_forward_recipients("m100", &recipients, &forwarded);
     assert_eq!(
         pending,
         vec!["alice".to_string(), "carol".to_string()],
@@ -48,9 +48,9 @@ fn pending_recipients_excludes_already_forwarded() {
 #[test]
 fn all_recipients_pending_when_nothing_forwarded() {
     let recipients = vec!["alice".to_string(), "bob".to_string()];
-    let forwarded: HashSet<(i64, String)> = HashSet::new();
+    let forwarded: HashSet<(String, String)> = HashSet::new();
     assert_eq!(
-        pending_forward_recipients(1, &recipients, &forwarded),
+        pending_forward_recipients("m1", &recipients, &forwarded),
         recipients
     );
 }
@@ -58,10 +58,10 @@ fn all_recipients_pending_when_nothing_forwarded() {
 #[test]
 fn no_recipients_pending_when_all_forwarded() {
     let recipients = vec!["alice".to_string(), "bob".to_string()];
-    let mut forwarded: HashSet<(i64, String)> = HashSet::new();
-    forwarded.insert((7, "alice".to_string()));
-    forwarded.insert((7, "bob".to_string()));
-    assert!(pending_forward_recipients(7, &recipients, &forwarded).is_empty());
+    let mut forwarded: HashSet<(String, String)> = HashSet::new();
+    forwarded.insert(("m7".to_string(), "alice".to_string()));
+    forwarded.insert(("m7".to_string(), "bob".to_string()));
+    assert!(pending_forward_recipients("m7", &recipients, &forwarded).is_empty());
 }
 
 #[test]
@@ -72,9 +72,9 @@ fn forwarded_set_persists_across_save_and_load() {
 
     {
         let api = BingleApiLocalImpl::new(LocalApiConfig::default());
-        api.mark_forwarded_for_tests(111, "alice");
-        api.mark_forwarded_for_tests(111, "bob");
-        api.mark_forwarded_for_tests(222, "carol");
+        api.mark_forwarded_for_tests("m111", "alice");
+        api.mark_forwarded_for_tests("m111", "bob");
+        api.mark_forwarded_for_tests("m222", "carol");
         api.save(&path_str).expect("save state");
     }
 
@@ -82,10 +82,10 @@ fn forwarded_set_persists_across_save_and_load() {
     reloaded.load(&path_str).expect("load state");
     let restored = reloaded.forwarded_for_tests();
 
-    let expected: HashSet<(i64, String)> = [
-        (111, "alice".to_string()),
-        (111, "bob".to_string()),
-        (222, "carol".to_string()),
+    let expected: HashSet<(String, String)> = [
+        ("m111".to_string(), "alice".to_string()),
+        ("m111".to_string(), "bob".to_string()),
+        ("m222".to_string(), "carol".to_string()),
     ]
     .into_iter()
     .collect();
@@ -137,7 +137,7 @@ fn gate_off_attempts_no_post_on_delivery_failure() {
     .expect("add message");
 
     api.update_message_status(
-        4242,
+        &api.id_of_timestamp_for_tests(4242),
         0.5,
         Some("Recipient unreachable — will keep retrying".to_string()),
         None,
@@ -172,11 +172,11 @@ fn a_fully_forwarded_message_stops_retrying_direct_delivery() {
         None,
     )
     .expect("add message");
-    api.mark_forwarded_for_tests(ts, "alice");
+    api.mark_forwarded_for_tests(&api.id_of_timestamp_for_tests(ts), "alice");
 
     // A failed retry: the message is fully forwarded, so it is completed rather than kept pending.
     api.update_message_status(
-        ts,
+        &api.id_of_timestamp_for_tests(ts),
         0.5,
         Some("Recipient unreachable — will keep retrying".to_string()),
         None,

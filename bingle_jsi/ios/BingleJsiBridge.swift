@@ -490,6 +490,8 @@ class BingleJsiBridge: RCTEventEmitter {
                 let messages = try api.getMessages()
                 resolve(messages.map {
                     [
+                        // Stable identifier (issue #209), the key for updateMessageStatusById.
+                        "id": $0.id,
                         "sender_handle": $0.senderHandle,
                         "recipient_handles": $0.recipientHandles,
                         "timestamp": $0.timestamp,
@@ -541,6 +543,24 @@ class BingleJsiBridge: RCTEventEmitter {
         DispatchQueue.global(qos: .userInitiated).async {
             do {
                 try api.updateMessageStatus(timestamp: Int64(timestamp), progress: Float(progress), failureReason: failureReason)
+                resolve(nil)
+            } catch {
+                reject("BINGLE_ERROR", "\(error)", error)
+            }
+        }
+    }
+
+    /// Update the status of the message with this id (issue #209). Replaces the deprecated
+    /// timestamp-keyed updateMessageStatus.
+    @objc
+    func updateMessageStatusById(_ id: String, progress: Double, failureReason: String?, resolver resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {
+        guard let api = apiInstance else {
+            reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.", nil)
+            return
+        }
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                try api.updateMessageStatusById(id: id, progress: Float(progress), failureReason: failureReason)
                 resolve(nil)
             } catch {
                 reject("BINGLE_ERROR", "\(error)", error)
