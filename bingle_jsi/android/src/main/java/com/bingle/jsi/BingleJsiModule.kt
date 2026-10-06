@@ -500,6 +500,65 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
         }.start()
     }
 
+    /** Set the store-and-forward send/receive gates on the running session (issue #242, bridged in #301). */
+    @ReactMethod
+    fun setStoreAndForward(send: Boolean, receive: Boolean, promise: Promise) {
+        val api = apiInstance
+        if (api == null) {
+            promise.reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.")
+            return
+        }
+        Thread {
+            try {
+                api.setStoreAndForward(send, receive)
+                promise.resolve(null)
+            } catch (e: Exception) {
+                promise.reject("BINGLE_ERROR", e.message, e)
+            }
+        }.start()
+    }
+
+    /** Set the give-up notify nudge and its gateway URL on the running session (issue #242, bridged in #301). */
+    @ReactMethod
+    fun setNotify(enabled: Boolean, gatewayUrl: String?, promise: Promise) {
+        val api = apiInstance
+        if (api == null) {
+            promise.reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.")
+            return
+        }
+        Thread {
+            try {
+                api.setNotify(enabled, gatewayUrl)
+                promise.resolve(null)
+            } catch (e: Exception) {
+                promise.reject("BINGLE_ERROR", e.message, e)
+            }
+        }.start()
+    }
+
+    /** The current effective messaging settings, for the Settings screen (issue #242, bridged in #301). */
+    @ReactMethod
+    fun messagingSettings(promise: Promise) {
+        val api = apiInstance
+        if (api == null) {
+            promise.reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.")
+            return
+        }
+        Thread {
+            try {
+                val settings = api.messagingSettings()
+                val map = Arguments.createMap()
+                map.putBoolean("store_and_forward_send", settings.storeAndForwardSend)
+                map.putBoolean("store_and_forward_receive", settings.storeAndForwardReceive)
+                map.putBoolean("notify_on_giveup", settings.notifyOnGiveup)
+                if (settings.notifyGatewayUrl != null) map.putString("notify_gateway_url", settings.notifyGatewayUrl) else map.putNull("notify_gateway_url")
+                promise.resolve(map)
+            } catch (e: Exception) {
+                promise.reject("BINGLE_ERROR", e.message, e)
+            }
+        }.start()
+    }
+
     @ReactMethod
     fun keypairStatus(promise: Promise) {
         val api = apiInstance
