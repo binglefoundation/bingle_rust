@@ -56,6 +56,16 @@ impl BingleApiLocalImpl {
         }
     }
 
+    /// Test seam: record a `(message id, handle)` as refused by the Mailbox node (#305), so the
+    /// skip-refused behaviour of [`forward_message_to_mailbox`](Self::forward_message_to_mailbox)
+    /// can be exercised without a live node.
+    #[doc(hidden)]
+    pub fn mark_forward_refused_for_tests(&self, message_id: &str, handle: &str) {
+        if let Ok(mut g) = self.refused_forwards.lock() {
+            g.insert((message_id.to_string(), handle.to_string()));
+        }
+    }
+
     /// Test seam: the id of the message stored at `timestamp`, for tests that address messages by
     /// the timestamp they stored them with (issue #209). Panics if there is none.
     #[doc(hidden)]
@@ -114,7 +124,9 @@ impl BingleApiLocalImpl {
     /// `forwarded_messages` (persisted) is skipped, so a retry or restart does not double-post, and a
     /// recipient whose post failed is retried on the next call without re-posting the others. A
     /// missing keypair, an unresolvable handle, a seal failure, or a transport error is logged and
-    /// skipped. `sent_time` is the message's send time (its queue timestamp), sealed in as the
+    /// skipped. A recipient whose post the node refused terminally (`rejected` / `expired` /
+    /// `failed`, #305) is logged once with the node's reason and not re-posted this session.
+    /// `sent_time` is the message's send time (its queue timestamp), sealed in as the
     /// sender-stamped `sent_time`.
     ///
     /// Returns `true` when the message is now posted for **every** recipient (fully handed off to the
@@ -150,6 +162,23 @@ impl BingleApiLocalImpl {
         // Every recipient already posted: the message is fully handed off to the sidechain.
         if pending.is_empty() {
             return true;
+        }
+        // Skip recipients the node refused this session: re-posting cannot succeed (#305).
+        let pending: Vec<String> = match self.refused_forwards.lock() {
+            Ok(refused) => pending
+                .into_iter()
+                .filter(|h| !refused.contains(&(message_id.to_string(), h.clone())))
+                .collect(),
+            Err(e) => {
+                tracing::error!(
+                    "[forward_to_mailbox] Failed to lock refused_forwards: {}",
+                    e
+                );
+                return false;
+            }
+        };
+        if pending.is_empty() {
+            return false;
         }
 
         // The sender's Ed25519 private key signs the sealed envelope; without a keypair we cannot seal.
@@ -231,13 +260,22 @@ impl BingleApiLocalImpl {
                     continue;
                 }
             };
-            match mailbox.post(&address, &sealed) {
-                Ok(()) => {
+            match mailbox.try_post(&address, &sealed) {
+                Ok(sidewinder::PostOutcome::Posted) => {
                     if let Ok(mut guard) = self.forwarded_messages.lock() {
                         guard.insert((message_id.to_string(), handle.clone()));
                     }
                     tracing::info!(
                         "[forward_to_mailbox] posted message {message_id} to '{handle}' Mailbox"
+                    );
+                }
+                Ok(sidewinder::PostOutcome::Refused { stage, reason }) => {
+                    if let Ok(mut guard) = self.refused_forwards.lock() {
+                        guard.insert((message_id.to_string(), handle.clone()));
+                    }
+                    tracing::warn!(
+                        "[forward_to_mailbox] Mailbox post to '{handle}' refused by the node \
+                         ({stage:?}: {reason}); not retrying this session"
                     );
                 }
                 Err(e) => {

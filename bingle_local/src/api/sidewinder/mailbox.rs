@@ -199,6 +199,69 @@ pub fn pending_forward_recipients(
         .collect()
 }
 
+/// The outcome of a Mailbox post that reached the node (#305): the post either finalised, or the node
+/// refused it with a terminal stage (`rejected` / `expired` / `failed`) that re-submitting will not
+/// change. Transport, timeout and other client failures stay `Err` on [`Mailbox::try_post`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PostOutcome {
+    /// The post finalised: the message is in the recipient's Mailbox.
+    Posted,
+    /// The node refused the post terminally (e.g. "sender is not enrolled or its parent-chain account
+    /// is not funded"). Do not retry it this session.
+    Refused {
+        /// The terminal stage the node reported.
+        stage: Stage,
+        /// The node's reason, or a placeholder when the node sent none.
+        reason: String,
+    },
+}
+
+/// How one `watch` read of a Mailbox transaction resolves (#305): still in flight, finalised, or
+/// refused terminally. Pure, so the stage classification is unit-tested without a node.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum WatchProgress {
+    /// `pending` / `provisional`: keep polling.
+    InFlight,
+    /// `final` with no error body.
+    Final,
+    /// `final` carrying an error body: the operation ran and reported an error.
+    FinalWithError(String),
+    /// `failed` / `rejected` / `expired`: will never finalise.
+    Refused {
+        /// The terminal stage the node reported.
+        stage: Stage,
+        /// The node's reason, or a placeholder when the node sent none.
+        reason: String,
+    },
+}
+
+/// Classify one `watch` read of a Mailbox transaction (#305). See [`WatchProgress`].
+pub fn classify_watch(pending: &PendingTransaction) -> WatchProgress {
+    let reason = || match &pending.error {
+        Some(error) => error.message.clone(),
+        None => "no reason given".to_string(),
+    };
+    if pending.stage == Stage::Final {
+        return match pending.error {
+            Some(_) => WatchProgress::FinalWithError(reason()),
+            None => WatchProgress::Final,
+        };
+    }
+    if pending.stage.is_unsuccessful() {
+        return WatchProgress::Refused {
+            stage: pending.stage,
+            reason: reason(),
+        };
+    }
+    WatchProgress::InFlight
+}
+
+/// The terminal result of polling a transaction: finalised, or refused by the node.
+enum Finality {
+    Final(PendingTransaction),
+    Refused { stage: Stage, reason: String },
+}
+
 /// A client for one recipient-addressable Sidewinder Mailbox, bound to an enrolled parent-chain
 /// account (the [`AlgoOps`] handle signs every transaction it submits, and — on the discovery
 /// transport — is also the mutual-TLS client identity, so one account serves both roles).
@@ -275,12 +338,34 @@ impl Mailbox {
     /// Post `message` to `recipient`'s Mailbox (`FIFO.append`), waiting for the transaction to
     /// finalise. `recipient` is the recipient's Algorand address string, packed as the queue key in
     /// `arg[0]`; the message bytes are `arg[1]`.
+    ///
+    /// A terminal refusal by the node is an `Err` here; use [`try_post`](Self::try_post) to tell it
+    /// apart from a retryable failure.
     pub fn post(&mut self, recipient: &str, message: &[u8]) -> Result<(), BingleError> {
+        match self.try_post(recipient, message)? {
+            PostOutcome::Posted => Ok(()),
+            PostOutcome::Refused { stage, reason } => Err(BingleError::Other(format!(
+                "sidewinder post refused ({stage:?}): {reason}"
+            ))),
+        }
+    }
+
+    /// Like [`post`](Self::post), but a terminal refusal by the node (`rejected` / `expired` /
+    /// `failed`) is returned as [`PostOutcome::Refused`] with the node's reason rather than an error,
+    /// so a caller can stop retrying it (#305). `Err` is left for transport, timeout and client
+    /// failures.
+    pub fn try_post(
+        &mut self,
+        recipient: &str,
+        message: &[u8],
+    ) -> Result<PostOutcome, BingleError> {
         let params = self.params_with_failover("post")?;
         let request = build_post_request(self.post_type, recipient, message, &params);
-        self.submit_and_finalize("post", request)?;
         // A successful `FIFO.append` returns an empty result; there is nothing to hand back.
-        Ok(())
+        Ok(match self.submit_and_finalize("post", request)? {
+            Finality::Final(_) => PostOutcome::Posted,
+            Finality::Refused { stage, reason } => PostOutcome::Refused { stage, reason },
+        })
     }
 
     /// Pop the head message from the caller's own Mailbox (`FIFO.remove_head`), waiting for the
@@ -292,7 +377,14 @@ impl Mailbox {
     pub fn pop(&mut self) -> Result<Option<Vec<u8>>, BingleError> {
         let params = self.params_with_failover("pop")?;
         let request = build_pop_request(self.pop_type, &params);
-        let finalized = self.submit_and_finalize("pop", request)?;
+        let finalized = match self.submit_and_finalize("pop", request)? {
+            Finality::Final(pending) => pending,
+            Finality::Refused { stage, reason } => {
+                return Err(BingleError::Other(format!(
+                    "sidewinder pop refused ({stage:?}): {reason}"
+                )));
+            }
+        };
         Ok(match finalized.result {
             Some(bytes) if !bytes.is_empty() => Some(bytes),
             _ => None,
@@ -375,7 +467,7 @@ impl Mailbox {
         &self,
         operation: &str,
         request: TransactionRequest,
-    ) -> Result<PendingTransaction, BingleError> {
+    ) -> Result<Finality, BingleError> {
         let txid = self
             .current_client()
             .submit_transaction(&request)
@@ -385,14 +477,12 @@ impl Mailbox {
         self.poll_to_final(operation, &txid)
     }
 
-    /// Poll `txid` until it reaches `final` (or `failed`), long-polling each request. A read node may
-    /// not know a just-submitted transaction yet, so a not-found is tolerated as propagation lag
-    /// until the deadline; any other error, a `failed` stage, or missing finality is an error.
-    fn poll_to_final(
-        &self,
-        operation: &str,
-        txid: &str,
-    ) -> Result<PendingTransaction, BingleError> {
+    /// Poll `txid` until it reaches a terminal stage, long-polling each request. A read node may not
+    /// know a just-submitted transaction yet, so a not-found is tolerated as propagation lag until
+    /// the deadline. `final` is [`Finality::Final`]; `failed` / `rejected` / `expired` is
+    /// [`Finality::Refused`] with the node's reason (#305); any other error, a `final` carrying an
+    /// error, or missing finality is an error.
+    fn poll_to_final(&self, operation: &str, txid: &str) -> Result<Finality, BingleError> {
         let deadline = Instant::now() + self.finality_timeout;
         // The most recent `stage` seen, so a timeout reports how far the transaction actually got
         // (e.g. stuck at `Pending` vs. reaching `Verified` but never anchored).
@@ -402,20 +492,20 @@ impl Mailbox {
                 Ok(pending) => {
                     last_stage = Some(format!("{:?}", pending.stage));
                     tracing::debug!("[mailbox {operation}] {txid} stage={:?}", pending.stage);
-                    if pending.stage == Stage::Final {
-                        if let Some(error) = pending.error {
+                    match classify_watch(&pending) {
+                        WatchProgress::InFlight => {}
+                        WatchProgress::Final => return Ok(Finality::Final(pending)),
+                        WatchProgress::FinalWithError(reason) => {
                             return Err(BingleError::Other(format!(
-                                "sidewinder {operation} transaction {txid} finalised with error: {error:?}"
+                                "sidewinder {operation} transaction {txid} finalised with error: {reason}"
                             )));
                         }
-                        return Ok(pending);
-                    }
-                    if pending.stage == Stage::Failed {
-                        tracing::warn!("[mailbox {operation}] {txid} FAILED: {:?}", pending.error);
-                        return Err(BingleError::Other(format!(
-                            "sidewinder {operation} transaction {txid} failed: {:?}",
-                            pending.error
-                        )));
+                        WatchProgress::Refused { stage, reason } => {
+                            tracing::warn!(
+                                "[mailbox {operation}] {txid} refused ({stage:?}): {reason}"
+                            );
+                            return Ok(Finality::Refused { stage, reason });
+                        }
                     }
                 }
                 Err(e) => {
