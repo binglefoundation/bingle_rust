@@ -59,6 +59,11 @@ pub struct LocalState {
     // failed recipient without double-posting the others. Persisted (see save/load) so a restart does
     // not re-post an already-forwarded message.
     pub(super) forwarded_messages: Mutex<HashSet<(String, String)>>,
+    // (message id, recipient handle) pairs whose Mailbox post the node refused terminally
+    // (rejected / expired / failed, #305), so forward_to_mailbox does not re-post them on every
+    // retry. In-memory only: a restart retries them once, which picks up an enrolment that happened
+    // in between.
+    pub(super) refused_forwards: Mutex<HashSet<(String, String)>>,
 }
 
 impl LocalState {
@@ -80,6 +85,7 @@ impl LocalState {
             register_poster: RwLock::new(Arc::new(HttpRegisterPoster::new())),
             nudged_messages: Mutex::new(HashSet::new()),
             forwarded_messages: Mutex::new(HashSet::new()),
+            refused_forwards: Mutex::new(HashSet::new()),
         }
     }
 

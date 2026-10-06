@@ -7,10 +7,10 @@
 
 use algo_ops::AlgoOps;
 use bingle_local::api::sidewinder::{
-    MAILBOX_POP_TYPE, MAILBOX_POST_TYPE, Mailbox, MailboxConfig, MailboxConnection,
-    build_pop_request, build_post_request, next_node_index,
+    MAILBOX_POP_TYPE, MAILBOX_POST_TYPE, Mailbox, MailboxConfig, MailboxConnection, WatchProgress,
+    build_pop_request, build_post_request, classify_watch, next_node_index,
 };
-use sidewinder_ops::SuggestedParams;
+use sidewinder_ops::{Disposition, PendingTransaction, Stage, SuggestedParams, TxnError};
 
 /// A keyless handle: `Mailbox::new` validates the config before it ever signs, so no key is needed
 /// to test the validation and construction path.
@@ -302,5 +302,73 @@ fn successive_builds_get_distinct_notes() {
     assert_ne!(
         a.note, b.note,
         "each built request gets a unique note so repeated pops have distinct content addresses"
+    );
+}
+
+/// A `watch` read at `stage`, with an error body carrying `reason` when given.
+fn pending_at(stage: Stage, reason: Option<&str>) -> PendingTransaction {
+    PendingTransaction {
+        tx_id: "TX".to_string(),
+        stage,
+        result: None,
+        logs: Vec::new(),
+        events: Vec::new(),
+        certificate: None,
+        proof: None,
+        error: reason.map(|message| TxnError {
+            message: message.to_string(),
+            disposition: Some(Disposition::Rejected),
+        }),
+    }
+}
+
+#[test]
+fn classify_watch_keeps_polling_while_in_flight() {
+    assert_eq!(
+        classify_watch(&pending_at(Stage::Pending, None)),
+        WatchProgress::InFlight
+    );
+    assert_eq!(
+        classify_watch(&pending_at(Stage::Provisional, None)),
+        WatchProgress::InFlight
+    );
+}
+
+#[test]
+fn classify_watch_final_with_and_without_error() {
+    assert_eq!(
+        classify_watch(&pending_at(Stage::Final, None)),
+        WatchProgress::Final
+    );
+    assert_eq!(
+        classify_watch(&pending_at(Stage::Final, Some("op error"))),
+        WatchProgress::FinalWithError("op error".to_string())
+    );
+}
+
+#[test]
+fn classify_watch_refuses_terminal_stages_with_the_node_reason() {
+    // #305: rejected / expired / failed are terminal refusals carrying the node's reason.
+    let reason = "sender is not enrolled or its parent-chain account is not funded";
+    for stage in [Stage::Rejected, Stage::Expired, Stage::Failed] {
+        assert_eq!(
+            classify_watch(&pending_at(stage, Some(reason))),
+            WatchProgress::Refused {
+                stage,
+                reason: reason.to_string()
+            },
+            "{stage:?} is a terminal refusal"
+        );
+    }
+}
+
+#[test]
+fn classify_watch_refusal_without_a_reason_has_a_placeholder() {
+    assert_eq!(
+        classify_watch(&pending_at(Stage::Rejected, None)),
+        WatchProgress::Refused {
+            stage: Stage::Rejected,
+            reason: "no reason given".to_string()
+        }
     );
 }
