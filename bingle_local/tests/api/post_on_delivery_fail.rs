@@ -200,3 +200,50 @@ fn a_fully_forwarded_message_stops_retrying_direct_delivery() {
         "the transient failure is cleared once handed off to store-and-forward"
     );
 }
+
+#[test]
+fn a_refused_recipient_is_not_treated_as_handed_off() {
+    // #305: a recipient whose Mailbox post the node refused terminally is skipped for the rest of
+    // the session, but a refusal is not a hand-off, so direct delivery keeps retrying the message.
+    let config = LocalApiConfig {
+        sidewinder: Some(MailboxConfig::new("http://localhost:9", "tok")),
+        store_and_forward_send: true,
+        ..LocalApiConfig::default()
+    };
+    let mut api = BingleApiLocalImpl::new(config);
+    api.import_keypair(TEST_MNEMONIC.to_string())
+        .expect("import test keypair");
+    let ts = 6160;
+    api.add_message(
+        "me".to_string(),
+        vec!["alice".to_string(), "bob".to_string()],
+        ts,
+        "refused for alice".to_string(),
+        None,
+    )
+    .expect("add message");
+    let id = api.id_of_timestamp_for_tests(ts);
+    api.mark_forwarded_for_tests(&id, "bob");
+    api.mark_forward_refused_for_tests(&id, "alice");
+
+    api.update_message_status(
+        &id,
+        0.5,
+        Some("Recipient unreachable — will keep retrying".to_string()),
+        None,
+    )
+    .expect("update status");
+
+    assert!(
+        api.get_pending_messages()
+            .expect("pending")
+            .iter()
+            .any(|m| m.timestamp == ts),
+        "a message refused for one recipient stays pending for direct delivery"
+    );
+    assert!(
+        !api.forwarded_for_tests()
+            .contains(&(id.clone(), "alice".to_string())),
+        "a refused recipient is not recorded as forwarded"
+    );
+}
