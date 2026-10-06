@@ -608,6 +608,65 @@ class BingleJsiBridge: RCTEventEmitter {
         }
     }
 
+    /// Set the store-and-forward send/receive gates on the running session (Settings screen, issue
+    /// #242). Bridged to JS in issue #301.
+    @objc
+    func setStoreAndForward(_ send: Bool, receive: Bool, resolver resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {
+        guard let api = apiInstance else {
+            reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.", nil)
+            return
+        }
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                try api.setStoreAndForward(send: send, receive: receive)
+                resolve(nil)
+            } catch {
+                reject("BINGLE_ERROR", "\(error)", error)
+            }
+        }
+    }
+
+    /// Set the give-up notify nudge and its gateway URL on the running session (issue #242).
+    /// Bridged to JS in issue #301.
+    @objc
+    func setNotify(_ enabled: Bool, gatewayUrl: String?, resolver resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {
+        guard let api = apiInstance else {
+            reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.", nil)
+            return
+        }
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                try api.setNotify(enabled: enabled, gatewayUrl: gatewayUrl)
+                resolve(nil)
+            } catch {
+                reject("BINGLE_ERROR", "\(error)", error)
+            }
+        }
+    }
+
+    /// The current effective messaging settings, for the Settings screen to render live state
+    /// (issue #242). Bridged to JS in issue #301.
+    @objc
+    func messagingSettings(_ resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {
+        guard let api = apiInstance else {
+            reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.", nil)
+            return
+        }
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                let settings = try api.messagingSettings()
+                resolve([
+                    "store_and_forward_send": settings.storeAndForwardSend,
+                    "store_and_forward_receive": settings.storeAndForwardReceive,
+                    "notify_on_giveup": settings.notifyOnGiveup,
+                    "notify_gateway_url": settings.notifyGatewayUrl as Any,
+                ])
+            } catch {
+                reject("BINGLE_ERROR", "\(error)", error)
+            }
+        }
+    }
+
     @objc
     func keypairStatus(_ resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {
         guard let api = apiInstance else {
