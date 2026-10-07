@@ -31,6 +31,16 @@ export interface BingleMessage {
   /** The cipher suite negotiated for the DTLS session on which this message was received.
    * Derived by the receiving client from the connection; not transmitted on the wire. */
   cipher_suite: string | null;
+  /** The id this message is stored under in local history (issue #307). Set on a message the
+   * store-and-forward Mailbox poller read; absent or null for a live delivery and for messages
+   * sent or returned by a request. */
+  id?: string | null;
+  /** How a received message arrived (issue #307): `Direct` for a live delivery, `StoreAndForward`
+   * for one read from the Mailbox. Absent or null for messages sent or returned by a request. */
+  delivery_route?: DeliveryRoute | null;
+  /** Receiver's clock (epoch milliseconds) when the message was read from the Mailbox (issue
+   * #307). Null for a live delivery. */
+  delivered_time?: number | null;
 }
 
 export interface VersionInfo {

@@ -66,6 +66,9 @@ fn bingle_message_plain_text() {
         text: Some("hello".to_string()),
         data: None,
         cipher_suite: None,
+        id: None,
+        delivery_route: None,
+        delivered_time: None,
     };
     assert!(msg.app.is_none());
     assert!(msg.r#type.is_none());
@@ -83,6 +86,9 @@ fn bingle_message_typed() {
         text: Some("Hello".to_string()),
         data: Some(r#"{"markdown":"**Hello**"}"#.to_string()),
         cipher_suite: None,
+        id: None,
+        delivery_route: None,
+        delivered_time: None,
     };
     let app = msg.app.expect("app should be Some");
     assert_eq!(app, "chat");

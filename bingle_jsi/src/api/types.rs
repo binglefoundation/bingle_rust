@@ -28,6 +28,20 @@ pub struct BingleMessage {
     /// The cipher suite negotiated for the DTLS session on which this message was received.
     /// Derived by the receiving client from the connection; not transmitted on the wire.
     pub cipher_suite: Option<String>,
+    /// The id this message is stored under in local history (issue #307), as in [`Message::id`].
+    /// Set on a message read from the store-and-forward Mailbox; `None` for a live delivery and
+    /// for messages sent or returned by a request.
+    #[uniffi(default = None)]
+    pub id: Option<String>,
+    /// How a received message arrived (issue #307): `Direct` for a live delivery,
+    /// `StoreAndForward` for one read from the Mailbox. `None` for messages sent or returned by a
+    /// request.
+    #[uniffi(default = None)]
+    pub delivery_route: Option<DeliveryRoute>,
+    /// Receiver's local clock (epoch milliseconds) when the message was read from the Mailbox
+    /// (issue #307), as in [`Message::delivered_time`]. `None` for a live delivery.
+    #[uniffi(default = None)]
+    pub delivered_time: Option<i64>,
 }
 
 /// Server version information.

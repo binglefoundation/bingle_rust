@@ -334,6 +334,41 @@ final class BingleJsiBridgeTests: XCTestCase {
         XCTAssertEqual(msg?["cipher_suite"] as? String, "TLS_AES_256_GCM_SHA384")
     }
 
+    /// A store-and-forward message from the Mailbox poller carries its stored id, route and read
+    /// time through the `onMessage` event (issue #307).
+    func testMessageCallback_carriesMailboxFields() {
+        let callbackExpectation = self.expectation(description: "setMessageCallback resolved")
+        bridge.setMessageCallback(
+            { _ in callbackExpectation.fulfill() },
+            rejecter: { _, _, _ in XCTFail("unexpected rejection") }
+        )
+        waitForExpectations(timeout: 2.0)
+
+        guard let callback = mockApi.messageCallback else {
+            XCTFail("messageCallback was not registered")
+            return
+        }
+
+        let mailboxMessage = BingleMessage(
+            app: nil,
+            type: nil,
+            tag: nil,
+            responseTag: nil,
+            text: "Held for you",
+            data: nil,
+            cipherSuite: nil,
+            id: "0042",
+            deliveryRoute: .storeAndForward,
+            deliveredTime: 1_700_000_050_000
+        )
+        callback.onMessage(senderId: "", senderHandle: "alice", message: mailboxMessage)
+
+        let msg = (bridge.capturedEvents.last?.body as? [String: Any])?["message"] as? [String: Any]
+        XCTAssertEqual(msg?["id"] as? String, "0042")
+        XCTAssertEqual(msg?["delivery_route"] as? String, "StoreAndForward")
+        XCTAssertEqual(msg?["delivered_time"] as? Int64, 1_700_000_050_000)
+    }
+
     // MARK: - keypairStatus
 
     func testKeypairStatus_resolvesWithExpectedFields() {
