@@ -10,7 +10,7 @@ use bingle_local::api::bingle_local_api_impl::{BingleApiLocalImpl, LocalApiConfi
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-struct MockBingleApi {
+pub(crate) struct MockBingleApi {
     pub progress_steps: Vec<u8>,
     pub on_listening: Mutex<Option<Arc<OnListeningHandler>>>,
     // Number of initial send_message_to_handle calls to fail with a transient error before

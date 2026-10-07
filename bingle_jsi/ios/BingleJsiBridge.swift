@@ -895,8 +895,8 @@ class BingleJsiBridge: RCTEventEmitter {
     }
 
     /// Serialize a `DeliveryRoute` to the string the TypeScript `DeliveryRoute` union expects
-    /// (issue #291).
-    private static func deliveryRouteToString(_ route: DeliveryRoute) -> String {
+    /// (issue #291). Internal so the `onMessage` bridge can use it too (issue #307).
+    static func deliveryRouteToString(_ route: DeliveryRoute) -> String {
         switch route {
         case .direct: return "Direct"
         case .storeAndForward: return "StoreAndForward"
@@ -948,6 +948,11 @@ class MessageCallbackBridge: MessageCallback {
                 "text": message.text as Any,
                 "data": message.data as Any,
                 "cipher_suite": message.cipherSuite as Any,
+                // Stored id, route and Mailbox read time (issue #307); set for a store-and-forward
+                // message read by the Mailbox poller, route `Direct` for a live delivery.
+                "id": message.id as Any,
+                "delivery_route": message.deliveryRoute.map { BingleJsiBridge.deliveryRouteToString($0) } as Any,
+                "delivered_time": message.deliveredTime as Any,
             ],
         ])
     }
