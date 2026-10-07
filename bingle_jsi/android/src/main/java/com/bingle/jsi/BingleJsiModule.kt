@@ -844,6 +844,14 @@ class MessageCallbackBridge(private val reactContext: ReactApplicationContext) :
         if (message.responseTag != null) msgMap.putString("response_tag", message.responseTag) else msgMap.putNull("response_tag")
         if (message.text != null) msgMap.putString("text", message.text) else msgMap.putNull("text")
         if (message.data != null) msgMap.putString("data", message.data) else msgMap.putNull("data")
+        if (message.cipherSuite != null) msgMap.putString("cipher_suite", message.cipherSuite) else msgMap.putNull("cipher_suite")
+        // Stored id, route and Mailbox read time (issue #307); set for a store-and-forward message
+        // read by the Mailbox poller, route `Direct` for a live delivery.
+        if (message.id != null) msgMap.putString("id", message.id) else msgMap.putNull("id")
+        val route = message.deliveryRoute
+        if (route != null) msgMap.putString("delivery_route", deliveryRouteToString(route)) else msgMap.putNull("delivery_route")
+        val deliveredTime = message.deliveredTime
+        if (deliveredTime != null) msgMap.putDouble("delivered_time", deliveredTime.toDouble()) else msgMap.putNull("delivered_time")
 
         val body = Arguments.createMap()
         body.putString("sender_id", senderId)

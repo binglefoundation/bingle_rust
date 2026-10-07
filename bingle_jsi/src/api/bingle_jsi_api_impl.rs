@@ -162,6 +162,51 @@ fn json_to_message(val: &JsonValue) -> BingleMessage {
             .get("cipherSuite")
             .and_then(|v| v.as_str())
             .map(|s| s.to_string()),
+        id: None,
+        delivery_route: None,
+        delivered_time: None,
+    }
+}
+
+/// Map a message read from the store-and-forward Mailbox to the [`BingleMessage`] the message
+/// callback receives (issue #307): the text and cipher suite as a live delivery carries them, plus
+/// the id it is stored under in local history, `StoreAndForward` as the route and the time it was
+/// read.
+#[doc(hidden)]
+pub fn mailbox_message_to_bingle(m: &bingle_local::api::Message) -> BingleMessage {
+    BingleMessage {
+        app: None,
+        r#type: None,
+        tag: None,
+        response_tag: None,
+        text: Some(m.text.clone()),
+        data: None,
+        cipher_suite: m.cipher_suite.clone(),
+        id: Some(m.id.clone()),
+        delivery_route: Some(DeliveryRoute::StoreAndForward),
+        delivered_time: m.delivered_time,
+    }
+}
+
+/// Invoke the registered message callback, if any, once for each message a Mailbox poll read
+/// (issue #307). The sender's account id is not known from a Mailbox read, so it is passed empty.
+fn notify_mailbox_messages(
+    callback: &Mutex<Option<Box<dyn MessageCallback>>>,
+    read: &[bingle_local::api::Message],
+) {
+    match callback.lock() {
+        Ok(guard) => {
+            if let Some(callback) = guard.as_ref() {
+                for m in read {
+                    callback.on_message(
+                        String::new(),
+                        m.sender_handle.clone(),
+                        mailbox_message_to_bingle(m),
+                    );
+                }
+            }
+        }
+        Err(e) => tracing::warn!("[mailbox poller] could not lock message callback: {e}"),
     }
 }
 
@@ -234,6 +279,7 @@ impl BingleJsiApiImpl {
         let interval = self.mailbox_poll_interval;
         let local_file = self.local_file.clone();
         let sender_slot = self.pending_sender.clone();
+        let message_callback = self.message_callback.clone();
         std::thread::spawn(move || {
             tracing::info!("[mailbox poller] started (every {:?})", interval);
             while !stop.load(Ordering::Relaxed) {
@@ -255,6 +301,9 @@ impl BingleJsiApiImpl {
                     );
                     // Persist the just-read (and node-dropped) messages so they survive a restart.
                     save_if_configured(&Some(local.clone()), &local_file);
+                    // Tell the host, so a UI that refreshes on onMessage shows them (issue #307).
+                    // `read` holds only messages newly read this cycle.
+                    notify_mailbox_messages(&message_callback, &read);
                 }
                 interruptible_sleep(interval, &stop);
             }
@@ -676,7 +725,10 @@ impl BingleJsiApiImpl {
                         if let Ok(guard) = cb.lock() {
                             if let Some(ref callback) = *guard {
                                 tracing::info!("[BingleJsiApiImpl][init handler] Invoking user callback for message from {}", sender_handle);
-                                let bingle_msg = json_to_message(&message);
+                                let bingle_msg = BingleMessage {
+                                    delivery_route: Some(DeliveryRoute::Direct),
+                                    ..json_to_message(&message)
+                                };
                                 callback.on_message(
                                     sender.clone(),
                                     sender_handle.clone(),
