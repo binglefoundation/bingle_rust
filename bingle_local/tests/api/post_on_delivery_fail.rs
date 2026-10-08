@@ -247,3 +247,64 @@ fn a_refused_recipient_is_not_treated_as_handed_off() {
         "a refused recipient is not recorded as forwarded"
     );
 }
+
+#[test]
+fn an_identity_refusal_holds_off_mailbox_posts_and_reads() {
+    // #309: after the node refuses this client's identity, store-and-forward leaves the Mailbox
+    // alone for the back-off window: a failed delivery is not handed off and a poll reads nothing.
+    let config = LocalApiConfig {
+        sidewinder: Some(MailboxConfig::new("http://localhost:9", "tok")),
+        store_and_forward_send: true,
+        store_and_forward_receive: true,
+        ..LocalApiConfig::default()
+    };
+    let mut api = BingleApiLocalImpl::new(config);
+    api.import_keypair(TEST_MNEMONIC.to_string())
+        .expect("import test keypair");
+    assert!(
+        !api.mailbox_identity_refusal_holds(),
+        "no hold-off before a refusal"
+    );
+
+    api.mark_mailbox_identity_refused_for_tests(std::time::Instant::now());
+    assert!(api.mailbox_identity_refusal_holds());
+
+    let ts = 7170;
+    api.add_message(
+        "me".to_string(),
+        vec!["alice".to_string()],
+        ts,
+        "held off".to_string(),
+        None,
+    )
+    .expect("add message");
+    let id = api.id_of_timestamp_for_tests(ts);
+    let started = std::time::Instant::now();
+    api.update_message_status(
+        &id,
+        0.5,
+        Some("Recipient unreachable — will keep retrying".to_string()),
+        None,
+    )
+    .expect("update status");
+    assert!(
+        api.poll_mailbox().expect("poll").is_empty(),
+        "a poll reads nothing while held off"
+    );
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(2),
+        "held off without contacting the node or the chain"
+    );
+
+    assert!(
+        api.forwarded_for_tests().is_empty(),
+        "nothing is recorded as forwarded while held off"
+    );
+    assert!(
+        api.get_pending_messages()
+            .expect("pending")
+            .iter()
+            .any(|m| m.timestamp == ts),
+        "the message stays pending for direct delivery"
+    );
+}
