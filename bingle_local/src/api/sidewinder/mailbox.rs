@@ -274,6 +274,8 @@ pub struct Mailbox {
     post_type: u32,
     pop_type: u32,
     finality_timeout: Duration,
+    /// The node's message when it refused this client's identity on the last operation (#309).
+    identity_refusal: Option<String>,
 }
 
 /// The live node connection: either the static bearer client, or a discovered-node client that
@@ -332,6 +334,7 @@ impl Mailbox {
             post_type: config.post_type,
             pop_type: config.pop_type,
             finality_timeout: config.finality_timeout,
+            identity_refusal: None,
         })
     }
 
@@ -391,6 +394,15 @@ impl Mailbox {
         })
     }
 
+    /// The node's message when the last [`post`](Self::post) / [`try_post`](Self::try_post) /
+    /// [`pop`](Self::pop) failed because the node refused this client's identity (#309): it was
+    /// reached over mutual TLS but this account is not a permitted client there. `None` otherwise.
+    /// Retrying cannot succeed until the account's on-chain membership changes and the node next
+    /// polls it, so a caller should stop retrying for a while rather than treat it as a network fault.
+    pub fn identity_refusal(&self) -> Option<&str> {
+        self.identity_refusal.as_deref()
+    }
+
     /// The client bound to the currently active node.
     fn current_client(&self) -> &SidewinderClient {
         match &self.transport {
@@ -411,12 +423,26 @@ impl Mailbox {
     /// through an operation never re-submits on a second node (which could double-post).
     fn params_with_failover(&mut self, operation: &str) -> Result<SuggestedParams, BingleError> {
         let mut reresolved = false;
+        self.identity_refusal = None;
         loop {
-            match self
-                .current_client()
-                .params()
-                .map_err(|e| map_error("params", e))
-            {
+            // The probe is where the mutual-TLS handshake happens, so an identity refusal shows here.
+            let probed = self.current_client().params().map_err(|e| {
+                let refusal = identity_refusal_message(&e);
+                (map_error("params", e), refusal)
+            });
+            let probed = match probed {
+                Ok(params) => Ok(params),
+                Err((e, refusal)) => {
+                    if refusal.is_some() {
+                        // Not a reachability fault: every node reads the same membership, so do not
+                        // fail over.
+                        self.identity_refusal = refusal;
+                        return Err(e);
+                    }
+                    Err(e)
+                }
+            };
+            match probed {
                 Ok(params) => return Ok(params),
                 Err(e) if is_transport_error(&e) && self.can_failover() => {
                     tracing::warn!(
@@ -640,9 +666,33 @@ fn is_not_found(error: &anyhow::Error) -> bool {
         .is_some_and(|se| se.kind == SidewinderErrorKind::NotFound)
 }
 
+/// The node's message when a client error is an identity refusal
+/// ([`SidewinderErrorKind::IdentityRefused`], #309): the node was reached over mutual TLS and refused
+/// this client's identity. `None` for every other error. Pure, so the classification is unit-tested
+/// without a node.
+pub fn identity_refusal_message(error: &anyhow::Error) -> Option<String> {
+    error
+        .downcast_ref::<SidewinderError>()
+        .filter(|se| se.kind == SidewinderErrorKind::IdentityRefused)
+        .map(|se| se.message.clone())
+}
+
+/// How long store-and-forward leaves the Mailbox alone after the node refused this client's identity
+/// (#309). The answer only changes once the account's membership changes on-chain and the node next
+/// polls it, so retrying sooner just repeats the refusal.
+pub const IDENTITY_REFUSED_BACKOFF: Duration = Duration::from_secs(600);
+
+/// Whether an identity refusal seen at `refused_at` still holds off Mailbox operations at `now`
+/// (#309). Pure, so the back-off window is unit-tested without a clock.
+pub fn identity_refusal_holds(refused_at: Option<Instant>, now: Instant) -> bool {
+    refused_at.is_some_and(|at| now.saturating_duration_since(at) < IDENTITY_REFUSED_BACKOFF)
+}
+
 /// Map a client error to a [`BingleError`], classifying unreachable/transient causes as retryable so
-/// the store-and-forward path can distinguish "try again" from a persistent failure.
-fn map_error(operation: &str, error: anyhow::Error) -> BingleError {
+/// the store-and-forward path can distinguish "try again" from a persistent failure. An identity
+/// refusal (#309) is not retryable.
+#[doc(hidden)]
+pub fn map_error(operation: &str, error: anyhow::Error) -> BingleError {
     if let Some(se) = error.downcast_ref::<SidewinderError>() {
         if matches!(
             se.kind,
