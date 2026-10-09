@@ -7,8 +7,9 @@
 
 pub mod mailbox;
 pub use mailbox::{
-    MAILBOX_POP_TYPE, MAILBOX_POST_TYPE, Mailbox, MailboxConfig, MailboxConnection, PostOutcome,
-    WatchProgress, classify_watch, pending_forward_recipients, should_forward_send,
+    IDENTITY_REFUSED_BACKOFF, MAILBOX_POP_TYPE, MAILBOX_POST_TYPE, Mailbox, MailboxConfig,
+    MailboxConnection, PostOutcome, WatchProgress, classify_watch, identity_refusal_holds,
+    identity_refusal_message, pending_forward_recipients, should_forward_send,
 };
 #[doc(hidden)]
-pub use mailbox::{build_pop_request, build_post_request, next_node_index};
+pub use mailbox::{build_pop_request, build_post_request, map_error, next_node_index};

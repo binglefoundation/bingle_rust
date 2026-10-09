@@ -64,6 +64,10 @@ pub struct LocalState {
     // retry. In-memory only: a restart retries them once, which picks up an enrolment that happened
     // in between.
     pub(super) refused_forwards: Mutex<HashSet<(String, String)>>,
+    // When the Sidewinder node last refused this client's identity (#309). Mailbox posts and reads
+    // are held off for a back-off window after it, since retrying cannot succeed until the account's
+    // on-chain membership changes and the node polls it. In-memory only.
+    pub(super) mailbox_identity_refused_at: Mutex<Option<std::time::Instant>>,
 }
 
 impl LocalState {
@@ -86,6 +90,7 @@ impl LocalState {
             nudged_messages: Mutex::new(HashSet::new()),
             forwarded_messages: Mutex::new(HashSet::new()),
             refused_forwards: Mutex::new(HashSet::new()),
+            mailbox_identity_refused_at: Mutex::new(None),
         }
     }
 

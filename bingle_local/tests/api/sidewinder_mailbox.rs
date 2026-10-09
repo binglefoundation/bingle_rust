@@ -6,11 +6,16 @@
 //! the separate, skip-clean `sidewinder_mailbox_e2e` target.
 
 use algo_ops::AlgoOps;
+use bingle_core::api::bingle_api::BingleError;
 use bingle_local::api::sidewinder::{
-    MAILBOX_POP_TYPE, MAILBOX_POST_TYPE, Mailbox, MailboxConfig, MailboxConnection, WatchProgress,
-    build_pop_request, build_post_request, classify_watch, next_node_index,
+    IDENTITY_REFUSED_BACKOFF, MAILBOX_POP_TYPE, MAILBOX_POST_TYPE, Mailbox, MailboxConfig,
+    MailboxConnection, WatchProgress, build_pop_request, build_post_request, classify_watch,
+    identity_refusal_holds, identity_refusal_message, map_error, next_node_index,
 };
-use sidewinder_ops::{Disposition, PendingTransaction, Stage, SuggestedParams, TxnError};
+use sidewinder_ops::{
+    Disposition, PendingTransaction, SidewinderError, Stage, SuggestedParams, TxnError,
+};
+use std::time::{Duration, Instant};
 
 /// A keyless handle: `Mailbox::new` validates the config before it ever signs, so no key is needed
 /// to test the validation and construction path.
@@ -370,5 +375,70 @@ fn classify_watch_refusal_without_a_reason_has_a_placeholder() {
             stage: Stage::Rejected,
             reason: "no reason given".to_string()
         }
+    );
+}
+
+/// The message sidewinder_ops 0.8.7 gives an identity refusal: it names the node and the address.
+const REFUSAL: &str = "the node at https://node.example:1080 refused this client's identity \
+    TESTADDRESS: it is not a permitted client there.";
+
+#[test]
+fn identity_refusal_message_is_some_only_for_identity_refused() {
+    // #309: the node was reached and refused this identity — not a network fault.
+    let refused: anyhow::Error = SidewinderError::identity_refused("params", REFUSAL).into();
+    let message = identity_refusal_message(&refused).expect("an identity refusal");
+    assert!(message.contains("refused this client's identity"));
+    assert!(
+        message.contains("TESTADDRESS"),
+        "the message names the address"
+    );
+
+    let unreachable: anyhow::Error =
+        SidewinderError::unreachable("params", "connection refused").into();
+    assert!(identity_refusal_message(&unreachable).is_none());
+    assert!(identity_refusal_message(&anyhow::anyhow!("something else")).is_none());
+}
+
+#[test]
+fn map_error_does_not_retry_an_identity_refusal() {
+    let refused: anyhow::Error = SidewinderError::identity_refused("params", REFUSAL).into();
+    let mapped = map_error("params", refused);
+    assert!(
+        !matches!(mapped, BingleError::Retryable(_)),
+        "an identity refusal is not retryable: {mapped}"
+    );
+    assert!(
+        mapped.to_string().contains("TESTADDRESS"),
+        "the surfaced error names the address"
+    );
+}
+
+#[test]
+fn map_error_still_retries_an_unreachable_or_transient_node() {
+    let unreachable: anyhow::Error =
+        SidewinderError::unreachable("params", "connection refused").into();
+    assert!(matches!(
+        map_error("params", unreachable),
+        BingleError::Retryable(_)
+    ));
+    let transient: anyhow::Error = SidewinderError::transient("params", "timed out").into();
+    assert!(matches!(
+        map_error("params", transient),
+        BingleError::Retryable(_)
+    ));
+}
+
+#[test]
+fn identity_refusal_holds_for_the_backoff_window_only() {
+    let refused_at = Instant::now();
+    assert!(!identity_refusal_holds(None, refused_at), "no refusal seen");
+    assert!(identity_refusal_holds(Some(refused_at), refused_at));
+    assert!(identity_refusal_holds(
+        Some(refused_at),
+        refused_at + IDENTITY_REFUSED_BACKOFF - Duration::from_secs(1)
+    ));
+    assert!(
+        !identity_refusal_holds(Some(refused_at), refused_at + IDENTITY_REFUSED_BACKOFF),
+        "the hold-off ends after the back-off window"
     );
 }

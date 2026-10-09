@@ -66,6 +66,38 @@ impl BingleApiLocalImpl {
         }
     }
 
+    /// Test seam: record that the Sidewinder node refused this client's identity at `at` (#309), so
+    /// the hold-off can be exercised without a live node.
+    #[doc(hidden)]
+    pub fn mark_mailbox_identity_refused_for_tests(&self, at: std::time::Instant) {
+        if let Ok(mut g) = self.mailbox_identity_refused_at.lock() {
+            *g = Some(at);
+        }
+    }
+
+    /// Whether Mailbox posts and reads are currently held off because the Sidewinder node refused
+    /// this client's identity within the last
+    /// [`IDENTITY_REFUSED_BACKOFF`](sidewinder::IDENTITY_REFUSED_BACKOFF) (#309).
+    pub fn mailbox_identity_refusal_holds(&self) -> bool {
+        match self.mailbox_identity_refused_at.lock() {
+            Ok(g) => sidewinder::identity_refusal_holds(*g, std::time::Instant::now()),
+            Err(_) => false,
+        }
+    }
+
+    /// Record an identity refusal by the Sidewinder node and log it once (#309). `reason` is the
+    /// node client's message, which names the node and this account's address.
+    fn note_mailbox_identity_refused(&self, context: &str, reason: &str) {
+        if let Ok(mut g) = self.mailbox_identity_refused_at.lock() {
+            *g = Some(std::time::Instant::now());
+        }
+        tracing::warn!(
+            "[{context}] the Sidewinder node refused this client's identity; store-and-forward is \
+             paused for {:?}, not retrying: {reason}",
+            sidewinder::IDENTITY_REFUSED_BACKOFF
+        );
+    }
+
     /// Test seam: the id of the message stored at `timestamp`, for tests that address messages by
     /// the timestamp they stored them with (issue #209). Panics if there is none.
     #[doc(hidden)]
@@ -162,6 +194,10 @@ impl BingleApiLocalImpl {
         // Every recipient already posted: the message is fully handed off to the sidechain.
         if pending.is_empty() {
             return true;
+        }
+        // The node refused this client's identity recently: posting cannot succeed yet (#309).
+        if self.mailbox_identity_refusal_holds() {
+            return false;
         }
         // Skip recipients the node refused this session: re-posting cannot succeed (#305).
         let pending: Vec<String> = match self.refused_forwards.lock() {
@@ -279,6 +315,11 @@ impl BingleApiLocalImpl {
                     );
                 }
                 Err(e) => {
+                    if let Some(reason) = mailbox.identity_refusal() {
+                        // The refusal is for this account, not this recipient: stop here.
+                        self.note_mailbox_identity_refused("forward_to_mailbox", reason);
+                        break;
+                    }
                     tracing::warn!(
                         "[forward_to_mailbox] Mailbox post to '{handle}' failed ({e}); will retry"
                     );
@@ -311,6 +352,10 @@ impl BingleApiLocalImpl {
     /// decrypt stops / skips without error. Returns the messages read this poll (possibly empty).
     pub(crate) fn poll_mailbox_inner(&self) -> Result<Vec<Message>, BingleError> {
         if !self.config().store_and_forward_receive || self.config().sidewinder.is_none() {
+            return Ok(Vec::new());
+        }
+        // The node refused this client's identity recently: reading cannot succeed yet (#309).
+        if self.mailbox_identity_refusal_holds() {
             return Ok(Vec::new());
         }
 
@@ -369,7 +414,10 @@ impl BingleApiLocalImpl {
                     break;
                 }
                 Err(e) => {
-                    tracing::warn!("[poll_mailbox] pop failed ({e}); stopping");
+                    match mailbox.identity_refusal() {
+                        Some(reason) => self.note_mailbox_identity_refused("poll_mailbox", reason),
+                        None => tracing::warn!("[poll_mailbox] pop failed ({e}); stopping"),
+                    }
                     break;
                 }
             };
