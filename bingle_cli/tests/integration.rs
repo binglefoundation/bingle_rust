@@ -426,4 +426,131 @@ mod localnet {
             "the echoed reply should be stored in the --state_file; messages were:\n{messages:#?}"
         );
     }
+
+    /// Run `bingle_cli checkrelays --once` and return its combined stdout + stderr.
+    fn run_checkrelays_once(passphrase: &str, node_file: &str, stun_arg: &str) -> String {
+        let out = Command::new(env!("CARGO_BIN_EXE_bingle_cli"))
+            .args([
+                "checkrelays",
+                "--passphrase",
+                passphrase,
+                "--node-file",
+                node_file,
+                "--stun-servers",
+                stun_arg,
+                "--once",
+            ])
+            .stdin(Stdio::null())
+            .output()
+            .expect("run bingle_cli checkrelays");
+        format!(
+            "{}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        )
+    }
+
+    /// Issue #313: relays refuse an account with no handle on the app, and `checkrelays` reports
+    /// that cause instead of "No relays discovered"; once the account is registered, the same
+    /// command finds and probes both relays (and does not report an empty list while relay
+    /// selection is still in flight).
+    #[ntest::timeout(300_000)]
+    #[serial_test::serial(localnet_chat)]
+    #[test]
+    fn checkrelays_reports_refusal_for_unregistered_account_over_localnet() {
+        if !provision::localnet_available() {
+            eprintln!(
+                "skipping localnet checkrelays e2e: algokit localnet not reachable at localhost:4001"
+            );
+            return;
+        }
+        test_util::init_test_logging();
+
+        let cfg = test_util::localnet_config();
+        setup_localnet::ensure_localnet_accounts_funded(
+            &cfg,
+            &[
+                test_util::ADDRESS_SPEND,
+                test_util::ADDRESS_RECEIVE,
+                RECEIVER_ADDRESS,
+            ],
+        )
+        .expect("fund localnet accounts");
+
+        // A fresh app, so RECEIVER_ADDRESS has no handle on it until registered below.
+        let creator = test_util::ops_from_mnemonic(
+            test_util::ADDRESS_SPEND,
+            test_util::PASSPHRASE_SPEND,
+            cfg.clone(),
+        );
+        let (app_id, asset_id) =
+            test_util::deploy_bingle_app_and_asset(&creator, "BINGLE$", 1_000_000);
+
+        let r1_port = test_util::find_unused_loopback_port();
+        let r2_port = test_util::find_unused_loopback_port();
+        let relay1_addr = std::net::SocketAddr::new(std::net::Ipv4Addr::LOCALHOST.into(), r1_port);
+        let relay2_addr = std::net::SocketAddr::new(std::net::Ipv4Addr::LOCALHOST.into(), r2_port);
+        provision::register_relays(app_id, asset_id, relay1_addr, relay2_addr);
+        let relay1 = test_util::start_root_relay(
+            "relay1",
+            relay1_addr,
+            test_util::PASSPHRASE_SPEND,
+            app_id,
+            cfg.clone(),
+        );
+        let relay2 = test_util::start_root_relay(
+            "relay2",
+            relay2_addr,
+            test_util::PASSPHRASE_RECEIVE,
+            app_id,
+            cfg.clone(),
+        );
+        let (mut s1, mut s2, stun_list) = provision::setup_stun_servers(false);
+        let stun_arg = format!("{},{}", stun_list[0], stun_list[1]);
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let node_file = dir.path().join("localnet.node.json");
+        provision::write_localnet_node_file(&node_file, app_id, asset_id);
+        let node_file_s = node_file.to_string_lossy().into_owned();
+
+        // (1) Unregistered: the relays refuse, and checkrelays names the missing handle.
+        let unregistered = run_checkrelays_once(RECEIVER_PASSPHRASE, &node_file_s, &stun_arg);
+
+        // (2) Registered: the same account now gets per-relay probe results.
+        test_util::register_client_on_blockchain(
+            RECEIVER_ADDRESS,
+            RECEIVER_PASSPHRASE,
+            "checker",
+            app_id,
+            asset_id,
+            &creator,
+            cfg.clone(),
+        );
+        let registered = run_checkrelays_once(RECEIVER_PASSPHRASE, &node_file_s, &stun_arg);
+
+        relay1.access_unsafe_for_tests(|r: &mut BingleApiImpl| r.stop());
+        relay2.access_unsafe_for_tests(|r: &mut BingleApiImpl| r.stop());
+        s1.stop();
+        s2.stop();
+
+        assert!(
+            unregistered.contains("Relays refused this account")
+                && unregistered.contains(&format!("has no handle on app {app_id}")),
+            "unregistered checkrelays should report the refusal and its cause; output was:\n{unregistered}"
+        );
+        assert!(
+            !unregistered.contains("No relays discovered"),
+            "unregistered checkrelays must not claim there are no relays; output was:\n{unregistered}"
+        );
+        assert!(
+            registered.contains(&format!("@ {relay1_addr} -> ok="))
+                || registered.contains(&format!("@ {relay2_addr} -> ok=")),
+            "registered checkrelays should probe the relays; output was:\n{registered}"
+        );
+        assert!(
+            !registered.contains("No relays discovered")
+                && !registered.contains("Relays refused this account"),
+            "registered checkrelays should report neither an empty list nor a refusal; output was:\n{registered}"
+        );
+    }
 }

@@ -1589,6 +1589,13 @@ impl BingleApiImpl {
         #[allow(unused)]
         {}
     }
+
+    /// Refusals received from peers that could not authenticate this account, latest per peer
+    /// (issue #313). Diagnostics use it to report why relays did not serve us.
+    #[doc(hidden)]
+    pub fn peer_refusals(&self) -> Vec<crate::api::bingle_api::PeerRefusal> {
+        self.engine.access(|e| e.peer_refusals())
+    }
 }
 
 impl BingleApiImpl {

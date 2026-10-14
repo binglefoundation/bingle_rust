@@ -11,7 +11,7 @@ use crate::ddb::{AdvertRecord, DdbBackend, InetSocketAddress};
 use crate::distributed_mutex::DistributedMutex;
 use crate::dtls::{Dtls, DtlsOpenSsl, NetworkMux, UdpNetworkMux};
 use crate::messages::handlers::MessageHandler;
-use crate::messages::types::{Message, RelayMessage, RelayTriangleTest1};
+use crate::messages::types::{Fail, Message, RelayMessage, RelayTriangleTest1};
 use crate::messages::{DefaultPrintingHandler, from_json_str};
 use algo_ops::{AlgoChainConfig, AlgoOps};
 
@@ -290,6 +290,9 @@ pub struct Engine {
     // (Mutex so it can be started/stopped through &self from the API wrappers)
     relay_keep_alive: Mutex<Option<crate::relay::relay_keep_alive::RelayKeepAliveSender>>,
     relay_keep_alive_interval: Mutex<std::time::Duration>,
+    // Refusals received from peers that could not authenticate us, latest per peer (issue #313).
+    // Shared with the DTLS handler closure, which records them as they arrive.
+    peer_refusals: Arc<Mutex<Vec<crate::api::bingle_api::PeerRefusal>>>,
 }
 
 impl Engine {
@@ -662,6 +665,7 @@ impl Engine {
             relay_keep_alive_interval: Mutex::new(
                 crate::relay::relay_keep_alive::RELAY_KEEP_ALIVE_INTERVAL,
             ),
+            peer_refusals: Arc::new(Mutex::new(Vec::new())),
         };
         eng.set_last_public_addr(options.static_ip);
 
@@ -797,6 +801,15 @@ impl Engine {
     /// (interior mutability), so shared access is sufficient for configuration too.
     pub fn with_dtls<F: FnOnce(&(dyn Dtls + Send + Sync))>(&self, f: F) {
         f(self.packet_transport.dtls())
+    }
+
+    /// Refusals received from peers that could not authenticate this node, latest per peer
+    /// (issue #313). Empty when no peer has refused us.
+    pub fn peer_refusals(&self) -> Vec<crate::api::bingle_api::PeerRefusal> {
+        self.peer_refusals
+            .lock()
+            .map(|g| g.clone())
+            .unwrap_or_default()
     }
 
     /// Test helper: install the DTLS message handler without starting the network stack.
@@ -1344,6 +1357,7 @@ impl Engine {
         let ddb_backend = self.ddb_backend.clone();
         let span = self.span();
         let custom_handler = self.custom_message_handler.lock().unwrap().clone();
+        let peer_refusals = self.peer_refusals.clone();
 
         let router_arc = self.router();
 
@@ -1363,15 +1377,38 @@ impl Engine {
                     };
                     let handle_opt = api.handle_lookup_by_id(&sender_id);
                     if handle_opt.is_none() {
-                        let claimed_handle = std::str::from_utf8(data)
+                        let parsed = std::str::from_utf8(data)
                             .ok()
-                            .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok())
+                            .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok());
+                        let claimed_handle = parsed
+                            .as_ref()
                             .and_then(|v| v.get("handle").and_then(|hv| hv.as_str()).map(|h| h.to_string()));
                         tracing::warn!(
                             "[Engine::install_dtls_handler][cb] dropping message from unauthenticated id={} handle={}",
                             sender_id,
                             claimed_handle.as_deref().unwrap_or("<missing>")
                         );
+                        // Answer a request (one carrying a `tag`) with an explicit refusal, so the
+                        // sender can tell refusal from silence (issue #313). Untagged messages
+                        // expect no reply, and a refusal carries no `tag`, so two nodes that cannot
+                        // authenticate each other never refuse each other's refusals.
+                        let request_tag = parsed
+                            .as_ref()
+                            .and_then(|v| v.get("tag").and_then(|t| t.as_str()).map(|t| t.to_string()));
+                        if let Some(tag) = request_tag {
+                            let refusal = serde_json::to_value(Fail::unauthenticated(Some(tag)))
+                                .unwrap_or(serde_json::Value::Null);
+                            let to = from.clone();
+                            let to_id = sender_id.clone();
+                            // Send off the DTLS receive thread, as router responses are.
+                            std::thread::spawn(move || {
+                                match api.send_message_to_network(&to, &to_id, refusal, None) {
+                                    Ok(true) => tracing::info!("[Engine::install_dtls_handler] sent refusal to unauthenticated id={}", to_id),
+                                    Ok(false) => tracing::warn!("[Engine::install_dtls_handler] refusal to unauthenticated id={} was not sent", to_id),
+                                    Err(e) => tracing::warn!("[Engine::install_dtls_handler] refusal to unauthenticated id={} failed: {}", to_id, e),
+                                }
+                            });
+                        }
                         return Ok(None);
                     }
 
@@ -1436,6 +1473,9 @@ impl Engine {
                             // If this is a response, fulfill waiter by responseTag only.
                             // This has been camelcased
                             let tag_str_opt = v.get("responseTag").and_then(|vv| vv.as_str());
+                            if tag_str_opt.is_some() {
+                                Engine::record_peer_refusal(&peer_refusals, &sender_id, &v);
+                            }
                             if let Some(tag_str) = tag_str_opt {
                                 if let Ok(tag_uuid) = Uuid::parse_str(tag_str) {
                                     if let Ok(map) = pending_responses.lock() {
@@ -1494,6 +1534,36 @@ impl Engine {
                 dtls_handler_worker()
             })));
         Ok(())
+    }
+
+    /// Record a refusal (issue #313) when `response` is a peer's `fail` answer refusing to
+    /// authenticate us, replacing any earlier refusal from the same peer. Returns whether one was
+    /// recorded.
+    fn record_peer_refusal(
+        store: &Mutex<Vec<crate::api::bingle_api::PeerRefusal>>,
+        peer_id: &str,
+        response: &serde_json::Value,
+    ) -> bool {
+        let Some(reason) = Fail::reason_of(response) else {
+            return false;
+        };
+        if reason != crate::api::bingle_api::REFUSAL_UNAUTHENTICATED {
+            return false;
+        }
+        tracing::warn!(
+            "[Engine::install_dtls_handler] peer {} refused our request: it cannot authenticate this account ({})",
+            peer_id,
+            reason
+        );
+        let Ok(mut g) = store.lock() else {
+            return false;
+        };
+        g.retain(|r| r.peer_id != peer_id);
+        g.push(crate::api::bingle_api::PeerRefusal {
+            peer_id: peer_id.to_string(),
+            reason,
+        });
+        true
     }
 
     /// Start the engine using the provided StartOptions.

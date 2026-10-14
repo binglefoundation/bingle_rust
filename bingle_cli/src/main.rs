@@ -1223,6 +1223,7 @@ use bingle_cli::chat_repl::{ChatInput, CurrentRecipient, parse_input};
 use bingle_cli::chat_send::{ChatDelivery, EXIT_FLUSH_DEADLINE, report_line, shutdown_lines};
 use bingle_cli::chat_state::ChatState;
 use bingle_cli::chat_state::RegisterError;
+use bingle_cli::checkrelays;
 use bingle_core::api::network_endpoint::NetworkEndpoint;
 use bingle_local::api::pending_sender::{
     LocalOutboundStore, OutboundStore, PendingSender, PendingSenderOptions,
@@ -1445,17 +1446,20 @@ fn cmd_checkrelays(mut args: Vec<String>) {
         }
     }
 
-    // After starting, wait for Engine to reach Registered state to ensure discovery is ready
+    // Wait for relay discovery to settle — the engine registering with a relay, or a relay
+    // refusing this account — rather than a fixed few seconds, so an in-flight relay selection is
+    // not reported as "no relays" (issue #313).
     let api_both: Arc<dyn bingle_core::api::bingle_api::BingleApiBoth> = api.clone();
     let wait_start = Instant::now();
-    let wait_timeout = Duration::from_secs(5);
-    while wait_start.elapsed() < wait_timeout {
-        let st = api_both.get_state();
-        if st == bingle_core::engine::EngineState::Registered {
+    while wait_start.elapsed() < checkrelays::DISCOVERY_WAIT {
+        if api_both.get_state() == bingle_core::engine::EngineState::Registered
+            || !api.peer_refusals().is_empty()
+        {
             break;
         }
-        std::thread::sleep(Duration::from_millis(50));
+        std::thread::sleep(Duration::from_millis(100));
     }
+    let waited = wait_start.elapsed();
 
     // Helper for a single check that returns Ok(duration_ms) or Err(()) using Ping/PingResponse
     let do_check = |relay_id: &str, addr: SocketAddr| -> Result<u128, ()> {
@@ -1484,10 +1488,61 @@ fn cmd_checkrelays(mut args: Vec<String>) {
 
     // Repeat loop (unless --once)
     loop {
-        let relays = api.list_all_relays(false);
-
-        if relays.is_empty() {
-            tracing::warn!("No relays discovered; nothing to check");
+        // The engine's relay finder only exists once a relay has been selected, so list through it
+        // only when registered; otherwise explain the silence from refusals and chain discovery.
+        let relays = if api_both.get_state() == bingle_core::engine::EngineState::Registered {
+            api.list_all_relays(false)
+        } else {
+            Vec::new()
+        };
+        let to_ref = |r: &bingle_core::relay::relay_finder::RelayInfo| checkrelays::RelayRef {
+            id: r.id().to_string(),
+            address: r.address().to_string(),
+        };
+        let listed: Vec<checkrelays::RelayRef> = relays.iter().map(to_ref).collect();
+        let refusals: Vec<checkrelays::RelayRefusal> = api
+            .peer_refusals()
+            .into_iter()
+            .map(|r| checkrelays::RelayRefusal {
+                relay_id: r.peer_id,
+                reason: r.reason,
+            })
+            .collect();
+        let discovered: Vec<checkrelays::RelayRef> = if listed.is_empty() && refusals.is_empty() {
+            bingle_core::relay::discovery::indexer_discover_closure(
+                app_id,
+                algo_provider_config.clone(),
+                None,
+            )()
+            .iter()
+            .filter(|r| r.id() != my_address)
+            .map(to_ref)
+            .collect()
+        } else {
+            Vec::new()
+        };
+        let plan = checkrelays::plan_relay_check(listed, discovered, refusals);
+        if !matches!(plan, checkrelays::RelayCheckPlan::Probe(_)) {
+            // Only a refusal needs our own registration checked on chain to name its cause.
+            let own_handle_registered = if matches!(plan, checkrelays::RelayCheckPlan::Refused(_)) {
+                let lookup_ops =
+                    AlgoOps::new_for_algorand(None, None, algo_provider_config.clone());
+                AlgoBingle::new(lookup_ops, app_id, asset_id)
+                    .handle_for_address(app_id, &my_address)
+                    .ok()
+                    .map(|h| h.is_some())
+            } else {
+                None
+            };
+            for line in checkrelays::describe_plan(
+                &plan,
+                app_id,
+                &my_address,
+                own_handle_registered,
+                waited,
+            ) {
+                tracing::warn!("{line}");
+            }
         } else {
             for r in &relays {
                 let mut ok: u32 = 0;
