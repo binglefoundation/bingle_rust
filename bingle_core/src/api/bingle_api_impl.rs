@@ -1,5 +1,6 @@
 use data_encoding::BASE32_NOPAD;
 use std::net::SocketAddr;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
@@ -195,6 +196,8 @@ pub struct BingleApiImpl {
         Mutex<Option<Box<dyn Fn(&UserId) -> Result<Option<Handle>, String> + Send + Sync>>>,
     handle_cache: Mutex<HandleCacheBi>,
     accounts_cache: Arc<Mutex<AccountsCache>>,
+    // Set once this node has registered an advert in the DDB, so stop() knows to sign off (#279).
+    advert_registered: AtomicBool,
     span: Mutex<tracing::Span>,
 }
 
@@ -248,6 +251,7 @@ impl BingleApiImpl {
                 id_to_handle_lookup_mock: Mutex::new(None),
                 handle_cache: Mutex::new(HandleCacheBi::new()),
                 accounts_cache: Arc::new(Mutex::new(AccountsCache::default())),
+                advert_registered: AtomicBool::new(false),
                 span: Mutex::new(tracing::Span::none()),
             }
         })
@@ -298,6 +302,7 @@ impl BingleApiImpl {
                 id_to_handle_lookup_mock: Mutex::new(None),
                 handle_cache: Mutex::new(HandleCacheBi::new()),
                 accounts_cache: Arc::new(Mutex::new(AccountsCache::default())),
+                advert_registered: AtomicBool::new(false),
                 span: Mutex::new(tracing::Span::none()),
             }
         })
@@ -557,6 +562,41 @@ impl BingleApiImpl {
     }
 }
 
+impl BingleApiImpl {
+    /// Send the DDB sign-off on a worker thread and wait at most `timeout` for it. Failure is
+    /// expected when the network is already gone, so it is logged at INFO, never WARN; the worker
+    /// is left to finish (or fail) on its own if it overruns.
+    fn signoff_with_timeout(&self, timeout: Duration) {
+        let cli = self.engine.ddb_client();
+        let (tx, rx) = std::sync::mpsc::channel();
+        let spawned = std::thread::Builder::new()
+            .name("ddb-signoff".to_string())
+            .spawn(move || {
+                let _ = tx.send(cli.signoff());
+            });
+        if let Err(e) = spawned {
+            tracing::info!(
+                "[BingleApiImpl::signoff_with_timeout] could not spawn sign-off: {}",
+                e
+            );
+            return;
+        }
+        match rx.recv_timeout(timeout) {
+            Ok(Ok(())) => tracing::info!("[BingleApiImpl::signoff_with_timeout] signed off"),
+            Ok(Err(e)) => {
+                tracing::info!(
+                    "[BingleApiImpl::signoff_with_timeout] sign-off failed: {}",
+                    e
+                )
+            }
+            Err(_) => tracing::info!(
+                "[BingleApiImpl::signoff_with_timeout] sign-off not confirmed within {:?}",
+                timeout
+            ),
+        }
+    }
+}
+
 impl Drop for BingleApiImpl {
     fn drop(&mut self) {
         // Ensure background threads and network mux are stopped to avoid use-after-free across tests
@@ -565,6 +605,10 @@ impl Drop for BingleApiImpl {
 }
 
 const DEFAULT_WAIT_RESPONSE_TIMEOUT: Duration = Duration::from_secs(90);
+
+/// Longest that stop() waits for the DDB sign-off (#279), so shutdown never hangs on an
+/// unreachable relay. Age-based advert expiry clears the record if the sign-off doesn't get through.
+pub const SIGNOFF_TIMEOUT: Duration = Duration::from_secs(2);
 
 impl BingleApi for BingleApiImpl {
     fn debug_print_options(&self) {
@@ -881,6 +925,13 @@ impl BingleApi for BingleApiImpl {
         let on_listening = self.on_listening.lock().expect("on_listening lock").clone();
         if let Some(cb) = on_listening {
             cb(false, crate::engine::NatType::Unknown);
+        }
+        // Remove our advert from the DDB before the transport goes down, so peers stop resolving a
+        // stopped node (#279). A relay does not sign off: its membership of the relay set follows
+        // its on-chain permission, and a restarting relay would otherwise drop out of every peer's
+        // set.
+        if self.advert_registered.swap(false, Ordering::SeqCst) && !self.opts().am_relay {
+            self.signoff_with_timeout(SIGNOFF_TIMEOUT);
         }
         // Stop Engine
         self.engine.stop();
@@ -1737,7 +1788,11 @@ impl crate::api::bingle_api::BingleApiInternal for BingleApiImpl {
             endpoint,
             am_relay
         );
-        cli.register_ip(endpoint, am_relay)
+        let res = cli.register_ip(endpoint, am_relay);
+        if res.is_ok() {
+            self.advert_registered.store(true, Ordering::SeqCst);
+        }
+        res
     }
     fn ddb_register_relay(
         &self,
@@ -1749,7 +1804,11 @@ impl crate::api::bingle_api::BingleApiInternal for BingleApiImpl {
             "[BingleApiImpl::ddb_register_relay] registering relay: id={}",
             relay_id
         );
-        cli.register_relay(relay_id, relay_sig)
+        let res = cli.register_relay(relay_id, relay_sig);
+        if res.is_ok() {
+            self.advert_registered.store(true, Ordering::SeqCst);
+        }
+        res
     }
     fn ddb_signoff(&self) -> Result<(), BingleError> {
         let cli = self.engine.access(|e| e.ddb_client());
