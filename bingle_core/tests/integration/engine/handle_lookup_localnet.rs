@@ -41,6 +41,7 @@ fn make_read_only_api(passphrase: &str, app_id: u64) -> std::sync::Arc<BingleApi
         dangerous_debug: false,
         log_mode: bingle_core::util::logging::LogMode::Plain,
         wait_response_timeout: None,
+        advert_ttl: None,
     };
     BingleApiImpl::new(&opts)
 }

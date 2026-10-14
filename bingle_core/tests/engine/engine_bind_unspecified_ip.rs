@@ -35,6 +35,7 @@ pub fn engine_binds_to_unspecified_ip_when_static_addr_is_provided() {
         dangerous_debug: true,
         log_mode: bingle_core::util::logging::LogMode::Plain,
         wait_response_timeout: None,
+        advert_ttl: None,
     };
 
     api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.start(&opts))

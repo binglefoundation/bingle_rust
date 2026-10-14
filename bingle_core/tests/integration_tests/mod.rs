@@ -33,6 +33,8 @@ pub mod register_collision;
 #[path = "../blockchain/algo_bingle/register_uniqueness.rs"]
 pub mod register_uniqueness;
 // Engine integration tests needing localnet
+#[path = "../integration/engine/advert_expiry_localnet.rs"]
+pub mod advert_expiry_localnet;
 #[path = "../integration/engine/handle_lookup_localnet.rs"]
 pub mod handle_lookup_localnet;
 #[path = "../integration/engine/relay_permission_eviction_localnet.rs"]

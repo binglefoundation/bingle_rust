@@ -275,6 +275,7 @@ pub fn bingle_api_send_via_relay() {
         dangerous_debug: true,
         log_mode: bingle_core::util::logging::LogMode::Plain,
         wait_response_timeout: None,
+        advert_ttl: None,
     };
     let start_res = api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.start(&opts));
     if let Err(e) = start_res {

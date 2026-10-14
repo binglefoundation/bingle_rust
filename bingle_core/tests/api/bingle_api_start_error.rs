@@ -24,6 +24,7 @@ pub fn bingle_api_start_propagates_engine_error() {
         dangerous_debug: true,
         log_mode: bingle_core::util::logging::LogMode::Plain,
         wait_response_timeout: None,
+        advert_ttl: None,
     };
 
     let res = api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.start(&opts));

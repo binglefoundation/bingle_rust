@@ -51,6 +51,7 @@ fn start_relay(
         dangerous_debug: false,
         log_mode: bingle_core::util::logging::LogMode::Plain,
         wait_response_timeout: None,
+        advert_ttl: None,
     };
     let api = BingleApiImpl::new(&opts);
     api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.start(&opts))
@@ -99,6 +100,7 @@ fn start_client_at_addr(
         dangerous_debug: false,
         log_mode: bingle_core::util::logging::LogMode::Plain,
         wait_response_timeout: None,
+        advert_ttl: None,
     };
     let api = BingleApiImpl::new(&opts);
     api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.start(&opts))
@@ -138,6 +140,7 @@ fn start_client(
         // Short response timeout so a transient relay non-response fails fast and the bounded
         // Listen retry in registration gets multiple attempts within the test's registration wait.
         wait_response_timeout: Some(Duration::from_secs(20)),
+        advert_ttl: None,
     };
     let api = BingleApiImpl::new(&opts);
     api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.start(&opts))

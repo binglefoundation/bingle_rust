@@ -38,6 +38,7 @@ fn start_pair(
         dangerous_debug: true,
         log_mode: bingle_core::util::logging::LogMode::Plain,
         wait_response_timeout: None,
+        advert_ttl: None,
     };
     let client_opts = StartOptions {
         handle: "client".into(),
@@ -54,6 +55,7 @@ fn start_pair(
         dangerous_debug: true,
         log_mode: bingle_core::util::logging::LogMode::Plain,
         wait_response_timeout: None,
+        advert_ttl: None,
     };
 
     let server = BingleApiImpl::new(&server_opts);

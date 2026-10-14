@@ -252,6 +252,7 @@ pub fn restricted_nat_client_reregisters_after_network_change() {
         dangerous_debug: false,
         log_mode: bingle_core::util::logging::LogMode::Plain,
         wait_response_timeout: None,
+        advert_ttl: None,
     };
     let client = bingle_core::api::bingle_api_impl::BingleApiImpl::new(&opts);
     client
@@ -386,6 +387,7 @@ pub fn restricted_nat_client_reregisters_after_network_change() {
         dangerous_debug: false,
         log_mode: bingle_core::util::logging::LogMode::Plain,
         wait_response_timeout: None,
+        advert_ttl: None,
     };
     let client = bingle_core::api::bingle_api_impl::BingleApiImpl::new(&opts2);
     client

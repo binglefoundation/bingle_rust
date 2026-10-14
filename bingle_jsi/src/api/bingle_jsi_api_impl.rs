@@ -559,6 +559,7 @@ impl BingleJsiApiImpl {
             dangerous_debug: false, // We don't want to enable dangerous debug DTLS features
             log_mode: bingle_core::util::logging::LogMode::JS,
             wait_response_timeout: None, // default to DEFAULT_WAIT_RESPONSE_TIMEOUT
+            advert_ttl: None,
         };
 
         // Install the callback log bridge (no-op if already installed by a prior init call)

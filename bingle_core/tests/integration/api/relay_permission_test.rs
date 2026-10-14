@@ -53,6 +53,7 @@ pub fn test_relay_start_fails_if_not_allowed_on_chain() {
         dangerous_debug: true,
         log_mode: bingle_core::util::logging::LogMode::Plain,
         wait_response_timeout: None,
+        advert_ttl: None,
     };
 
     let relay = BingleApiImpl::new(&r_opts);
@@ -125,6 +126,7 @@ pub fn test_relay_start_fails_if_not_opted_in() {
         dangerous_debug: true,
         log_mode: bingle_core::util::logging::LogMode::Plain,
         wait_response_timeout: None,
+        advert_ttl: None,
     };
 
     let relay = BingleApiImpl::new(&r_opts);

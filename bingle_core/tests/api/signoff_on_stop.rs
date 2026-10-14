@@ -120,3 +120,70 @@ fn test_stop_is_bounded_when_signoff_hangs() {
         took
     );
 }
+
+/// Records each DDB call in order, to check no advert refresh follows the sign-off (#279 with #280).
+struct EventLogDdb {
+    events: Arc<std::sync::Mutex<Vec<&'static str>>>,
+}
+
+impl DdbClient for EventLogDdb {
+    fn register_ip(&self, _endpoint: SocketAddr, _am_relay: bool) -> Result<(), BingleError> {
+        self.events.lock().unwrap().push("register");
+        Ok(())
+    }
+    fn register_relay(
+        &self,
+        _relay_id: String,
+        _relay_sig: Option<String>,
+    ) -> Result<(), BingleError> {
+        self.events.lock().unwrap().push("register");
+        Ok(())
+    }
+    fn lookup(&self, _id: &str) -> Result<NetworkEndpoint, BingleError> {
+        Err(BingleError::Other("not found".to_string()))
+    }
+    fn signoff(&self) -> Result<(), BingleError> {
+        self.events.lock().unwrap().push("signoff");
+        Ok(())
+    }
+    fn start_load_from_peer(&self, _peer_id: &str) -> Result<usize, BingleError> {
+        Ok(0)
+    }
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+fn test_stop_halts_advert_refresh_before_signing_off() {
+    let mut opts = StartOptions::new("".into());
+    // Refresh every 50ms, so several passes run before the stop.
+    opts.advert_ttl = Some(Duration::from_millis(150));
+    let api = BingleApiImpl::new(&opts);
+    let events = Arc::new(std::sync::Mutex::new(Vec::new()));
+    api.engine_set_ddb_client_for_tests(Arc::new(EventLogDdb {
+        events: events.clone(),
+    }));
+    api.ddb_register_ip(endpoint(), false).unwrap();
+    std::thread::sleep(Duration::from_millis(300));
+    api.stop();
+    std::thread::sleep(Duration::from_millis(300));
+
+    let events = events.lock().unwrap().clone();
+    let refreshes = events.iter().filter(|e| **e == "register").count();
+    assert!(
+        refreshes >= 2,
+        "expected the advert to be refreshed before the stop, events: {:?}",
+        events
+    );
+    assert_eq!(
+        events.last(),
+        Some(&"signoff"),
+        "the sign-off must be the last DDB call, events: {:?}",
+        events
+    );
+    assert_eq!(
+        events.iter().filter(|e| **e == "signoff").count(),
+        1,
+        "events: {:?}",
+        events
+    );
+}

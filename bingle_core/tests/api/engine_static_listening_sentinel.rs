@@ -177,6 +177,7 @@ pub fn engine_static_ip_triggers_on_listening_handler() {
         dangerous_debug: true,
         log_mode: bingle_core::util::logging::LogMode::Plain,
         wait_response_timeout: None,
+        advert_ttl: None,
     };
 
     // Start should cause Engine::start_with_addr to notify listening=true via EngineInternalPtr

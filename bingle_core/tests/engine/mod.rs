@@ -75,6 +75,9 @@ pub mod sender_auth;
 #[path = "ddb_upsert_relay_check.rs"]
 pub mod ddb_upsert_relay_check;
 
+#[path = "advert_refresh.rs"]
+pub mod advert_refresh;
+
 #[path = "relay_keep_alive_engine.rs"]
 pub mod relay_keep_alive_engine;
 
