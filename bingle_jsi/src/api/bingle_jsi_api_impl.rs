@@ -1852,12 +1852,8 @@ impl BingleJsiApi for BingleJsiApiImpl {
             *guard = false;
         }
 
-        // Tell a relay we are leaving so it removes our DDB entry. Best-effort:
-        // relies on the transport ACK, and a failure here must not block shutdown.
-        match self.api.ddb_signoff() {
-            Ok(()) => tracing::info!("Sent DDB signoff"),
-            Err(e) => tracing::warn!("DDB signoff failed (continuing shutdown): {}", e),
-        }
+        // The DDB sign-off is sent by the core API's stop() below, bounded so it can't hang
+        // shutdown (#279).
 
         // Stop the shared pending-message sender, if running (issue #283).
         let pending_sender = self.pending_sender.lock().ok().and_then(|mut g| g.take());

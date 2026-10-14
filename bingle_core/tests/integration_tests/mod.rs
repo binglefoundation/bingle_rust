@@ -21,6 +21,8 @@ pub mod unique_handle;
 pub mod connection_tests;
 #[path = "../integration/api/send_message_to_id_integration.rs"]
 pub mod send_message_to_id_integration;
+#[path = "../integration/api/signoff_on_stop_localnet.rs"]
+pub mod signoff_on_stop_localnet;
 // API tests needing localnet
 #[path = "../api/endpoint_identify_integration.rs"]
 pub mod endpoint_identify_integration;
