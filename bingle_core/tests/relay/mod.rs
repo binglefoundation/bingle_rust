@@ -12,6 +12,9 @@ pub mod relay_info_cache;
 #[path = "relay_keep_alive_sender.rs"]
 pub mod relay_keep_alive_sender;
 
+#[path = "relay_permission_refresh.rs"]
+pub mod relay_permission_refresh;
+
 #[path = "relay_updater.rs"]
 pub mod relay_updater;
 

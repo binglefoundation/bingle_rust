@@ -293,6 +293,10 @@ pub struct Engine {
     // Refusals received from peers that could not authenticate us, latest per peer (issue #313).
     // Shared with the DTLS handler closure, which records them as they arrive.
     peer_refusals: Arc<Mutex<Vec<crate::api::bingle_api::PeerRefusal>>>,
+    // On a relay: the loop that evicts relays whose on-chain allow_relay was withdrawn (#120).
+    relay_permission_refresher:
+        Mutex<Option<crate::relay::relay_permission_refresh::RelayPermissionRefresher>>,
+    relay_permission_refresh_interval: Mutex<std::time::Duration>,
 }
 
 impl Engine {
@@ -400,6 +404,13 @@ impl Engine {
     /// Test helper to upsert provided roots into backend.
     pub fn upsert_root_relays_for_tests(&self, roots: Vec<RelayInfo>) {
         self.upsert_roots_into_backend(&roots);
+    }
+
+    /// Test helper to put a record straight into the backend, bypassing the ingest gate.
+    pub fn ddb_backend_upsert_for_tests(&self, record: AdvertRecord) {
+        if let Ok(mut b) = self.ddb_backend.lock() {
+            b.upsert(record);
+        }
     }
 
     /// Test helper to query backend for a given id.
@@ -666,6 +677,10 @@ impl Engine {
                 crate::relay::relay_keep_alive::RELAY_KEEP_ALIVE_INTERVAL,
             ),
             peer_refusals: Arc::new(Mutex::new(Vec::new())),
+            relay_permission_refresher: Mutex::new(None),
+            relay_permission_refresh_interval: Mutex::new(
+                crate::relay::relay_permission_refresh::RELAY_PERMISSION_REFRESH_INTERVAL,
+            ),
         };
         eng.set_last_public_addr(options.static_ip);
 
@@ -1846,6 +1861,7 @@ impl Engine {
             tracing::info!(
                 "[Engine::initialize_relay] stage complete: DDB initialized and relay marked Available"
             );
+            self.start_relay_permission_refresh();
         }
         tracing::info!("[Engine::initialize_relay] complete for {:?}", self.issuer);
     }
@@ -2635,6 +2651,86 @@ impl Engine {
         }
     }
 
+    /// Start (or restart) the loop that evicts relays whose on-chain `allow_relay` permission has
+    /// been withdrawn from this relay's set (issue #120). It runs one pass now, which also clears
+    /// any disabled relay re-added from the root list during initialisation.
+    pub(crate) fn start_relay_permission_refresh(&self) {
+        let Ok(mut guard) = self.relay_permission_refresher.lock() else {
+            tracing::error!(
+                "[Engine::start_relay_permission_refresh] relay_permission_refresher mutex poisoned"
+            );
+            return;
+        };
+        if let Some(mut old) = guard.take() {
+            old.stop();
+        }
+        let api_weak = self.bingle_api.clone();
+        let span = self.span();
+        let pass: crate::relay::relay_permission_refresh::RefreshPass = Box::new(move || {
+            let _guard = span.enter();
+            let Some(api) = api_weak.upgrade() else {
+                return false;
+            };
+            api.with_engine(&mut |e| {
+                e.evict_disallowed_relays();
+            });
+            true
+        });
+        let mut refresher = crate::relay::relay_permission_refresh::RelayPermissionRefresher::new(
+            *self.relay_permission_refresh_interval.lock().unwrap(),
+            pass,
+        );
+        refresher.start();
+        *guard = Some(refresher);
+    }
+
+    /// Stop the relay permission refresh loop, if running.
+    pub(crate) fn stop_relay_permission_refresh(&self) {
+        let old = self
+            .relay_permission_refresher
+            .lock()
+            .ok()
+            .and_then(|mut g| g.take());
+        if let Some(mut old) = old {
+            old.stop();
+        }
+    }
+
+    /// Evict relays from this node's DDB whose on-chain `allow_relay` permission is withdrawn, so
+    /// they leave the relay set used for ripple and getRelaysStatus (issue #120). A relay whose
+    /// permission cannot be read (chain unreachable) is kept. Returns the evicted ids.
+    pub fn evict_disallowed_relays(&self) -> Vec<String> {
+        let Some(api) = self.bingle_api.upgrade() else {
+            tracing::warn!("[Engine::evict_disallowed_relays] bingle_api dropped; skipping");
+            return Vec::new();
+        };
+        let my_id = match self.issuer() {
+            Ok(iss) => iss
+                .trim_end_matches(crate::protocol::ISSUER_SUFFIX)
+                .to_string(),
+            Err(_) => {
+                tracing::warn!("[Engine::evict_disallowed_relays] issuer not set; skipping");
+                return Vec::new();
+            }
+        };
+        let evicted = crate::ddb::evict_disallowed_relays(&self.ddb_backend, &my_id, |id| {
+            crate::blockchain::algo_bingle::relay_permission(
+                api.as_ref(),
+                id,
+                "Engine::evict_disallowed_relays",
+            )
+        });
+        if !evicted.is_empty() {
+            info_theme!(
+                themes::ENGINE,
+                "[Engine::evict_disallowed_relays] evicted {} relay(s) no longer permitted on chain: {:?}",
+                evicted.len(),
+                evicted
+            );
+        }
+        evicted
+    }
+
     /// Start the relay keep-alive towards the remembered home relay if it is not already running.
     /// Used on foreground to resume the keep-alive that backgrounding paused, without disturbing a
     /// keep-alive that is already live.
@@ -2773,6 +2869,7 @@ impl Engine {
         tracing::info!("[Engine::stop] starting {:?}:{:?}", self.issuer, last_addr);
         // Stop the relay keep-alive first so no send races the teardown below
         self.stop_relay_keep_alive();
+        self.stop_relay_permission_refresh();
         // Clear any API pointers and global router callbacks to avoid dangling references across tests
         self.clear_api_bindings();
         tracing::info!("[Engine::stop] stop dtls");
@@ -3013,6 +3110,19 @@ impl Engine {
     /// long to keep sends from firing during engine lifecycle tests).
     pub fn test_set_relay_keep_alive_interval(&self, interval: std::time::Duration) {
         *self.relay_keep_alive_interval.lock().unwrap() = interval;
+    }
+
+    /// Test helper: override the relay permission refresh interval (#120).
+    pub fn test_set_relay_permission_refresh_interval(&self, interval: std::time::Duration) {
+        *self.relay_permission_refresh_interval.lock().unwrap() = interval;
+    }
+
+    /// Test helper: whether the relay permission refresh loop is running (#120).
+    pub fn relay_permission_refresh_running_for_tests(&self) -> bool {
+        self.relay_permission_refresher
+            .lock()
+            .map(|g| g.is_some())
+            .unwrap_or(false)
     }
 
     /// Test helper: the (relay_id, relay_addr) the running keep-alive targets, if any.

@@ -33,6 +33,8 @@ pub mod register_uniqueness;
 // Engine integration tests needing localnet
 #[path = "../integration/engine/handle_lookup_localnet.rs"]
 pub mod handle_lookup_localnet;
+#[path = "../integration/engine/relay_permission_eviction_localnet.rs"]
+pub mod relay_permission_eviction_localnet;
 #[path = "../integration/engine/route_incoming_sender_auth_localnet.rs"]
 pub mod route_incoming_sender_auth_localnet;
 // Relay localnet test

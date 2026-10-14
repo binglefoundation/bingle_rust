@@ -269,3 +269,52 @@ pub fn test_ddb_upsert_non_relay_always_accepted() {
         "Non-relay record should be accepted even without blockchain info"
     );
 }
+
+/// Issue #120: the periodic eviction must not drop a relay when the chain cannot be read, so a
+/// chain outage cannot empty the relay set (ingest stays fail-closed, eviction fails open).
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn test_evict_keeps_relay_when_blockchain_unreachable() {
+    let config = algo_ops::AlgoChainConfig {
+        client_api_url: "http://localhost".to_string(),
+        client_api_port: 1234,
+        indexer_api_url: "http://localhost".to_string(),
+        indexer_api_port: 1235,
+        token: Some("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string()),
+        token_key: Some("X-Algo-API-Token".to_string()),
+        app_id: None,
+        asset_id: None,
+        ..Default::default()
+    };
+    let api = DummyApi {
+        app_id: Some(123),
+        config: Some(config),
+    };
+    let engine = Engine::new(
+        &StartOptions::new("".into()),
+        crate::util::mock_bingle_api::to_weak(api),
+    );
+    engine.set_issuer(format!(
+        "{}{}",
+        crate::util::test_util::ADDRESS_RECEIVE,
+        bingle_core::protocol::ISSUER_SUFFIX
+    ));
+
+    let id = crate::util::test_util::ADDRESS_SPEND.to_string();
+    let record = AdvertRecord::new_unsigned(
+        id.clone(),
+        None,
+        Some(true),
+        None,
+        None,
+        "2025-01-01T00:00:00Z".into(),
+    );
+    engine.ddb_backend_upsert_for_tests(record);
+
+    let evicted = engine.evict_disallowed_relays();
+    assert!(evicted.is_empty(), "nothing is evicted on a chain error");
+    assert!(
+        engine.ddb_backend_lookup_for_tests(&id).is_some(),
+        "the relay stays in the set while its permission cannot be read"
+    );
+}
