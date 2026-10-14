@@ -51,6 +51,12 @@ esac
 # the `test-hooks` feature automatically via bingle_core's self dev-dependency.
 CLIPPY_TARGETS=(--workspace --all-targets)
 
+# Off-by-default features that gate whole test modules: the store-and-forward end-to-end cases in
+# the bingle_cli `integration` target need a live Sidewinder node (localnet) or cluster (TestNet),
+# so the pass above never compiles them. Lint them here too, so an API change cannot break them
+# unnoticed (issue #225) — this only compiles them, it does not run them.
+GATED_CLIPPY_TARGETS=(-p bingle_cli --features sidewinder_localnet,sidewinder_testnet --test integration)
+
 # Target set for `clippy --fix`: lib + bins only, NOT test targets. The test tree
 # includes shared helpers (e.g. tests/test_util.rs) via `#[path = "../test_util.rs"]`
 # from dozens of files, so a single `clippy --fix --all-targets` pass sees those
@@ -185,6 +191,33 @@ if [[ "${RUN_CLIPPY}" == "1" ]]; then
   # In strict mode, clippy's own exit code (with -D warnings) decides pass/fail.
   [[ "${STRICT}" == "1" && "${clippy_rc}" -ne 0 ]] && fail=1
   rm -f "${clippy_log}" "${clippy_log}.plain"
+fi
+
+# ---------------------------------------------------- clippy (gated features)
+if [[ "${RUN_CLIPPY}" == "1" ]]; then
+  section "clippy (${GATED_CLIPPY_TARGETS[*]})"
+  gated_log="$(mktemp)"
+  if [[ "${STRICT}" == "1" ]]; then
+    cargo clippy "${GATED_CLIPPY_TARGETS[@]}" -- -D warnings >"${gated_log}" 2>&1
+    gated_rc=$?
+  else
+    cargo clippy "${GATED_CLIPPY_TARGETS[@]}" >"${gated_log}" 2>&1
+    gated_rc=$?
+  fi
+  # Strip ANSI before matching, as above.
+  sed -E $'s/\x1b\\[[0-9;]*m//g' "${gated_log}" > "${gated_log}.plain"
+  gated_issues="$(grep -cE '^(error(\[|:)|warning: )' "${gated_log}.plain")"
+  if [[ "${gated_rc}" -eq 0 && "${gated_issues}" -eq 0 ]]; then
+    echo -e "${GREEN}clean${NC}"
+  else
+    echo -e "${RED}${gated_issues} issue(s) (exit ${gated_rc})${NC}"
+    # Always surface the diagnostics on failure so CI shows the cause.
+    if [[ "${DETAIL}" == "1" || "${gated_rc}" -ne 0 ]]; then
+      echo; grep -E '^(error|warning)' "${gated_log}.plain" | head -60
+    fi
+    [[ "${STRICT}" == "1" && "${gated_rc}" -ne 0 ]] && fail=1
+  fi
+  rm -f "${gated_log}" "${gated_log}.plain"
 fi
 
 # -------------------------------------------------------------------- docs
