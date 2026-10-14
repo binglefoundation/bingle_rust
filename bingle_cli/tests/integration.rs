@@ -18,7 +18,8 @@ use std::process::Command;
 // Store-and-forward end-to-end against a real Sidewinder node on LocalNet (epic #200, story #216).
 // Gated behind the `sidewinder_localnet` feature so it only compiles/runs when explicitly enabled: it
 // needs a live `sw-node` (via scripts/e2e_sidewinder_localnet.sh) + algokit localnet and FAILS (not skips)
-// when they are absent. See the module's own docs for how to run it.
+// when they are absent. The integration workflow enables it (issue #224). See the module's own docs
+// for how to run it.
 #[cfg(feature = "sidewinder_localnet")]
 #[path = "store_and_forward_e2e.rs"]
 mod store_and_forward_e2e;
