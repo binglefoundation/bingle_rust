@@ -242,6 +242,31 @@ pub struct Fail {
     pub reason: String,
 }
 
+impl Fail {
+    /// The refusal a node sends back, in place of a reply, to a request whose sender it cannot
+    /// authenticate (issue #313). `response_tag` is the request's `tag`, so the sender's waiter
+    /// receives the refusal instead of timing out.
+    pub fn unauthenticated(response_tag: Option<String>) -> Self {
+        Self {
+            app: None,
+            typ: "fail".to_string(),
+            response_tag,
+            reason: crate::api::bingle_api::REFUSAL_UNAUTHENTICATED.to_string(),
+        }
+    }
+
+    /// The reason carried by a generic `fail` message, or `None` when `value` is not one.
+    pub fn reason_of(value: &serde_json::Value) -> Option<String> {
+        if value.get("type").and_then(|t| t.as_str()) != Some("fail") {
+            return None;
+        }
+        value
+            .get("reason")
+            .and_then(|r| r.as_str())
+            .map(|r| r.to_string())
+    }
+}
+
 // ---------------- DDB messages (app = "ddb") ----------------
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

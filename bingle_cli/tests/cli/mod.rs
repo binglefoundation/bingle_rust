@@ -15,6 +15,8 @@ pub mod chat_repl;
 pub mod chat_send;
 #[path = "chat_state.rs"]
 pub mod chat_state;
+#[path = "checkrelays.rs"]
+pub mod checkrelays;
 #[path = "echo_mode.rs"]
 pub mod echo_mode;
 #[path = "logging.rs"]

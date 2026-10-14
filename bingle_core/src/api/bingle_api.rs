@@ -442,6 +442,25 @@ impl<T: BingleApi + BingleApiInternal> BingleApiBoth for T {}
 #[doc(hidden)]
 pub type BingleApiBothType = std::sync::Weak<dyn BingleApiBoth>;
 
+/// Reason a node gives when it refuses a request because it cannot authenticate the sender: it
+/// found no handle for the sender's id on its app (the account is not opted in or has no handle
+/// there, or the node could not read the chain). Carried in the generic `fail` message sent back
+/// in place of a reply (issue #313).
+#[doc(hidden)]
+pub const REFUSAL_UNAUTHENTICATED: &str = "unauthenticated";
+
+/// A refusal received from a peer: the peer answered one of our requests with a `fail` message
+/// instead of a reply (issue #313). Recorded by the engine so diagnostics such as
+/// `bingle_cli checkrelays` can report why a peer did not serve us.
+#[doc(hidden)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PeerRefusal {
+    /// Id (Algorand address) of the peer that refused.
+    pub peer_id: UserId,
+    /// The reason the peer gave, e.g. [`REFUSAL_UNAUTHENTICATED`].
+    pub reason: String,
+}
+
 /// Progress callback reported during send operations.
 /// Parameters:
 /// - percent_done: 0..=100 indicating the percentage complete

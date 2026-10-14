@@ -24,4 +24,6 @@ pub mod chat_send;
 #[doc(hidden)]
 pub mod chat_state;
 #[doc(hidden)]
+pub mod checkrelays;
+#[doc(hidden)]
 pub mod logging;
