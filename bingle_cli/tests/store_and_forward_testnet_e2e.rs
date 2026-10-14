@@ -189,11 +189,12 @@ fn local_config(cfg: &TestnetConfig, send: bool, receive: bool) -> LocalApiConfi
 /// failure must not double-post (idempotency).
 fn fail_delivery_twice(sender: &mut BingleApiLocalImpl, timestamp: i64) {
     let reason = || Some("Recipient unreachable — will keep retrying".to_string());
+    let id = sender.id_of_timestamp_for_tests(timestamp);
     sender
-        .update_message_status(timestamp, 0.5, reason(), None)
+        .update_message_status(&id, 0.5, reason(), None)
         .expect("first failure");
     sender
-        .update_message_status(timestamp, 0.5, reason(), None)
+        .update_message_status(&id, 0.5, reason(), None)
         .expect("second failure (retry) — must not double-post");
 }
 
