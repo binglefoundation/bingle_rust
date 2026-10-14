@@ -35,6 +35,65 @@ pub trait DdbBackend {
     fn len(&self) -> usize;
 }
 
+/// Choose which relays in an epoch snapshot to evict because they are no longer permitted to relay
+/// on chain (issue #120).
+///
+/// `permission` reports a relay's on-chain `allow_relay` state: `Some(true)` permitted,
+/// `Some(false)` not permitted (flag cleared, or not opted in to the app), `None` unknown (the
+/// chain could not be read). Only a definite `Some(false)` evicts, so a chain outage never empties
+/// the relay set. `my_id` is never evicted: a relay's own permission is checked when it starts.
+pub fn relays_to_evict(
+    relay_ids: &[String],
+    my_id: &str,
+    mut permission: impl FnMut(&str) -> Option<bool>,
+) -> Vec<String> {
+    relay_ids
+        .iter()
+        .filter(|id| id.as_str() != my_id)
+        .filter(|id| permission(id) == Some(false))
+        .cloned()
+        .collect()
+}
+
+/// Remove relays that are no longer permitted to relay from `backend`, so they leave the relay set
+/// that [`DdbBackend::make_epoch_info`] builds for ripple and getRelaysStatus (issue #120).
+///
+/// The backend lock is held only to snapshot the relay ids and to delete; `permission` (which may
+/// query the chain) runs without it. See [`relays_to_evict`] for which relays are removed. Returns
+/// the evicted ids.
+pub fn evict_disallowed_relays<B: DdbBackend + ?Sized>(
+    backend: &std::sync::Mutex<B>,
+    my_id: &str,
+    permission: impl FnMut(&str) -> Option<bool>,
+) -> Vec<String> {
+    let relay_ids = match backend.lock() {
+        Ok(b) => b.make_epoch_info().0,
+        Err(_) => {
+            tracing::error!("[ddb::evict_disallowed_relays] DDB backend lock poisoned");
+            return Vec::new();
+        }
+    };
+    let evict = relays_to_evict(&relay_ids, my_id, permission);
+    if evict.is_empty() {
+        return evict;
+    }
+    match backend.lock() {
+        Ok(mut b) => {
+            for id in &evict {
+                tracing::info!(
+                    "[ddb::evict_disallowed_relays] removing relay id={id}: allow_relay is no longer set on chain"
+                );
+                b.delete(id);
+            }
+        }
+        Err(_) => {
+            tracing::error!("[ddb::evict_disallowed_relays] DDB backend lock poisoned");
+            return Vec::new();
+        }
+    }
+    evict
+}
+
 /// Simple in-memory DDB backend backed by a HashMap
 #[derive(Default)]
 pub struct InMemoryDdbBackend {

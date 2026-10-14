@@ -6,6 +6,9 @@ pub mod advert_record_json;
 #[path = "ddb/backend.rs"]
 pub mod backend;
 
+#[path = "ddb/relay_eviction.rs"]
+pub mod relay_eviction;
+
 #[path = "ddb/client/register_ip.rs"]
 pub mod ddb_client_register_ip;
 
