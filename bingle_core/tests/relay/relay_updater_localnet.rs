@@ -132,6 +132,7 @@ fn relay_updater_localnet_e2e_matrix() {
         dangerous_debug: true,
         log_mode: bingle_core::util::logging::LogMode::Plain,
         wait_response_timeout: None,
+        advert_ttl: None,
     };
     let client1 = BingleApiImpl::new(&client1_opts);
     test_util::register_client_on_blockchain(
@@ -396,6 +397,7 @@ fn relay_start_options(
         dangerous_debug: true,
         log_mode: bingle_core::util::logging::LogMode::Plain,
         wait_response_timeout: None,
+        advert_ttl: None,
     }
 }
 fn register_relay_static_endpoint(

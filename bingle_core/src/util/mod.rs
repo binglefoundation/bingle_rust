@@ -17,6 +17,8 @@ pub mod cli_utils;
 pub mod config_utils;
 #[doc(hidden)]
 pub mod net_det;
+/// Background loop that runs a pass once per interval ([`periodic_task::PeriodicTask`]).
+pub mod periodic_task;
 /// Wall-clock helpers ([`time::now_millis`]).
 pub mod time;
 /// Build and version metadata, [`version::VersionInfo`].

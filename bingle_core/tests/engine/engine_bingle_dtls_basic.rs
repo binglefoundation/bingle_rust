@@ -65,6 +65,7 @@ pub fn engine_basic_bingle_dtls_layer() {
         dangerous_debug: true,
         log_mode: bingle_core::util::logging::LogMode::Plain,
         wait_response_timeout: None,
+        advert_ttl: None,
     };
     let client_opts = StartOptions {
         handle: "client".into(),
@@ -81,6 +82,7 @@ pub fn engine_basic_bingle_dtls_layer() {
         dangerous_debug: true,
         log_mode: bingle_core::util::logging::LogMode::Plain,
         wait_response_timeout: None,
+        advert_ttl: None,
     };
 
     // Start both nodes (bound to OS-assigned loopback ports).

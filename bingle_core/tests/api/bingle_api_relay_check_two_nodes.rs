@@ -30,6 +30,7 @@ pub fn bingle_api_relay_check_two_nodes() {
         dangerous_debug: true,
         log_mode: bingle_core::util::logging::LogMode::Plain,
         wait_response_timeout: None,
+        advert_ttl: None,
     };
     let relay = BingleApiImpl::new(&relay_opts);
     relay.set_id_to_handle_lookup_mock_for_tests(Box::new(|user_id| {
@@ -96,6 +97,7 @@ pub fn bingle_api_relay_check_two_nodes() {
         dangerous_debug: true,
         log_mode: bingle_core::util::logging::LogMode::Plain,
         wait_response_timeout: None,
+        advert_ttl: None,
     };
     client.set_id_to_handle_lookup_mock_for_tests(Box::new(|user_id| {
         if user_id.is_empty() {

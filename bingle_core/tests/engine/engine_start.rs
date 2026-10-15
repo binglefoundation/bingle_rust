@@ -156,6 +156,7 @@ pub fn engine_start_with_static_ip_localhost_ok() {
         dangerous_debug: true,
         log_mode: bingle_core::util::logging::LogMode::Plain,
         wait_response_timeout: None,
+        advert_ttl: None,
     };
     let res = engine.start(&opts);
     // Engine may fail to start DTLS due to lack of certificates; however, our DTLS implementation only

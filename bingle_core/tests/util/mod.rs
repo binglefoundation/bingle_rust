@@ -8,6 +8,7 @@ pub mod test_util;
 pub mod arc_retry;
 pub mod mock_bingle_api;
 pub mod net_det;
+pub mod periodic_task;
 pub mod reusable_mock_api;
 pub mod version;
 

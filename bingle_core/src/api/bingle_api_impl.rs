@@ -1,6 +1,5 @@
 use data_encoding::BASE32_NOPAD;
 use std::net::SocketAddr;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
@@ -196,8 +195,6 @@ pub struct BingleApiImpl {
         Mutex<Option<Box<dyn Fn(&UserId) -> Result<Option<Handle>, String> + Send + Sync>>>,
     handle_cache: Mutex<HandleCacheBi>,
     accounts_cache: Arc<Mutex<AccountsCache>>,
-    // Set once this node has registered an advert in the DDB, so stop() knows to sign off (#279).
-    advert_registered: AtomicBool,
     span: Mutex<tracing::Span>,
 }
 
@@ -251,7 +248,6 @@ impl BingleApiImpl {
                 id_to_handle_lookup_mock: Mutex::new(None),
                 handle_cache: Mutex::new(HandleCacheBi::new()),
                 accounts_cache: Arc::new(Mutex::new(AccountsCache::default())),
-                advert_registered: AtomicBool::new(false),
                 span: Mutex::new(tracing::Span::none()),
             }
         })
@@ -302,7 +298,6 @@ impl BingleApiImpl {
                 id_to_handle_lookup_mock: Mutex::new(None),
                 handle_cache: Mutex::new(HandleCacheBi::new()),
                 accounts_cache: Arc::new(Mutex::new(AccountsCache::default())),
-                advert_registered: AtomicBool::new(false),
                 span: Mutex::new(tracing::Span::none()),
             }
         })
@@ -930,7 +925,9 @@ impl BingleApi for BingleApiImpl {
         // stopped node (#279). A relay does not sign off: its membership of the relay set follows
         // its on-chain permission, and a restarting relay would otherwise drop out of every peer's
         // set.
-        if self.advert_registered.swap(false, Ordering::SeqCst) && !self.opts().am_relay {
+        // Taking the registration also stops the advert refresh (#280), so a refresh can't re-add
+        // the advert after the sign-off, and a second stop() finds nothing to sign off.
+        if self.engine.take_advert_registration().is_some() && !self.opts().am_relay {
             self.signoff_with_timeout(SIGNOFF_TIMEOUT);
         }
         // Stop Engine
@@ -1788,11 +1785,11 @@ impl crate::api::bingle_api::BingleApiInternal for BingleApiImpl {
             endpoint,
             am_relay
         );
-        let res = cli.register_ip(endpoint, am_relay);
-        if res.is_ok() {
-            self.advert_registered.store(true, Ordering::SeqCst);
-        }
-        res
+        cli.register_ip(endpoint, am_relay)?;
+        // Remember it so the advert refresh can repeat it before relays expire it (#280).
+        self.engine
+            .note_advert_registered(crate::ddb::AdvertRegistration::Ip { endpoint, am_relay });
+        Ok(())
     }
     fn ddb_register_relay(
         &self,
@@ -1804,13 +1801,18 @@ impl crate::api::bingle_api::BingleApiInternal for BingleApiImpl {
             "[BingleApiImpl::ddb_register_relay] registering relay: id={}",
             relay_id
         );
-        let res = cli.register_relay(relay_id, relay_sig);
-        if res.is_ok() {
-            self.advert_registered.store(true, Ordering::SeqCst);
-        }
-        res
+        cli.register_relay(relay_id.clone(), relay_sig.clone())?;
+        // Remember it so the advert refresh can repeat it before relays expire it (#280).
+        self.engine
+            .note_advert_registered(crate::ddb::AdvertRegistration::Relay {
+                relay_id,
+                relay_sig,
+            });
+        Ok(())
     }
     fn ddb_signoff(&self) -> Result<(), BingleError> {
+        // Stop refreshing first, so a refresh cannot re-add the advert after the sign-off (#280).
+        let _ = self.engine.take_advert_registration();
         let cli = self.engine.access(|e| e.ddb_client());
         tracing::info!("[BingleApiImpl::ddb_signoff] signing off");
         cli.signoff()

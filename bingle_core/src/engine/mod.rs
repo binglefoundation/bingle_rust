@@ -15,6 +15,7 @@ use crate::messages::types::{Fail, Message, RelayMessage, RelayTriangleTest1};
 use crate::messages::{DefaultPrintingHandler, from_json_str};
 use algo_ops::{AlgoChainConfig, AlgoOps};
 
+mod advert_lifecycle;
 mod relay_init_mutex;
 use crate::packet_transport::{DtlsReliablePacketTransport, PacketTransport};
 use crate::relay::relay_finder::{RelayFinder, RelayFinderTrait, RelayInfo};
@@ -297,6 +298,14 @@ pub struct Engine {
     relay_permission_refresher:
         Mutex<Option<crate::relay::relay_permission_refresh::RelayPermissionRefresher>>,
     relay_permission_refresh_interval: Mutex<std::time::Duration>,
+    // Time to live of client adverts (issue #280); None when expiry and refresh are disabled.
+    advert_ttl: Option<std::time::Duration>,
+    // The advert registration this node last made, repeated by advert_refresher (#280).
+    advert_registration: Mutex<Option<crate::ddb::AdvertRegistration>>,
+    // On a client: re-registers the advert every third of advert_ttl so relays keep it (#280).
+    advert_refresher: Mutex<Option<crate::util::periodic_task::PeriodicTask>>,
+    // On a relay: deletes client adverts older than advert_ttl (#280).
+    advert_sweeper: Mutex<Option<crate::util::periodic_task::PeriodicTask>>,
 }
 
 impl Engine {
@@ -646,7 +655,9 @@ impl Engine {
             connections: Arc::new(Mutex::new(HashMap::new())),
             pending_responses: Arc::new(Mutex::new(HashMap::new())),
             issuer: std::sync::OnceLock::new(),
-            ddb_backend: Arc::new(Mutex::new(crate::ddb::InMemoryDdbBackend::new())),
+            ddb_backend: Arc::new(Mutex::new(crate::ddb::InMemoryDdbBackend::with_advert_ttl(
+                crate::ddb::effective_advert_ttl(options.advert_ttl),
+            ))),
             router: Mutex::new(Arc::new(crate::messages::router::Router::new(api.clone()))),
             ddb_client: Mutex::new(ddb),
             turn_handler_client: Mutex::new(if options.am_relay {
@@ -681,6 +692,10 @@ impl Engine {
             relay_permission_refresh_interval: Mutex::new(
                 crate::relay::relay_permission_refresh::RELAY_PERMISSION_REFRESH_INTERVAL,
             ),
+            advert_ttl: crate::ddb::effective_advert_ttl(options.advert_ttl),
+            advert_registration: Mutex::new(None),
+            advert_refresher: Mutex::new(None),
+            advert_sweeper: Mutex::new(None),
         };
         eng.set_last_public_addr(options.static_ip);
 
@@ -1862,6 +1877,7 @@ impl Engine {
                 "[Engine::initialize_relay] stage complete: DDB initialized and relay marked Available"
             );
             self.start_relay_permission_refresh();
+            self.start_advert_expiry_sweep();
         }
         tracing::info!("[Engine::initialize_relay] complete for {:?}", self.issuer);
     }
@@ -2870,6 +2886,8 @@ impl Engine {
         // Stop the relay keep-alive first so no send races the teardown below
         self.stop_relay_keep_alive();
         self.stop_relay_permission_refresh();
+        self.stop_advert_refresh();
+        self.stop_advert_expiry_sweep();
         // Clear any API pointers and global router callbacks to avoid dangling references across tests
         self.clear_api_bindings();
         tracing::info!("[Engine::stop] stop dtls");

@@ -43,6 +43,7 @@ pub fn start_client(
         // Short response timeout so a transient relay non-response fails fast and the bounded Listen
         // retry gets multiple attempts within the registration wait.
         wait_response_timeout: Some(Duration::from_secs(20)),
+        advert_ttl: None,
     };
     let api = BingleApiImpl::new(&opts);
     api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.start(&opts))

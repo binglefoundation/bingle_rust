@@ -285,6 +285,7 @@ pub fn engine_upserts_root_relays_into_backend() {
         dangerous_debug: true,
         log_mode: bingle_core::util::logging::LogMode::Plain,
         wait_response_timeout: None,
+        advert_ttl: None,
     };
     let eng = Engine::new_with_dtls(
         &opts,

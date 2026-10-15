@@ -9,6 +9,9 @@ pub mod backend;
 #[path = "ddb/relay_eviction.rs"]
 pub mod relay_eviction;
 
+#[path = "ddb/advert_expiry.rs"]
+pub mod advert_expiry;
+
 #[path = "ddb/client/register_ip.rs"]
 pub mod ddb_client_register_ip;
 
