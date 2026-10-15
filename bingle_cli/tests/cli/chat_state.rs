@@ -2,6 +2,7 @@
 use std::io::Write;
 use std::sync::{Arc, Mutex};
 
+use algo_ops::AlgoOps;
 use bingle_cli::chat::parse_chat_args;
 use bingle_cli::chat_state::ChatState;
 use bingle_local::api::bingle_local_api::{BingleLocalApi, ContactSource};
@@ -56,25 +57,148 @@ pub fn state_file_surfaces_keypair_handle_and_contacts() {
     assert!(state.resolve_recipient("carol").is_none());
 }
 
+/// A fresh account (address, passphrase) unrelated to any state file.
+fn other_account() -> (String, String) {
+    let mut local = BingleApiLocalImpl::new(LocalApiConfig::default());
+    let keypair = local.generate_keypair().expect("generate keypair");
+    (keypair.id, keypair.passphrase)
+}
+
 #[test]
 #[cfg(not(target_os = "ios"))]
-pub fn cli_handle_and_passphrase_override_state_file() {
+pub fn passphrase_for_another_account_is_rejected() {
+    // Issue #316: a --passphrase that is not the state file's account fails before anything starts,
+    // naming both addresses and the file, and leaves the file untouched.
     let dir = tempfile::tempdir().expect("tempdir");
-    let (path, _passphrase) = write_state_file(&dir, "alice", "bob", "BOB_ID");
+    let (path, file_passphrase) = write_state_file(&dir, "alice", "bob", "BOB_ID");
+    let file_id = AlgoOps::address_from_passphrase(&file_passphrase).expect("file address");
+    let (other_id, other_passphrase) = other_account();
+    let before = std::fs::read(&path).expect("read state file");
 
     let chat_args = parse_chat_args(args(&[
-        "--handle",
-        "override",
         "--passphrase",
-        "cli-pass",
+        &other_passphrase,
         "--state_file",
         &path,
     ]))
     .expect("parse");
+    let err = ChatState::from_chat_args(&chat_args)
+        .err()
+        .expect("a mismatched passphrase should be rejected");
+
+    assert!(
+        err.contains(&path),
+        "error should name the file; got: {err}"
+    );
+    assert!(
+        err.contains(&file_id),
+        "error should name the file's address; got: {err}"
+    );
+    assert!(
+        err.contains(&other_id),
+        "error should name the passphrase's address; got: {err}"
+    );
+    assert!(
+        !err.contains(&other_passphrase),
+        "error must never include the passphrase"
+    );
+    assert_eq!(
+        std::fs::read(&path).expect("reread state file"),
+        before,
+        "state file must be left untouched"
+    );
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn invalid_passphrase_with_state_file_is_rejected() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let (path, _passphrase) = write_state_file(&dir, "alice", "bob", "BOB_ID");
+
+    let chat_args = parse_chat_args(args(&[
+        "--passphrase",
+        "not-a-mnemonic",
+        "--state_file",
+        &path,
+    ]))
+    .expect("parse");
+    let err = ChatState::from_chat_args(&chat_args)
+        .err()
+        .expect("an invalid passphrase should be rejected");
+    assert!(
+        !err.contains("not-a-mnemonic"),
+        "error must never include the passphrase; got: {err}"
+    );
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn handle_differing_from_state_file_is_rejected() {
+    // Issue #316: a --handle that is not the state file's own handle fails, naming both handles.
+    let dir = tempfile::tempdir().expect("tempdir");
+    let (path, _passphrase) = write_state_file(&dir, "alice", "bob", "BOB_ID");
+    let before = std::fs::read(&path).expect("read state file");
+
+    let chat_args =
+        parse_chat_args(args(&["--handle", "mallory", "--state_file", &path])).expect("parse");
+    let err = ChatState::from_chat_args(&chat_args)
+        .err()
+        .expect("a mismatched handle should be rejected");
+
+    assert!(
+        err.contains("'alice'"),
+        "error should name the file's handle; got: {err}"
+    );
+    assert!(
+        err.contains("'mallory'"),
+        "error should name --handle; got: {err}"
+    );
+    assert_eq!(
+        std::fs::read(&path).expect("reread state file"),
+        before,
+        "state file must be left untouched"
+    );
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn matching_handle_and_passphrase_are_accepted() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let (path, passphrase) = write_state_file(&dir, "alice", "bob", "BOB_ID");
+
+    let chat_args = parse_chat_args(args(&[
+        "--handle",
+        "alice",
+        "--passphrase",
+        &passphrase,
+        "--state_file",
+        &path,
+    ]))
+    .expect("parse");
+    let state = ChatState::from_chat_args(&chat_args).expect("agreeing account should load");
+
+    assert_eq!(state.opts.handle, "alice");
+    assert_eq!(
+        state.opts.algo_passphrase.as_deref(),
+        Some(passphrase.as_str())
+    );
+    assert_eq!(state.resolve_recipient("bob"), Some("BOB_ID"));
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn passphrase_without_state_file_is_accepted() {
+    // Only one source of the account: nothing to disagree with, behaves as before.
+    let (_id, passphrase) = other_account();
+    let chat_args =
+        parse_chat_args(args(&["--handle", "alice", "--passphrase", &passphrase])).expect("parse");
     let state = ChatState::from_chat_args(&chat_args).expect("bridge should load");
 
-    assert_eq!(state.opts.handle, "override");
-    assert_eq!(state.opts.algo_passphrase.as_deref(), Some("cli-pass"));
+    assert_eq!(state.opts.handle, "alice");
+    assert_eq!(
+        state.opts.algo_passphrase.as_deref(),
+        Some(passphrase.as_str())
+    );
 }
 
 #[test]

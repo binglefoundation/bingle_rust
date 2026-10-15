@@ -15,6 +15,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use algo_ops::AlgoOps;
 use bingle_core::api::bingle_api::{BingleError, SendFailureKind, StartOptions};
 use bingle_core::blockchain::algo_bingle::AlgoBingle;
 use bingle_local::api::MailboxConfig;
@@ -53,8 +54,8 @@ pub struct ChatState {
     /// Path to persist to on [`save_state`](ChatState::save_state); `None` when no `--state_file`
     /// was given (state is in-memory only for this run).
     state_file: Option<String>,
-    /// Engine start options derived from the file (keypair passphrase and registered handle) with
-    /// CLI-provided `--handle`/`--passphrase` taking precedence.
+    /// Engine start options derived from the file (keypair passphrase and registered handle), or from
+    /// the CLI-provided `--handle`/`--passphrase`, which must name the file's account (issue #316).
     pub opts: StartOptions,
     /// `handle -> id` map seeded from the file's contacts, so a known `--to <handle>` resolves
     /// without a chain round-trip.
@@ -65,13 +66,14 @@ impl ChatState {
     /// Build the chat state from parsed [`ChatArgs`].
     ///
     /// When `--state_file` names an existing file it is loaded and its keypair/handle/contacts are
-    /// surfaced into [`opts`](ChatState::opts) and [`contacts`](ChatState::contacts). CLI-provided
-    /// `--passphrase`/`--handle` win over the stored values. A malformed file is a hard error; a
-    /// path that does not exist yet is treated as an empty first-run store. When no handle can be
-    /// resolved (neither on the command line nor in the file) [`opts.handle`](ChatState::opts) is
-    /// left empty — that is a not-yet-registered account, which the `cmd_chat` first-run flow
-    /// resolves via [`resolve_account_status`](ChatState::resolve_account_status); it is not an error
-    /// here.
+    /// surfaced into [`opts`](ChatState::opts) and [`contacts`](ChatState::contacts). A CLI-provided
+    /// `--passphrase` or `--handle` that names a different account from the file's keypair or own
+    /// handle is a hard error, before anything starts or is saved (issue #316). A malformed file is a
+    /// hard error; a path that does not exist yet is treated as an empty first-run store. When no
+    /// handle can be resolved (neither on the command line nor in the file)
+    /// [`opts.handle`](ChatState::opts) is left empty — that is a not-yet-registered account, which
+    /// the `cmd_chat` first-run flow resolves via
+    /// [`resolve_account_status`](ChatState::resolve_account_status); it is not an error here.
     ///
     /// Never logs the passphrase.
     pub fn from_chat_args(args: &ChatArgs) -> Result<ChatState, String> {
@@ -120,9 +122,17 @@ impl ChatState {
             if Path::new(path).exists() {
                 load_state(&mut local, path)?;
 
-                // Surface the stored keypair. The CLI passphrase wins if one was supplied.
+                // Surface the stored keypair. A state file is one account's store, so any
+                // `--passphrase`/`--handle` must name that same account (issue #316).
                 match local.get_keypair().map_err(|e| e.to_string())? {
                     Some(keypair) => {
+                        check_account_agreement(
+                            path,
+                            &keypair.id,
+                            local.own_handle().as_deref(),
+                            opts.algo_passphrase.as_deref(),
+                            &opts.handle,
+                        )?;
                         if opts.algo_passphrase.is_none() {
                             opts.algo_passphrase = Some(keypair.passphrase);
                         }
@@ -488,6 +498,41 @@ impl ChatState {
     pub fn mark_forwarded_for_tests(&self, id: &str, handle: &str) {
         self.local.mark_forwarded_for_tests(id, handle);
     }
+}
+
+/// Check that a CLI-supplied `--passphrase` and `--handle` name the account stored in the state file
+/// at `path` (address `stored_id`, own handle `stored_handle`), failing with a message that names
+/// what disagrees (issue #316). Without this the engine ran as the CLI account while the local
+/// store — history, contacts, Mailbox identity — stayed the file's account, and saving wrote the mix
+/// back. An empty `cli_handle` means none was supplied. The `--handle` against the on-chain handle
+/// check needs a chain read, so it is made by the startup flow (`StartupDecision::HandleMismatch`).
+///
+/// Never includes the passphrase in the message; addresses and handles only.
+fn check_account_agreement(
+    path: &str,
+    stored_id: &str,
+    stored_handle: Option<&str>,
+    cli_passphrase: Option<&str>,
+    cli_handle: &str,
+) -> Result<(), String> {
+    if let Some(passphrase) = cli_passphrase {
+        let cli_id = AlgoOps::address_from_passphrase(passphrase)
+            .map_err(|_| "--passphrase is not a valid account mnemonic".to_string())?;
+        if cli_id != stored_id {
+            return Err(format!(
+                "state file {path} belongs to {stored_id}, but --passphrase is {cli_id}; use that account's state file or a new path"
+            ));
+        }
+    }
+    if !cli_handle.is_empty()
+        && let Some(stored_handle) = stored_handle
+        && stored_handle != cli_handle
+    {
+        return Err(format!(
+            "state file {path} belongs to handle '{stored_handle}', but --handle is '{cli_handle}'; use that account's state file or a new path"
+        ));
+    }
+    Ok(())
 }
 
 /// Load a BingleLocal state file into `local`, mapping any load error to a clear, user-facing
