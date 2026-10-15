@@ -35,6 +35,9 @@ pub mod check_allow_relay_test;
 #[path = "algo_bingle/allow_flags_test.rs"]
 pub mod allow_flags_test;
 
+#[path = "algo_bingle/relay_endpoint_filter_test.rs"]
+pub mod relay_endpoint_filter_test;
+
 #[path = "algo_bingle/required_funding.rs"]
 pub mod required_funding;
 

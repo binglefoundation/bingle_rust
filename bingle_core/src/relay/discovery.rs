@@ -7,7 +7,8 @@ use algo_ops::{AlgoChainConfig, AlgoOps};
 use std::sync::Mutex;
 
 /// Build a reusable discovery closure that queries the Algorand Indexer for
-/// accounts with a static endpoint set in local state for the given app_id.
+/// accounts with a static endpoint set in local state for the given app_id and
+/// the on-chain `allow_relay` permission (issue #324).
 ///
 /// The returned closure maps entries to RelayInfo items and preserves the
 /// previous behavior of panicking on failures or empty results, ensuring that
@@ -31,8 +32,7 @@ pub fn indexer_discover_closure(
         );
 
         // Use the synchronous indexer call to ensure we block until results are ready
-        let closure_result = match algo_bingle_indexer
-            .list_static_endpoints_via_indexer_sync(app_id)
+        let closure_result = match algo_bingle_indexer.list_relay_endpoints_via_indexer_sync(app_id)
         {
             Ok(list) => {
                 tracing::info!(
