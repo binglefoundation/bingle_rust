@@ -282,8 +282,12 @@ pub trait BingleLocalApi: Send + Sync {
         source: ContactSource,
     ) -> Result<(), BingleError>;
 
-    /// Block a contact by id.
+    /// Block a contact by id. Messages from a blocked contact are dropped on receipt, live or
+    /// from the Mailbox, and the contact is left out of [`get_contacts`](Self::get_contacts).
     fn block_contact(&mut self, id: String) -> Result<(), BingleError>;
+
+    /// Unblock a previously blocked contact by id, so its messages are received again.
+    fn unblock_contact(&mut self, id: String) -> Result<(), BingleError>;
 
     /// Remove a contact by id (without blocking it).
     fn remove_contact(&mut self, id: String) -> Result<(), BingleError>;
@@ -293,6 +297,9 @@ pub trait BingleLocalApi: Send + Sync {
 
     /// Get the list of unblocked contacts.
     fn get_contacts(&self) -> Result<Vec<Contact>, BingleError>;
+
+    /// Get the list of blocked contacts.
+    fn get_blocked_contacts(&self) -> Result<Vec<Contact>, BingleError>;
 
     /// Add a message received over a live session to the local store. It is recorded complete,
     /// with [`delivery_route`](Message::delivery_route) set to [`DeliveryRoute::Direct`].

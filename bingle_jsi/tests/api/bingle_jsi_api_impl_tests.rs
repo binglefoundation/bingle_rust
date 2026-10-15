@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex};
 
 use bingle_jsi::api::bingle_jsi_api::BingleJsiApi;
-use bingle_jsi::api::bingle_jsi_api_impl::BingleJsiApiImpl;
+use bingle_jsi::api::bingle_jsi_api_impl::{BingleJsiApiImpl, is_sender_blocked};
 use bingle_jsi::api::callback::{ListeningCallback, MessageCallback};
 use bingle_jsi::api::error::BingleJsiError;
 use bingle_jsi::api::types::{
@@ -554,6 +554,62 @@ fn block_contact_hides_from_contacts() {
 
     let contacts = api.get_contacts().expect("get_contacts should succeed");
     assert!(contacts.is_empty());
+}
+
+#[test]
+fn unblock_contact_restores_and_lists_blocked() {
+    let api = init_with_local_helper();
+    api.add_contact(
+        "bob".to_string(),
+        "BOB_ID".to_string(),
+        ContactSource::Manual,
+    )
+    .expect("add_contact should succeed");
+    api.block_contact("BOB_ID".to_string())
+        .expect("block_contact should succeed");
+
+    let blocked = api
+        .get_blocked_contacts()
+        .expect("get_blocked_contacts should succeed");
+    assert_eq!(blocked.len(), 1);
+    assert_eq!(blocked[0].id, "BOB_ID");
+
+    api.unblock_contact("BOB_ID".to_string())
+        .expect("unblock_contact should succeed");
+
+    assert!(!api.is_blocked("BOB_ID".to_string()).unwrap());
+    assert!(api.get_blocked_contacts().unwrap().is_empty());
+    assert_eq!(api.get_contacts().unwrap().len(), 1);
+}
+
+#[test]
+fn live_handler_drops_only_blocked_senders() {
+    let mut local = BingleApiLocalImpl::new(Default::default());
+    local
+        .add_contact(
+            "bob".to_string(),
+            "BOB_ID".to_string(),
+            bingle_local::api::bingle_local_api::ContactSource::Manual,
+        )
+        .expect("add bob");
+    local
+        .add_contact(
+            "carol".to_string(),
+            "CAROL_ID".to_string(),
+            bingle_local::api::bingle_local_api::ContactSource::Manual,
+        )
+        .expect("add carol");
+    local
+        .block_contact("BOB_ID".to_string())
+        .expect("block bob");
+    let store: Option<Arc<Mutex<Box<dyn BingleLocalApi>>>> =
+        Some(Arc::new(Mutex::new(Box::new(local))));
+
+    assert!(is_sender_blocked(&store, "BOB_ID"));
+    assert!(!is_sender_blocked(&store, "CAROL_ID"));
+    assert!(!is_sender_blocked(&store, "STRANGER_ID"));
+    // Without a local store nothing is blocked.
+    assert!(!is_sender_blocked(&None, "BOB_ID"));
 }
 
 #[test]

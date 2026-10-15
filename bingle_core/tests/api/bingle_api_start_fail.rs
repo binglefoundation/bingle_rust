@@ -30,6 +30,7 @@ pub fn start_returns_err_on_invalid_passphrase() {
         dangerous_debug: true,
         log_mode: bingle_core::util::logging::LogMode::Plain,
         wait_response_timeout: None,
+        advert_ttl: None,
     };
 
     let err = api

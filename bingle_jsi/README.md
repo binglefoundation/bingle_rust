@@ -576,10 +576,12 @@ The full API is defined in `src/api/bingle_jsi_api.rs`. Key methods:
 | `generateKeypair()` | Generate a new Algorand keypair |
 | `registerKeypair(handle)` | Register keypair on-chain |
 | `addContact(handle, id, source)` | Add a contact |
-| `blockContact(id)` | Block a contact |
+| `blockContact(id)` | Block a contact; its live and Mailbox messages are dropped on receipt |
+| `unblockContact(id)` | Unblock a contact |
 | `removeContact(id)` | Remove a contact |
 | `isBlocked(id)` | Check if contact is blocked |
 | `getContacts()` | List unblocked contacts |
+| `getBlockedContacts()` | List blocked contacts |
 | `addMessage(sender, recipients, ts, text)` | Store a message locally |
 | `getMessages()` | List stored messages, ordered by send time (`sent_time`, else `delivered_time`, else `timestamp`). Each has a `delivery_route`: `"Direct"` (sent or received over a live session), `"StoreAndForward"` (posted to, or read from, a Sidewinder Mailbox), or `null` while a send is pending or after it failed |
 | `keypairStatus()` | Check keypair funding status |

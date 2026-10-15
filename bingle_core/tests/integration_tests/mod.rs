@@ -21,6 +21,8 @@ pub mod unique_handle;
 pub mod connection_tests;
 #[path = "../integration/api/send_message_to_id_integration.rs"]
 pub mod send_message_to_id_integration;
+#[path = "../integration/api/signoff_on_stop_localnet.rs"]
+pub mod signoff_on_stop_localnet;
 // API tests needing localnet
 #[path = "../api/endpoint_identify_integration.rs"]
 pub mod endpoint_identify_integration;
@@ -31,11 +33,17 @@ pub mod register_collision;
 #[path = "../blockchain/algo_bingle/register_uniqueness.rs"]
 pub mod register_uniqueness;
 // Engine integration tests needing localnet
+#[path = "../integration/engine/advert_expiry_localnet.rs"]
+pub mod advert_expiry_localnet;
 #[path = "../integration/engine/handle_lookup_localnet.rs"]
 pub mod handle_lookup_localnet;
+#[path = "../integration/engine/relay_permission_eviction_localnet.rs"]
+pub mod relay_permission_eviction_localnet;
 #[path = "../integration/engine/route_incoming_sender_auth_localnet.rs"]
 pub mod route_incoming_sender_auth_localnet;
 // Relay localnet test
+#[path = "../integration/relay/relay_selection_dead_relays_localnet.rs"]
+pub mod relay_selection_dead_relays_localnet;
 #[path = "../relay/relay_updater_localnet.rs"]
 pub mod relay_updater_localnet;
 // Internet tests: live STUN over real internet UDP

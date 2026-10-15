@@ -11,10 +11,11 @@ use crate::ddb::{AdvertRecord, DdbBackend, InetSocketAddress};
 use crate::distributed_mutex::DistributedMutex;
 use crate::dtls::{Dtls, DtlsOpenSsl, NetworkMux, UdpNetworkMux};
 use crate::messages::handlers::MessageHandler;
-use crate::messages::types::{Message, RelayMessage, RelayTriangleTest1};
+use crate::messages::types::{Fail, Message, RelayMessage, RelayTriangleTest1};
 use crate::messages::{DefaultPrintingHandler, from_json_str};
 use algo_ops::{AlgoChainConfig, AlgoOps};
 
+mod advert_lifecycle;
 mod relay_init_mutex;
 use crate::packet_transport::{DtlsReliablePacketTransport, PacketTransport};
 use crate::relay::relay_finder::{RelayFinder, RelayFinderTrait, RelayInfo};
@@ -224,6 +225,9 @@ pub struct Engine {
     pending_ip_change: Mutex<Option<(std::net::IpAddr, u32)>>,
     stun: Mutex<Option<Arc<Mutex<Box<dyn StunEndpointFinder + Send + Sync>>>>>, // background STUN
     relay_finder: Mutex<Option<Arc<RelayFinder>>>, // used to locate peer relay
+    // Relays that recently could not be reached, skipped by relay selection for a cooldown.
+    // Shared by every relay finder this engine creates, which are often short-lived (#122).
+    relay_probe_failures: Arc<crate::relay::relay_probe_failures::RelayProbeFailures>,
     // The relay we most recently registered with. Retained so that, if our public endpoint
     // changes (e.g. a NAT port remap), we can re-register with the same relay on the new
     // mapping without a full re-discovery.
@@ -290,6 +294,21 @@ pub struct Engine {
     // (Mutex so it can be started/stopped through &self from the API wrappers)
     relay_keep_alive: Mutex<Option<crate::relay::relay_keep_alive::RelayKeepAliveSender>>,
     relay_keep_alive_interval: Mutex<std::time::Duration>,
+    // Refusals received from peers that could not authenticate us, latest per peer (issue #313).
+    // Shared with the DTLS handler closure, which records them as they arrive.
+    peer_refusals: Arc<Mutex<Vec<crate::api::bingle_api::PeerRefusal>>>,
+    // On a relay: the loop that evicts relays whose on-chain allow_relay was withdrawn (#120).
+    relay_permission_refresher:
+        Mutex<Option<crate::relay::relay_permission_refresh::RelayPermissionRefresher>>,
+    relay_permission_refresh_interval: Mutex<std::time::Duration>,
+    // Time to live of client adverts (issue #280); None when expiry and refresh are disabled.
+    advert_ttl: Option<std::time::Duration>,
+    // The advert registration this node last made, repeated by advert_refresher (#280).
+    advert_registration: Mutex<Option<crate::ddb::AdvertRegistration>>,
+    // On a client: re-registers the advert every third of advert_ttl so relays keep it (#280).
+    advert_refresher: Mutex<Option<crate::util::periodic_task::PeriodicTask>>,
+    // On a relay: deletes client adverts older than advert_ttl (#280).
+    advert_sweeper: Mutex<Option<crate::util::periodic_task::PeriodicTask>>,
 }
 
 impl Engine {
@@ -399,9 +418,22 @@ impl Engine {
         self.upsert_roots_into_backend(&roots);
     }
 
+    /// Test helper to put a record straight into the backend, bypassing the ingest gate.
+    pub fn ddb_backend_upsert_for_tests(&self, record: AdvertRecord) {
+        if let Ok(mut b) = self.ddb_backend.lock() {
+            b.upsert(record);
+        }
+    }
+
     /// Test helper to query backend for a given id.
     pub fn ddb_backend_lookup_for_tests(&self, id: &str) -> Option<AdvertRecord> {
         self.ddb_backend.lock().ok().and_then(|b| b.lookup(id))
+    }
+    /// The negative cache of unreachable relays shared by this engine's relay finders (#122).
+    pub fn relay_probe_failures(
+        &self,
+    ) -> Arc<crate::relay::relay_probe_failures::RelayProbeFailures> {
+        self.relay_probe_failures.clone()
     }
     pub fn ddb_client(&self) -> Arc<dyn crate::ddb::DdbClient> {
         self.ddb_client.lock().unwrap().clone()
@@ -619,6 +651,9 @@ impl Engine {
             last_public_addr_shared: Arc::new(Mutex::new(None)),
             stun: Mutex::new(None),
             relay_finder: Mutex::new(None),
+            relay_probe_failures: Arc::new(
+                crate::relay::relay_probe_failures::RelayProbeFailures::new(),
+            ),
             last_registered_relay: Mutex::new(None),
             last_reregister_at: Mutex::new(None),
             triangle_wait: Mutex::new(None),
@@ -632,7 +667,9 @@ impl Engine {
             connections: Arc::new(Mutex::new(HashMap::new())),
             pending_responses: Arc::new(Mutex::new(HashMap::new())),
             issuer: std::sync::OnceLock::new(),
-            ddb_backend: Arc::new(Mutex::new(crate::ddb::InMemoryDdbBackend::new())),
+            ddb_backend: Arc::new(Mutex::new(crate::ddb::InMemoryDdbBackend::with_advert_ttl(
+                crate::ddb::effective_advert_ttl(options.advert_ttl),
+            ))),
             router: Mutex::new(Arc::new(crate::messages::router::Router::new(api.clone()))),
             ddb_client: Mutex::new(ddb),
             turn_handler_client: Mutex::new(if options.am_relay {
@@ -662,6 +699,15 @@ impl Engine {
             relay_keep_alive_interval: Mutex::new(
                 crate::relay::relay_keep_alive::RELAY_KEEP_ALIVE_INTERVAL,
             ),
+            peer_refusals: Arc::new(Mutex::new(Vec::new())),
+            relay_permission_refresher: Mutex::new(None),
+            relay_permission_refresh_interval: Mutex::new(
+                crate::relay::relay_permission_refresh::RELAY_PERMISSION_REFRESH_INTERVAL,
+            ),
+            advert_ttl: crate::ddb::effective_advert_ttl(options.advert_ttl),
+            advert_registration: Mutex::new(None),
+            advert_refresher: Mutex::new(None),
+            advert_sweeper: Mutex::new(None),
         };
         eng.set_last_public_addr(options.static_ip);
 
@@ -797,6 +843,15 @@ impl Engine {
     /// (interior mutability), so shared access is sufficient for configuration too.
     pub fn with_dtls<F: FnOnce(&(dyn Dtls + Send + Sync))>(&self, f: F) {
         f(self.packet_transport.dtls())
+    }
+
+    /// Refusals received from peers that could not authenticate this node, latest per peer
+    /// (issue #313). Empty when no peer has refused us.
+    pub fn peer_refusals(&self) -> Vec<crate::api::bingle_api::PeerRefusal> {
+        self.peer_refusals
+            .lock()
+            .map(|g| g.clone())
+            .unwrap_or_default()
     }
 
     /// Test helper: install the DTLS message handler without starting the network stack.
@@ -1344,6 +1399,7 @@ impl Engine {
         let ddb_backend = self.ddb_backend.clone();
         let span = self.span();
         let custom_handler = self.custom_message_handler.lock().unwrap().clone();
+        let peer_refusals = self.peer_refusals.clone();
 
         let router_arc = self.router();
 
@@ -1363,15 +1419,38 @@ impl Engine {
                     };
                     let handle_opt = api.handle_lookup_by_id(&sender_id);
                     if handle_opt.is_none() {
-                        let claimed_handle = std::str::from_utf8(data)
+                        let parsed = std::str::from_utf8(data)
                             .ok()
-                            .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok())
+                            .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok());
+                        let claimed_handle = parsed
+                            .as_ref()
                             .and_then(|v| v.get("handle").and_then(|hv| hv.as_str()).map(|h| h.to_string()));
                         tracing::warn!(
                             "[Engine::install_dtls_handler][cb] dropping message from unauthenticated id={} handle={}",
                             sender_id,
                             claimed_handle.as_deref().unwrap_or("<missing>")
                         );
+                        // Answer a request (one carrying a `tag`) with an explicit refusal, so the
+                        // sender can tell refusal from silence (issue #313). Untagged messages
+                        // expect no reply, and a refusal carries no `tag`, so two nodes that cannot
+                        // authenticate each other never refuse each other's refusals.
+                        let request_tag = parsed
+                            .as_ref()
+                            .and_then(|v| v.get("tag").and_then(|t| t.as_str()).map(|t| t.to_string()));
+                        if let Some(tag) = request_tag {
+                            let refusal = serde_json::to_value(Fail::unauthenticated(Some(tag)))
+                                .unwrap_or(serde_json::Value::Null);
+                            let to = from.clone();
+                            let to_id = sender_id.clone();
+                            // Send off the DTLS receive thread, as router responses are.
+                            std::thread::spawn(move || {
+                                match api.send_message_to_network(&to, &to_id, refusal, None) {
+                                    Ok(true) => tracing::info!("[Engine::install_dtls_handler] sent refusal to unauthenticated id={}", to_id),
+                                    Ok(false) => tracing::warn!("[Engine::install_dtls_handler] refusal to unauthenticated id={} was not sent", to_id),
+                                    Err(e) => tracing::warn!("[Engine::install_dtls_handler] refusal to unauthenticated id={} failed: {}", to_id, e),
+                                }
+                            });
+                        }
                         return Ok(None);
                     }
 
@@ -1436,6 +1515,9 @@ impl Engine {
                             // If this is a response, fulfill waiter by responseTag only.
                             // This has been camelcased
                             let tag_str_opt = v.get("responseTag").and_then(|vv| vv.as_str());
+                            if tag_str_opt.is_some() {
+                                Engine::record_peer_refusal(&peer_refusals, &sender_id, &v);
+                            }
                             if let Some(tag_str) = tag_str_opt {
                                 if let Ok(tag_uuid) = Uuid::parse_str(tag_str) {
                                     if let Ok(map) = pending_responses.lock() {
@@ -1494,6 +1576,36 @@ impl Engine {
                 dtls_handler_worker()
             })));
         Ok(())
+    }
+
+    /// Record a refusal (issue #313) when `response` is a peer's `fail` answer refusing to
+    /// authenticate us, replacing any earlier refusal from the same peer. Returns whether one was
+    /// recorded.
+    fn record_peer_refusal(
+        store: &Mutex<Vec<crate::api::bingle_api::PeerRefusal>>,
+        peer_id: &str,
+        response: &serde_json::Value,
+    ) -> bool {
+        let Some(reason) = Fail::reason_of(response) else {
+            return false;
+        };
+        if reason != crate::api::bingle_api::REFUSAL_UNAUTHENTICATED {
+            return false;
+        }
+        tracing::warn!(
+            "[Engine::install_dtls_handler] peer {} refused our request: it cannot authenticate this account ({})",
+            peer_id,
+            reason
+        );
+        let Ok(mut g) = store.lock() else {
+            return false;
+        };
+        g.retain(|r| r.peer_id != peer_id);
+        g.push(crate::api::bingle_api::PeerRefusal {
+            peer_id: peer_id.to_string(),
+            reason,
+        });
+        true
     }
 
     /// Start the engine using the provided StartOptions.
@@ -1776,6 +1888,8 @@ impl Engine {
             tracing::info!(
                 "[Engine::initialize_relay] stage complete: DDB initialized and relay marked Available"
             );
+            self.start_relay_permission_refresh();
+            self.start_advert_expiry_sweep();
         }
         tracing::info!("[Engine::initialize_relay] complete for {:?}", self.issuer);
     }
@@ -2565,6 +2679,86 @@ impl Engine {
         }
     }
 
+    /// Start (or restart) the loop that evicts relays whose on-chain `allow_relay` permission has
+    /// been withdrawn from this relay's set (issue #120). It runs one pass now, which also clears
+    /// any disabled relay re-added from the root list during initialisation.
+    pub(crate) fn start_relay_permission_refresh(&self) {
+        let Ok(mut guard) = self.relay_permission_refresher.lock() else {
+            tracing::error!(
+                "[Engine::start_relay_permission_refresh] relay_permission_refresher mutex poisoned"
+            );
+            return;
+        };
+        if let Some(mut old) = guard.take() {
+            old.stop();
+        }
+        let api_weak = self.bingle_api.clone();
+        let span = self.span();
+        let pass: crate::relay::relay_permission_refresh::RefreshPass = Box::new(move || {
+            let _guard = span.enter();
+            let Some(api) = api_weak.upgrade() else {
+                return false;
+            };
+            api.with_engine(&mut |e| {
+                e.evict_disallowed_relays();
+            });
+            true
+        });
+        let mut refresher = crate::relay::relay_permission_refresh::RelayPermissionRefresher::new(
+            *self.relay_permission_refresh_interval.lock().unwrap(),
+            pass,
+        );
+        refresher.start();
+        *guard = Some(refresher);
+    }
+
+    /// Stop the relay permission refresh loop, if running.
+    pub(crate) fn stop_relay_permission_refresh(&self) {
+        let old = self
+            .relay_permission_refresher
+            .lock()
+            .ok()
+            .and_then(|mut g| g.take());
+        if let Some(mut old) = old {
+            old.stop();
+        }
+    }
+
+    /// Evict relays from this node's DDB whose on-chain `allow_relay` permission is withdrawn, so
+    /// they leave the relay set used for ripple and getRelaysStatus (issue #120). A relay whose
+    /// permission cannot be read (chain unreachable) is kept. Returns the evicted ids.
+    pub fn evict_disallowed_relays(&self) -> Vec<String> {
+        let Some(api) = self.bingle_api.upgrade() else {
+            tracing::warn!("[Engine::evict_disallowed_relays] bingle_api dropped; skipping");
+            return Vec::new();
+        };
+        let my_id = match self.issuer() {
+            Ok(iss) => iss
+                .trim_end_matches(crate::protocol::ISSUER_SUFFIX)
+                .to_string(),
+            Err(_) => {
+                tracing::warn!("[Engine::evict_disallowed_relays] issuer not set; skipping");
+                return Vec::new();
+            }
+        };
+        let evicted = crate::ddb::evict_disallowed_relays(&self.ddb_backend, &my_id, |id| {
+            crate::blockchain::algo_bingle::relay_permission(
+                api.as_ref(),
+                id,
+                "Engine::evict_disallowed_relays",
+            )
+        });
+        if !evicted.is_empty() {
+            info_theme!(
+                themes::ENGINE,
+                "[Engine::evict_disallowed_relays] evicted {} relay(s) no longer permitted on chain: {:?}",
+                evicted.len(),
+                evicted
+            );
+        }
+        evicted
+    }
+
     /// Start the relay keep-alive towards the remembered home relay if it is not already running.
     /// Used on foreground to resume the keep-alive that backgrounding paused, without disturbing a
     /// keep-alive that is already live.
@@ -2703,6 +2897,9 @@ impl Engine {
         tracing::info!("[Engine::stop] starting {:?}:{:?}", self.issuer, last_addr);
         // Stop the relay keep-alive first so no send races the teardown below
         self.stop_relay_keep_alive();
+        self.stop_relay_permission_refresh();
+        self.stop_advert_refresh();
+        self.stop_advert_expiry_sweep();
         // Clear any API pointers and global router callbacks to avoid dangling references across tests
         self.clear_api_bindings();
         tracing::info!("[Engine::stop] stop dtls");
@@ -2943,6 +3140,19 @@ impl Engine {
     /// long to keep sends from firing during engine lifecycle tests).
     pub fn test_set_relay_keep_alive_interval(&self, interval: std::time::Duration) {
         *self.relay_keep_alive_interval.lock().unwrap() = interval;
+    }
+
+    /// Test helper: override the relay permission refresh interval (#120).
+    pub fn test_set_relay_permission_refresh_interval(&self, interval: std::time::Duration) {
+        *self.relay_permission_refresh_interval.lock().unwrap() = interval;
+    }
+
+    /// Test helper: whether the relay permission refresh loop is running (#120).
+    pub fn relay_permission_refresh_running_for_tests(&self) -> bool {
+        self.relay_permission_refresher
+            .lock()
+            .map(|g| g.is_some())
+            .unwrap_or(false)
     }
 
     /// Test helper: the (relay_id, relay_addr) the running keep-alive targets, if any.

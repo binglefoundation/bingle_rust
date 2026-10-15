@@ -10,7 +10,9 @@ use std::sync::{Arc, Mutex};
 
 use crate::util::message_mocks::all_message_samples;
 
-use bingle_core::api::bingle_api::{BingleApiBoth, NetworkEndpoint, StartOptions};
+use bingle_core::api::bingle_api::{
+    BingleApiBoth, NetworkEndpoint, PeerRefusal, REFUSAL_UNAUTHENTICATED, StartOptions,
+};
 use bingle_core::dtls::network_mux_udp::UdpNetworkMux;
 use bingle_core::dtls::{Dtls, HandleMessage, HandlePeerCertificate};
 use bingle_core::engine::Engine;
@@ -18,10 +20,11 @@ use bingle_core::messages::handlers::{FromStruct, MessageHandler};
 use bingle_core::messages::router::Router;
 use bingle_core::messages::types::{
     DdbDeleteResolve, DdbDumpResolve, DdbGetRelaysStatus, DdbInitResolve, DdbQueryResolve,
-    DdbRelaysStatusResponse, DdbSignon, DdbSignonResponse, DdbUpsertResolve, Message, PingPing,
-    PingResponse, PlainTextMessage, RelayCall, RelayCalled, RelayCheck, RelayCheckResponse,
-    RelayKeepAlive, RelayListen, RelayListenResponse, RelayResponse, RelayTriangleTest1,
-    RelayTriangleTest1Response, RelayTriangleTest2, RelayTriangleTest3, ReportFailMessage,
+    DdbRelaysStatusResponse, DdbSignon, DdbSignonResponse, DdbUpsertResolve, Fail, Message,
+    PingPing, PingResponse, PlainTextMessage, RelayCall, RelayCalled, RelayCheck,
+    RelayCheckResponse, RelayKeepAlive, RelayListen, RelayListenResponse, RelayResponse,
+    RelayTriangleTest1, RelayTriangleTest1Response, RelayTriangleTest2, RelayTriangleTest3,
+    ReportFailMessage,
 };
 
 use crate::util::reusable_mock_api::{InnerBingleApi, MockApiBoth};
@@ -427,6 +430,14 @@ fn is_mutex_message(msg: &Message) -> bool {
 fn build_engine<A: InnerBingleApi + Send + Sync + 'static>(
     inner_api: A,
 ) -> (HandleMessage, Arc<AtomicBool>, Arc<Router>) {
+    let (_engine, handler, called, router) = build_engine_keeping_engine(inner_api);
+    (handler, called, router)
+}
+
+/// As [`build_engine`], but also return the engine so a test can inspect its state.
+fn build_engine_keeping_engine<A: InnerBingleApi + Send + Sync + 'static>(
+    inner_api: A,
+) -> (Engine, HandleMessage, Arc<AtomicBool>, Arc<Router>) {
     let called = Arc::new(AtomicBool::new(false));
     let capturing = Arc::new(CapturingHandler {
         called: called.clone(),
@@ -455,7 +466,7 @@ fn build_engine<A: InnerBingleApi + Send + Sync + 'static>(
         });
         h.expect("DTLS handler should be installed after install_dtls_handler_for_tests")
     };
-    (handler, called, router)
+    (engine, handler, called, router)
 }
 
 /// Fire a message through the handler closure, simulating a DTLS packet arrival.
@@ -465,11 +476,16 @@ fn fire_message(
     issuer: &str,
     msg: &bingle_core::messages::types::Message,
 ) {
+    let msg_bytes = serde_json::to_vec(msg).expect("serialize test message");
+    fire_raw(handler, router, issuer, &msg_bytes);
+}
+
+/// Fire raw JSON bytes through the handler closure, simulating a DTLS packet arrival.
+fn fire_raw(handler: &HandleMessage, router: Arc<Router>, issuer: &str, bytes: &[u8]) {
     let server = MinimalFakeDtls::new();
     let from_ep = NetworkEndpoint::new_direct("127.0.0.1:9999".parse::<SocketAddr>().unwrap());
-    let msg_bytes = serde_json::to_vec(msg).expect("serialize test message");
     Router::with_current_router(router, || {
-        handler(&server as &dyn Dtls, &from_ep, issuer, &msg_bytes);
+        handler(&server as &dyn Dtls, &from_ep, issuer, bytes);
     });
 }
 
@@ -529,4 +545,165 @@ pub fn valid_sender_message_routed() {
             );
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Refusal of unauthenticated senders (issue #313)
+// ---------------------------------------------------------------------------
+
+type SentLog = Arc<Mutex<Vec<(String, serde_json::Value)>>>;
+
+/// Rejects every sender, like [`NeverAuthApi`], and records each `send_message_to_network` call
+/// so a test can see the refusal sent back.
+struct RefusingApi {
+    sent: SentLog,
+}
+
+impl InnerBingleApi for RefusingApi {
+    fn handle_lookup_by_id(
+        &self,
+        _user_id: &bingle_core::api::bingle_api::UserId,
+    ) -> Option<bingle_core::api::bingle_api::Handle> {
+        None
+    }
+
+    fn send_message_to_network(
+        &self,
+        _network_source_key: &NetworkEndpoint,
+        user_id: &bingle_core::api::bingle_api::UserId,
+        message: serde_json::Value,
+        _progress: Option<Arc<bingle_core::api::bingle_api::ProgressCallback>>,
+    ) -> Result<bool, bingle_core::api::bingle_api::BingleError> {
+        self.sent
+            .lock()
+            .expect("sent lock")
+            .push((user_id.clone(), message));
+        Ok(true)
+    }
+}
+
+/// Wait up to `limit` for at least one recorded send (the refusal is sent off-thread).
+fn wait_for_sends(sent: &SentLog, limit: std::time::Duration) -> Vec<(String, serde_json::Value)> {
+    let start = std::time::Instant::now();
+    loop {
+        let snapshot = sent.lock().expect("sent lock").clone();
+        if !snapshot.is_empty() || start.elapsed() >= limit {
+            return snapshot;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+}
+
+/// The refusal's wire shape: the generic `fail` message, echoing the request's tag.
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn unauthenticated_refusal_wire_shape() {
+    let v = serde_json::to_value(Fail::unauthenticated(Some("T1".to_string()))).expect("json");
+    assert_eq!(
+        v,
+        serde_json::json!({"app": null, "type": "fail", "responseTag": "T1", "reason": REFUSAL_UNAUTHENTICATED})
+    );
+    assert_eq!(
+        Fail::reason_of(&v).as_deref(),
+        Some(REFUSAL_UNAUTHENTICATED)
+    );
+    // The ddb-specific fail (text, no reason) and ordinary replies carry no refusal reason.
+    assert_eq!(
+        Fail::reason_of(&serde_json::json!({"app": "ddb", "type": "fail", "text": "not a relay"})),
+        None
+    );
+    assert_eq!(
+        Fail::reason_of(&serde_json::json!({"app": "ping", "type": "response", "text": "ACK:x"})),
+        None
+    );
+}
+
+/// A request (a message with a `tag`) from a sender with no handle is answered with a refusal
+/// carrying that tag, so the sender's waiter gets an answer instead of timing out.
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn tagged_request_from_unauthenticated_sender_is_refused() {
+    init_test_logging();
+    let sent: SentLog = Arc::new(Mutex::new(Vec::new()));
+    let (handler, called, router) = build_engine(RefusingApi { sent: sent.clone() });
+    let request = br#"{"app":"ddb","type":"getRelaysStatus","epochId":0,"tag":"T1"}"#;
+    fire_raw(&handler, router, "UNKNOWN_SENDER.", request);
+
+    let sends = wait_for_sends(&sent, std::time::Duration::from_secs(5));
+    assert_eq!(sends.len(), 1, "exactly one refusal: {sends:?}");
+    assert_eq!(sends[0].0, "UNKNOWN_SENDER");
+    assert_eq!(
+        sends[0].1,
+        serde_json::to_value(Fail::unauthenticated(Some("T1".to_string()))).expect("json")
+    );
+    assert!(
+        !called.load(Ordering::SeqCst),
+        "the request itself is still dropped"
+    );
+}
+
+/// A message without a `tag` expects no reply, so an unauthenticated one is dropped silently.
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn untagged_message_from_unauthenticated_sender_gets_no_refusal() {
+    init_test_logging();
+    let sent: SentLog = Arc::new(Mutex::new(Vec::new()));
+    let (handler, _called, router) = build_engine(RefusingApi { sent: sent.clone() });
+    fire_raw(
+        &handler,
+        router,
+        "UNKNOWN_SENDER.",
+        br#"{"app":"ping","type":"ping","text":"hi"}"#,
+    );
+    let sends = wait_for_sends(&sent, std::time::Duration::from_millis(300));
+    assert!(
+        sends.is_empty(),
+        "no refusal for an untagged message: {sends:?}"
+    );
+}
+
+/// A refusal arriving from an authenticated peer is recorded against that peer, once per peer;
+/// other `fail` answers are not refusals and are not recorded.
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn refusal_from_peer_is_recorded_once_per_peer() {
+    init_test_logging();
+    let lookup_count = Arc::new(AtomicU32::new(0));
+    let (engine, handler, _called, router) =
+        build_engine_keeping_engine(AlwaysAuthApi::new(lookup_count));
+    let refusal = |tag: &str| {
+        serde_json::to_vec(&Fail::unauthenticated(Some(tag.to_string()))).expect("json")
+    };
+    // Tags with no waiter: the refusal is still recorded before the late response is dropped.
+    fire_raw(
+        &handler,
+        router.clone(),
+        "RELAY_ONE.",
+        &refusal("6f1c1a4e-5b8e-4a62-9d1e-2f5b7c9a0b11"),
+    );
+    fire_raw(
+        &handler,
+        router.clone(),
+        "RELAY_ONE.",
+        &refusal("6f1c1a4e-5b8e-4a62-9d1e-2f5b7c9a0b12"),
+    );
+    let other_fail = serde_json::json!({
+        "app": null, "type": "fail",
+        "responseTag": "6f1c1a4e-5b8e-4a62-9d1e-2f5b7c9a0b13",
+        "reason": "no sender available"
+    });
+    fire_raw(
+        &handler,
+        router,
+        "RELAY_TWO.",
+        &serde_json::to_vec(&other_fail).expect("json"),
+    );
+
+    assert_eq!(
+        engine.peer_refusals(),
+        vec![PeerRefusal {
+            peer_id: "RELAY_ONE".to_string(),
+            reason: REFUSAL_UNAUTHENTICATED.to_string(),
+        }]
+    );
 }

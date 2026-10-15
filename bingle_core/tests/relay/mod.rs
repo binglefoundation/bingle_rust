@@ -12,6 +12,9 @@ pub mod relay_info_cache;
 #[path = "relay_keep_alive_sender.rs"]
 pub mod relay_keep_alive_sender;
 
+#[path = "relay_permission_refresh.rs"]
+pub mod relay_permission_refresh;
+
 #[path = "relay_updater.rs"]
 pub mod relay_updater;
 
@@ -41,3 +44,9 @@ pub mod list_root_relays;
 
 #[path = "unavailable_relays.rs"]
 pub mod unavailable_relays;
+
+#[path = "relay_probe_failures.rs"]
+pub mod relay_probe_failures;
+
+#[path = "relay_selection_dead_relays.rs"]
+pub mod relay_selection_dead_relays;

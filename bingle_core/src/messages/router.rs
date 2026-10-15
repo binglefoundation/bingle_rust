@@ -224,6 +224,11 @@ impl BingleApi for LockingApiWrapper {
 }
 
 impl BingleApiInternal for LockingApiWrapper {
+    fn with_engine(&self, f: &mut dyn FnMut(&crate::engine::Engine)) {
+        if let Some(a) = self.api("with_engine") {
+            a.with_engine(f)
+        }
+    }
     fn mutex_handle_request(&self, from_id: String, req: MutexRequest) {
         if let Some(a) = self.api("mutex_handle_request") {
             a.mutex_handle_request(from_id, req)

@@ -33,6 +33,10 @@ jobs:
       # Fail the build on any compiler warning, matching the "no warnings" requirement in CLAUDE.md
       # (quality-checks already lints these targets with -D warnings via clippy --all-targets).
       RUSTFLAGS: "-D warnings"
+      # Version of the sidewinder-node crate (it installs the `sw-node` binary) for the
+      # store-and-forward e2e (issue #224). Bump deliberately, together with the same pin in
+      # e2e-android.yml: scripts/e2e_sidewinder_localnet.sh drives the node's CLI and config.
+      SW_NODE_VERSION: "0.1.0"
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -47,6 +51,20 @@ jobs:
       # .config/nextest.toml runs the suite single-threaded so its shared localnet accounts don't clash.
       - name: Install cargo-nextest
         uses: taiki-e/install-action@nextest
+
+      # Sidewinder Mailbox node for the store-and-forward e2e (issue #224), which starts a one-node
+      # network with it (scripts/e2e_sidewinder_localnet.sh). Pinned; cached by version. Mirrors
+      # e2e-android.yml.
+      - name: Cache sw-node
+        uses: actions/cache@v6
+        id: sw-node-cache
+        with:
+          path: ~/.cargo/bin/sw-node
+          key: sw-node-${{ runner.os }}-${{ env.SW_NODE_VERSION }}
+
+      - name: Install sw-node
+        if: steps.sw-node-cache.outputs.cache-hit != 'true'
+        run: cargo install sidewinder-node --version "$SW_NODE_VERSION" --locked
 
       # Bring up algokit localnet (native Docker on Linux). The integration tests probe algod at
       # localhost:4001 and skip cleanly when it is down, so wait until 4001 (algod) and 8980 (indexer)
@@ -76,17 +94,21 @@ jobs:
             --output-source-map
 
       # Compile the integration test targets first, so a build/compile break is reported as a failure
-      # (not a silent skip). --locked keeps CI honest about Cargo.lock.
+      # (not a silent skip). --locked keeps CI honest about Cargo.lock. The `sidewinder_localnet`
+      # feature adds the store-and-forward e2e to the bingle_cli target (issue #224); it is qualified
+      # with the crate name because bingle_core has no such feature.
       - name: Build integration tests
         run: >
           cargo test --no-run --locked
           -p bingle_core -p bingle_cli
+          --features bingle_cli/sidewinder_localnet
           --test integration
 
       - name: Run integration tests
         run: >
           cargo nextest run --profile integration --no-fail-fast
           -p bingle_core -p bingle_cli
+          --features bingle_cli/sidewinder_localnet
           --test integration
 
       # Publish a readable pass/fail table on the run even when tests fail.
@@ -98,3 +120,15 @@ jobs:
           path: target/nextest/integration/junit.xml
           reporter: java-junit
           fail-on-error: false
+
+      # The store-and-forward e2e copies the node log of a failing case to target/tmp before tearing
+      # the node down; a case killed by the nextest timeout leaves it in the harness work dir instead.
+      - name: Upload sw-node logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: sw-node-logs
+          path: |
+            target/tmp/sw-e2e-node.log
+            target/tmp/sw-e2e/node.log
+          if-no-files-found: ignore

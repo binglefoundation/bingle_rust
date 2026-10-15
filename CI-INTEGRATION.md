@@ -7,7 +7,7 @@ localnet + puya-compile tooling (issue #32).
 
 | Workflow | Job | What it does |
 | --- | --- | --- |
-| `.github/workflows/integration-tests.yml` | `integration` | starts algokit localnet, compiles the dapp, runs the `integration` test target for `bingle_core` + `bingle_cli` |
+| `.github/workflows/integration-tests.yml` | `integration` | installs the Sidewinder node (`sw-node`), starts algokit localnet, compiles the dapp, runs the `integration` test target for `bingle_core` + `bingle_cli` including the store-and-forward end-to-end (e2e) cases |
 
 ## Why Linux (and post-merge)
 
@@ -31,16 +31,21 @@ in-flight run rather than queueing behind it ("heap not queue", issue #136).
 1. Checks out the code and installs the stable Rust toolchain (`edition = "2024"`). OpenSSL is
    vendored, so it compiles from source — no system packages required.
 2. Caches the cargo registry and `target/` (`Swatinem/rust-cache`) and installs `cargo-nextest`.
-3. **Starts `algokit localnet`** (native Docker) and waits until algod (`localhost:4001`) and the
+3. **Installs `sw-node`**, the Sidewinder node binary, from crates.io: `cargo install sidewinder-node`
+   at the version pinned in `SW_NODE_VERSION`, cached by that version (issue #224). The
+   store-and-forward e2e starts a one-node Mailbox network with it.
+4. **Starts `algokit localnet`** (native Docker) and waits until algod (`localhost:4001`) and the
    indexer (`8980`) are reachable. This wait is a real gate: the tests probe algod and *skip cleanly*
    when it is down, so without it a broken localnet would silently pass.
-4. **Compiles the dapp artifacts** with puya (`dapp_projects`) — the harness deploys the BingleDapp
+5. **Compiles the dapp artifacts** with puya (`dapp_projects`) — the harness deploys the BingleDapp
    from its `.approval.teal` / `.clear.teal` / `.arc56.json`, which are gitignored build outputs. Same
    puya invocation as e2e-android.
-5. **Builds** the `integration` test target for `bingle_core` + `bingle_cli` with `--locked`. A
-   compile break here fails the job.
-6. **Runs** `cargo nextest run --profile integration --test integration` across those crates.
-7. Publishes a pass/fail table (`dorny/test-reporter`), even on failure.
+6. **Builds** the `integration` test target for `bingle_core` + `bingle_cli` with `--locked` and
+   `--features bingle_cli/sidewinder_localnet`. A compile break here fails the job.
+7. **Runs** `cargo nextest run --profile integration --test integration` across those crates, with
+   the same feature.
+8. Publishes a pass/fail table (`dorny/test-reporter`), even on failure.
+9. On failure, uploads the Sidewinder node log as the `sw-node-logs` artifact.
 
 A 45-minute `timeout-minutes` bounds the run. `RUSTFLAGS: -D warnings` turns any compiler warning into
 a failure, matching the "no warnings" rule in `CLAUDE.md`.
@@ -62,6 +67,20 @@ API, engine, and relay cases plus the live-internet STUN case; the `bingle_cli` 
 (`tests/integration.rs`) drives the compiled `chat` binary over localnet. The `integration_blockchain`
 target is a Docker-run subset of the same cases and is not run here.
 
+### Store-and-forward end-to-end
+
+The `sidewinder_localnet` feature of `bingle_cli` adds the store-and-forward cases
+(`tests/store_and_forward_e2e.rs`, issue #224) to its `integration` target: a Mailbox post and pop
+round trip, an offline send that is read when the recipient reconnects, and the exit flush. Each
+starts its own one-node Sidewinder network on the localnet through
+`scripts/e2e_sidewinder_localnet.sh`, which drives the installed `sw-node`. Unlike the other localnet
+cases they **fail, not skip**, when `sw-node` or localnet is missing, so a red run means
+store-and-forward really broke. The feature stays off in the unit and quality gates.
+
+The `sw-node` version is pinned as `SW_NODE_VERSION` in both `integration-tests.yml` and
+`e2e-android.yml`. Bump the two together, and deliberately: the script drives the node's command
+line and config.
+
 ## Reproduce locally
 
 With `algokit` installed and localnet up:
@@ -77,3 +96,15 @@ cargo nextest run --profile integration -p bingle_core -p bingle_cli --test inte
 ```
 
 The dapp artifacts must exist first (`scripts/build_dapp.sh`, or the puya compile in the workflow).
+
+To include the store-and-forward cases, install the node (`cargo install sidewinder-node --version 0.1.0 --locked`) and add the feature:
+
+```bash
+cargo nextest run --profile integration -p bingle_core -p bingle_cli --features bingle_cli/sidewinder_localnet --test integration
+```
+
+Or only those cases:
+
+```bash
+cargo nextest run --profile integration -p bingle_cli --features sidewinder_localnet --test integration -E 'test(store_and_forward_e2e)'
+```

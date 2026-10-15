@@ -1,13 +1,14 @@
 //! Store-and-forward end-to-end against a real Sidewinder node on LocalNet (epic #200, story #216).
 //!
 //! A case in the `integration` suite, gated behind the `sidewinder_localnet` cargo feature so it is
-//! **not** compiled or run by the normal suites/CI. It stands up a one-node Sidewinder Mailbox network
+//! **not** compiled or run by the unit/quality gates. The integration workflow turns the feature on
+//! (issue #224, see CI-INTEGRATION.md). It stands up a one-node Sidewinder Mailbox network
 //! on algokit LocalNet via `scripts/e2e_sidewinder_localnet.sh` (which drives the installed `sw-node`
 //! binary), then drives the store-and-forward path against it. Per the LocalNet-suite policy it
 //! **fails, not skips**, when the prerequisites are missing.
 //!
 //! Prerequisites (see the script header):
-//!   - `sw-node` on PATH (`cargo install --path sw-node` in the sidewinder repo),
+//!   - `sw-node` on PATH (`cargo install sidewinder-node`),
 //!   - algokit LocalNet up (`algokit localnet start`), and `curl`.
 //!
 //! Run it explicitly (single-threaded — the node binds fixed ports):
@@ -78,6 +79,14 @@ impl Cluster {
 
 impl Drop for Cluster {
     fn drop(&mut self) {
+        // `down` removes the work dir, so keep the node log of a failing case beside it for the
+        // integration workflow to upload (issue #224).
+        if std::thread::panicking() {
+            let _ = std::fs::copy(
+                self.work.join("node.log"),
+                Path::new(env!("CARGO_TARGET_TMPDIR")).join("sw-e2e-node.log"),
+            );
+        }
         let _ = Command::new("sh")
             .arg(&self.script)
             .arg("down")
@@ -222,11 +231,12 @@ fn local_config(
 /// failure must not double-post (idempotency).
 fn fail_delivery_twice(sender: &mut BingleApiLocalImpl, timestamp: i64) {
     let reason = || Some("Recipient unreachable — will keep retrying".to_string());
+    let id = sender.id_of_timestamp_for_tests(timestamp);
     sender
-        .update_message_status(timestamp, 0.5, reason(), None)
+        .update_message_status(&id, 0.5, reason(), None)
         .expect("first failure");
     sender
-        .update_message_status(timestamp, 0.5, reason(), None)
+        .update_message_status(&id, 0.5, reason(), None)
         .expect("second failure (retry) — must not double-post");
 }
 
@@ -420,7 +430,7 @@ fn exit_flush_posts_a_queued_message_to_the_offline_peers_mailbox() {
         )
         .expect("add message");
     sender
-        .update_message_status(ts, 0.0, None, None)
+        .update_message_status(&sender.id_of_timestamp_for_tests(ts), 0.0, None, None)
         .expect("mark pending");
 
     let pending_sender = PendingSender::start(

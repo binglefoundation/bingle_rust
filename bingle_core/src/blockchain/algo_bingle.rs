@@ -2187,10 +2187,9 @@ pub(crate) enum RelayGate {
 
 /// Verify a record's on-chain `allow_relay` flag before it is accepted as a relay record.
 ///
-/// Resolves the app id, Algorand provider config, and accounts cache from `api`, then checks the
-/// app local state via [`AlgoBingle::check_allow_relay`]. Returns [`RelayGate::Rejected`] when any
-/// of those are unavailable, when `allow_relay` is false, when the id is not opted in to the app,
-/// or when the check errors — otherwise [`RelayGate::Allowed`].
+/// Fail-closed wrapper over [`relay_permission`]: returns [`RelayGate::Allowed`] only when the
+/// record's `allow_relay` flag is set, and [`RelayGate::Rejected`] when it is not, when the id is
+/// not opted in to the app, or when the check cannot be evaluated.
 ///
 /// `caller` appears only in log messages so the originating call site stays identifiable. This is
 /// the single source of truth shared by `Engine::ddb_upsert_record` and
@@ -2202,22 +2201,41 @@ pub(crate) fn check_relay_allowed(
     record_id: &str,
     caller: &str,
 ) -> RelayGate {
+    match relay_permission(api, record_id, caller) {
+        Some(true) => RelayGate::Allowed,
+        Some(false) | None => RelayGate::Rejected,
+    }
+}
+
+/// Read a record's on-chain relay permission, keeping "not permitted" apart from "unknown".
+///
+/// Resolves the app id, Algorand provider config, and accounts cache from `api`, then checks the
+/// app local state via [`AlgoBingle::check_allow_relay`]. Returns `Some(true)` when `allow_relay`
+/// is set, `Some(false)` when it is not or the id is not opted in to the app, and `None` when the
+/// check cannot be evaluated (no app id or provider config, or the chain query errors). Ingest
+/// treats `None` as a rejection ([`check_relay_allowed`]); evicting an already-stored relay
+/// (issue #120) must not, so a chain outage cannot empty the relay set.
+///
+/// Internal to the relay-acceptance path; not part of the supported public API.
+pub(crate) fn relay_permission(
+    api: &dyn BingleApiBoth,
+    record_id: &str,
+    caller: &str,
+) -> Option<bool> {
     let app_id = match api.get_app_id() {
         Some(id) => id,
         None => {
-            tracing::warn!(
-                "[{caller}] app_id not available; rejecting relay record id={record_id}"
-            );
-            return RelayGate::Rejected;
+            tracing::warn!("[{caller}] app_id not available; cannot check relay id={record_id}");
+            return None;
         }
     };
     let config = match api.get_algo_provider_config() {
         Some(cfg) => cfg,
         None => {
             tracing::warn!(
-                "[{caller}] algo_provider_config not available; rejecting relay record id={record_id}"
+                "[{caller}] algo_provider_config not available; cannot check relay id={record_id}"
             );
-            return RelayGate::Rejected;
+            return None;
         }
     };
     let cache = api.get_accounts_cache();
@@ -2229,23 +2247,23 @@ pub(crate) fn check_relay_allowed(
     match algo_bingle.check_allow_relay(app_id, record_id) {
         Ok(Some(true)) => {
             tracing::info!("[{caller}] blockchain verified allow_relay for id={record_id}");
-            RelayGate::Allowed
+            Some(true)
         }
         Ok(Some(false)) => {
             tracing::warn!(
                 "[{caller}] blockchain check FAILED: allow_relay is false for id={record_id}"
             );
-            RelayGate::Rejected
+            Some(false)
         }
         Ok(None) => {
             tracing::warn!(
                 "[{caller}] blockchain check FAILED: id={record_id} not opted-in to app {app_id}"
             );
-            RelayGate::Rejected
+            Some(false)
         }
         Err(e) => {
             tracing::warn!("[{caller}] blockchain check ERROR for id={record_id}: {e}");
-            RelayGate::Rejected
+            None
         }
     }
 }

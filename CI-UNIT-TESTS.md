@@ -109,6 +109,14 @@ mode is a gate: rustfmt must report no drift and clippy must pass with
 `-D warnings`, so the script exits non-zero (failing the job, blocking merge)
 on any formatting or lint regression.
 
+clippy also lints the bingle_cli `integration` target with the off-by-default
+`sidewinder_localnet` and `sidewinder_testnet` features on. Those features gate
+the store-and-forward end-to-end cases, which need a live Sidewinder node or
+cluster, so no other pull-request check compiles them; this pass stops an API
+change from breaking them unnoticed (issue #225). It only compiles them — the
+localnet cases run in the integration workflow (`CI-INTEGRATION.md`) and the
+TestNet case is run by hand.
+
 The large clippy backlog is silenced centrally in `[workspace.lints.clippy]`
 (root `Cargo.toml`, tracked by issues #33–#39), so `--strict` only fails on
 *new* lints outside that backlog and on formatting drift. Override / bypass

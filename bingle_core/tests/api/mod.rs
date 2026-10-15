@@ -71,3 +71,6 @@ pub mod dangerous_debug_check;
 
 #[path = "dtls_via_relay_integration.rs"]
 pub mod dtls_via_relay_integration;
+
+#[path = "signoff_on_stop.rs"]
+pub mod signoff_on_stop;

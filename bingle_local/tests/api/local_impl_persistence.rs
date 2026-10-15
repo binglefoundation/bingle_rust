@@ -121,3 +121,33 @@ fn save_succeeds_when_parent_directory_already_exists() {
             .is_file()
     );
 }
+
+#[test]
+fn unblock_survives_a_save_and_load() {
+    let mut api = BingleApiLocalImpl::new(LocalApiConfig::default());
+    api.add_contact("bob".into(), "ID_BOB".into(), ContactSource::Received)
+        .expect("add bob");
+    api.add_contact("carol".into(), "ID_CAROL".into(), ContactSource::Received)
+        .expect("add carol");
+    api.block_contact("ID_BOB".into()).expect("block bob");
+    api.block_contact("ID_CAROL".into()).expect("block carol");
+    api.unblock_contact("ID_CAROL".into())
+        .expect("unblock carol");
+
+    let file_path = project_tmp_file_path("bingle-local-unblock", ".json");
+    let path = file_path
+        .to_str()
+        .expect("project tmp path should be valid utf-8")
+        .to_string();
+    api.save(&path).expect("save ok");
+
+    let mut api2 = BingleApiLocalImpl::new(LocalApiConfig::default());
+    api2.load(&path).expect("load ok");
+
+    assert!(api2.is_blocked("ID_BOB").unwrap());
+    assert!(!api2.is_blocked("ID_CAROL").unwrap());
+    let blocked = api2.get_blocked_contacts().expect("blocked");
+    assert_eq!(blocked.len(), 1);
+    assert_eq!(blocked[0].handle, "bob");
+    let _ = fs::remove_file(&path);
+}

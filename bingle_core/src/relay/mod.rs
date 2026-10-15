@@ -3,4 +3,6 @@ pub mod relay_client;
 pub mod relay_finder;
 pub mod relay_info_cache;
 pub mod relay_keep_alive;
+pub mod relay_permission_refresh;
+pub mod relay_probe_failures;
 pub mod relay_updater;

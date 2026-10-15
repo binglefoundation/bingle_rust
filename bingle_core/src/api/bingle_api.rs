@@ -442,6 +442,25 @@ impl<T: BingleApi + BingleApiInternal> BingleApiBoth for T {}
 #[doc(hidden)]
 pub type BingleApiBothType = std::sync::Weak<dyn BingleApiBoth>;
 
+/// Reason a node gives when it refuses a request because it cannot authenticate the sender: it
+/// found no handle for the sender's id on its app (the account is not opted in or has no handle
+/// there, or the node could not read the chain). Carried in the generic `fail` message sent back
+/// in place of a reply (issue #313).
+#[doc(hidden)]
+pub const REFUSAL_UNAUTHENTICATED: &str = "unauthenticated";
+
+/// A refusal received from a peer: the peer answered one of our requests with a `fail` message
+/// instead of a reply (issue #313). Recorded by the engine so diagnostics such as
+/// `bingle_cli checkrelays` can report why a peer did not serve us.
+#[doc(hidden)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PeerRefusal {
+    /// Id (Algorand address) of the peer that refused.
+    pub peer_id: UserId,
+    /// The reason the peer gave, e.g. [`REFUSAL_UNAUTHENTICATED`].
+    pub reason: String,
+}
+
 /// Progress callback reported during send operations.
 /// Parameters:
 /// - percent_done: 0..=100 indicating the percentage complete
@@ -510,6 +529,12 @@ pub struct StartOptions {
     /// If None, the production default (90 s) is used. Tests can set a short value (e.g. 100 ms).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub wait_response_timeout: Option<Duration>,
+    /// Time to live of client adverts in the distributed database (DDB) (issue #280). On a relay,
+    /// a client advert not refreshed within it is dropped; on a client, the advert is refreshed every
+    /// third of it. If None, `ddb::DEFAULT_ADVERT_TTL` (10 min) is used; zero disables both. A relay
+    /// must not use a shorter value than its clients, or live clients lapse between refreshes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub advert_ttl: Option<Duration>,
 }
 
 impl StartOptions {
@@ -530,6 +555,7 @@ impl StartOptions {
             dangerous_debug: false,
             log_mode: LogMode::Plain,
             wait_response_timeout: None,
+            advert_ttl: None,
         }
     }
 }
@@ -540,7 +566,7 @@ impl std::fmt::Display for StartOptions {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "StartOptions {{ handle: {:?}, algo_passphrase: {}, static_ip: {:?}, am_relay: {}, stun_servers: {:?}, algo_provider_config: {:?}, algo_network: {:?}, app_id: {:?}, asset_id: {:?}, log_level: {:?}, handle_cache_expiry: {:?}, dangerous_debug: {}, log_mode: {:?}, wait_response_timeout: {:?} }}",
+            "StartOptions {{ handle: {:?}, algo_passphrase: {}, static_ip: {:?}, am_relay: {}, stun_servers: {:?}, algo_provider_config: {:?}, algo_network: {:?}, app_id: {:?}, asset_id: {:?}, log_level: {:?}, handle_cache_expiry: {:?}, dangerous_debug: {}, log_mode: {:?}, wait_response_timeout: {:?}, advert_ttl: {:?} }}",
             self.handle,
             if self.algo_passphrase.is_some() {
                 "<set>"
@@ -559,6 +585,7 @@ impl std::fmt::Display for StartOptions {
             self.dangerous_debug,
             self.log_mode,
             self.wait_response_timeout,
+            self.advert_ttl,
         )
     }
 }

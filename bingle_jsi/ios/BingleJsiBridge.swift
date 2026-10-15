@@ -410,6 +410,22 @@ class BingleJsiBridge: RCTEventEmitter {
     }
 
     @objc
+    func unblockContact(_ id: String, resolver resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {
+        guard let api = apiInstance else {
+            reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.", nil)
+            return
+        }
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                try api.unblockContact(id: id)
+                resolve(nil)
+            } catch {
+                reject("BINGLE_ERROR", "\(error)", error)
+            }
+        }
+    }
+
+    @objc
     func removeContact(_ id: String, resolver resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {
         guard let api = apiInstance else {
             reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.", nil)
@@ -450,6 +466,22 @@ class BingleJsiBridge: RCTEventEmitter {
         DispatchQueue.global(qos: .userInitiated).async {
             do {
                 let contacts = try api.getContacts()
+                resolve(contacts.map { ["handle": $0.handle, "id": $0.id, "fields": $0.fields] })
+            } catch {
+                reject("BINGLE_ERROR", "\(error)", error)
+            }
+        }
+    }
+
+    @objc
+    func getBlockedContacts(_ resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {
+        guard let api = apiInstance else {
+            reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.", nil)
+            return
+        }
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                let contacts = try api.getBlockedContacts()
                 resolve(contacts.map { ["handle": $0.handle, "id": $0.id, "fields": $0.fields] })
             } catch {
                 reject("BINGLE_ERROR", "\(error)", error)

@@ -212,6 +212,25 @@ fn notify_mailbox_messages(
 
 /// Tell the shared pending-message sender, if running, that a peer (by id and/or handle; empty ones
 /// are skipped) was heard from, ending its offline window (issue #278).
+/// Whether `sender` (an Algorand address) is a contact this user has blocked, so its live message is
+/// dropped (bingle_ux_rn #34). Without a local store, or if the store can't be read, nothing is
+/// blocked.
+pub fn is_sender_blocked(
+    local_api: &Option<Arc<Mutex<Box<dyn BingleLocalApi>>>>,
+    sender: &str,
+) -> bool {
+    let Some(local_arc) = local_api else {
+        return false;
+    };
+    match local_arc.lock() {
+        Ok(guard) => matches!(guard.is_blocked(sender), Ok(true)),
+        Err(e) => {
+            tracing::warn!("[is_sender_blocked] could not lock the local store: {}", e);
+            false
+        }
+    }
+}
+
 fn note_peer_seen(sender: &Mutex<Option<PendingSender>>, id: &str, handle: &str) {
     if let Ok(guard) = sender.lock()
         && let Some(sender) = guard.as_ref()
@@ -559,6 +578,7 @@ impl BingleJsiApiImpl {
             dangerous_debug: false, // We don't want to enable dangerous debug DTLS features
             log_mode: bingle_core::util::logging::LogMode::JS,
             wait_response_timeout: None, // default to DEFAULT_WAIT_RESPONSE_TIMEOUT
+            advert_ttl: None,
         };
 
         // Install the callback log bridge (no-op if already installed by a prior init call)
@@ -717,6 +737,12 @@ impl BingleJsiApiImpl {
             api.access(|api_mut| {
                 let on_message: Arc<bingle_core::api::bingle_api::OnMessageHandler> =
                     Arc::new(move |sender, sender_handle, message| {
+                        // Drop a blocked sender's message before the app hears of it or it is
+                        // stored (bingle_ux_rn #34).
+                        if is_sender_blocked(&local_api_for_closure, &sender) {
+                            tracing::info!("[BingleJsiApiImpl][init handler] Dropping a message from blocked sender {}", sender_handle);
+                            return;
+                        }
                         tracing::info!("[BingleJsiApiImpl][init handler] Received message from {}: {}", sender_handle, message);
                         // Hearing from a peer means it is online: end any offline window so the
                         // next send to it is attempted direct (issue #278).
@@ -1497,6 +1523,14 @@ impl BingleJsiApi for BingleJsiApiImpl {
         Ok(())
     }
 
+    fn unblock_contact(&self, id: String) -> Result<(), BingleJsiError> {
+        let mut guard = local_api_guard(&self.local_api)?;
+        guard.unblock_contact(id).map_err(bingle_error_to_jsi)?;
+        drop(guard);
+        save_if_configured(&self.local_api, &self.local_file);
+        Ok(())
+    }
+
     fn remove_contact(&self, id: String) -> Result<(), BingleJsiError> {
         let mut guard = local_api_guard(&self.local_api)?;
         guard.remove_contact(id).map_err(bingle_error_to_jsi)?;
@@ -1532,6 +1566,19 @@ impl BingleJsiApi for BingleJsiApiImpl {
     fn get_contacts(&self) -> Result<Vec<Contact>, BingleJsiError> {
         let guard = local_api_guard(&self.local_api)?;
         let contacts = guard.get_contacts().map_err(bingle_error_to_jsi)?;
+        Ok(contacts
+            .into_iter()
+            .map(|c| Contact {
+                handle: c.handle,
+                id: c.id,
+                fields: c.fields,
+            })
+            .collect())
+    }
+
+    fn get_blocked_contacts(&self) -> Result<Vec<Contact>, BingleJsiError> {
+        let guard = local_api_guard(&self.local_api)?;
+        let contacts = guard.get_blocked_contacts().map_err(bingle_error_to_jsi)?;
         Ok(contacts
             .into_iter()
             .map(|c| Contact {
@@ -1852,12 +1899,8 @@ impl BingleJsiApi for BingleJsiApiImpl {
             *guard = false;
         }
 
-        // Tell a relay we are leaving so it removes our DDB entry. Best-effort:
-        // relies on the transport ACK, and a failure here must not block shutdown.
-        match self.api.ddb_signoff() {
-            Ok(()) => tracing::info!("Sent DDB signoff"),
-            Err(e) => tracing::warn!("DDB signoff failed (continuing shutdown): {}", e),
-        }
+        // The DDB sign-off is sent by the core API's stop() below, bounded so it can't hang
+        // shutdown (#279).
 
         // Stop the shared pending-message sender, if running (issue #283).
         let pending_sender = self.pending_sender.lock().ok().and_then(|mut g| g.take());

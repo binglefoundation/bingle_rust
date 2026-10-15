@@ -147,6 +147,7 @@ pub fn bingle_api_register_via_forced_stun() {
         dangerous_debug: true,
         log_mode: bingle_core::util::logging::LogMode::Plain,
         wait_response_timeout: None,
+        advert_ttl: None,
     };
     let r2_opts = StartOptions {
         handle: "relay2".into(),
@@ -163,6 +164,7 @@ pub fn bingle_api_register_via_forced_stun() {
         dangerous_debug: true,
         log_mode: bingle_core::util::logging::LogMode::Plain,
         wait_response_timeout: None,
+        advert_ttl: None,
     };
 
     let relay1 = test_util::start_root_relay(
@@ -241,6 +243,7 @@ pub fn bingle_api_register_via_forced_stun() {
         dangerous_debug: true,
         log_mode: bingle_core::util::logging::LogMode::Plain,
         wait_response_timeout: None,
+        advert_ttl: None,
     };
 
     // A client instance without staticEndpoint; provide the STUN server list to Engine.start

@@ -24,6 +24,7 @@ pub fn test_ddb_upsert_record_mandatory_verification() {
         dangerous_debug: true,
         log_mode: bingle_core::util::logging::LogMode::Plain,
         wait_response_timeout: None,
+        advert_ttl: None,
     };
     let api = BingleApiImpl::new(&opts);
     api.access_unsafe_for_tests(|a| a.start(&opts))
