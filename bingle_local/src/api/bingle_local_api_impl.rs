@@ -497,6 +497,62 @@ impl BingleApiLocalImpl {
         Ok(())
     }
 
+    /// Whether a Mailbox message from `sender_address` (its authenticated Algorand address, `None`
+    /// when it could not be decoded) is from a blocked contact and so must be dropped by
+    /// [`poll_mailbox`](BingleLocalApi::poll_mailbox). An undecodable or unknown sender is not
+    /// blocked.
+    pub fn is_mailbox_sender_blocked(&self, sender_address: Option<&str>) -> bool {
+        match sender_address {
+            Some(addr) => matches!(self.is_blocked(addr), Ok(true)),
+            None => false,
+        }
+    }
+
+    /// Set or clear the blocked flag of an existing contact; the core of
+    /// [`BingleLocalApi::block_contact`] and [`BingleLocalApi::unblock_contact`].
+    fn set_contact_blocked(&self, id: &str, blocked: bool) -> Result<(), BingleError> {
+        if id.trim().is_empty() {
+            return Err(BingleError::Other("id cannot be empty".to_string()));
+        }
+        let mut map = match self.contacts.lock() {
+            Ok(g) => g,
+            Err(e) => {
+                let msg = format!("mutex poisoned: {}", e);
+                tracing::error!("[set_contact_blocked] Failed to lock contacts: {}", msg);
+                return Err(BingleError::Other(msg));
+            }
+        };
+        match map.get_mut(id) {
+            Some((_handle, _source, flag)) => {
+                *flag = blocked;
+                Ok(())
+            }
+            None => Err(BingleError::Other("contact not found".to_string())),
+        }
+    }
+
+    /// The contacts whose blocked flag equals `blocked`; the core of
+    /// [`BingleLocalApi::get_contacts`] and [`BingleLocalApi::get_blocked_contacts`].
+    fn contacts_with_blocked(&self, blocked: bool) -> Result<Vec<Contact>, BingleError> {
+        let map = match self.contacts.lock() {
+            Ok(g) => g,
+            Err(e) => {
+                let msg = format!("mutex poisoned: {}", e);
+                tracing::error!("[contacts_with_blocked] Failed to lock contacts: {}", msg);
+                return Err(BingleError::Other(msg));
+            }
+        };
+        Ok(map
+            .iter()
+            .filter(|(_id, (_handle, _source, flag))| *flag == blocked)
+            .map(|(id, (handle, _source, _flag))| Contact {
+                handle: handle.clone(),
+                id: id.clone(),
+                fields: HashMap::new(),
+            })
+            .collect())
+    }
+
     /// `&self` core of [`BingleLocalApi::add_message`]. Returns the stored message's new
     /// [`id`](Message::id).
     pub fn add_message_shared(
@@ -978,24 +1034,12 @@ impl BingleLocalApi for BingleApiLocalImpl {
 
     fn block_contact(&mut self, id: String) -> Result<(), BingleError> {
         tracing::info!("[BingleLocalApi] Blocking contact: id={}", id);
-        if id.trim().is_empty() {
-            return Err(BingleError::Other("id cannot be empty".to_string()));
-        }
-        let mut map = match self.contacts.lock() {
-            Ok(g) => g,
-            Err(e) => {
-                let msg = format!("mutex poisoned: {}", e);
-                tracing::error!("[block_contact] Failed to lock contacts: {}", msg);
-                return Err(BingleError::Other(msg));
-            }
-        };
-        match map.get_mut(&id) {
-            Some((_h, _s, blocked)) => {
-                *blocked = true;
-                Ok(())
-            }
-            None => Err(BingleError::Other("contact not found".to_string())),
-        }
+        self.set_contact_blocked(&id, true)
+    }
+
+    fn unblock_contact(&mut self, id: String) -> Result<(), BingleError> {
+        tracing::info!("[BingleLocalApi] Unblocking contact: id={}", id);
+        self.set_contact_blocked(&id, false)
     }
 
     fn remove_contact(&mut self, id: String) -> Result<(), BingleError> {
@@ -1034,25 +1078,11 @@ impl BingleLocalApi for BingleApiLocalImpl {
     }
 
     fn get_contacts(&self) -> Result<Vec<Contact>, BingleError> {
-        let map = match self.contacts.lock() {
-            Ok(g) => g,
-            Err(e) => {
-                let msg = format!("mutex poisoned: {}", e);
-                tracing::error!("[get_contacts] Failed to lock contacts: {}", msg);
-                return Err(BingleError::Other(msg));
-            }
-        };
-        let mut out: Vec<Contact> = Vec::new();
-        for (id, (handle, _source, blocked)) in map.iter() {
-            if !*blocked {
-                out.push(Contact {
-                    handle: handle.clone(),
-                    id: id.clone(),
-                    fields: HashMap::new(),
-                });
-            }
-        }
-        Ok(out)
+        self.contacts_with_blocked(false)
+    }
+
+    fn get_blocked_contacts(&self) -> Result<Vec<Contact>, BingleError> {
+        self.contacts_with_blocked(true)
     }
 
     fn add_message(

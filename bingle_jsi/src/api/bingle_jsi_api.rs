@@ -149,8 +149,11 @@ pub trait BingleJsiApi: Send + Sync {
         source: ContactSource,
     ) -> Result<(), BingleJsiError>;
 
-    /// Block a contact by id.
+    /// Block a contact by id. Its live and Mailbox messages are dropped on receipt.
     fn block_contact(&self, id: String) -> Result<(), BingleJsiError>;
+
+    /// Unblock a previously blocked contact by id, so its messages are received again.
+    fn unblock_contact(&self, id: String) -> Result<(), BingleJsiError>;
 
     /// Remove a contact by id without blocking it.
     fn remove_contact(&self, id: String) -> Result<(), BingleJsiError>;
@@ -160,6 +163,9 @@ pub trait BingleJsiApi: Send + Sync {
 
     /// Get the list of unblocked contacts.
     fn get_contacts(&self) -> Result<Vec<Contact>, BingleJsiError>;
+
+    /// Get the list of blocked contacts.
+    fn get_blocked_contacts(&self) -> Result<Vec<Contact>, BingleJsiError>;
 
     /// Add a message to the local store.
     fn add_message(

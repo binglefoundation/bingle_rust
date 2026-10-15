@@ -439,6 +439,15 @@ impl BingleApiLocalImpl {
             // Attribute the message to the sender's handle, resolved from the authenticated sender
             // address; fall back to the address string when the handle cannot be resolved.
             let sender_address = algo_ops::byte_key_to_address(&opened.sender_id).ok();
+            // A message from a sender this user has blocked is dropped: not stored and not returned
+            // (bingle_ux_rn #34). The pop already removed it from the node, so it is gone.
+            if self.is_mailbox_sender_blocked(sender_address.as_deref()) {
+                tracing::info!(
+                    "[poll_mailbox] dropping a message from blocked sender {:?}",
+                    sender_address
+                );
+                continue;
+            }
             let sender_handle = sender_address
                 .as_deref()
                 .and_then(|addr| {

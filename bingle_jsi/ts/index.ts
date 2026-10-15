@@ -161,9 +161,13 @@ export const BingleJsi = BingleJsiNative as {
   apnsRegistrationFailed(reason: string): Promise<void>;
   addContact(handle: string, id: string, source: string): Promise<void>;
   blockContact(id: string): Promise<void>;
+  unblockContact(id: string): Promise<void>;
   removeContact(id: string): Promise<void>;
   isBlocked(id: string): Promise<boolean>;
   getContacts(): Promise<
+    { handle: string; id: string; fields: Record<string, string> }[]
+  >;
+  getBlockedContacts(): Promise<
     { handle: string; id: string; fields: Record<string, string> }[]
   >;
   addMessage(

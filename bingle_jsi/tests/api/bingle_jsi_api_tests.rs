@@ -154,6 +154,12 @@ impl BingleJsiApi for StubApi {
         })
     }
 
+    fn unblock_contact(&self, _id: String) -> Result<(), BingleJsiError> {
+        Err(BingleJsiError::NotImplemented {
+            reason: "unblock_contact".to_string(),
+        })
+    }
+
     fn remove_contact(&self, _id: String) -> Result<(), BingleJsiError> {
         Err(BingleJsiError::NotImplemented {
             reason: "remove_contact".to_string(),
@@ -169,6 +175,12 @@ impl BingleJsiApi for StubApi {
     fn get_contacts(&self) -> Result<Vec<Contact>, BingleJsiError> {
         Err(BingleJsiError::NotImplemented {
             reason: "get_contacts".to_string(),
+        })
+    }
+
+    fn get_blocked_contacts(&self) -> Result<Vec<Contact>, BingleJsiError> {
+        Err(BingleJsiError::NotImplemented {
+            reason: "get_blocked_contacts".to_string(),
         })
     }
 

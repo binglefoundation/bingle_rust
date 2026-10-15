@@ -194,3 +194,32 @@ pub fn receive_persists_across_reload() {
     assert_eq!(messages.len(), 1);
     assert_eq!(messages[0].text, "persisted");
 }
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn a_blocked_senders_message_is_dropped() {
+    // bingle_ux_rn #34: a message from a blocked contact is neither stored nor shown.
+    let dir = tempfile::tempdir().expect("tempdir");
+    let mut local = BingleApiLocalImpl::new(LocalApiConfig::default());
+    local.generate_keypair().expect("keypair");
+    local.seed_own_handle_for_tests("alice".to_string());
+    local
+        .add_contact(
+            "bob".to_string(),
+            "PEER_BOB".to_string(),
+            ContactSource::Received,
+        )
+        .expect("seed bob");
+    local
+        .block_contact("PEER_BOB".to_string())
+        .expect("block bob");
+    let path = dir.path().join("state.json").to_string_lossy().into_owned();
+    local.save(&path).expect("save");
+    let chat_args = parse_chat_args(args(&["--state_file", &path])).expect("parse");
+    let mut state = ChatState::from_chat_args(&chat_args).expect("bridge");
+
+    let received = receive_message(&mut state, "PEER_BOB", "bob", &json!({ "text": "hi" }));
+
+    assert!(received.is_none());
+    assert!(state.messages().expect("messages").is_empty());
+}

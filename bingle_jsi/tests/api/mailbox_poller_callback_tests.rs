@@ -69,6 +69,9 @@ impl BingleLocalApi for ScriptedMailboxLocal {
     fn block_contact(&mut self, id: String) -> Result<(), BingleError> {
         self.inner.block_contact(id)
     }
+    fn unblock_contact(&mut self, id: String) -> Result<(), BingleError> {
+        self.inner.unblock_contact(id)
+    }
     fn remove_contact(&mut self, id: String) -> Result<(), BingleError> {
         self.inner.remove_contact(id)
     }
@@ -77,6 +80,9 @@ impl BingleLocalApi for ScriptedMailboxLocal {
     }
     fn get_contacts(&self) -> Result<Vec<Contact>, BingleError> {
         self.inner.get_contacts()
+    }
+    fn get_blocked_contacts(&self) -> Result<Vec<Contact>, BingleError> {
+        self.inner.get_blocked_contacts()
     }
     fn add_message(
         &mut self,

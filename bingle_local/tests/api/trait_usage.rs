@@ -74,6 +74,11 @@ impl BingleLocalApi for DummyLocal {
         Ok(())
     }
 
+    fn unblock_contact(&mut self, id: String) -> Result<(), BingleError> {
+        self.blocked.remove(&id);
+        Ok(())
+    }
+
     fn remove_contact(&mut self, id: String) -> Result<(), BingleError> {
         self.contacts.retain(|c| c.id != id);
         Ok(())
@@ -88,6 +93,16 @@ impl BingleLocalApi for DummyLocal {
             .contacts
             .iter()
             .filter(|c| !self.blocked.contains(&c.id))
+            .cloned()
+            .collect();
+        Ok(v)
+    }
+
+    fn get_blocked_contacts(&self) -> Result<Vec<Contact>, BingleError> {
+        let v = self
+            .contacts
+            .iter()
+            .filter(|c| self.blocked.contains(&c.id))
             .cloned()
             .collect();
         Ok(v)
