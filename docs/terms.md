@@ -25,9 +25,11 @@ You must follow the [Bingle Community Guidelines](../community-guidelines/). The
 - content promoting suicide or self-injury;
 - spam, scams or fraud;
 - content that impersonates another person;
-- offers of illegal or restricted goods or services.
+- offers of illegal or restricted goods or services;
+- material that infringes copyright or other intellectual property rights;
+- any other communication that is unlawful.
 
-Bingle may check messages on your device before they are sent and stop those containing offensive language.
+Bingle may perform automated checks of messages on your local device before they are sent, and stop those containing offensive language.
 
 ## 3. Reporting
 

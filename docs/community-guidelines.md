@@ -33,6 +33,10 @@ Bingle messages are end-to-end encrypted, so we cannot see them. We rely on user
 
 **Restricted or illegal goods.** Do not offer to buy, sell or trade illegal drugs, weapons or other goods or services whose sale is illegal.
 
+**Copyright infringement.** Do not use Bingle to transmit material that infringes copyright or other intellectual property rights, such as pirated films, music, software or books.
+
+**Any other illegal communication.** Do not use Bingle for any communication that is unlawful where you or the recipient are, even if it is not listed above.
+
 ## Reporting
 
 To report a message, long-press it in the chat and choose **Report**. Choose the reason that fits best, and add details if they help. Reports are sent to Bingle moderators together with the message's cryptographic signature, which proves who sent it.
