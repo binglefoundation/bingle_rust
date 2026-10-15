@@ -66,6 +66,9 @@ impl DistributedMutex for LocalDistributedMutex {
     }
 }
 
+/// Clock used to set and check grant leases; injectable so tests need not sleep.
+pub type MutexClock = Arc<dyn Fn() -> Instant + Send + Sync>;
+
 // Modified Lamport with Lease-Based Safety implementation.
 //
 // Acquisition rule: all-node acks. Because the Bingle transport now guarantees
@@ -91,6 +94,7 @@ pub struct ModifiedLamportDistributedMutex {
     send_request: Arc<dyn Fn(&str, &crate::messages::types::MutexRequest) -> bool + Send + Sync>,
     send_reply: Arc<dyn Fn(&str, &crate::messages::types::MutexResponse) -> bool + Send + Sync>,
     send_release: Arc<dyn Fn(&str, &crate::messages::types::MutexRelease) -> bool + Send + Sync>,
+    clock: MutexClock,
     inner: Arc<Mutex<InnerState>>,
     cv: Arc<Condvar>,
 }
@@ -156,6 +160,15 @@ impl InnerState {
 }
 
 impl ModifiedLamportDistributedMutex {
+    /// Use the given lease duration and clock instead of the defaults (one second, the real
+    /// clock); lets tests age leases without sleeping.
+    #[cfg(feature = "test-hooks")]
+    pub fn with_lease(mut self, lease_duration: Duration, clock: MutexClock) -> Self {
+        self.lease_duration = lease_duration;
+        self.clock = clock;
+        self
+    }
+
     pub fn new<Req, Rep, Rel>(
         self_id: String,
         node_ids: Vec<String>,
@@ -193,6 +206,7 @@ impl ModifiedLamportDistributedMutex {
             send_request: Arc::new(send_request),
             send_reply: Arc::new(send_reply),
             send_release: Arc::new(send_release),
+            clock: Arc::new(Instant::now),
             inner: Arc::new(Mutex::new(inner)),
             cv: Arc::new(Condvar::new()),
         }
@@ -327,7 +341,7 @@ impl ModifiedLamportDistributedMutex {
                 .insert((req.lamport_timestamp, from_id.to_string()));
         } else {
             // Check current holder lease
-            let now = Instant::now();
+            let now = (self.clock)();
             let mut deferred_by_lease = false;
             if let Some((holder, _ts, deadline)) = &st.last_holder
                 && *holder != from_id
@@ -357,12 +371,22 @@ impl ModifiedLamportDistributedMutex {
                 };
 
                 if grant_now {
-                    // Record last holder lease for requester
-                    st.last_holder = Some((
-                        from_id.to_string(),
-                        req.lamport_timestamp,
-                        Instant::now() + self.lease_duration,
-                    ));
+                    // Record last holder lease for requester. A retry of the request we already
+                    // granted is re-acknowledged but keeps its original deadline: renewing it
+                    // let a requester's retries hold this node's grant indefinitely, so an
+                    // earlier requester waiting on this node never got it (issue #37).
+                    let deadline = match &st.last_holder {
+                        Some((holder, ts, deadline))
+                            if holder == from_id && *ts == req.lamport_timestamp =>
+                        {
+                            *deadline
+                        }
+                        _ => now + self.lease_duration,
+                    };
+                    st.last_holder = Some((from_id.to_string(), req.lamport_timestamp, deadline));
+                    // A deferral of this requester is now satisfied; leaving it would make a
+                    // later release send it a stale grant.
+                    st.deferred.retain(|(_, id)| id != from_id);
                     should_send_reply = true;
                 } else {
                     st.deferred
@@ -443,7 +467,7 @@ impl ModifiedLamportDistributedMutex {
             st.last_holder = Some((
                 next_id.clone(),
                 next_ts,
-                Instant::now() + self.lease_duration,
+                (self.clock)() + self.lease_duration,
             ));
             next_grant = Some(next_id);
         }
@@ -512,7 +536,7 @@ impl DistributedMutex for ModifiedLamportDistributedMutex {
             let req_acks = st.required_acks();
             if st.acks.len() >= req_acks {
                 // Only enter if we have not granted our vote to someone else whose lease is still valid
-                let now = Instant::now();
+                let now = (self.clock)();
                 let can_enter = match &st.last_holder {
                     None => true,
                     Some((holder, _hts, deadline)) => {
@@ -532,7 +556,7 @@ impl DistributedMutex for ModifiedLamportDistributedMutex {
                     st.last_holder.as_ref().map(|(h, ts, dl)| (
                         h.clone(),
                         *ts,
-                        dl.saturating_duration_since(Instant::now())
+                        dl.saturating_duration_since((self.clock)())
                     ))
                 );
                 if can_enter {
@@ -541,7 +565,7 @@ impl DistributedMutex for ModifiedLamportDistributedMutex {
                     st.last_holder = Some((
                         self.self_id.clone(),
                         ts,
-                        Instant::now() + self.lease_duration,
+                        (self.clock)() + self.lease_duration,
                     ));
                     debug!(
                         "[mutex:{}] ENTER critical section ts={} (lease {:?})",
@@ -563,7 +587,7 @@ impl DistributedMutex for ModifiedLamportDistributedMutex {
             let mut st2 = res.0;
             let req_acks2 = st2.required_acks();
             if st2.acks.len() >= req_acks2 {
-                let now2 = Instant::now();
+                let now2 = (self.clock)();
                 let can_enter2 = match &st2.last_holder {
                     None => true,
                     Some((holder, _hts, deadline)) => {
@@ -582,7 +606,7 @@ impl DistributedMutex for ModifiedLamportDistributedMutex {
                     st2.last_holder.as_ref().map(|(h, ts, dl)| (
                         h.clone(),
                         *ts,
-                        dl.saturating_duration_since(Instant::now())
+                        dl.saturating_duration_since((self.clock)())
                     ))
                 );
                 if can_enter2 {
@@ -590,7 +614,7 @@ impl DistributedMutex for ModifiedLamportDistributedMutex {
                     st2.last_holder = Some((
                         self.self_id.clone(),
                         ts,
-                        Instant::now() + self.lease_duration,
+                        (self.clock)() + self.lease_duration,
                     ));
                     debug!(
                         "[mutex:{}] ENTER critical section (post-wake) ts={} (lease {:?})",
@@ -631,7 +655,7 @@ impl DistributedMutex for ModifiedLamportDistributedMutex {
                 st.last_holder = Some((
                     id_grant.clone(),
                     *ts_grant,
-                    Instant::now() + self.lease_duration,
+                    (self.clock)() + self.lease_duration,
                 ));
                 debug!(
                     "[mutex:{}] RELEASE: granting next {:?} with ts={} and broadcasting reply",
