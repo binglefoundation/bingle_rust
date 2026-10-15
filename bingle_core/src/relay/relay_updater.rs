@@ -11,6 +11,7 @@ use crate::messages::types::{
 };
 use crate::relay::relay_finder::{RelayFinderTrait, RelayInfo};
 use crate::relay::relay_info_cache::RelayInfoCache;
+use crate::relay::relay_probe_failures::RelayProbeFailures;
 
 const LONG_TTL_SECS: u64 = 30_000;
 const MEDIUM_TTL_SECS: u64 = 300;
@@ -24,11 +25,31 @@ const SHORT_TTL_SECS: u64 = 30;
 /// deliver once connectivity returns (bingle_rust #31/#43).
 const RELAY_STATUS_RESPONSE_TIMEOUT: Duration = Duration::from_secs(5);
 
+/// Longest a relay selection waits for its probes (issue #122), however many candidates are
+/// dead. It is above the 10s DTLS connect deadline, so a pass whose first-ranked candidate is dead
+/// gives up only after that connect has finished. A connect left running could collide with the
+/// peer's own connect if it came up meanwhile, failing both handshakes and putting the peer into
+/// the engine's send backoff.
+pub const RELAY_SELECTION_BUDGET: Duration = Duration::from_secs(12);
+
+/// How long selection waits on a candidate before also probing the next-ranked one (issue #122).
+/// A reachable relay answers well inside this, so a live preferred relay is the only one
+/// contacted, while each dead one ahead of a live one costs this much rather than a connect
+/// timeout. Probing one candidate at a time matters: a client's triangle test needs a corner
+/// relay it has not sent to, so selection must not contact more relays than it needs.
+pub const RELAY_PREFERENCE_GRACE: Duration = Duration::from_millis(1500);
+
+/// Result of one candidate's status probe, sent back from its probe thread.
+type ProbeResult = (usize, Result<DdbRelaysStatusResponse, String>);
+
 pub struct RelayUpdater {
     my_id: String,
     api: Option<BingleApiBothType>,
     relay_info_cache: Arc<RelayInfoCache>,
     discover_roots: Arc<dyn Fn() -> Vec<RelayInfo> + Send + Sync>,
+    probe_failures: Arc<RelayProbeFailures>,
+    selection_budget: Duration,
+    preference_grace: Duration,
 }
 
 impl RelayUpdater {
@@ -41,6 +62,9 @@ impl RelayUpdater {
             api: None,
             relay_info_cache: Arc::new(RelayInfoCache::new(Vec::new())),
             discover_roots,
+            probe_failures: Arc::new(RelayProbeFailures::new()),
+            selection_budget: RELAY_SELECTION_BUDGET,
+            preference_grace: RELAY_PREFERENCE_GRACE,
         }
     }
 
@@ -54,7 +78,23 @@ impl RelayUpdater {
             api: Some(api),
             relay_info_cache: Arc::new(RelayInfoCache::new(Vec::new())),
             discover_roots,
+            probe_failures: Arc::new(RelayProbeFailures::new()),
+            selection_budget: RELAY_SELECTION_BUDGET,
+            preference_grace: RELAY_PREFERENCE_GRACE,
         }
+    }
+
+    /// Share a negative cache of unreachable relays with other updaters (issue #122).
+    pub fn with_probe_failures(mut self, probe_failures: Arc<RelayProbeFailures>) -> Self {
+        self.probe_failures = probe_failures;
+        self
+    }
+
+    /// Override the selection budget and preference grace (tests).
+    pub fn with_selection_timing(mut self, budget: Duration, preference_grace: Duration) -> Self {
+        self.selection_budget = budget;
+        self.preference_grace = preference_grace;
+        self
     }
 
     pub fn relay_info_cache(&self) -> Arc<RelayInfoCache> {
@@ -138,6 +178,15 @@ impl RelayUpdater {
         }
     }
 
+    /// Select a relay to use (issue #122): probe the candidates in rank order and return the
+    /// first that answers Available.
+    ///
+    /// Candidates are ranked by this node's id (preferred, then alternate, then the rest), so
+    /// load spreads across relays. The next-ranked candidate is probed as soon as the latest one
+    /// fails, or once it has not answered within `preference_grace`, so a dead relay costs at
+    /// most the grace rather than a connect timeout. A candidate that recently could not be
+    /// reached is skipped for a cooldown, unless every candidate is cooling down. Selection
+    /// gives up after `selection_budget`.
     pub fn relay_select_and_query(&self, exclude_ids: &[String]) -> Option<RelayInfo> {
         let my_id_norm = self.my_id.trim_end_matches(crate::protocol::ISSUER_SUFFIX);
         let mut candidates = self.relay_info_cache.list_all_relays(my_id_norm, true);
@@ -147,58 +196,157 @@ impl RelayUpdater {
                 && !exclude_ids.contains(&relay.id().to_string())
         });
         candidates.sort_by(|left, right| left.id().cmp(right.id()));
+        // A relay listed twice must not be probed twice.
+        candidates.dedup_by(|left, right| left.id() == right.id());
 
         if candidates.is_empty() {
             return None;
         }
 
+        let ranked: Vec<RelayInfo> = self
+            .selection_order(&candidates, my_id_norm)
+            .into_iter()
+            .filter_map(|index| candidates.get(index).cloned())
+            .collect();
+        let mut probed: Vec<RelayInfo> = ranked
+            .iter()
+            .filter(|relay| !self.probe_failures.is_cooling_down(relay.id()))
+            .cloned()
+            .collect();
+        if probed.is_empty() {
+            // Every candidate failed recently. Probe them anyway rather than strand the node.
+            tracing::info!(
+                "[RelayUpdater::relay_select_and_query] all {} candidate(s) recently unreachable; probing anyway",
+                ranked.len()
+            );
+            probed = ranked;
+        }
+
+        let (sender, receiver) = std::sync::mpsc::channel::<ProbeResult>();
+        let deadline = Instant::now() + self.selection_budget;
+        let mut started = 0usize;
+        let mut resolved = 0usize;
+        let mut next_start_at = Instant::now();
         let mut failed_relay_ids: Vec<String> = Vec::new();
-        let selection_order = self.selection_order(&candidates, my_id_norm);
-        for index in selection_order {
-            let Some(candidate) = candidates.get(index).cloned() else {
-                continue;
-            };
 
-            match self.query_relay_status(&candidate) {
-                Ok(status_response) => {
-                    self.update_cached_relay_state(candidate.id(), status_response.responder_state);
-                    if status_response.responder_state != RelayState::Available {
-                        failed_relay_ids.push(candidate.id().to_string());
-                        continue;
-                    }
+        loop {
+            let now = Instant::now();
+            // Start the next candidate when every started one has failed, or the latest has
+            // not answered within the grace.
+            if started < probed.len() && (resolved == started || now >= next_start_at) {
+                self.spawn_probe(started, &probed[started], &sender);
+                started += 1;
+                next_start_at = now + self.preference_grace;
+            }
+            if resolved == started {
+                // Every candidate has been probed and none answered Available.
+                return None;
+            }
+            if now >= deadline {
+                tracing::info!(
+                    "[RelayUpdater::relay_select_and_query] no relay answered Available within {:?}",
+                    self.selection_budget
+                );
+                return None;
+            }
 
-                    if !self.update_cache_from_status(&status_response, my_id_norm) {
-                        self.update_cached_relay_state(candidate.id(), RelayState::Off);
-                        failed_relay_ids.push(candidate.id().to_string());
-                        continue;
-                    }
-
-                    let selected = self
-                        .relay_info_cache
-                        .list_all_relays(my_id_norm, true)
-                        .into_iter()
-                        .find(|relay| relay.id() == candidate.id());
-
-                    if let Some(relay) = selected {
+            let mut wake = deadline;
+            if started < probed.len() {
+                wake = wake.min(next_start_at);
+            }
+            let (rank, result) =
+                match receiver.recv_timeout(wake.saturating_duration_since(Instant::now())) {
+                    Ok(received) => received,
+                    Err(_) => continue,
+                };
+            resolved += 1;
+            let candidate = &probed[rank];
+            match result {
+                Ok(status) if status.responder_state == RelayState::Available => {
+                    self.update_cached_relay_state(candidate.id(), status.responder_state);
+                    if let Some(relay) = self.accept_available(candidate, &status, my_id_norm) {
                         self.report_failed_relays(&relay, &failed_relay_ids);
                         return Some(relay);
                     }
-
-                    let mut relay = candidate.clone();
-                    relay.is_root = true;
-                    relay.state = Some(RelayState::Available);
-                    relay.ttl = Some(MEDIUM_TTL_SECS);
-                    self.report_failed_relays(&relay, &failed_relay_ids);
-                    return Some(relay);
+                    failed_relay_ids.push(candidate.id().to_string());
                 }
-                Err(_) => {
+                Ok(status) => {
+                    self.update_cached_relay_state(candidate.id(), status.responder_state);
+                    failed_relay_ids.push(candidate.id().to_string());
+                }
+                Err(err) => {
+                    tracing::info!(
+                        "[RelayUpdater::relay_select_and_query] relay {} unreachable: {}",
+                        candidate.id(),
+                        err
+                    );
                     self.update_cached_relay_state(candidate.id(), RelayState::Off);
                     failed_relay_ids.push(candidate.id().to_string());
                 }
             }
         }
+    }
 
-        None
+    /// Probe one relay's status on its own thread, reporting `(rank, result)` on `sender`. A probe
+    /// that fails to reach its relay records it in the negative cache, even if selection has
+    /// already finished by then.
+    fn spawn_probe(
+        &self,
+        rank: usize,
+        relay: &RelayInfo,
+        sender: &std::sync::mpsc::Sender<ProbeResult>,
+    ) {
+        let probe_sender = sender.clone();
+        let api = self.api.clone();
+        let probe_relay = relay.clone();
+        let failures = self.probe_failures.clone();
+        let spawned = std::thread::Builder::new()
+            .name("relay-probe".to_string())
+            .spawn(move || {
+                let result = Self::query_relay_status(api.as_ref(), &probe_relay);
+                match &result {
+                    Ok(_) => failures.record_success(probe_relay.id()),
+                    Err(_) => failures.record_failure(probe_relay.id()),
+                }
+                let _ = probe_sender.send((rank, result));
+            });
+        if let Err(err) = spawned {
+            tracing::error!(
+                "[RelayUpdater::spawn_probe] could not spawn probe for {}: {}",
+                relay.id(),
+                err
+            );
+            let _ = sender.send((rank, Err(format!("probe not started: {err}"))));
+        }
+    }
+
+    /// Take an Available candidate: refresh the relay cache from its status and return the relay,
+    /// or `None` (marking it Off) when its status cannot be used.
+    fn accept_available(
+        &self,
+        candidate: &RelayInfo,
+        status_response: &DdbRelaysStatusResponse,
+        my_id_norm: &str,
+    ) -> Option<RelayInfo> {
+        if !self.update_cache_from_status(status_response, my_id_norm) {
+            self.update_cached_relay_state(candidate.id(), RelayState::Off);
+            return None;
+        }
+
+        let selected = self
+            .relay_info_cache
+            .list_all_relays(my_id_norm, true)
+            .into_iter()
+            .find(|relay| relay.id() == candidate.id());
+        if let Some(relay) = selected {
+            return Some(relay);
+        }
+
+        let mut relay = candidate.clone();
+        relay.is_root = true;
+        relay.state = Some(RelayState::Available);
+        relay.ttl = Some(MEDIUM_TTL_SECS);
+        Some(relay)
     }
 
     fn report_failed_relays(&self, selected_relay: &RelayInfo, failed_relay_ids: &[String]) {
@@ -233,21 +381,15 @@ impl RelayUpdater {
         }
     }
 
+    /// Rank every candidate: the preferred relay for this node's id, then the alternate, then
+    /// the rest in order after them, so load spreads across relays.
     fn selection_order(&self, relays: &[RelayInfo], my_id: &str) -> Vec<usize> {
-        if relays.is_empty() {
+        let n = relays.len();
+        if n == 0 {
             return Vec::new();
         }
-
-        if relays.len() == 1 {
-            return vec![0];
-        }
-
-        let (preferred, alternate) = self.select_indices_internal(relays, my_id);
-        if preferred == alternate {
-            vec![preferred]
-        } else {
-            vec![preferred, alternate]
-        }
+        let (preferred, _alternate) = self.select_indices_internal(relays, my_id);
+        (0..n).map(|offset| (preferred + offset) % n).collect()
     }
 
     fn select_indices_internal(&self, relays: &[RelayInfo], my_id: &str) -> (usize, usize) {
@@ -276,8 +418,11 @@ impl RelayUpdater {
         u32::from_be_bytes([digest[0], digest[1], digest[2], digest[3]])
     }
 
-    fn query_relay_status(&self, relay: &RelayInfo) -> Result<DdbRelaysStatusResponse, String> {
-        let Some(api) = &self.api else {
+    fn query_relay_status(
+        api: Option<&BingleApiBothType>,
+        relay: &RelayInfo,
+    ) -> Result<DdbRelaysStatusResponse, String> {
+        let Some(api) = api else {
             return Err("api unavailable".to_string());
         };
 

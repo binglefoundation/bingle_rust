@@ -42,6 +42,8 @@ pub mod relay_permission_eviction_localnet;
 #[path = "../integration/engine/route_incoming_sender_auth_localnet.rs"]
 pub mod route_incoming_sender_auth_localnet;
 // Relay localnet test
+#[path = "../integration/relay/relay_selection_dead_relays_localnet.rs"]
+pub mod relay_selection_dead_relays_localnet;
 #[path = "../relay/relay_updater_localnet.rs"]
 pub mod relay_updater_localnet;
 // Internet tests: live STUN over real internet UDP

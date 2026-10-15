@@ -225,6 +225,9 @@ pub struct Engine {
     pending_ip_change: Mutex<Option<(std::net::IpAddr, u32)>>,
     stun: Mutex<Option<Arc<Mutex<Box<dyn StunEndpointFinder + Send + Sync>>>>>, // background STUN
     relay_finder: Mutex<Option<Arc<RelayFinder>>>, // used to locate peer relay
+    // Relays that recently could not be reached, skipped by relay selection for a cooldown.
+    // Shared by every relay finder this engine creates, which are often short-lived (#122).
+    relay_probe_failures: Arc<crate::relay::relay_probe_failures::RelayProbeFailures>,
     // The relay we most recently registered with. Retained so that, if our public endpoint
     // changes (e.g. a NAT port remap), we can re-register with the same relay on the new
     // mapping without a full re-discovery.
@@ -425,6 +428,12 @@ impl Engine {
     /// Test helper to query backend for a given id.
     pub fn ddb_backend_lookup_for_tests(&self, id: &str) -> Option<AdvertRecord> {
         self.ddb_backend.lock().ok().and_then(|b| b.lookup(id))
+    }
+    /// The negative cache of unreachable relays shared by this engine's relay finders (#122).
+    pub fn relay_probe_failures(
+        &self,
+    ) -> Arc<crate::relay::relay_probe_failures::RelayProbeFailures> {
+        self.relay_probe_failures.clone()
     }
     pub fn ddb_client(&self) -> Arc<dyn crate::ddb::DdbClient> {
         self.ddb_client.lock().unwrap().clone()
@@ -642,6 +651,9 @@ impl Engine {
             last_public_addr_shared: Arc::new(Mutex::new(None)),
             stun: Mutex::new(None),
             relay_finder: Mutex::new(None),
+            relay_probe_failures: Arc::new(
+                crate::relay::relay_probe_failures::RelayProbeFailures::new(),
+            ),
             last_registered_relay: Mutex::new(None),
             last_reregister_at: Mutex::new(None),
             triangle_wait: Mutex::new(None),
