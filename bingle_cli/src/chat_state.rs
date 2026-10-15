@@ -247,6 +247,11 @@ impl ChatState {
         self.contacts.values().any(|known| known == id)
     }
 
+    /// Whether `id` is a contact this user has blocked, so its messages are dropped.
+    pub fn is_blocked(&self, id: &str) -> bool {
+        matches!(self.local.is_blocked(id), Ok(true))
+    }
+
     /// Add a contact discovered by receiving a message from them ([`ContactSource::Received`]), to
     /// both the persistent store and the in-memory recipient map. The caller persists via
     /// [`save_state`](ChatState::save_state).

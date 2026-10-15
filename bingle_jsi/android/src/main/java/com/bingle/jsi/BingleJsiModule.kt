@@ -320,6 +320,23 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
+    fun unblockContact(id: String, promise: Promise) {
+        val api = apiInstance
+        if (api == null) {
+            promise.reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.")
+            return
+        }
+        Thread {
+            try {
+                api.unblockContact(id)
+                promise.resolve(null)
+            } catch (e: Exception) {
+                promise.reject("BINGLE_ERROR", e.message, e)
+            }
+        }.start()
+    }
+
+    @ReactMethod
     fun removeContact(id: String, promise: Promise) {
         val api = apiInstance
         if (api == null) {
@@ -363,6 +380,33 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
         Thread {
             try {
                 val contacts = api.getContacts()
+                val arr = Arguments.createArray()
+                contacts.forEach { c ->
+                    val map = Arguments.createMap()
+                    map.putString("handle", c.handle)
+                    map.putString("id", c.id)
+                    val fields = Arguments.createMap()
+                    c.fields.forEach { (k, v) -> fields.putString(k, v) }
+                    map.putMap("fields", fields)
+                    arr.pushMap(map)
+                }
+                promise.resolve(arr)
+            } catch (e: Exception) {
+                promise.reject("BINGLE_ERROR", e.message, e)
+            }
+        }.start()
+    }
+
+    @ReactMethod
+    fun getBlockedContacts(promise: Promise) {
+        val api = apiInstance
+        if (api == null) {
+            promise.reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.")
+            return
+        }
+        Thread {
+            try {
+                val contacts = api.getBlockedContacts()
                 val arr = Arguments.createArray()
                 contacts.forEach { c ->
                     val map = Arguments.createMap()

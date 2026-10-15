@@ -141,6 +141,8 @@ class MockBingleJsiApi: BingleJsiApiProtocol {
 
     func blockContact(id: String) throws {}
 
+    func unblockContact(id: String) throws {}
+
     func removeContact(id: String) throws {}
 
     func isBlocked(id: String) throws -> Bool {
@@ -149,6 +151,10 @@ class MockBingleJsiApi: BingleJsiApiProtocol {
 
     func getContacts() throws -> [Contact] {
         return contactsResult
+    }
+
+    func getBlockedContacts() throws -> [Contact] {
+        return []
     }
 
     func addMessage(senderHandle: String, recipientHandles: [String], timestamp: Int64, text: String, cipherSuite: String?) throws {}

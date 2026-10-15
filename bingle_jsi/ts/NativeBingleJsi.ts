@@ -299,9 +299,11 @@ export interface BingleJsiApi {
   apnsRegistrationFailed(reason: string): void;
   addContact(handle: string, id: string, source: ContactSource): void;
   blockContact(id: string): void;
+  unblockContact(id: string): void;
   removeContact(id: string): void;
   isBlocked(id: string): boolean;
   getContacts(): Contact[];
+  getBlockedContacts(): Contact[];
   addMessage(
     senderHandle: string,
     recipientHandles: string[],

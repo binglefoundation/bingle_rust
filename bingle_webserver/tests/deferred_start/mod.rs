@@ -65,6 +65,9 @@ impl BingleLocalApi for ControllableLocalApi {
     fn block_contact(&mut self, _id: String) -> Result<(), BingleError> {
         Ok(())
     }
+    fn unblock_contact(&mut self, _id: String) -> Result<(), BingleError> {
+        Ok(())
+    }
     fn remove_contact(&mut self, _id: String) -> Result<(), BingleError> {
         Ok(())
     }
@@ -72,6 +75,9 @@ impl BingleLocalApi for ControllableLocalApi {
         Ok(false)
     }
     fn get_contacts(&self) -> Result<Vec<Contact>, BingleError> {
+        Ok(Vec::new())
+    }
+    fn get_blocked_contacts(&self) -> Result<Vec<Contact>, BingleError> {
         Ok(Vec::new())
     }
 

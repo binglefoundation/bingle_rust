@@ -17,7 +17,8 @@ use crate::chat_state::ChatState;
 /// Handle an inbound engine message.
 ///
 /// When `message` is a plaintext `{ "text": ... }` message (the same shape `run --echo` uses — no
-/// non-null `app`/`type`), this records the sender as a `Received` contact if it is new, appends the
+/// non-null `app`/`type`) from a sender that is not blocked, this records the sender as a
+/// `Received` contact if it is new, appends the
 /// message to the history, saves the state file, and returns the stored [`Message`] for the caller
 /// to display (its `sender_handle` is the resolved handle, or the id when the sender is unknown).
 /// Non-plaintext or text-less messages are ignored (`None`).
@@ -36,6 +37,15 @@ pub fn receive_message(
     let is_plain = message.get("app").is_none_or(|v| v.is_null())
         && message.get("type").is_none_or(|v| v.is_null());
     if !is_plain {
+        return None;
+    }
+
+    // A blocked sender's message is dropped before it is recorded (bingle_ux_rn #34).
+    if state.is_blocked(sender_id) {
+        tracing::info!(
+            "chat: dropping a message from blocked sender '{}'",
+            sender_id
+        );
         return None;
     }
 

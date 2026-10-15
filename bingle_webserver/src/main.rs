@@ -192,6 +192,14 @@ async fn main() -> anyhow::Result<()> {
         let api_for_handle = api.clone();
         api.access(|api_mut| {
             let on_message: Arc<OnMessageHandler> = Arc::new(move |sender, sender_handle, message| {
+                // Drop a blocked sender's message before it is buffered or stored (bingle_ux_rn #34).
+                if let Some(local_arc) = &local_api_for_closure
+                    && let Ok(guard) = local_arc.lock()
+                    && matches!(guard.is_blocked(&sender), Ok(true))
+                {
+                    tracing::info!("Dropping a message from blocked sender {} ({})", sender, sender_handle);
+                    return;
+                }
                 tracing::info!("Received message from {} ({}): {}", sender, sender_handle, message);
                 let mut m = msgs.lock().unwrap();
                 m.push(message.clone());
