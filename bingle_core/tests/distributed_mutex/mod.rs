@@ -9,9 +9,8 @@ pub mod modified_lamport;
 #[path = "lease_renewal.rs"]
 pub mod lease_renewal;
 
-// TODO: reinstate when these tests are fixed
-// #[path = "dynamic_add.rs"]
-//pub mod dynamic_add;
+#[path = "dynamic_add.rs"]
+pub mod dynamic_add;
 
-// #[path = "islanding.rs"]
-//pub mod islanding;
+#[path = "divergent_views.rs"]
+pub mod divergent_views;

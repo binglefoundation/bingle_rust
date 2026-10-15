@@ -10,13 +10,16 @@ pub mod common;
 use crate::util::test_util::init_test_logging;
 use common::TestNetwork;
 
+/// A node Z, absent from every other node's view, joins while A may hold the lock. Z must still
+/// acquire it without overlapping A, and B must acquire it afterwards with Z in the group.
 #[ntest::timeout(30000)]
 #[test]
 #[cfg(not(target_os = "ios"))]
 pub fn modified_lamport_dynamic_add_node_after_start() {
     init_test_logging();
 
-    // Start with three nodes where only A and B are of interest; C exists but is idle.
+    // A and B start knowing only each other; C knows A, B and itself and never requests the
+    // lock. A and B first hear of C, and of Z, through the `known_ids` on Z's requests.
     let net = TestNetwork::new();
     let ids = vec!["A".to_string(), "B".to_string(), "C".to_string()];
     for id in &ids {
