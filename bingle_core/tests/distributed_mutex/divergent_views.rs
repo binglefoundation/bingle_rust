@@ -10,17 +10,24 @@ pub mod common;
 use crate::util::test_util::init_test_logging;
 use common::TestNetwork;
 
-#[ntest::timeout(60000)]
+/// Two late joiners that start with different membership views, C with A, B, C and D with
+/// A, B, D, contend for the lock and must not hold it together. Neither knows the other at
+/// first; the views converge through the `known_ids` carried on requests, replies and
+/// membership broadcasts, and A and B each grant one holder at a time.
+///
+/// Every node can reach every other here, so this is not a partition test. A real partition is
+/// out of scope: the mutex is AP by design, and each side of a partition prunes the other and
+/// proceeds.
+#[ntest::timeout(30000)]
 #[test]
 #[cfg(not(target_os = "ios"))]
-pub fn modified_lamport_partitioned_networks_no_dual_hold_c_and_d() {
+pub fn modified_lamport_divergent_views_no_dual_hold_c_and_d() {
     init_test_logging();
 
-    // Networks:
-    // a: A, B
-    // b: A, B
-    // c: A, B, C
-    // d: A, B, D
+    // Initial membership views:
+    // A, B: A, B
+    // C: A, B, C
+    // D: A, B, D
     let net = TestNetwork::new();
     net.add_node("A");
     net.add_node("B");
@@ -66,7 +73,7 @@ pub fn modified_lamport_partitioned_networks_no_dual_hold_c_and_d() {
 
     tb.join().expect("B finished");
 
-    // C & D attempt acquire simultaneously.
+    // C and D join, each knowing only A, B and itself, and contend for the lock.
     net.add_node("C");
     let c = net.create_mutex("C", vec!["A".to_string(), "B".to_string(), "C".to_string()]);
     net.add_node("D");
