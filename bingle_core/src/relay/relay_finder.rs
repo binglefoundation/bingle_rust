@@ -244,15 +244,31 @@ impl RelayFinder {
         }
     }
 
+    /// The engine's shared negative cache of unreachable relays (#122), so a relay that failed in
+    /// one selection pass is skipped by the next even though each pass may use a new finder.
+    /// `None` when the API has no engine (test doubles); the updater then keeps its own.
+    fn engine_probe_failures(
+        &self,
+    ) -> Option<Arc<crate::relay::relay_probe_failures::RelayProbeFailures>> {
+        let api = self.api.upgrade()?;
+        let mut failures = None;
+        api.with_engine(&mut |engine| failures = Some(engine.relay_probe_failures()));
+        failures
+    }
+
     /// Lazy-initialise the `RelayUpdater` and ensure the `RelayInfoCache` is populated.
     /// Calls `init_from_blockchain` when the cache is empty, otherwise `update_when_expired`.
     fn get_or_init_updater(&self, my_id: &str) -> &RelayUpdater {
         let updater = self.relay_updater.get_or_init(|| {
-            RelayUpdater::new_with_api(
+            let updater = RelayUpdater::new_with_api(
                 my_id.to_string(),
                 self.api.clone(),
                 self.discover_roots.clone(),
-            )
+            );
+            match self.engine_probe_failures() {
+                Some(failures) => updater.with_probe_failures(failures),
+                None => updater,
+            }
         });
         if updater.relay_info_cache().is_empty() {
             updater.init_from_blockchain();

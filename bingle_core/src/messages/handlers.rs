@@ -96,6 +96,9 @@ struct BothAsApi {
     inner: Arc<dyn BingleApiBoth>,
 }
 impl BingleApiInternal for BothAsApi {
+    fn with_engine(&self, f: &mut dyn FnMut(&crate::engine::Engine)) {
+        self.inner.with_engine(f)
+    }
     fn mutex_handle_request(&self, from_id: String, req: MutexRequest) {
         self.inner.mutex_handle_request(from_id, req)
     }
