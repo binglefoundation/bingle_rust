@@ -14,7 +14,8 @@
 #   --nat-mode <mode>      Direct|Full|Restricted (default: Direct)
 #   --region <region>      AWS region (default: from aws configure)
 #   --repo-name <name>     ECR repository name (default: bingle-relay)
-#   --redeploy-only        Skip CloudFormation and just update the ECS service
+#   --redeploy-only        Update only the stack's image (all other parameters keep their
+#                          previous values) instead of a full CloudFormation deploy
 #   --tag <tag>            Image tag (default: latest, or from .build_number if exists)
 #   --express              Use simplified Fargate-based deployment (faster, cheaper for small loads)
 
@@ -64,7 +65,7 @@ usage() {
   echo "  --node-file <path>     Path to node configuration file (default: $NODE_FILE)"
   echo "  --region <region>      AWS region (default: $REGION)"
   echo "  --repo-name <name>     ECR repository name (default: $REPO_NAME)"
-  echo "  --redeploy-only        Skip CloudFormation and just update the ECS service (requires existing stack)"
+  echo "  --redeploy-only        Update only the stack's image, keeping all other parameters (requires existing stack)"
   echo "  --tag <tag>            Image tag (default: $TAG)"
   echo "  --express              Use simplified Fargate-based deployment (faster)"
   echo "  --cost-tag <tag>       Cost allocation tag (default: $COST_TAG)"
@@ -102,6 +103,16 @@ if [[ -z "$STACK_NAME" ]]; then
   echo "[deploy] Stack name derived from handle '$HANDLE': $STACK_NAME"
 fi
 
+# Whether the stack exists decides how to treat its log group and whether a deploy may be a no-op.
+STACK_EXISTS=0
+if aws cloudformation describe-stacks --stack-name "$STACK_NAME" --region "$REGION" >/dev/null 2>&1; then
+  STACK_EXISTS=1
+fi
+if [[ $REDEPLOY_ONLY -eq 1 && $STACK_EXISTS -eq 0 ]]; then
+  echo "[deploy] ✗ --redeploy-only needs an existing stack, and '$STACK_NAME' does not exist." >&2
+  exit 1
+fi
+
 # 1) Build the Docker image
 echo "[deploy] Building Docker image for linux/arm64..."
 # We use the existing build script to ensure consistency
@@ -129,13 +140,25 @@ LATEST_IMAGE_URI="${ECR_URL}/${REPO_NAME}:latest"
 docker tag "$REPO_NAME:$TAG" "$LATEST_IMAGE_URI"
 docker push "$LATEST_IMAGE_URI"
 
+# Pin the task definition to the pushed image's digest, not its tag. Rebuilding under an unchanged
+# .build_number re-pushes the same tag, so a tag reference leaves every stack parameter identical:
+# CloudFormation reports "No changes to deploy" and the service keeps running the old image (#312).
+# A digest reference makes any new image a parameter change, and so a new deployment.
+IMAGE_DIGEST=$(aws ecr describe-images --repository-name "$REPO_NAME" --image-ids imageTag="$TAG" --region "$REGION" --query "imageDetails[0].imageDigest" --output text)
+if [[ "$IMAGE_DIGEST" != sha256:* ]]; then
+  echo "[deploy] ✗ Could not read the digest of the pushed image '$FULL_IMAGE_URI' (got '$IMAGE_DIGEST')." >&2
+  exit 1
+fi
+IMAGE_REF="${ECR_URL}/${REPO_NAME}@${IMAGE_DIGEST}"
+echo "[deploy] Image pinned by digest: $IMAGE_REF"
+
 # 3) Deploy/Update
 
-# If the log group was retained from a previous stack deletion, remove it so
-# CloudFormation can recreate it cleanly.  This avoids "already exists" errors
-# while still preserving logs between destroy and the next deploy.
+# The log group is DeletionPolicy: Retain, so after destroy_relay.sh it outlives its stack and a
+# fresh create would fail with "already exists". Remove it only in that case — when the stack does
+# not exist. On an update the group belongs to the running relay and must be left alone.
 LOG_GROUP_NAME="/bingle/relay/${STACK_NAME}"
-if aws logs describe-log-groups --log-group-name-prefix "$LOG_GROUP_NAME" --region "$REGION" \
+if [[ $STACK_EXISTS -eq 0 ]] && aws logs describe-log-groups --log-group-name-prefix "$LOG_GROUP_NAME" --region "$REGION" \
     --query "logGroups[?logGroupName=='${LOG_GROUP_NAME}']" --output text 2>/dev/null | grep -q "$LOG_GROUP_NAME"; then
   echo "[deploy] Removing retained log group '$LOG_GROUP_NAME' from previous deployment..."
   aws logs delete-log-group --log-group-name "$LOG_GROUP_NAME" --region "$REGION" || true
@@ -176,18 +199,82 @@ show_relay_failure_logs() {
   fi
 }
 
-if [[ $REDEPLOY_ONLY -eq 1 ]]; then
-  echo "[deploy] Redeploying ECS service '$STACK_NAME' with new image..."
-  # When using --redeploy-only, we assume the stack exists and we just want to update the ECS service
-  # This is faster than CloudFormation if only the code changed.
-  
-  # Try to find the cluster and service names from the stack.
-  SERVICE_NAME=$(aws cloudformation describe-stack-resource --stack-name "$STACK_NAME" --logical-resource-id RelayService --region "$REGION" --query "StackResourceDetail.PhysicalResourceId" --output text)
-  CLUSTER_NAME=$(aws cloudformation describe-stack-resource --stack-name "$STACK_NAME" --logical-resource-id ECSCluster --region "$REGION" --query "StackResourceDetail.PhysicalResourceId" --output text)
+stack_resource_id() {
+  aws cloudformation describe-stack-resource --stack-name "$STACK_NAME" --logical-resource-id "$1" --region "$REGION" --query "StackResourceDetail.PhysicalResourceId" --output text
+}
 
-  echo "[deploy] Forcing new deployment for service '$SERVICE_NAME' in cluster '$CLUSTER_NAME'..."
-  aws ecs update-service --cluster "$CLUSTER_NAME" --service "$SERVICE_NAME" --force-new-deployment --region "$REGION"
+# The id of the service's PRIMARY deployment. If it is the same after a stack deploy as before, the
+# deploy did not restart the relay.
+primary_deployment_id() {
+  aws ecs describe-services --cluster "$(stack_resource_id ECSCluster)" --services "$(stack_resource_id RelayService)" --region "$REGION" --query "services[0].deployments[?status=='PRIMARY'] | [0].id" --output text
+}
+
+# Restart the service on its current task definition and wait for the new deployment to reach a
+# steady state. Used when the stack update was a no-op, so a rebuild still ends with a fresh task.
+force_new_deployment() {
+  local cluster service deployment_id rollout
+  service=$(stack_resource_id RelayService)
+  cluster=$(stack_resource_id ECSCluster)
+  echo "[deploy] Forcing new deployment for service '$service' in cluster '$cluster'..."
+  deployment_id=$(aws ecs update-service --cluster "$cluster" --service "$service" --force-new-deployment --region "$REGION" --query "service.deployments[?status=='PRIMARY'] | [0].id" --output text)
+  echo "[deploy] Waiting for deployment '$deployment_id' to reach a steady state..."
+  if ! aws ecs wait services-stable --cluster "$cluster" --services "$service" --region "$REGION"; then
+    show_relay_failure_logs
+    exit 1
+  fi
+  # services-stable is also satisfied after the circuit breaker rolls back to the old deployment,
+  # so check that the deployment we started is the one that completed.
+  rollout=$(aws ecs describe-services --cluster "$cluster" --services "$service" --region "$REGION" --query "services[0].deployments[?id=='${deployment_id}'] | [0].rolloutState" --output text)
+  if [[ "$rollout" != "COMPLETED" ]]; then
+    echo "[deploy] ✗ Deployment '$deployment_id' did not complete (rolloutState: $rollout)." >&2
+    show_relay_failure_logs
+    exit 1
+  fi
+}
+
+# Final check before reporting success: the service has a single, completed deployment whose task
+# definition runs the image just pushed, with its desired task count running.
+verify_service_image() {
+  local cluster service state task_def running_image n_deployments rollout running desired
+  service=$(stack_resource_id RelayService)
+  cluster=$(stack_resource_id ECSCluster)
+  state=$(aws ecs describe-services --cluster "$cluster" --services "$service" --region "$REGION" --query "services[0].[length(deployments), deployments[?status=='PRIMARY'] | [0].rolloutState, runningCount, desiredCount, taskDefinition]" --output text)
+  read -r n_deployments rollout running desired task_def <<<"$state"
+  running_image=$(aws ecs describe-task-definition --task-definition "$task_def" --region "$REGION" --query "taskDefinition.containerDefinitions[0].image" --output text)
+  if [[ "$n_deployments" != "1" || "$rollout" != "COMPLETED" || "$running" != "$desired" || "$running_image" != "$IMAGE_REF" ]]; then
+    echo "[deploy] ✗ Service '$service' is not running the pushed image in a steady state:" >&2
+    echo "         deployments=$n_deployments rolloutState=$rollout running=$running/$desired" >&2
+    echo "         image=$running_image" >&2
+    echo "         expected=$IMAGE_REF" >&2
+    exit 1
+  fi
+  echo "[deploy] Service '$service' is running $IMAGE_REF ($running/$desired tasks)."
+}
+
+if [[ $REDEPLOY_ONLY -eq 1 ]]; then
+  # The task definition is pinned to an image digest, so restarting the service alone would rerun
+  # the old image. Update just ImageUri on the stack, keeping every other parameter and the template.
+  CURRENT_IMAGE=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --region "$REGION" --query "Stacks[0].Parameters[?ParameterKey=='ImageUri'] | [0].ParameterValue" --output text)
+  if [[ "$CURRENT_IMAGE" == "$IMAGE_REF" ]]; then
+    echo "[deploy] Stack '$STACK_NAME' already references $IMAGE_REF; restarting the service on it."
+    force_new_deployment
+  else
+    echo "[deploy] Updating the image of stack '$STACK_NAME'..."
+    UPDATE_PARAMS=("ParameterKey=ImageUri,ParameterValue=$IMAGE_REF")
+    for key in $(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --region "$REGION" --query "Stacks[0].Parameters[?ParameterKey!='ImageUri'].ParameterKey" --output text); do
+      UPDATE_PARAMS+=("ParameterKey=$key,UsePreviousValue=true")
+    done
+    aws cloudformation update-stack --stack-name "$STACK_NAME" --use-previous-template --capabilities CAPABILITY_IAM --region "$REGION" --parameters "${UPDATE_PARAMS[@]}" >/dev/null
+    if ! aws cloudformation wait stack-update-complete --stack-name "$STACK_NAME" --region "$REGION"; then
+      show_relay_failure_logs
+      exit 1
+    fi
+  fi
 else
+  DEPLOYMENT_BEFORE=""
+  if [[ $STACK_EXISTS -eq 1 ]]; then
+    DEPLOYMENT_BEFORE=$(primary_deployment_id)
+  fi
   if [[ $EXPRESS -eq 1 ]]; then
     TEMPLATE_FILE="aws/relay_express.yaml"
     echo "[deploy] Deploying CloudFormation stack '$STACK_NAME' (EXPRESS MODE)..."
@@ -198,7 +285,7 @@ else
       --region "$REGION" \
       --parameter-overrides \
         RelayPort="$PORT" \
-        ImageUri="$FULL_IMAGE_URI" \
+        ImageUri="$IMAGE_REF" \
         Handle="$HANDLE" \
         Passphrase="$PASSPHRASE" \
         NatMode="$NAT_MODE" \
@@ -218,7 +305,7 @@ else
       --parameter-overrides \
         InstanceType="$INSTANCE_TYPE" \
         RelayPort="$PORT" \
-        ImageUri="$FULL_IMAGE_URI" \
+        ImageUri="$IMAGE_REF" \
         Handle="$HANDLE" \
         Passphrase="$PASSPHRASE" \
         NatMode="$NAT_MODE" \
@@ -228,7 +315,16 @@ else
       exit 1
     fi
   fi
+  # `cloudformation deploy` exits 0 on an empty change set ("No changes to deploy"), and a change
+  # that does not touch the task definition leaves the old task running too. Either way the
+  # service's PRIMARY deployment is unchanged: restart it so the rebuild still takes effect.
+  if [[ $STACK_EXISTS -eq 1 && "$(primary_deployment_id)" == "$DEPLOYMENT_BEFORE" ]]; then
+    echo "[deploy] CloudFormation did not redeploy the service; restarting it."
+    force_new_deployment
+  fi
 fi
+
+verify_service_image
 
 echo "[deploy] Success! Relay server deployed."
 echo "[deploy] You can check the logs in CloudWatch Logs under group: /bingle/relay/${STACK_NAME}"
