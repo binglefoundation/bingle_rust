@@ -39,6 +39,12 @@ Parameters:
     Default: 'bingle_dev'
     Description: 'Cost allocation tag'
 
+  AutoMigrate:
+    Type: String
+    Default: '0'
+    AllowedValues: [ '0', '1' ]
+    Description: "'1' migrates the relay account from a blessed ancestor app at start, when it is not yet registered on the configured app"
+
   LatestECSAMI:
     Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
     Default: '/aws/service/ecs/optimized-ami/amazon-linux-2023/arm64/recommended/image_id'
@@ -289,6 +295,8 @@ Resources:
               Value: '1'
             - Name: AWS
               Value: '1'
+            - Name: AUTO_MIGRATE
+              Value: !Ref AutoMigrate
           Secrets:
             - Name: PASSPHRASE
               ValueFrom: !Ref RelayPassphraseSecret

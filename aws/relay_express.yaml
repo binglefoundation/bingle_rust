@@ -22,6 +22,12 @@ Parameters:
     Type: String
     Default: 'bingle_dev'
 
+  AutoMigrate:
+    Type: String
+    Default: '0'
+    AllowedValues: [ '0', '1' ]
+    Description: "'1' migrates the relay account from a blessed ancestor app at start, when it is not yet registered on the configured app"
+
 Resources:
   # Simple VPC setup (using a single public subnet for 'express')
   VPC:
@@ -184,6 +190,8 @@ Resources:
               Value: '1'
             - Name: AWS
               Value: '1'
+            - Name: AUTO_MIGRATE
+              Value: !Ref AutoMigrate
             - Name: PORT
               Value: !Ref RelayPort
             - Name: NAT_MODE
