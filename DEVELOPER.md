@@ -432,6 +432,7 @@ Options:
 - `--port`: UDP port to expose (default: `12121`).
 - `--stack-name`: CloudFormation stack name.
 - `--region`: AWS region.
+- `--auto-migrate`: at start, migrate the relay account from a blessed ancestor app when it is registered there but not yet on the configured app. Migration copies the handle, `allow_relay` and `allow_static`, so no manual `bingle_cli migrate` or admin step is needed after an app migration. Without it, an un-migrated relay refuses to start and names the command to run.
 
 The script will:
 1. Build the relay Docker image for the `linux/arm64` platform.
@@ -447,13 +448,13 @@ If you have made changes to the code and want to redeploy the relay:
    ```bash
    bash aws/deploy_relay.sh --handle "my-relay" --passphrase "my-secret-passphrase"
    ```
-   By default, the script uses the build number from `.build_number` as the image tag, which ensures CloudFormation detects a change in the `ImageUri` and updates the ECS service.
+   The stack references the pushed image by its digest, so any rebuilt image (even under an unchanged `.build_number`) is a change that CloudFormation deploys. If CloudFormation does not redeploy the service, the script forces a new ECS deployment. It reports success only once the service is running the pushed image.
 
-2. **Quick redeploy** (updates image and forces ECS restart, skipping CloudFormation):
+2. **Image-only redeploy** (updates only the stack's image, keeping the template and every other parameter):
    ```bash
    bash aws/deploy_relay.sh --handle "my-relay" --passphrase "my-secret-passphrase" --redeploy-only
    ```
-   This is faster if you only changed the code and don't need to update any AWS infrastructure.
+   Use this when only the code changed.
 
 ### Shutting Down and Deleting Resources
 

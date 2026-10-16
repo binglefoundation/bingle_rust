@@ -690,6 +690,18 @@ impl AlgoBingle {
         Ok(None)
     }
 
+    /// Whether `account` is registered on `app_id`: opted in, with a `Handle` in its local state.
+    /// An account that is registered only on an ancestor app (not yet migrated) is not.
+    pub fn holds_handle(&self, app_id: u64, account: &str) -> Result<bool> {
+        if app_id == 0 {
+            bail!("app_id must be > 0");
+        }
+        Ok(self
+            .ops
+            .local_state_for_account(app_id, account)?
+            .is_some_and(|kvs| kvs.iter().any(|(k, _)| k == "Handle")))
+    }
+
     /// Migrate this account's local state to `new_app_id` from a blessed ancestor, once.
     ///
     /// Returns the `migrate_local` txid if a migration was performed, or `Ok(None)` when there
@@ -709,9 +721,7 @@ impl AlgoBingle {
             .to_string();
 
         // Idempotency: if we already hold a Handle on the new app, migration is done.
-        if let Some(kvs) = self.ops.local_state_for_account(new_app_id, &me)?
-            && kvs.iter().any(|(k, _)| k == "Handle")
-        {
+        if self.holds_handle(new_app_id, &me)? {
             return Ok(None);
         }
 

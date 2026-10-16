@@ -380,6 +380,11 @@ impl ChatState {
         matches!(self.local.get_keypair(), Ok(Some(_)))
     }
 
+    /// The chain access for the current keypair. Errors when there is no keypair yet.
+    pub fn algo_ops(&self) -> Result<AlgoOps, String> {
+        self.local.get_algo_ops().map_err(|e| e.to_string())
+    }
+
     /// Import an account from its 25-word Algorand mnemonic, replacing any current keypair. Used by
     /// the first-run flow when the state file has no keypair. Never logs the passphrase.
     pub fn import_keypair(&mut self, passphrase: &str) -> Result<(), String> {

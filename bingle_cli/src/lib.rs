@@ -10,6 +10,8 @@
 #![warn(missing_docs)]
 
 #[doc(hidden)]
+pub mod account_check;
+#[doc(hidden)]
 pub mod chat;
 #[doc(hidden)]
 pub mod chat_poll;

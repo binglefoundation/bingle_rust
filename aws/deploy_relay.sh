@@ -18,6 +18,8 @@
 #                          previous values) instead of a full CloudFormation deploy
 #   --tag <tag>            Image tag (default: latest, or from .build_number if exists)
 #   --express              Use simplified Fargate-based deployment (faster, cheaper for small loads)
+#   --auto-migrate         At start, migrate the relay account from a blessed ancestor app when it
+#                          is not yet registered on the configured app (no manual `bingle_cli migrate`)
 
 set -euo pipefail
 
@@ -48,6 +50,7 @@ PASSPHRASE=""
 REDEPLOY_ONLY=0
 TAG="latest"
 EXPRESS=0
+AUTO_MIGRATE=0
 
 if [[ -f .build_number ]]; then
   TAG=$(cat .build_number)
@@ -68,6 +71,7 @@ usage() {
   echo "  --redeploy-only        Update only the stack's image, keeping all other parameters (requires existing stack)"
   echo "  --tag <tag>            Image tag (default: $TAG)"
   echo "  --express              Use simplified Fargate-based deployment (faster)"
+  echo "  --auto-migrate         At start, migrate the relay account from a blessed ancestor app if needed"
   echo "  --cost-tag <tag>       Cost allocation tag (default: $COST_TAG)"
   exit 1
 }
@@ -86,6 +90,7 @@ while [[ $# -gt 0 ]]; do
     --redeploy-only) REDEPLOY_ONLY=1; shift ;;
     --tag) TAG="$2"; shift 2 ;;
     --express) EXPRESS=1; shift ;;
+    --auto-migrate) AUTO_MIGRATE=1; shift ;;
     --cost-tag) COST_TAG="$2"; shift 2 ;;
     *) echo "Unknown argument: $1"; usage ;;
   esac
@@ -290,7 +295,8 @@ else
         Passphrase="$PASSPHRASE" \
         NatMode="$NAT_MODE" \
         NodeFile="$NODE_FILE" \
-        CostTag="$COST_TAG"; then
+        CostTag="$COST_TAG" \
+        AutoMigrate="$AUTO_MIGRATE"; then
       show_relay_failure_logs
       exit 1
     fi
@@ -310,7 +316,8 @@ else
         Passphrase="$PASSPHRASE" \
         NatMode="$NAT_MODE" \
         NodeFile="$NODE_FILE" \
-        CostTag="$COST_TAG"; then
+        CostTag="$COST_TAG" \
+        AutoMigrate="$AUTO_MIGRATE"; then
       show_relay_failure_logs
       exit 1
     fi

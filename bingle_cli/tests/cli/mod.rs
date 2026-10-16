@@ -1,4 +1,6 @@
 // Grouped CLI tests
+#[path = "account_check.rs"]
+pub mod account_check;
 #[path = "app_support.rs"]
 pub mod app_support;
 #[path = "chat_args.rs"]

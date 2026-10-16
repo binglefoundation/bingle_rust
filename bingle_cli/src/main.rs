@@ -199,12 +199,12 @@ fn print_usage_and_exit(code: i32) -> ! {
         "  Common options (for all commands): -h|--help | -V|--version | --log-warn|--warn|-q | --log-info|--info | --log-debug|--debug|-v | --log-trace|--vv|-vv | --log-mode <Plain|ANSI|AWS|JS> | --stun-servers <list> | --stun-servers-file <file>\n",
         "  Note: chat and checkrelays default to WARN-level logs so their output isn't buried under engine tracing; use --info or --debug to see more (or --log-level error for just the result).\n",
         "  bingle_cli run [--handle <handle>|<handle>] [--passphrase <text>] [--relay] [--static-ip <ip:port>] [--stun-servers <list>] [--stun-servers-file <file>] [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--sentinel-file <path>] [--echo] [--auto-migrate] [--log-mode <Plain|ANSI|AWS|JS>]\n",
-        "  bingle_cli chat [--handle <handle>|<handle>] [--passphrase <text>] [--to <handle> | --to-id <id>] [--state_file <file>] [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--stun-servers <list>] [--stun-servers-file <file>] [--no-retries] [--store-forward <both|send|receive|none>] [--notify <url>] [--info|--debug]\n",
+        "  bingle_cli chat [--handle <handle>|<handle>] [--passphrase <text>] [--to <handle> | --to-id <id>] [--state_file <file>] [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--stun-servers <list>] [--stun-servers-file <file>] [--no-retries] [--store-forward <both|send|receive|none>] [--notify <url>] [--auto-migrate] [--info|--debug]\n",
         "  bingle_cli register --handle <handle> --passphrase <text> --app-id <id> --asset-id <id> --price-units <n> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>] [--log-mode <Plain|ANSI|AWS|JS>]\n",
         "  bingle_cli migrate --passphrase <text> [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--log-mode <Plain|ANSI|AWS|JS>]  (opt-in + migrate local state to the app from a blessed ancestor; handle is copied on-chain)\n",
         "  bingle_cli buybingle [<price_algos>] --passphrase <text> --app-id <id> --asset-id <id> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>] [--log-mode <Plain|ANSI|AWS|JS>]  (omit <price_algos> to pay the on-chain price)\n",
         "  bingle_cli sellbingle <amount_units> <price_algos> --passphrase <text> --app-id <id> --asset-id <id> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>] [--log-mode <Plain|ANSI|AWS|JS>]\n",
-        "  bingle_cli checkrelays --passphrase <text> [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--interval-ms <n>] [--stun-servers <list>] [--stun-servers-file <file>] [--log-mode <Plain|ANSI|AWS|JS>]",
+        "  bingle_cli checkrelays --passphrase <text> [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--interval-ms <n>] [--auto-migrate] [--stun-servers <list>] [--stun-servers-file <file>] [--log-mode <Plain|ANSI|AWS|JS>]",
     );
     // Help (exit 0) is user-requested output and goes to stdout; a usage error (non-zero) goes to
     // stderr. Both bypass the tracing logger so they are never suppressed by the active log level.
@@ -336,40 +336,32 @@ fn cmd_run(mut args: Vec<String>) {
         }
     }
 
-    // Auto-migrate: after the successor check (so we only run against a live app), optionally copy
-    // the user's local state from the creator-blessed ancestor app into the current app. This is a
-    // one-time, idempotent `migrate_local` — once the user holds a Handle on the current app it is a
-    // no-op. Best-effort: a read/transaction hiccup must not stop the client from starting.
-    if auto_migrate {
-        match (app_id_for_check, opts.algo_passphrase.as_ref()) {
-            (Some(app_id), Some(passphrase)) => {
-                let ops = AlgoOps::new_for_algorand(
-                    Some(passphrase.clone()),
-                    None,
-                    opts.algo_provider_config.clone(),
-                );
-                let asset_id_for_ctor = opts
-                    .asset_id
-                    .or_else(|| opts.algo_provider_config.as_ref().and_then(|c| c.asset_id))
-                    .unwrap_or(0);
-                let bingle = AlgoBingle::new(ops, app_id, asset_id_for_ctor);
-                match bingle.ensure_local_migrated(app_id) {
-                    Ok(Some(txid)) => tracing::info!(
-                        "auto-migrate: migrated local state to app {} (txid {})",
-                        app_id,
-                        txid
-                    ),
-                    Ok(None) => {
-                        tracing::info!("auto-migrate: nothing to migrate for app {}", app_id)
-                    }
-                    Err(e) => warn!("auto-migrate: skipped ({})", e),
-                }
-            }
-            (_, None) => {
-                warn!("--auto-migrate set but no --passphrase; skipping local migration")
-            }
-            _ => {}
+    // After the successor check (so we only act on a live app): optionally migrate the account
+    // from a blessed ancestor, then refuse to start unless it is registered on the app (#314).
+    match (app_id_for_check, opts.algo_passphrase.as_ref()) {
+        (Some(app_id), Some(passphrase)) => {
+            let ops = AlgoOps::new_for_algorand(
+                Some(passphrase.clone()),
+                None,
+                opts.algo_provider_config.clone(),
+            );
+            let asset_id_for_ctor = opts
+                .asset_id
+                .or_else(|| opts.algo_provider_config.as_ref().and_then(|c| c.asset_id))
+                .unwrap_or(0);
+            ensure_account_ready_or_exit(
+                ops,
+                app_id,
+                asset_id_for_ctor,
+                auto_migrate,
+                WhenUnregistered::Fail,
+                opts.am_relay,
+            );
         }
+        (_, None) if auto_migrate => {
+            warn!("--auto-migrate set but no --passphrase; skipping local migration")
+        }
+        _ => {}
     }
 
     // The compact record this process registered on-chain at startup; used on shutdown
@@ -683,7 +675,7 @@ fn cmd_chat(args: Vec<String>) {
     // One string literal per output line (adjacent literals concatenate at compile time) for
     // readability in source; each keeps its trailing `\n` except the last.
     const USAGE: &str = concat!(
-        "Usage: bingle_cli chat [--handle <handle>|<handle>] [--passphrase <text>] [--to <handle> | --to-id <id>] [--state_file <file>] [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--stun-servers <list>] [--stun-servers-file <file>] [--no-retries] [--store-forward <both|send|receive|none>] [--notify <url>] [--info|--debug]\n",
+        "Usage: bingle_cli chat [--handle <handle>|<handle>] [--passphrase <text>] [--to <handle> | --to-id <id>] [--state_file <file>] [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--stun-servers <list>] [--stun-servers-file <file>] [--no-retries] [--store-forward <both|send|receive|none>] [--notify <url>] [--auto-migrate] [--info|--debug]\n",
         "  --store-forward: enable Sidewinder Mailbox store-and-forward. The node is discovered on-chain from the Bingle app id and reached over mutual TLS; set SIDEWINDER_NODE_URL + SIDEWINDER_TOKEN to override with a plaintext bearer node instead. both=send+receive, send=post on give-up, receive=poll inbox, none=off (default).\n",
         "  --notify <url>: nudge the bingle_notify gateway at <url> when a direct send gives up.",
     );
@@ -716,6 +708,32 @@ fn cmd_chat(args: Vec<String>) {
             std::process::exit(2);
         }
     };
+
+    // An account registered only on an ancestor app must migrate, not register a fresh handle on
+    // this one (#314). An account with nothing anywhere falls through to first-run registration.
+    if let Some(app_id) = state.opts.app_id {
+        let ops = if state.has_keypair() {
+            state.algo_ops().ok()
+        } else {
+            cli_passphrase.as_ref().map(|p| {
+                AlgoOps::new_for_algorand(
+                    Some(p.clone()),
+                    None,
+                    state.opts.algo_provider_config.clone(),
+                )
+            })
+        };
+        if let Some(ops) = ops {
+            ensure_account_ready_or_exit(
+                ops,
+                app_id,
+                state.opts.asset_id.unwrap_or(0),
+                chat_args.auto_migrate,
+                WhenUnregistered::Continue,
+                false,
+            );
+        }
+    }
 
     // Ensure the account is registered and funded (exits non-zero with a clear message otherwise).
     run_chat_startup(&mut state, cli_handle.as_deref(), cli_passphrase.as_deref());
@@ -1217,6 +1235,7 @@ fn resolve_status_or_exit(state: &ChatState) -> chat_register::AccountStatus {
     }
 }
 
+use bingle_cli::account_check::{self, AccountReadiness};
 use bingle_cli::chat::parse_chat_args;
 use bingle_cli::chat_register::{self, CredentialGap, StartupDecision, decide_startup};
 use bingle_cli::chat_repl::{ChatInput, CurrentRecipient, parse_input};
@@ -1237,7 +1256,7 @@ fn cmd_checkrelays(mut args: Vec<String>) {
     // Support subcommand help
     if args.iter().any(|a| a == "--help" || a == "-h") {
         println!(
-            "Usage: bingle_cli checkrelays --passphrase <text> [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--interval-ms <n>] [--once] [--stun-servers <list>] [--stun-servers-file <file>]\n\
+            "Usage: bingle_cli checkrelays --passphrase <text> [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--interval-ms <n>] [--once] [--auto-migrate] [--stun-servers <list>] [--stun-servers-file <file>]\n\
               Notes: by default this command repeats indefinitely, sleeping --interval-ms between runs. Use --once to run a single iteration."
         );
         std::process::exit(0);
@@ -1277,6 +1296,7 @@ fn cmd_checkrelays(mut args: Vec<String>) {
     let mut cli_app_id: Option<u64> = None;
     let mut cli_asset_id: Option<u64> = None;
     let mut stun_servers: Option<Vec<SocketAddr>> = None;
+    let mut auto_migrate = false;
     let dangerous_debug = false;
 
     // Remaining args after --interval-ms extraction
@@ -1349,6 +1369,7 @@ fn cmd_checkrelays(mut args: Vec<String>) {
                     }
                 }
             }
+            "--auto-migrate" => auto_migrate = true,
             s if s.starts_with('-') => {
                 warn!("Unknown option: {}", s);
                 std::process::exit(2);
@@ -1403,6 +1424,17 @@ fn cmd_checkrelays(mut args: Vec<String>) {
             std::process::exit(2);
         }
     };
+
+    // Relays drop requests from an account that is not registered on the app, which would surface
+    // only as "no relays", so check (and optionally migrate) first (#314).
+    ensure_account_ready_or_exit(
+        ops.clone(),
+        app_id,
+        asset_id,
+        auto_migrate,
+        WhenUnregistered::Fail,
+        false,
+    );
 
     // Construct minimal StartOptions without requiring user-provided handle
     let opts = bingle_core::api::bingle_api::StartOptions {
@@ -1780,6 +1812,70 @@ fn cmd_register(args: Vec<String>) {
 /// the `APP_ID`/`ASSET_ID` env — erroring if both a flag and the node file set one), build
 /// `AlgoOps` from the passphrase, and derive the sender address. Exits(2) with a clear message on a
 /// node-file / id-resolution / passphrase error. Returns `(ops, app_id, asset_id, address)`.
+/// What [`ensure_account_ready_or_exit`] does with an account that has no state on the app or any
+/// ancestor.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum WhenUnregistered {
+    /// Exit: the command needs a registered account.
+    Fail,
+    /// Carry on: the command registers the account itself (`chat` on first run).
+    Continue,
+}
+
+/// Start-up check for every command that starts the engine (issue #314). With `auto_migrate`,
+/// first migrate the account from a blessed ancestor (best-effort, as `run --auto-migrate` always
+/// did). Then exit non-zero, naming the account, the app and the command to run, unless the account
+/// is registered on `app_id` — or, with [`WhenUnregistered::Continue`], has nothing anywhere yet.
+/// A failed chain read is logged and does not block start-up. `am_relay` adds the
+/// `RELAY STARTUP ABORTED` marker that `aws/deploy_relay.sh` looks for in the container logs.
+fn ensure_account_ready_or_exit(
+    ops: AlgoOps,
+    app_id: u64,
+    asset_id: u64,
+    auto_migrate: bool,
+    when_unregistered: WhenUnregistered,
+    am_relay: bool,
+) {
+    let Some(account) = ops.address.clone() else {
+        warn!("could not derive an account from the passphrase; skipping the registration check");
+        return;
+    };
+    let bingle = AlgoBingle::new(ops, app_id, asset_id);
+    if auto_migrate {
+        match bingle.ensure_local_migrated(app_id) {
+            Ok(Some(txid)) => tracing::info!(
+                "auto-migrate: migrated local state to app {} (txid {})",
+                app_id,
+                txid
+            ),
+            Ok(None) => tracing::info!("auto-migrate: nothing to migrate for app {}", app_id),
+            Err(e) => warn!("auto-migrate: skipped ({})", e),
+        }
+    }
+    let message = match account_check::readiness_on_chain(&bingle, app_id, &account) {
+        Ok(AccountReadiness::Registered) => return,
+        Ok(AccountReadiness::NeedsMigration { ancestor }) => {
+            account_check::migration_needed_message(&account, app_id, ancestor)
+        }
+        Ok(AccountReadiness::Unregistered) => match when_unregistered {
+            WhenUnregistered::Continue => return,
+            WhenUnregistered::Fail => account_check::registration_needed_message(&account, app_id),
+        },
+        Err(e) => {
+            warn!(
+                "could not verify that account {} is registered on app {} ({}); continuing",
+                account, app_id, e
+            );
+            return;
+        }
+    };
+    if am_relay {
+        eprintln!("RELAY STARTUP ABORTED — account is not registered on the configured app");
+    }
+    eprintln!("Error: {message}");
+    std::process::exit(1);
+}
+
 fn setup_chain_ops(
     node_file: Option<String>,
     cli_app_id: Option<u64>,
