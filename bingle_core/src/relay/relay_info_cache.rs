@@ -93,7 +93,10 @@ impl RelayFinderTrait for RelayInfoCache {
     ) -> Result<RelayInfo, String> {
         let my_id_norm = my_id.trim_end_matches(crate::protocol::ISSUER_SUFFIX);
         let mut relays = self.snapshot_relays();
-        relays.retain(|relay| relay.id() != my_id_norm && !exclude.contains(&relay.address()));
+        relays.retain(|relay| {
+            relay.id() != my_id_norm
+                && !crate::relay::corner_exclusion::is_excluded_corner(relay.address(), exclude)
+        });
         relays.sort_by(|left, right| left.id().cmp(right.id()));
         if let Some(relay) = relays.into_iter().next() {
             return Ok(relay);

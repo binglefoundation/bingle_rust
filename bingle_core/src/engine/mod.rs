@@ -278,7 +278,7 @@ pub struct Engine {
     peer_ddb_records: Mutex<Option<usize>>,
     // Signon completion signal
     signon_complete: Arc<(Mutex<bool>, Condvar)>,
-    // Set of endpoints we have seen (sent to)
+    // Set of endpoints we have sent to (or tried to: recorded before the send, #347)
     seen_endpoints: Arc<Mutex<std::collections::HashSet<InetSocketAddress>>>,
     // Tracks success/failure of the most recent send to each known endpoint
     endpoint_status:
@@ -1122,7 +1122,8 @@ impl Engine {
     }
 
     /// Send bytes to a peer and track the connection's last_seen.
-    /// If this is the first interaction with the peer, create a connection entry on successful send.
+    /// The destination is recorded as seen before the send, whatever its outcome (#347); if this
+    /// is the first interaction with the peer, a connection entry is created on successful send.
     pub fn send_to_peer(&self, to: &NetworkEndpoint, data: &[u8]) -> Result<(), String> {
         match std::str::from_utf8(data) {
             Ok(s) => tracing::info!("[Engine::send_to_peer] to={} data={}", to, s),
@@ -1159,6 +1160,15 @@ impl Engine {
         {
             return Err("Sending is failing".to_string());
         }
+        // Track the endpoint as seen before sending, whatever the outcome. The first packet (a
+        // DTLS ClientHello for a new peer) opens a path through our NAT to that address, even if
+        // the handshake later fails or is still in progress; the triangle test excludes every
+        // seen endpoint from its corner-node choice, so a missed one can fake a full cone (#347).
+        if let Some(addr) = to.inet_socket_address()
+            && let Ok(mut seen) = self.seen_endpoints.lock()
+        {
+            seen.insert(addr.into());
+        }
         // Perform the packet transport send using the configured transport (avoid pre-locking connections to
         // prevent rare OS mutex EINVAL during early send paths). We update the connection map only
         // after a successful send.
@@ -1187,12 +1197,6 @@ impl Engine {
             }
         }
         if res.is_ok() {
-            // Track seen endpoints
-            if let Some(addr) = to.inet_socket_address()
-                && let Ok(mut seen) = self.seen_endpoints.lock()
-            {
-                seen.insert(addr.into());
-            }
             // Track connection using NetworkEndpointKey derived from `to`
             if let Some(key) = to.get_key() {
                 if let Ok(mut m) = self.connections.lock() {
