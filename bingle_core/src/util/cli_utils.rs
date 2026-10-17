@@ -157,6 +157,10 @@ where
     let handle =
         handle.ok_or("Missing handle: provide --handle <handle> or a positional <handle>")?;
 
+    // A node file and a flag that disagree on an id is the user's error: report it (#315) rather
+    // than dropping the ids and failing later on the first thing that needs one.
+    config_utils::check_node_and_cli_ids(node_app_id, node_asset_id, cli_app_id, cli_asset_id)?;
+
     // Try to resolve IDs; if none provided anywhere, leave as None to keep start flexible for tests.
     let (app_id_opt, asset_id_opt) = match config_utils::resolve_app_asset_ids(
         node_app_id,

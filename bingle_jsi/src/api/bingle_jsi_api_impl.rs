@@ -24,7 +24,8 @@ use bingle_core::api::bingle_api_impl::BingleApiImpl;
 use bingle_core::api::network_endpoint::NetworkEndpoint;
 use bingle_core::engine::BingleAccess;
 use bingle_core::util::config_utils::{
-    parse_node_file_with_ids, parse_stun_file, parse_stun_list, resolve_app_asset_ids,
+    check_node_and_cli_ids, parse_node_file_with_ids, parse_stun_file, parse_stun_list,
+    resolve_app_asset_ids,
 };
 use bingle_local::api::MailboxConfig;
 use bingle_local::api::bingle_local_api::BingleLocalApi;
@@ -551,6 +552,10 @@ impl BingleJsiApiImpl {
             node_app_id = nid_app;
             node_asset_id = nid_asset;
         }
+
+        // a node file and a config id that disagree is a caller error, not a missing id (#315)
+        check_node_and_cli_ids(node_app_id, node_asset_id, config.app_id, config.asset_id)
+            .map_err(|e| BingleJsiError::InvalidRequest { reason: e })?;
 
         let (app_id, asset_id) =
             match resolve_app_asset_ids(node_app_id, node_asset_id, config.app_id, config.asset_id)

@@ -183,27 +183,51 @@ pub fn parse_node_file_with_ids(
     ))
 }
 
-/// Resolve the effective application and asset ids from the node-file values and any
-/// command-line overrides, requiring exactly one source for each.
+/// Check that the node-file ids and the command-line ids do not disagree. An id given in both
+/// places is accepted when the two values are equal (issue #315).
 ///
 /// # Errors
 ///
-/// Returns an error string if both a node-file value and a command-line override are given for the
-/// same id, or if neither supplies a required id.
+/// Returns an error string naming both values if the node file and a command-line flag give
+/// different values for the same id.
+pub fn check_node_and_cli_ids(
+    node_app_id: Option<u64>,
+    node_asset_id: Option<u64>,
+    cli_app_id: Option<u64>,
+    cli_asset_id: Option<u64>,
+) -> Result<(), String> {
+    check_id_agrees("--app-id", "app_id", node_app_id, cli_app_id)?;
+    check_id_agrees("--asset-id", "asset_id", node_asset_id, cli_asset_id)
+}
+
+fn check_id_agrees(
+    flag: &str,
+    field: &str,
+    node_value: Option<u64>,
+    cli_value: Option<u64>,
+) -> Result<(), String> {
+    match (node_value, cli_value) {
+        (Some(node), Some(cli)) if node != cli => Err(format!(
+            "{flag} {cli} disagrees with {field} {node} in the node file; remove one or make them match"
+        )),
+        _ => Ok(()),
+    }
+}
+
+/// Resolve the effective application and asset ids from the node-file values and any
+/// command-line overrides. An id given in both places must have the same value in each.
+///
+/// # Errors
+///
+/// Returns an error string if a node-file value and a command-line override disagree for the
+/// same id (see [`check_node_and_cli_ids`]), or if no source supplies a required id.
 pub fn resolve_app_asset_ids(
     node_app_id: Option<u64>,
     node_asset_id: Option<u64>,
     cli_app_id: Option<u64>,
     cli_asset_id: Option<u64>,
 ) -> Result<(u64, u64), String> {
-    if node_app_id.is_some() && cli_app_id.is_some() {
-        return Err("--app-id provided but node file also contains app_id; remove one".to_string());
-    }
-    if node_asset_id.is_some() && cli_asset_id.is_some() {
-        return Err(
-            "--asset-id provided but node file also contains asset_id; remove one".to_string(),
-        );
-    }
+    check_node_and_cli_ids(node_app_id, node_asset_id, cli_app_id, cli_asset_id)?;
 
     let env_app = std::env::var("APP_ID")
         .ok()
