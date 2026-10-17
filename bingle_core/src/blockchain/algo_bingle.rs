@@ -690,6 +690,18 @@ impl AlgoBingle {
         Ok(None)
     }
 
+    /// Whether `account` is registered on `app_id`: opted in, with a `Handle` in its local state.
+    /// An account that is registered only on an ancestor app (not yet migrated) is not.
+    pub fn holds_handle(&self, app_id: u64, account: &str) -> Result<bool> {
+        if app_id == 0 {
+            bail!("app_id must be > 0");
+        }
+        Ok(self
+            .ops
+            .local_state_for_account(app_id, account)?
+            .is_some_and(|kvs| kvs.iter().any(|(k, _)| k == "Handle")))
+    }
+
     /// Migrate this account's local state to `new_app_id` from a blessed ancestor, once.
     ///
     /// Returns the `migrate_local` txid if a migration was performed, or `Ok(None)` when there
@@ -709,9 +721,7 @@ impl AlgoBingle {
             .to_string();
 
         // Idempotency: if we already hold a Handle on the new app, migration is done.
-        if let Some(kvs) = self.ops.local_state_for_account(new_app_id, &me)?
-            && kvs.iter().any(|(k, _)| k == "Handle")
-        {
+        if self.holds_handle(new_app_id, &me)? {
             return Ok(None);
         }
 
@@ -1056,6 +1066,9 @@ impl AlgoBingle {
     /// Synchronous implementation behind [`AlgoBingle::list_static_endpoints_via_indexer`],
     /// listing `(address, static_endpoint)` pairs for accounts opted in to `app_id`.
     ///
+    /// This lists every static endpoint, whatever the account's allow flags. Relay discovery uses
+    /// [`AlgoBingle::list_relay_endpoints_via_indexer_sync`], which keeps only permitted relays.
+    ///
     /// Prefer [`AlgoBingle::list_static_endpoints_via_indexer`], which dispatches to this on a
     /// dedicated thread when called from within a tokio runtime.
     ///
@@ -1067,11 +1080,68 @@ impl AlgoBingle {
         &self,
         app_id: u64,
     ) -> Result<Vec<(String, String)>> {
-        // Debug: print the current ops.config for visibility in discovery
-        algo_log!(
-            "[AlgoBingle::list_static_endpoints_via_indexer_sync] ops.config={:?}",
-            self.ops.config
-        );
+        self.scan_static_endpoints_sync(
+            app_id,
+            "AlgoBingle::list_static_endpoints_via_indexer_sync",
+            |_| true,
+        )
+    }
+
+    /// List `(address, static_endpoint)` pairs for the relays clients may use: accounts opted in
+    /// to `app_id` with a static endpoint and the `allow_relay` permission (issue #324). An
+    /// account whose permission was withdrawn but whose endpoint was left in place is skipped, so
+    /// clients don't pick a relay the relay set has evicted (#120).
+    ///
+    /// The permission is read from the same indexer scan as the endpoint, so there is no extra
+    /// chain request per account.
+    ///
+    /// # Errors
+    ///
+    /// As for [`AlgoBingle::list_static_endpoints_via_indexer_sync`].
+    pub fn list_relay_endpoints_via_indexer_sync(
+        &self,
+        app_id: u64,
+    ) -> Result<Vec<(String, String)>> {
+        self.scan_static_endpoints_sync(
+            app_id,
+            "AlgoBingle::list_relay_endpoints_via_indexer_sync",
+            Self::relay_allowed_in_local_state,
+        )
+    }
+
+    /// The static endpoint in an account's decoded local state: the `static_endpoint` byte-slice
+    /// plus its overflow in `static_endpoint_x`, or `None` when unset.
+    pub fn static_endpoint_from_local_state(entries: &[(String, String)]) -> Option<String> {
+        let field = |key: &str| {
+            entries
+                .iter()
+                .find(|(k, _)| k == key)
+                .map(|(_, v)| v.as_str())
+                .unwrap_or("")
+        };
+        let full_val = format!("{}{}", field("static_endpoint"), field("static_endpoint_x"));
+        if full_val.is_empty() {
+            None
+        } else {
+            Some(full_val)
+        }
+    }
+
+    /// Whether an account's decoded local state grants `allow_relay`, for either the packed
+    /// bitfield or the legacy scalar encoding (see [`Self::effective_allow_bits`]).
+    pub fn relay_allowed_in_local_state(entries: &[(String, String)]) -> bool {
+        Self::effective_allow_bits(entries) & allow_flags::BIT_RELAY != 0
+    }
+
+    /// Scan the accounts opted in to `app_id` for static endpoints, keeping those whose local
+    /// state passes `keep`.
+    fn scan_static_endpoints_sync(
+        &self,
+        app_id: u64,
+        caller: &str,
+        keep: impl Fn(&[(String, String)]) -> bool,
+    ) -> Result<Vec<(String, String)>> {
+        algo_log!("[{}] ops.config={:?}", caller, self.ops.config);
         let mut results: Vec<(String, String)> = Vec::new();
         let indexer_query_result = self.indexer_query_opted_in_accounts_sync(
             app_id,
@@ -1079,23 +1149,23 @@ impl AlgoBingle {
             Some(30),
             |acct| {
                 tracing::debug!(
-                    "[AlgoBingle::list_static_endpoints_via_indexer_sync] processing account: address: {:?} local_state: {:?}",
+                    "[{}] processing account: address: {:?} local_state: {:?}",
+                    caller,
                     acct.address,
                     acct.local_state
                 );
                 // `local_state` is already the app's decoded key/values (algo_ops scopes the scan to
-                // `app_id`), so the endpoint is a split byte-slice: `static_endpoint` plus overflow in
-                // `static_endpoint_x`.
-                let field = |key: &str| {
-                    acct.local_state
-                        .iter()
-                        .find(|(k, _)| k == key)
-                        .map(|(_, v)| v.as_str())
-                        .unwrap_or("")
-                };
-                let full_val = format!("{}{}", field("static_endpoint"), field("static_endpoint_x"));
-                if !full_val.is_empty() {
-                    results.push((acct.address.clone(), full_val));
+                // `app_id`).
+                if let Some(endpoint) = Self::static_endpoint_from_local_state(&acct.local_state) {
+                    if keep(&acct.local_state) {
+                        results.push((acct.address.clone(), endpoint));
+                    } else {
+                        tracing::debug!(
+                            "[{}] skipping {}: static endpoint set but not permitted",
+                            caller,
+                            acct.address
+                        );
+                    }
                 }
                 Ok(())
             },
@@ -1106,21 +1176,20 @@ impl AlgoBingle {
             // condition, so log at info; any other failure is a genuine error.
             if AlgoError::is_host_unreachable(&e) {
                 tracing::info!(
-                    "[AlgoBingle::list_static_endpoints_via_indexer_sync] indexer_query_opted_in_accounts_sync unreachable: {}",
+                    "[{}] indexer_query_opted_in_accounts_sync unreachable: {}",
+                    caller,
                     e
                 );
             } else {
                 tracing::error!(
-                    "[AlgoBingle::list_static_endpoints_via_indexer_sync] indexer_query_opted_in_accounts_sync failed: {}",
+                    "[{}] indexer_query_opted_in_accounts_sync failed: {}",
+                    caller,
                     e
                 );
             }
             Err(e)
         } else {
-            algo_log!(
-                "[AlgoBingle::list_static_endpoints_via_indexer_sync] results={:?}",
-                results
-            );
+            algo_log!("[{}] results={:?}", caller, results);
             Ok(results)
         }
     }

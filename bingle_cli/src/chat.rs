@@ -79,6 +79,9 @@ pub struct ChatArgs {
     /// (epic #200, issue #274). `None` lets the chat session pick a sensible default. Only has effect
     /// when the receive gate is on (`--store-forward both|receive`).
     pub poll_interval_secs: Option<u64>,
+    /// `--auto-migrate`: before starting, migrate the account from a blessed ancestor app when it is
+    /// registered there but not yet on the configured app (issue #314), as `run --auto-migrate` does.
+    pub auto_migrate: bool,
 }
 
 /// Parse the arguments following `chat` into a [`ChatArgs`].
@@ -94,6 +97,7 @@ pub fn parse_chat_args(args: Vec<String>) -> Result<ChatArgs, String> {
     let mut store_forward = StoreForwardMode::None;
     let mut notify_url: Option<String> = None;
     let mut poll_interval_secs: Option<u64> = None;
+    let mut auto_migrate = false;
     // Everything not consumed here is forwarded to the shared start-options parser.
     let mut rest: Vec<String> = Vec::with_capacity(args.len());
 
@@ -129,6 +133,9 @@ pub fn parse_chat_args(args: Vec<String>) -> Result<ChatArgs, String> {
                     format!("--poll-interval expects a whole number of seconds, got '{value}'")
                 })?;
                 poll_interval_secs = Some(secs);
+            }
+            "--auto-migrate" => {
+                auto_migrate = true;
             }
             // Logging flags are normally consumed before dispatch by `init_logger_from_args`. Tolerate
             // them here too (as no-ops) so they never reach `parse_start_options_from_args`, which
@@ -169,5 +176,6 @@ pub fn parse_chat_args(args: Vec<String>) -> Result<ChatArgs, String> {
         store_forward,
         notify_url,
         poll_interval_secs,
+        auto_migrate,
     })
 }

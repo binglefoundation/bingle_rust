@@ -14,6 +14,8 @@ set -euo pipefail
 #   STUN_FILE   - path to STUN servers file (default /app/stunservers.txt)
 #   NODE_FILE   - path to node configuration JSON (default /app/nodely_staging_testnet_node.json)
 #   NAT_MODE    - Direct|Full|Restricted (default Direct)
+#   AUTO_MIGRATE - set to 1 to pass --auto-migrate: at start, migrate the account from a blessed
+#                  ancestor app when it is not yet registered on the configured app
 
 : "${PASSPHRASE:?Environment variable PASSPHRASE must be set}"
 : "${PORT:?Environment variable PORT must be set}"
@@ -143,6 +145,10 @@ if [[ -n "${RELAY:-}" ]]; then
 fi
 
 CMD+=("--stun-servers-file" "$STUN_FILE" "--node-file" "$NODE_FILE")
+
+if [[ "${AUTO_MIGRATE:-0}" == "1" ]]; then
+  CMD+=("--auto-migrate")
+fi
 
 if [[ "${AWS:-0}" == "1" ]]; then
   CMD+=("--log-mode" "AWS")

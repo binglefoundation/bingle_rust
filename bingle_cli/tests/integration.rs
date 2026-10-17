@@ -102,6 +102,7 @@ mod localnet {
 
     use bingle_core::api::bingle_api::{BingleApi, OnMessageHandler};
     use bingle_core::api::bingle_api_impl::BingleApiImpl;
+    use bingle_core::blockchain::algo_bingle::AlgoBingle;
     use bingle_core::engine::BingleAccessUnsafeForTests;
     use bingle_test::localnet::{provision, relay_test_util, setup_localnet, test_util};
 
@@ -427,8 +428,14 @@ mod localnet {
         );
     }
 
-    /// Run `bingle_cli checkrelays --once` and return its combined stdout + stderr.
-    fn run_checkrelays_once(passphrase: &str, node_file: &str, stun_arg: &str) -> String {
+    /// Run `bingle_cli checkrelays --once` (plus `extra` args) and return its exit code and combined
+    /// stdout + stderr.
+    fn run_checkrelays_once(
+        passphrase: &str,
+        node_file: &str,
+        stun_arg: &str,
+        extra: &[&str],
+    ) -> (Option<i32>, String) {
         let out = Command::new(env!("CARGO_BIN_EXE_bingle_cli"))
             .args([
                 "checkrelays",
@@ -440,24 +447,28 @@ mod localnet {
                 stun_arg,
                 "--once",
             ])
+            .args(extra)
             .stdin(Stdio::null())
             .output()
             .expect("run bingle_cli checkrelays");
-        format!(
-            "{}{}",
-            String::from_utf8_lossy(&out.stdout),
-            String::from_utf8_lossy(&out.stderr)
+        (
+            out.status.code(),
+            format!(
+                "{}{}",
+                String::from_utf8_lossy(&out.stdout),
+                String::from_utf8_lossy(&out.stderr)
+            ),
         )
     }
 
-    /// Issue #313: relays refuse an account with no handle on the app, and `checkrelays` reports
-    /// that cause instead of "No relays discovered"; once the account is registered, the same
-    /// command finds and probes both relays (and does not report an empty list while relay
-    /// selection is still in flight).
+    /// Issues #313 and #314: `checkrelays` with an account that has no handle on the app (or any
+    /// ancestor) exits non-zero and points at `register`, instead of reporting "No relays
+    /// discovered"; once the account is registered, the same command finds and probes both relays
+    /// (and does not report an empty list while relay selection is still in flight).
     #[ntest::timeout(300_000)]
     #[serial_test::serial(localnet_chat)]
     #[test]
-    fn checkrelays_reports_refusal_for_unregistered_account_over_localnet() {
+    fn checkrelays_requires_registration_then_probes_over_localnet() {
         if !provision::localnet_available() {
             eprintln!(
                 "skipping localnet checkrelays e2e: algokit localnet not reachable at localhost:4001"
@@ -513,8 +524,9 @@ mod localnet {
         provision::write_localnet_node_file(&node_file, app_id, asset_id);
         let node_file_s = node_file.to_string_lossy().into_owned();
 
-        // (1) Unregistered: the relays refuse, and checkrelays names the missing handle.
-        let unregistered = run_checkrelays_once(RECEIVER_PASSPHRASE, &node_file_s, &stun_arg);
+        // (1) Unregistered: checkrelays fails up front and names `register`.
+        let (unregistered_code, unregistered) =
+            run_checkrelays_once(RECEIVER_PASSPHRASE, &node_file_s, &stun_arg, &[]);
 
         // (2) Registered: the same account now gets per-relay probe results.
         test_util::register_client_on_blockchain(
@@ -526,17 +538,24 @@ mod localnet {
             &creator,
             cfg.clone(),
         );
-        let registered = run_checkrelays_once(RECEIVER_PASSPHRASE, &node_file_s, &stun_arg);
+        let (_, registered) =
+            run_checkrelays_once(RECEIVER_PASSPHRASE, &node_file_s, &stun_arg, &[]);
 
         relay1.access_unsafe_for_tests(|r: &mut BingleApiImpl| r.stop());
         relay2.access_unsafe_for_tests(|r: &mut BingleApiImpl| r.stop());
         s1.stop();
         s2.stop();
 
+        assert_eq!(
+            unregistered_code,
+            Some(1),
+            "unregistered checkrelays should exit 1; output was:\n{unregistered}"
+        );
         assert!(
-            unregistered.contains("Relays refused this account")
-                && unregistered.contains(&format!("has no handle on app {app_id}")),
-            "unregistered checkrelays should report the refusal and its cause; output was:\n{unregistered}"
+            unregistered.contains(&format!(
+                "account {RECEIVER_ADDRESS} is not registered on app {app_id} or any of its ancestor apps"
+            )) && unregistered.contains("bingle_cli register"),
+            "unregistered checkrelays should name the account, the app and `register`; output was:\n{unregistered}"
         );
         assert!(
             !unregistered.contains("No relays discovered"),
@@ -551,6 +570,128 @@ mod localnet {
             !registered.contains("No relays discovered")
                 && !registered.contains("Relays refused this account"),
             "registered checkrelays should report neither an empty list nor a refusal; output was:\n{registered}"
+        );
+    }
+
+    /// Issue #314: an account registered only on an ancestor app makes `checkrelays` exit non-zero,
+    /// naming the ancestor and `migrate`; with `--auto-migrate` the same command migrates the
+    /// account and then probes the relays.
+    #[ntest::timeout(300_000)]
+    #[serial_test::serial(localnet_chat)]
+    #[test]
+    fn checkrelays_requires_migration_and_auto_migrates_over_localnet() {
+        if !provision::localnet_available() {
+            eprintln!(
+                "skipping localnet checkrelays migration e2e: algokit localnet not reachable at localhost:4001"
+            );
+            return;
+        }
+        test_util::init_test_logging();
+
+        let cfg = test_util::localnet_config();
+        setup_localnet::ensure_localnet_accounts_funded(
+            &cfg,
+            &[
+                test_util::ADDRESS_SPEND,
+                test_util::ADDRESS_RECEIVE,
+                RECEIVER_ADDRESS,
+            ],
+        )
+        .expect("fund localnet accounts");
+
+        let creator = test_util::ops_from_mnemonic(
+            test_util::ADDRESS_SPEND,
+            test_util::PASSPHRASE_SPEND,
+            cfg.clone(),
+        );
+        // The account registers on the old app only.
+        let (old_app, old_asset) =
+            test_util::deploy_bingle_app_and_asset(&creator, "BINGLE$", 1_000_000);
+        test_util::register_client_on_blockchain(
+            RECEIVER_ADDRESS,
+            RECEIVER_PASSPHRASE,
+            "migrant",
+            old_app,
+            old_asset,
+            &creator,
+            cfg.clone(),
+        );
+        // The new app blesses the old one as its predecessor; the relays serve the new app. The
+        // deploy helper always deploys as the app-creator account, which alone may set the lineage.
+        let (app_id, asset_id) =
+            test_util::deploy_bingle_app_and_asset(&creator, "BINGLE$", 1_000_000);
+        let app_creator = test_util::ops_from_mnemonic(
+            test_util::ADDRESS_APP_CREATOR,
+            test_util::PASSPHRASE_APP_CREATOR,
+            cfg.clone(),
+        );
+        AlgoBingle::new(app_creator, app_id, 0)
+            .set_predecessor_app(app_id, old_app)
+            .expect("set_predecessor_app");
+
+        let r1_port = test_util::find_unused_loopback_port();
+        let r2_port = test_util::find_unused_loopback_port();
+        let relay1_addr = std::net::SocketAddr::new(std::net::Ipv4Addr::LOCALHOST.into(), r1_port);
+        let relay2_addr = std::net::SocketAddr::new(std::net::Ipv4Addr::LOCALHOST.into(), r2_port);
+        provision::register_relays(app_id, asset_id, relay1_addr, relay2_addr);
+        let relay1 = test_util::start_root_relay(
+            "relay1",
+            relay1_addr,
+            test_util::PASSPHRASE_SPEND,
+            app_id,
+            cfg.clone(),
+        );
+        let relay2 = test_util::start_root_relay(
+            "relay2",
+            relay2_addr,
+            test_util::PASSPHRASE_RECEIVE,
+            app_id,
+            cfg.clone(),
+        );
+        let (mut s1, mut s2, stun_list) = provision::setup_stun_servers(false);
+        let stun_arg = format!("{},{}", stun_list[0], stun_list[1]);
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let node_file = dir.path().join("localnet.node.json");
+        provision::write_localnet_node_file(&node_file, app_id, asset_id);
+        let node_file_s = node_file.to_string_lossy().into_owned();
+
+        // (1) Not migrated: checkrelays fails up front, naming the ancestor and `migrate`.
+        let (unmigrated_code, unmigrated) =
+            run_checkrelays_once(RECEIVER_PASSPHRASE, &node_file_s, &stun_arg, &[]);
+
+        // (2) --auto-migrate: the account is migrated, then the relays are probed.
+        let (migrated_code, migrated) = run_checkrelays_once(
+            RECEIVER_PASSPHRASE,
+            &node_file_s,
+            &stun_arg,
+            &["--auto-migrate"],
+        );
+
+        relay1.access_unsafe_for_tests(|r: &mut BingleApiImpl| r.stop());
+        relay2.access_unsafe_for_tests(|r: &mut BingleApiImpl| r.stop());
+        s1.stop();
+        s2.stop();
+
+        assert_eq!(
+            unmigrated_code,
+            Some(1),
+            "un-migrated checkrelays should exit 1; output was:\n{unmigrated}"
+        );
+        assert!(
+            unmigrated.contains(&format!(
+                "account {RECEIVER_ADDRESS} is not registered on app {app_id}: it is registered on ancestor app {old_app}"
+            )) && unmigrated.contains("bingle_cli migrate"),
+            "un-migrated checkrelays should name the account, both apps and `migrate`; output was:\n{unmigrated}"
+        );
+        assert!(
+            !migrated.contains("is not registered on app"),
+            "--auto-migrate should migrate before the check; output was:\n{migrated}"
+        );
+        assert!(
+            migrated.contains(&format!("@ {relay1_addr} -> ok="))
+                || migrated.contains(&format!("@ {relay2_addr} -> ok=")),
+            "migrated checkrelays should probe the relays (exit {migrated_code:?}); output was:\n{migrated}"
         );
     }
 }

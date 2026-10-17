@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::sync::{
-    Arc, Mutex,
+    Arc, Barrier, Mutex,
     atomic::{AtomicIsize, Ordering},
 };
 use std::thread;
@@ -120,9 +120,6 @@ impl TestNetwork {
     }
 }
 
-// modified_lamport_mutual_exclusion_3_nodes was moved to the flaky target
-// (tests/flaky/modified_lamport_mutex_3_nodes.rs) — it fails intermittently.
-
 #[test]
 #[cfg(not(target_os = "ios"))]
 pub fn modified_lamport_majority_with_one_down() {
@@ -167,4 +164,60 @@ pub fn modified_lamport_majority_with_one_down() {
 
     // Avoid unused variable warning for c
     let _ = c;
+}
+
+// Two nodes contend for the lock while the third only grants. Issue #37: this used to stall
+// until the timeout when the bystander granted the lower-priority requester first.
+#[ntest::timeout(30000)]
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn modified_lamport_mutual_exclusion_3_nodes() {
+    let net = TestNetwork::new();
+    let ids = vec!["A".to_string(), "B".to_string(), "C".to_string()];
+
+    let a = net.add_node("A", ids.clone());
+    let b = net.add_node("B", ids.clone());
+    let _c = net.add_node("C", ids.clone());
+
+    let barrier = Arc::new(Barrier::new(2));
+    let in_cs = Arc::new(AtomicIsize::new(0));
+
+    let barrier1 = barrier.clone();
+    let in_cs1 = in_cs.clone();
+    let t1 = thread::spawn(move || {
+        barrier1.wait();
+        a.acquire(|| {
+            let prev = in_cs1.fetch_add(1, Ordering::SeqCst);
+            assert_eq!(
+                prev, 0,
+                "Two threads entered critical section concurrently (A)"
+            );
+            // simulate work
+            thread::sleep(Duration::from_millis(50));
+            let prev2 = in_cs1.fetch_sub(1, Ordering::SeqCst);
+            assert_eq!(prev2, 1);
+            1u32
+        })
+    });
+
+    let barrier2 = barrier.clone();
+    let in_cs2 = in_cs.clone();
+    let t2 = thread::spawn(move || {
+        barrier2.wait();
+        b.acquire(|| {
+            let prev = in_cs2.fetch_add(1, Ordering::SeqCst);
+            assert_eq!(
+                prev, 0,
+                "Two threads entered critical section concurrently (B)"
+            );
+            thread::sleep(Duration::from_millis(50));
+            let prev2 = in_cs2.fetch_sub(1, Ordering::SeqCst);
+            assert_eq!(prev2, 1);
+            2u32
+        })
+    });
+
+    let r1 = t1.join().expect("t1");
+    let r2 = t2.join().expect("t2");
+    assert!(r1 == 1 || r2 == 2); // both ran
 }

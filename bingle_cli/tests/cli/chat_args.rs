@@ -269,3 +269,19 @@ pub fn poll_interval_without_value_is_error() {
 // configured — not just the SIDEWINDER_NODE_URL/TOKEN bearer override. It is unit-tested in
 // bingle_local (`store_and_forward_toggles`), so the earlier CLI-level `validate_store_forward`
 // helper and its tests were removed here.
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn auto_migrate_defaults_to_off() {
+    let parsed = parse_chat_args(args(&["alice"])).expect("should parse");
+    assert!(!parsed.auto_migrate);
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn auto_migrate_flag_is_accepted() {
+    // `chat --auto-migrate` behaves as `run --auto-migrate` does (issue #314).
+    let parsed = parse_chat_args(args(&["alice", "--auto-migrate"])).expect("should parse");
+    assert!(parsed.auto_migrate);
+    assert_eq!(parsed.opts.handle, "alice");
+}
