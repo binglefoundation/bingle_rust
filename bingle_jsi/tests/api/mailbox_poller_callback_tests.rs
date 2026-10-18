@@ -207,6 +207,7 @@ fn mock_api() -> Arc<MockBingleApi> {
         on_listening: Mutex::new(None),
         send_fail_count: Arc::new(AtomicUsize::new(0)),
         payloads: Mutex::new(Vec::new()),
+        hold_sends: Arc::new(std::sync::atomic::AtomicBool::new(false)),
     })
 }
 

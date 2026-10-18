@@ -9,6 +9,8 @@ set -euo pipefail
 # Usage (from anywhere in the repo):
 #   bash bingle_jsi/example/scripts/run_e2e_ios.sh              # full: build everything, then test
 #   bash bingle_jsi/example/scripts/run_e2e_ios.sh --test-only  # fast: skip setup, just run the e2e
+#   bash bingle_jsi/example/scripts/run_e2e_ios.sh --test-only e2e/backgrounding.test.ts  # one suite
+# Arguments after the optional --test-only are passed to `detox test` (e.g. suite paths).
 #
 # Backend for the network e2e (issue #111), via environment:
 #   BINGLE_E2E_BACKEND=testnet|localnet   default testnet
@@ -44,7 +46,10 @@ JSI_DIR="$(cd "$EXAMPLE_DIR/.." && pwd)"
 ROOT_DIR="$(cd "$JSI_DIR/.." && pwd)"
 
 TEST_ONLY=false
-[[ "${1:-}" == "--test-only" ]] && TEST_ONLY=true
+if [[ "${1:-}" == "--test-only" ]]; then
+  TEST_ONLY=true
+  shift
+fi
 
 if ! command -v applesimutils >/dev/null 2>&1; then
   echo "Error: applesimutils not found. Install it with:" >&2
@@ -192,4 +197,4 @@ echo "==> Pre-warming the iOS JS bundle"
 curl -s -o /dev/null "http://localhost:8081/index.bundle?platform=ios&dev=true&minify=false" || true
 
 echo "==> Running the Detox e2e suite"
-npm run e2e:test:ios
+npm run e2e:test:ios -- "$@"

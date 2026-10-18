@@ -428,6 +428,7 @@ fn main() {
          export BINGLE_E2E_PASSPHRASE='{SENDER_PASSPHRASE}'\n\
          export BINGLE_E2E_ECHO_TO={ECHO_HANDLE}\n\
          export BINGLE_E2E_OFFLINE_HANDLE={OFFLINE_HANDLE}\n\
+         export BINGLE_E2E_OFFLINE_PASSPHRASE='{OFFLINE_PASSPHRASE}'\n\
          {sidewinder_env}"
     );
     std::fs::write(&env_file, env_body).expect("write env file");
