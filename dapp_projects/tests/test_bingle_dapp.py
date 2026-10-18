@@ -1,6 +1,6 @@
 import algosdk.logic
 import pytest
-from algopy import OnCompleteAction, String, UInt64, op
+from algopy import Account, OnCompleteAction, String, UInt64, op
 from algopy_testing import AlgopyTestContext, algopy_testing_context
 
 from smart_contracts.bingle_dapp.contract import (
@@ -8,6 +8,7 @@ from smart_contracts.bingle_dapp.contract import (
     BIT_RELAY,
     BIT_STATIC,
     BIT_SW_CLIENT,
+    BIT_SW_CLIENT_REVOKED,
     BIT_SW_NODE,
     BingleDapp,
 )
@@ -667,3 +668,167 @@ def test_withdraw_still_works_when_superseded(ctx: AlgopyTestContext) -> None:
     itxn = ctx.txn.last_group.last_itxn.payment
     assert itxn.receiver == recipient
     assert itxn.amount == UInt64(500_000)
+
+
+# --- Sidewinder client self-grant (issue #239) --------------------------------------------------
+
+
+def _register(ctx: AlgopyTestContext, contract: BingleDapp, user: object, handle: str) -> None:
+    """Call register as `user`, grouped with the 1 Bingle$ asset transfer it requires."""
+    asset = ctx.any.asset()
+    app_address = Account(algosdk.logic.get_application_address(contract.__app_id__))
+    axfer = ctx.any.txn.asset_transfer(
+        sender=user, asset_receiver=app_address, xfer_asset=asset, asset_amount=UInt64(1)
+    )
+    appl = ctx.any.txn.application_call(
+        app_id=ctx.ledger.get_app(contract.__app_id__), sender=user, assets=[asset]
+    )
+    with ctx.txn.create_group(gtxns=[axfer, appl], active_txn_index=1):
+        contract.register(String(handle))
+
+
+def _set_sw_client(ctx: AlgopyTestContext, contract: BingleDapp, admin: object, user: object, allow: int) -> None:
+    with ctx.txn.create_group(active_txn_overrides={"sender": admin}):
+        contract.set_allow_sw_client(user, UInt64(allow))
+
+
+def _enrol(ctx: AlgopyTestContext, contract: BingleDapp, user: object) -> None:
+    with ctx.txn.create_group(active_txn_overrides={"sender": user}):
+        contract.enrol_sw_client()
+
+
+def test_register_grants_sw_client_without_admin(ctx: AlgopyTestContext) -> None:
+    contract, _, _ = _deploy(ctx)
+    user = ctx.any.account()
+    _register(ctx, contract, user, "alice")
+    assert contract.handle[user] == String("alice")
+    assert contract.config_bitfield[user] == UInt64(BIT_MIGRATED | BIT_SW_CLIENT)
+
+
+def test_register_grants_only_the_client_bit_and_keeps_others(ctx: AlgopyTestContext) -> None:
+    contract, _, _ = _deploy(ctx)
+    user = ctx.any.account()
+    # An un-migrated account with a legacy relay grant: the self-grant folds it, never adds sw_node.
+    ctx.ledger.set_local_state(contract, user, b"allow_relay", 1)
+    _register(ctx, contract, user, "alice")
+    assert contract.config_bitfield[user] == UInt64(BIT_MIGRATED | BIT_RELAY | BIT_SW_CLIENT)
+
+
+def test_register_does_not_touch_other_accounts(ctx: AlgopyTestContext) -> None:
+    contract, _, _ = _deploy(ctx)
+    user = ctx.any.account()
+    other = ctx.any.account()
+    _register(ctx, contract, user, "alice")
+    _value, exists = contract.config_bitfield.maybe(other)
+    assert not exists
+
+
+def test_admin_revoke_clears_client_and_marks_revoked(ctx: AlgopyTestContext) -> None:
+    contract, admin, _ = _deploy(ctx)
+    user = ctx.any.account()
+    _register(ctx, contract, user, "alice")
+    _set_sw_client(ctx, contract, admin, user, 0)
+    assert contract.config_bitfield[user] == UInt64(BIT_MIGRATED | BIT_SW_CLIENT_REVOKED)
+
+
+def test_register_again_does_not_undo_a_revoke(ctx: AlgopyTestContext) -> None:
+    contract, admin, _ = _deploy(ctx)
+    user = ctx.any.account()
+    _register(ctx, contract, user, "alice")
+    _set_sw_client(ctx, contract, admin, user, 0)
+    _register(ctx, contract, user, "alice")
+    assert (contract.config_bitfield[user] & UInt64(BIT_SW_CLIENT)) == UInt64(0)
+
+
+def test_admin_enable_after_revoke_clears_the_revoke(ctx: AlgopyTestContext) -> None:
+    contract, admin, _ = _deploy(ctx)
+    user = ctx.any.account()
+    _register(ctx, contract, user, "alice")
+    _set_sw_client(ctx, contract, admin, user, 0)
+    _set_sw_client(ctx, contract, admin, user, 1)
+    assert contract.config_bitfield[user] == UInt64(BIT_MIGRATED | BIT_SW_CLIENT)
+    # A later revoke and self-enrol behave as before.
+    _set_sw_client(ctx, contract, admin, user, 0)
+    _enrol(ctx, contract, user)
+    assert (contract.config_bitfield[user] & UInt64(BIT_SW_CLIENT)) == UInt64(0)
+
+
+def test_enrol_grants_an_already_registered_account(ctx: AlgopyTestContext) -> None:
+    contract, _, _ = _deploy(ctx)
+    user = ctx.any.account()
+    # Registered before the self-grant existed: a handle and no allow bits.
+    ctx.ledger.set_local_state(contract, user, b"Handle", b"alice")
+    _enrol(ctx, contract, user)
+    assert contract.config_bitfield[user] == UInt64(BIT_MIGRATED | BIT_SW_CLIENT)
+
+
+def test_enrol_without_a_handle_fails(ctx: AlgopyTestContext) -> None:
+    contract, _, _ = _deploy(ctx)
+    user = ctx.any.account()
+    with ctx.txn.create_group(active_txn_overrides={"sender": user}):
+        with pytest.raises(AssertionError):
+            contract.enrol_sw_client()
+
+
+def test_enrol_with_an_empty_handle_fails(ctx: AlgopyTestContext) -> None:
+    contract, _, _ = _deploy(ctx)
+    user = ctx.any.account()
+    ctx.ledger.set_local_state(contract, user, b"Handle", b"")
+    with ctx.txn.create_group(active_txn_overrides={"sender": user}):
+        with pytest.raises(AssertionError):
+            contract.enrol_sw_client()
+
+
+def test_enrol_after_revoke_does_not_grant(ctx: AlgopyTestContext) -> None:
+    contract, admin, _ = _deploy(ctx)
+    user = ctx.any.account()
+    ctx.ledger.set_local_state(contract, user, b"Handle", b"alice")
+    _set_sw_client(ctx, contract, admin, user, 0)
+    _enrol(ctx, contract, user)
+    assert contract.config_bitfield[user] == UInt64(BIT_MIGRATED | BIT_SW_CLIENT_REVOKED)
+
+
+def test_enrol_fails_when_superseded(ctx: AlgopyTestContext) -> None:
+    contract, _, _ = _deploy(ctx)
+    contract.set_successor_app(ctx.any.application())
+    user = ctx.any.account()
+    ctx.ledger.set_local_state(contract, user, b"Handle", b"alice")
+    with ctx.txn.create_group(active_txn_overrides={"sender": user}):
+        with pytest.raises(AssertionError):
+            contract.enrol_sw_client()
+
+
+def test_migrate_local_grants_sw_client(ctx: AlgopyTestContext) -> None:
+    contract, _, _ = _deploy(ctx)
+    old_app = ctx.any.application()
+    contract.set_predecessor_app(old_app)
+    user = ctx.any.account()
+    ctx.ledger.set_local_state(old_app, user, b"Handle", b"alice")
+    # A legacy static grant on the ancestor is kept alongside the new client bit.
+    ctx.ledger.set_local_state(old_app, user, b"allow_static", 1)
+    with ctx.txn.create_group(active_txn_overrides={"sender": user}):
+        contract.migrate_local(old_app)
+    assert contract.config_bitfield[user] == UInt64(BIT_MIGRATED | BIT_STATIC | BIT_SW_CLIENT)
+
+
+def test_migrate_local_without_a_handle_does_not_grant(ctx: AlgopyTestContext) -> None:
+    contract, _, _ = _deploy(ctx)
+    old_app = ctx.any.application()
+    contract.set_predecessor_app(old_app)
+    user = ctx.any.account()
+    with ctx.txn.create_group(active_txn_overrides={"sender": user}):
+        contract.migrate_local(old_app)
+    _value, exists = contract.config_bitfield.maybe(user)
+    assert not exists
+
+
+def test_migrate_local_keeps_an_ancestor_revoke(ctx: AlgopyTestContext) -> None:
+    contract, _, _ = _deploy(ctx)
+    old_app = ctx.any.application()
+    contract.set_predecessor_app(old_app)
+    user = ctx.any.account()
+    ctx.ledger.set_local_state(old_app, user, b"Handle", b"alice")
+    ctx.ledger.set_local_state(old_app, user, b"allow_static", BIT_MIGRATED | BIT_SW_CLIENT_REVOKED)
+    with ctx.txn.create_group(active_txn_overrides={"sender": user}):
+        contract.migrate_local(old_app)
+    assert contract.config_bitfield[user] == UInt64(BIT_MIGRATED | BIT_SW_CLIENT_REVOKED)

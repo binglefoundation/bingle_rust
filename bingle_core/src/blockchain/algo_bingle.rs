@@ -30,7 +30,11 @@ pub mod allow_flags {
     pub const BIT_SW_NODE: u64 = 1 << 2;
     /// Permitted as a Sidewinder API client.
     pub const BIT_SW_CLIENT: u64 = 1 << 3;
-    // Bits 4..62 are reserved for future flags.
+    /// An admin revoked the Sidewinder client bit, so the account's own self-grants (registration,
+    /// `enrol_sw_client`, migration) are refused until an admin enables it again (issue #239). Not a
+    /// permission: readers of the client permission test [`BIT_SW_CLIENT`] only.
+    pub const BIT_SW_CLIENT_REVOKED: u64 = 1 << 4;
+    // Bits 5..62 are reserved for future flags.
     /// Migration sentinel (bit 63): when set the value is the packed bitfield; when clear the account
     /// still holds the pre-bitfield legacy `allow_static` / `allow_relay` scalar encoding.
     pub const BIT_MIGRATED: u64 = 1 << 63;
@@ -448,6 +452,35 @@ impl AlgoBingle {
         )
     }
 
+    /// Grant the caller its own Sidewinder API-client permission (issue #239).
+    ///
+    /// Calls enrol_sw_client()void. For an account that registered before registration granted the
+    /// bit; registration and migration grant it themselves. The caller must hold a registered handle
+    /// on the app, and the contract leaves the bit clear if an admin has revoked it (see
+    /// [`check_sw_client_revoked`](Self::check_sw_client_revoked)). Returns the submitted
+    /// transaction id on success.
+    pub fn enrol_sw_client(&self, app_id: u64) -> Result<String> {
+        if app_id == 0 {
+            bail!("app_id must be > 0");
+        }
+        let client = self.ops.algod_client()?;
+        let params = self.params(&client)?;
+        let (account, sender) = self.sender_account()?;
+        let tx = CallApplication::new(sender, AppId(app_id))
+            .app_arguments(vec![
+                AlgoOps::arc4_selector("enrol_sw_client()void").to_vec(),
+            ])
+            .note(AlgoOps::unique_note())
+            .build(&params)
+            .map_err(|e| anyhow!("build app call: {e}"))?;
+        let signed = account
+            .sign(tx)
+            .map_err(|e| anyhow!("sign app call: {e}"))?
+            .to_msg_pack()
+            .map_err(|e| anyhow!("encode signed app call: {e}"))?;
+        self.broadcast_group(&client, vec![signed])
+    }
+
     /// Withdraw Algo from the app account to the given address.
     ///
     /// Calls withdraw(address,uint64)void. Must be called by the app withdrawer.
@@ -815,6 +848,13 @@ impl AlgoBingle {
     /// if not opted-in, or `Err` on other error.
     pub fn check_allow_sw_client(&self, app_id: u64, address: &str) -> Result<Option<bool>> {
         self.check_allow_bit(app_id, address, allow_flags::BIT_SW_CLIENT)
+    }
+
+    /// Whether an admin has revoked `address`'s Sidewinder client permission, which stops the
+    /// account granting it to itself again (issue #239). Same return convention as
+    /// [`check_allow_sw_client`](Self::check_allow_sw_client).
+    pub fn check_sw_client_revoked(&self, app_id: u64, address: &str) -> Result<Option<bool>> {
+        self.check_allow_bit(app_id, address, allow_flags::BIT_SW_CLIENT_REVOKED)
     }
 
     /// Resolve an account `address` to the handle it has registered on-chain, by reading the
@@ -1698,11 +1738,8 @@ impl AlgoBingle {
         handle: &str,
         price_units: u64,
     ) -> Result<String> {
-        // POINTER (issue #239): auto-grant Sidewinder store-and-forward. If registration should also make
-        // the caller a permitted Sidewinder client (self-service enrolment), the grant happens in the DApp
-        // `register` method (dapp_projects/smart_contracts/bingle_dapp/contract.py), not here — this
-        // binding just submits the call. Today client membership is admin-enabled by default
-        // (`set_allow_sw_client`); change the policy only under issue #239.
+        // Registration also grants the caller's own Sidewinder client bit on-chain (issue #239),
+        // unless an admin has revoked it; nothing extra is submitted here.
         if app_id == 0 {
             bail!("app_id must be > 0");
         }
