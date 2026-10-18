@@ -65,6 +65,10 @@ pub trait OutboundStore: Send + Sync {
     /// Whether the message with this id is complete with no failure — delivered, or handed off
     /// to the recipient's Mailbox.
     fn is_handed_off(&self, id: &str) -> bool;
+
+    /// The message's failure reason as shown to the user, with any store-and-forward failure
+    /// appended (issue #349); `None` when it has no failure or is not found.
+    fn display_failure_reason(&self, id: &str) -> Option<String>;
 }
 
 /// An [`OutboundStore`] over a [`BingleApiLocalImpl`] handle that also saves the state file after
@@ -118,6 +122,15 @@ impl OutboundStore for LocalOutboundStore {
             .find(|m| m.id == id)
             .map(|m| m.progress == Some(1.0) && m.failure_reason.is_none())
             .unwrap_or(false)
+    }
+
+    fn display_failure_reason(&self, id: &str) -> Option<String> {
+        self.local
+            .get_messages()
+            .ok()?
+            .into_iter()
+            .find(|m| m.id == id)?
+            .display_failure_reason()
     }
 }
 
@@ -689,10 +702,14 @@ fn send_one(
             );
             if store.store_and_forward_send() && store.is_handed_off(id) {
                 SendOutcome::Forwarded(failure.reason)
-            } else if transient {
-                SendOutcome::Retrying(failure.reason)
             } else {
-                SendOutcome::Failed(failure.reason)
+                // Report why the Mailbox post did not complete too, when it was tried (#349).
+                let reason = store.display_failure_reason(id).unwrap_or(failure.reason);
+                if transient {
+                    SendOutcome::Retrying(reason)
+                } else {
+                    SendOutcome::Failed(reason)
+                }
             }
         }
     };

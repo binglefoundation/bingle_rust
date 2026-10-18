@@ -131,9 +131,36 @@ pub struct Message {
     /// through a Mailbox. `serde(default)` so older message files still load (as `None`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub delivery_route: Option<DeliveryRoute>,
+    /// Why the store-and-forward post of this failing message did not complete (issue #349): set
+    /// while a send is failing, the send gate is on, and the Mailbox post did not reach every
+    /// recipient; `None` otherwise, and cleared once the message is delivered or handed off. Shown
+    /// beside [`failure_reason`](Message::failure_reason) by
+    /// [`display_failure_reason`](Message::display_failure_reason). `serde(default)` so older
+    /// message files still load.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub store_and_forward_failure: Option<String>,
+}
+
+/// A send failure reason with the store-and-forward failure, when there is one, appended in
+/// brackets (issue #349), for example
+/// `Recipient unreachable — will keep retrying (store-and-forward failed: no account for 'bob')`.
+pub fn with_store_and_forward_failure(reason: &str, store_and_forward: Option<&str>) -> String {
+    match store_and_forward {
+        Some(sf) => format!("{reason} (store-and-forward failed: {sf})"),
+        None => reason.to_string(),
+    }
 }
 
 impl Message {
+    /// The failure reason to show the user (issue #349): [`failure_reason`](Message::failure_reason)
+    /// with the [`store_and_forward_failure`](Message::store_and_forward_failure) appended, so a
+    /// device without log access can see why the message was not handed off to the Mailbox.
+    pub fn display_failure_reason(&self) -> Option<String> {
+        self.failure_reason.as_deref().map(|reason| {
+            with_store_and_forward_failure(reason, self.store_and_forward_failure.as_deref())
+        })
+    }
+
     /// The time to order this message by (issue #69): the sender's [`sent_time`](Message::sent_time)
     /// when known, else the [`delivered_time`](Message::delivered_time) a Mailbox read stamped, else
     /// [`timestamp`](Message::timestamp). For a message this client sent, `timestamp` is its queue
@@ -179,6 +206,7 @@ impl Message {
             delivered_time: Some(delivered_time),
             signature: Some(general_purpose::STANDARD.encode(opened.signature)),
             delivery_route: Some(DeliveryRoute::StoreAndForward),
+            store_and_forward_failure: None,
         }
     }
 }

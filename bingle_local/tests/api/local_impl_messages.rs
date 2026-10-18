@@ -86,6 +86,7 @@ fn get_messages_returns_clone() {
         delivered_time: None,
         signature: None,
         delivery_route: None,
+        store_and_forward_failure: None,
     });
     // fetch again and ensure original store is unchanged
     let msgs2 = api.get_messages().unwrap();
