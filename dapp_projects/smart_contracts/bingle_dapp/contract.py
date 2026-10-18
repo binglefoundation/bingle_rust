@@ -20,7 +20,8 @@ BIT_STATIC = 1 << 0     # permitted to register a static endpoint
 BIT_RELAY = 1 << 1      # permitted to relay
 BIT_SW_NODE = 1 << 2    # permitted as a Sidewinder cluster node
 BIT_SW_CLIENT = 1 << 3  # permitted as a Sidewinder API client
-# bits 4..62 are reserved for future flags.
+BIT_SW_CLIENT_REVOKED = 1 << 4  # an admin revoked the client bit: self-grants are refused (#239)
+# bits 5..62 are reserved for future flags.
 BIT_MIGRATED = 1 << 63  # sentinel: set => packed bitfield; clear => legacy allow_static/relay scalar
 
 
@@ -161,6 +162,18 @@ class BingleDapp(ARC4Contract):
         else:
             packed = packed & ~mask
         self.config_bitfield[target] = packed
+
+    @subroutine
+    def _self_grant_sw_client(self, account: Account) -> None:
+        """Self-service Sidewinder client enrolment (issue #239): set the client bit for `account`,
+        which callers pass as `Txn.sender` only. Unlike `_set_allow_bit` this needs no admin, and it
+        touches only the client bit, never another account's bits or the node bit. It does nothing
+        once an admin has revoked the client bit (BIT_SW_CLIENT_REVOKED), so registering, enrolling or
+        migrating again cannot undo a ban; only an admin `set_allow_sw_client(target, 1)` can.
+        """
+        packed = self._packed_allow_bits(account) | UInt64(BIT_MIGRATED)
+        if (packed & UInt64(BIT_SW_CLIENT_REVOKED)) == UInt64(0):
+            self.config_bitfield[account] = packed | UInt64(BIT_SW_CLIENT)
 
     @subroutine
     def _clear_endpoint(self, account: Account) -> None:
@@ -373,12 +386,23 @@ class BingleDapp(ARC4Contract):
             self.handle[Txn.sender] = handle
             self.handle_time[Txn.sender] = handle_time
 
-        # POINTER (issue #239): auto-grant Sidewinder store-and-forward. To make every registered Bingle
-        # user a permitted Sidewinder client without an admin call, set the sender's allow_sw_client bit
-        # HERE — a self-grant for Txn.sender, distinct from the admin-gated `_set_allow_bit` (which stays
-        # admin-only, and is unchanged for the node bit). Deliberately NOT done today: client membership
-        # defaults off (fail-closed) and is admin-enabled via `set_allow_sw_client`. Change the enrolment
-        # policy only under issue #239 — see it for the trust-model and back-compat decisions.
+        # Every registered user is a Sidewinder store-and-forward client (issue #239), unless an admin
+        # has revoked it.
+        self._self_grant_sw_client(Txn.sender)
+
+    @abimethod()
+    def enrol_sw_client(self) -> None:
+        """Grant the caller's own Sidewinder client bit (issue #239).
+
+        For an account that registered before registration granted the bit, so it can use
+        store-and-forward without an admin call or a second Bingle$ payment. Requires a registered
+        (non-empty) handle; does nothing if an admin has revoked the caller's client bit.
+        """
+        # Reject once superseded: force the client to upgrade to the successor app.
+        assert not self._is_superseded()
+        current, exists = self.handle.maybe(Txn.sender)
+        assert exists and current != String()
+        self._self_grant_sw_client(Txn.sender)
 
     @abimethod()
     def set_allow_static(self, target_address: Account, allow: UInt64) -> None:
@@ -429,8 +453,17 @@ class BingleDapp(ARC4Contract):
         accounts array. Only the application admin may call this method. The target account must be
         opted-in to the application. Sets/clears the allow_sw_client bit in the packed allow field.
         Admin-only (enforced in `_set_allow_bit`).
+
+        Registered users grant themselves the client bit (issue #239), so a revoke also sets
+        BIT_SW_CLIENT_REVOKED, which stops a later register / enrol_sw_client / migrate_local from
+        re-granting it; an admin enable clears that bit again.
         """
         self._set_allow_bit(target_address, UInt64(BIT_SW_CLIENT), allow)
+        self._set_allow_bit(
+            target_address,
+            UInt64(BIT_SW_CLIENT_REVOKED),
+            UInt64(1) if allow == UInt64(0) else UInt64(0),
+        )
 
     @abimethod()
     def set_predecessor_app(self, predecessor: Application) -> None:
@@ -472,7 +505,7 @@ class BingleDapp(ARC4Contract):
 
         Creator-only. Records `successor`'s id as the SuccessorApp global (8-byte big-endian).
         Once set, the user-facing state-changing methods (register, buy_bingle, sell_bingle,
-        register_endpoint, register_sidewinder_endpoint) hard-reject, and clients read this pointer on start to prompt the
+        register_endpoint, register_sidewinder_endpoint, enrol_sw_client) hard-reject, and clients read this pointer on start to prompt the
         user to update. Admin/creator methods, withdraw, and the migrate_* methods stay
         callable so the old app can still be wound down and users migrated. Re-pointable.
         `successor` must be included in the transaction's foreign apps array.
@@ -565,6 +598,8 @@ class BingleDapp(ARC4Contract):
         sentinel-aware reader decodes whichever; the account converts to the packed form on its next
         set_allow_* write. So no fold is needed here.
         static_endpoint / static_endpoint_x: only copied when the account is static-allowed.
+        Sidewinder client bit: granted when the account has a handle here (issue #239), unless the
+        copied state records an admin revoke.
         """
         lineage = self.ancestor_apps.get(default=Bytes())
         assert self._lineage_contains(lineage, old_app.id)
@@ -607,6 +642,11 @@ class BingleDapp(ARC4Contract):
             old_sw_endpoint, has_sw_endpoint = op.AppLocal.get_ex_bytes(sender, old_app, b"rsvd_l_b1")
             if has_sw_endpoint:
                 self.sidewinder_endpoint[sender] = old_sw_endpoint
+        # A migrated user never calls register on this app, so grant the Sidewinder client bit here
+        # too (issue #239). A revoke carried over from the ancestor still holds.
+        current_handle, has_current_handle = self.handle.maybe(sender)
+        if has_current_handle and current_handle != String():
+            self._self_grant_sw_client(sender)
 
     @abimethod()
     def register_endpoint(self, endpoint: String) -> None:
