@@ -22,8 +22,6 @@ use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-const TEST_MNEMONIC: &str = "square flat curtain negative three april hobby culture unit fit drip bronze cactus stage vault pluck captain nation pond pizza grief domain coin abstract path";
-
 /// Which JSI send path drives the pending message.
 #[derive(Clone, Copy)]
 enum SendPath {
@@ -34,7 +32,8 @@ enum SendPath {
 }
 
 /// A local store with a Mailbox configured, store-and-forward send on, and the identity hold-off
-/// set, holding one pending message to `bob` queued at `timestamp`. Returns the store and the id.
+/// set (checked before the keypair, so none is imported and `start` makes no chain read), holding
+/// one pending message to `bob` queued at `timestamp`. Returns the store and the id.
 fn store_with_pending_message(timestamp: i64) -> (BingleApiLocalImpl, String) {
     let config = LocalApiConfig {
         sidewinder: Some(MailboxConfig::new("http://localhost:9", "tok")),
@@ -42,9 +41,6 @@ fn store_with_pending_message(timestamp: i64) -> (BingleApiLocalImpl, String) {
         ..LocalApiConfig::default()
     };
     let local = BingleApiLocalImpl::new(config);
-    local
-        .import_keypair_shared(TEST_MNEMONIC.to_string())
-        .expect("import test keypair");
     local
         .add_message_shared(
             "testuser".to_string(),
