@@ -966,6 +966,49 @@ fn pending_failure_reason_is_human_readable() {
     assert!(permanent.contains("recipient handle is invalid"));
 }
 
+/// Issue #349: the bridge folds the store-and-forward failure into `failure_reason`, so the app's
+/// existing info panel shows why the message was not handed off to the Mailbox.
+#[test]
+fn bridge_appends_the_store_and_forward_failure_to_the_reason() {
+    use bingle_jsi::api::bingle_jsi_api_impl::local_message_to_jsi;
+    use bingle_local::api::Message as LocalMessage;
+
+    let local = LocalMessage {
+        id: "0a0a".to_string(),
+        sender_handle: "alice".to_string(),
+        recipient_handles: vec!["bob".to_string()],
+        timestamp: 1,
+        text: "hi".to_string(),
+        cipher_suite: None,
+        progress: Some(0.0),
+        failure_reason: Some("Recipient unreachable — will keep retrying".to_string()),
+        failure_kind: None,
+        sent_time: None,
+        delivered_time: None,
+        signature: None,
+        delivery_route: None,
+        store_and_forward_failure: Some("no account for 'bob'".to_string()),
+    };
+
+    let jsi = local_message_to_jsi(local.clone());
+    assert_eq!(
+        jsi.failure_reason.as_deref(),
+        Some(
+            "Recipient unreachable — will keep retrying (store-and-forward failed: no account for 'bob')"
+        )
+    );
+
+    let plain = local_message_to_jsi(LocalMessage {
+        store_and_forward_failure: None,
+        ..local
+    });
+    assert_eq!(
+        plain.failure_reason.as_deref(),
+        Some("Recipient unreachable — will keep retrying"),
+        "no suffix without a store-and-forward failure"
+    );
+}
+
 /// The FFI bridge must carry every stored-message field to JS, including the store-and-forward
 /// fields added in issue #204 (`sent_time`, `delivered_time`, `signature`) and the delivery route
 /// added in issue #291. This test fails if a future change adds a field to the local message but
@@ -990,6 +1033,7 @@ fn bridge_carries_store_and_forward_fields_to_jsi() {
         delivered_time: Some(1_700_000_050_000),
         signature: Some("AwMDAw==".to_string()),
         delivery_route: Some(LocalRoute::StoreAndForward),
+        store_and_forward_failure: None,
     };
 
     let jsi = local_message_to_jsi(local.clone());

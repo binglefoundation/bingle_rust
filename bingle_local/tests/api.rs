@@ -62,6 +62,8 @@ mod store_and_forward_toggles;
 
 #[path = "api/post_on_delivery_fail.rs"]
 mod post_on_delivery_fail;
+#[path = "api/store_and_forward_feedback.rs"]
+mod store_and_forward_feedback;
 
 #[path = "api/read_on_reconnect.rs"]
 mod read_on_reconnect;

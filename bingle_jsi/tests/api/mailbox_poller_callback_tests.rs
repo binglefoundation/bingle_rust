@@ -197,6 +197,7 @@ fn mailbox_message(id: &str, sender: &str, text: &str) -> Message {
         delivered_time: Some(1_700_000_050_000),
         signature: None,
         delivery_route: Some(LocalRoute::StoreAndForward),
+        store_and_forward_failure: None,
     }
 }
 

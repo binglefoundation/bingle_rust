@@ -406,9 +406,13 @@ fn parse_keypair_status(status: &str) -> KeypairStatus {
 /// Every field of the local record is carried across, including the store-and-forward fields
 /// (`sent_time`, `delivered_time`, `signature`) added in issue #204 and the `delivery_route` added
 /// in issue #291 — a dedicated test asserts none are dropped, so a future field addition that
-/// forgets the bridge fails CI.
+/// forgets the bridge fails CI. The `store_and_forward_failure` (issue #349) is folded into
+/// `failure_reason` rather than carried as its own field.
 #[doc(hidden)]
 pub fn local_message_to_jsi(m: bingle_local::api::Message) -> Message {
+    // The display reason carries any store-and-forward failure (issue #349), so the app shows why
+    // the message was not handed off to the Mailbox without a new field.
+    let failure_reason = m.display_failure_reason();
     Message {
         id: m.id,
         sender_handle: m.sender_handle,
@@ -417,7 +421,7 @@ pub fn local_message_to_jsi(m: bingle_local::api::Message) -> Message {
         text: m.text,
         cipher_suite: m.cipher_suite,
         progress: m.progress,
-        failure_reason: m.failure_reason,
+        failure_reason,
         failure_kind: m.failure_kind.map(send_failure_kind_to_ffi),
         sent_time: m.sent_time,
         delivered_time: m.delivered_time,
@@ -1983,6 +1987,7 @@ mod tests {
             delivered_time: None,
             signature: None,
             delivery_route: None,
+            store_and_forward_failure: None,
         }
     }
 

@@ -418,6 +418,30 @@ fn a_handed_off_failure_is_reported_forwarded() {
 }
 
 #[test]
+fn a_retrying_report_says_why_the_mailbox_post_failed() {
+    // Issue #349: the post was refused (test seam), so the retrying line carries the reason too.
+    let local = local_store(LocalApiConfig {
+        sidewinder: Some(MailboxConfig::new("http://localhost:9", "tok")),
+        store_and_forward_send: true,
+        ..LocalApiConfig::default()
+    });
+    let ts = queue(&local, 1, &["bob"], "hi");
+    local.mark_forward_refused_for_tests(&local.id_of_timestamp_for_tests(ts), "bob");
+    let delivery = MockDelivery::new();
+    delivery.script("bob", vec![Scripted::Transient]);
+    let (_sender, rx) = start(&local, delivery, fast_options(), ready());
+
+    let report = rx.recv_timeout(REPORT_TIMEOUT).expect("report");
+    match report.outcome {
+        SendOutcome::Retrying(reason) => assert!(
+            reason.contains("(store-and-forward failed: ") && reason.contains("'bob'"),
+            "{reason}"
+        ),
+        other => panic!("expected Retrying, got {other:?}"),
+    }
+}
+
+#[test]
 fn sends_and_status_updates_do_not_need_the_callers_lock() {
     // A client keeps its store behind its own mutex (as bingle_jsi does). Holding that lock must not
     // stop the sender from sending and recording the outcome through its own handle.

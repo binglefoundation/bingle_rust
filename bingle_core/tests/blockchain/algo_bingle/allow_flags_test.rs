@@ -155,8 +155,34 @@ pub fn test_check_allow_sw_param_validation() {
             0,
             "P577PSTDICQ6PQFBR5YMDMJ2YVK7LT5V4GOPNVDLCEDJIL7XGRWC5BRFWA",
         ),
+        ab.check_sw_client_revoked(
+            0,
+            "P577PSTDICQ6PQFBR5YMDMJ2YVK7LT5V4GOPNVDLCEDJIL7XGRWC5BRFWA",
+        ),
     ] {
         assert!(res.is_err());
         assert!(res.unwrap_err().to_string().contains("app_id must be > 0"));
     }
+}
+
+// Issue #239: the revoked marker is its own bit and never reads as the client permission.
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn test_effective_allow_bits_revoked_is_not_a_client_grant() {
+    assert_eq!(allow_flags::BIT_SW_CLIENT_REVOKED, 1 << 4);
+    let packed = allow_flags::BIT_MIGRATED | allow_flags::BIT_SW_CLIENT_REVOKED;
+    let bits = AlgoBingle::effective_allow_bits(&kv(&[("allow_static", &packed.to_string())]));
+    assert_eq!(bits & allow_flags::BIT_SW_CLIENT, 0);
+    assert_eq!(
+        bits & allow_flags::BIT_SW_CLIENT_REVOKED,
+        allow_flags::BIT_SW_CLIENT_REVOKED
+    );
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn test_enrol_sw_client_param_validation() {
+    let res = ab().enrol_sw_client(0);
+    assert!(res.is_err());
+    assert!(res.unwrap_err().to_string().contains("app_id must be > 0"));
 }
