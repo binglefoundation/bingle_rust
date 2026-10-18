@@ -11,6 +11,7 @@
  */
 import React, {useCallback, useEffect, useRef, useState} from 'react';
 import {
+  AppState,
   SafeAreaView,
   ScrollView,
   StyleSheet,
@@ -123,6 +124,29 @@ function App(): React.JSX.Element {
       )
       .finally(() => setReady(true));
     return () => subs.forEach(s => s.remove());
+  }, [pushEvent]);
+
+  // Forward app lifecycle to the engine as a host app does (bingle_ux_rn App.tsx), so a test that
+  // backgrounds the app (`device.sendToHome()`) drives the real native backgrounding path (#352).
+  // The bridge resolves without doing anything before `init`, so no gate is needed.
+  useEffect(() => {
+    let previous = AppState.currentState;
+    const sub = AppState.addEventListener('change', next => {
+      const was = previous;
+      previous = next;
+      if (next === 'active' && was !== 'active') {
+        pushEvent('lifecycle foregrounding');
+        BingleJsi.foregrounding().catch((err: unknown) =>
+          pushEvent(`foregrounding error: ${String(err)}`),
+        );
+      } else if (next === 'background') {
+        pushEvent('lifecycle backgrounding');
+        BingleJsi.backgrounding().catch((err: unknown) =>
+          pushEvent(`backgrounding error: ${String(err)}`),
+        );
+      }
+    });
+    return () => sub.remove();
   }, [pushEvent]);
 
   const runCommand = useCallback(async () => {

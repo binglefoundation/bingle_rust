@@ -1,3 +1,4 @@
+mod backgrounding_mailbox_tests;
 mod bingle_jsi_api_impl_tests;
 mod bingle_jsi_api_tests;
 mod error_tests;
