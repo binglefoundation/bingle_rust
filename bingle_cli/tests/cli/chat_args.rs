@@ -285,3 +285,30 @@ pub fn auto_migrate_flag_is_accepted() {
     assert!(parsed.auto_migrate);
     assert_eq!(parsed.opts.handle, "alice");
 }
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn app_id_disagreeing_with_node_file_is_error() {
+    // #315: `chat --app-id` beside a node file naming another app used to drop the app id and fail
+    // later with a misleading "no Sidewinder Mailbox is configured"
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../tmp");
+    std::fs::create_dir_all(&dir).expect("create tmp dir");
+    let mut node_file = tempfile::Builder::new()
+        .prefix("chat_args_nodefile")
+        .suffix(".json")
+        .tempfile_in(&dir)
+        .expect("create node file");
+    std::io::Write::write_all(
+        &mut node_file,
+        br#"{"network":"testnet","client_api_url":"https://api.example","client_api_port":443,"indexer_api_url":"https://idx.example","indexer_api_port":443,"token":null,"token_key":null,"app_id":12345,"asset_id":67890}"#,
+    )
+    .expect("write node file");
+    let path = node_file.path().to_string_lossy().to_string();
+
+    let err = parse_chat_args(args(&["alice", "--app-id", "999", "--node-file", &path]))
+        .expect_err("conflicting app ids");
+    assert!(
+        err.contains("--app-id 999") && err.contains("app_id 12345"),
+        "got: {err}"
+    );
+}

@@ -298,7 +298,8 @@ impl RelayFinder {
         // 2) Ensure the relay updater is initialised (populates the cache if empty)
         let updater = self.get_or_init_updater(my_id_norm);
 
-        // 3) Build exclusion id list from the excluded socket addresses
+        // 3) Build exclusion id list from the excluded socket addresses, matching on IP so a
+        // corner node sharing an IP the client has sent to is skipped too (#347).
         let exclude_ids: Vec<String> = if exclude.is_empty() {
             Vec::new()
         } else {
@@ -306,7 +307,9 @@ impl RelayFinder {
                 .relay_info_cache()
                 .list_all_relays(my_id_norm, true)
                 .into_iter()
-                .filter(|r| exclude.contains(&r.address()))
+                .filter(|r| {
+                    crate::relay::corner_exclusion::is_excluded_corner(r.address(), exclude)
+                })
                 .map(|r| r.id().to_string())
                 .collect()
         };

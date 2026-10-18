@@ -1,5 +1,8 @@
 // Grouped relay tests
 
+#[path = "corner_exclusion.rs"]
+pub mod corner_exclusion;
+
 #[path = "relay_finder.rs"]
 pub mod relay_finder;
 
