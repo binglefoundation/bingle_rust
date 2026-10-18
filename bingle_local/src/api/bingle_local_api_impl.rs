@@ -24,6 +24,7 @@ mod local_state;
 // Store-and-forward posting (the Mailbox accessor, gate accessors, and the post-on-delivery-fail
 // hook, epic #200 / #214). A child module so it still reads this implementation's private state.
 mod store_and_forward;
+pub use store_and_forward::ForwardOutcome;
 
 #[doc(hidden)]
 pub use local_state::LocalState;
@@ -654,6 +655,7 @@ impl BingleApiLocalImpl {
             delivered_time: None,
             signature,
             delivery_route: Some(DeliveryRoute::Direct),
+            store_and_forward_failure: None,
         };
         let mut guard = match self.messages.lock() {
             Ok(g) => g,
@@ -710,6 +712,10 @@ impl BingleApiLocalImpl {
                     msg.failure_kind = failure_kind;
                 }
                 msg.delivery_route = delivery_route;
+                if delivery_route.is_some() {
+                    // Delivered: any earlier store-and-forward failure no longer applies (#349).
+                    msg.store_and_forward_failure = None;
+                }
                 if msg.failure_reason.is_some() {
                     Some((
                         msg.id.clone(),
@@ -750,18 +756,27 @@ impl BingleApiLocalImpl {
             // recipient's Sidewinder Mailbox so it survives until they reconnect. Runs on each failed
             // retry but is idempotent per recipient, so it posts once per recipient and retries only
             // recipients whose post has not yet succeeded. Gated + best-effort; never affects delivery.
-            let fully_forwarded =
-                self.forward_message_to_mailbox(&id, sent_time, &recipients, &text);
-            if fully_forwarded {
-                // The message is now safely in every recipient's Mailbox, so stop retrying direct
-                // Bingle delivery: mark it complete and clear the transient failure. The recipient
-                // reads it from the Mailbox on reconnect (#215).
-                if let Ok(mut guard) = self.messages.lock() {
-                    if let Some(m) = guard.iter_mut().find(|m| m.id == id) {
-                        m.progress = Some(1.0);
-                        m.failure_reason = None;
-                        m.failure_kind = None;
-                        m.delivery_route = Some(DeliveryRoute::StoreAndForward);
+            let outcome = self.forward_message_to_mailbox(&id, sent_time, &recipients, &text);
+            if let Ok(mut guard) = self.messages.lock() {
+                if let Some(m) = guard.iter_mut().find(|m| m.id == id) {
+                    match outcome {
+                        ForwardOutcome::Forwarded => {
+                            // The message is now safely in every recipient's Mailbox, so stop
+                            // retrying direct Bingle delivery: mark it complete and clear the
+                            // transient failure. The recipient reads it from the Mailbox on
+                            // reconnect (#215).
+                            m.progress = Some(1.0);
+                            m.failure_reason = None;
+                            m.failure_kind = None;
+                            m.delivery_route = Some(DeliveryRoute::StoreAndForward);
+                            m.store_and_forward_failure = None;
+                        }
+                        ForwardOutcome::Disabled => m.store_and_forward_failure = None,
+                        // Keep why the post did not complete on the message, so a device without
+                        // log access can see it beside the send failure (#349).
+                        ForwardOutcome::NotForwarded(reason) => {
+                            m.store_and_forward_failure = Some(reason)
+                        }
                     }
                 }
             }
@@ -1160,6 +1175,7 @@ impl BingleLocalApi for BingleApiLocalImpl {
             delivered_time: None,
             signature: None,
             delivery_route: None,
+            store_and_forward_failure: None,
         };
 
         let mut guard = match self.messages.lock() {

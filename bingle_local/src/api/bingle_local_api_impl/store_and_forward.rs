@@ -13,6 +13,18 @@ use bingle_core::blockchain::algo_bingle::AlgoBingle;
 use bingle_core::util::time::now_millis;
 use std::collections::{BTreeMap, HashSet};
 
+/// What a store-and-forward post-on-delivery-fail attempt achieved (#214, #349).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ForwardOutcome {
+    /// The send gate is off or no Sidewinder node is configured: nothing was tried.
+    Disabled,
+    /// The message is posted to every recipient's Mailbox (now or on an earlier attempt).
+    Forwarded,
+    /// At least one recipient is not yet posted. Carries a human-readable reason, one clause per
+    /// outstanding recipient (or one for the whole attempt), for display beside the send failure.
+    NotForwarded(String),
+}
+
 impl BingleApiLocalImpl {
     /// Build a Sidewinder [`Mailbox`](crate::api::sidewinder::Mailbox) client for the current
     /// keypair (store-and-forward, epic #200). The Mailbox signs its transactions with the same
@@ -62,7 +74,10 @@ impl BingleApiLocalImpl {
     #[doc(hidden)]
     pub fn mark_forward_refused_for_tests(&self, message_id: &str, handle: &str) {
         if let Ok(mut g) = self.refused_forwards.lock() {
-            g.insert((message_id.to_string(), handle.to_string()));
+            g.insert(
+                (message_id.to_string(), handle.to_string()),
+                "refused for tests".to_string(),
+            );
         }
     }
 
@@ -72,6 +87,19 @@ impl BingleApiLocalImpl {
     pub fn mark_mailbox_identity_refused_for_tests(&self, at: std::time::Instant) {
         if let Ok(mut g) = self.mailbox_identity_refused_at.lock() {
             *g = Some(at);
+        }
+    }
+
+    /// The reason to report while posts are held off by an identity refusal (#309, #349).
+    fn identity_refusal_note(&self) -> String {
+        match self
+            .mailbox_identity_refusal_reason
+            .lock()
+            .ok()
+            .and_then(|g| g.clone())
+        {
+            Some(reason) => format!("the Mailbox node refused this account ({reason})"),
+            None => "the Mailbox node refused this account".to_string(),
         }
     }
 
@@ -90,6 +118,9 @@ impl BingleApiLocalImpl {
     fn note_mailbox_identity_refused(&self, context: &str, reason: &str) {
         if let Ok(mut g) = self.mailbox_identity_refused_at.lock() {
             *g = Some(std::time::Instant::now());
+        }
+        if let Ok(mut g) = self.mailbox_identity_refusal_reason.lock() {
+            *g = Some(reason.to_string());
         }
         tracing::warn!(
             "[{context}] the Sidewinder node refused this client's identity; store-and-forward is \
@@ -161,79 +192,81 @@ impl BingleApiLocalImpl {
     /// `sent_time` is the message's send time (its queue timestamp), sealed in as the
     /// sender-stamped `sent_time`.
     ///
-    /// Returns `true` when the message is now posted for **every** recipient (fully handed off to the
-    /// sidechain), so the caller can stop retrying direct Bingle delivery; `false` while any recipient
-    /// still needs a (retryable) post, or when the gate is off / the node is unconfigured.
+    /// Returns [`ForwardOutcome::Forwarded`] when the message is now posted for **every** recipient
+    /// (fully handed off to the sidechain), so the caller can stop retrying direct Bingle delivery;
+    /// [`ForwardOutcome::Disabled`] when the gate is off or the node is unconfigured; otherwise
+    /// [`ForwardOutcome::NotForwarded`] with why the post did not complete, which the caller keeps
+    /// on the message so it can be shown without log access (#349).
     pub(crate) fn forward_message_to_mailbox(
         &self,
         message_id: &str,
         sent_time: i64,
         recipient_handles: &[String],
         text: &str,
-    ) -> bool {
+    ) -> ForwardOutcome {
         if !sidewinder::should_forward_send(
             self.config().store_and_forward_send,
             self.config().sidewinder.is_some(),
         ) {
-            return false;
+            return ForwardOutcome::Disabled;
         }
+        let not_forwarded = |reason: String| ForwardOutcome::NotForwarded(reason);
+        let lock_failed = |what: &str| {
+            tracing::error!("[forward_to_mailbox] Failed to lock {what}");
+            not_forwarded(format!("internal error (could not lock {what})"))
+        };
 
         // Recipients of this message not yet posted to a Mailbox.
         let pending: Vec<String> = match self.forwarded_messages.lock() {
             Ok(guard) => {
                 sidewinder::pending_forward_recipients(message_id, recipient_handles, &guard)
             }
-            Err(e) => {
-                tracing::error!(
-                    "[forward_to_mailbox] Failed to lock forwarded_messages: {}",
-                    e
-                );
-                return false;
-            }
+            Err(_) => return lock_failed("forwarded_messages"),
         };
         // Every recipient already posted: the message is fully handed off to the sidechain.
         if pending.is_empty() {
-            return true;
+            return ForwardOutcome::Forwarded;
         }
         // The node refused this client's identity recently: posting cannot succeed yet (#309).
         if self.mailbox_identity_refusal_holds() {
-            return false;
+            return not_forwarded(self.identity_refusal_note());
         }
-        // Skip recipients the node refused this session: re-posting cannot succeed (#305).
+        // Recipients the node refused this session are skipped: re-posting cannot succeed (#305).
+        // Their refusal is still reported.
+        let mut notes: Vec<String> = Vec::new();
         let pending: Vec<String> = match self.refused_forwards.lock() {
             Ok(refused) => pending
                 .into_iter()
-                .filter(|h| !refused.contains(&(message_id.to_string(), h.clone())))
+                .filter(
+                    |h| match refused.get(&(message_id.to_string(), h.clone())) {
+                        Some(reason) => {
+                            notes.push(refused_note(h, reason));
+                            false
+                        }
+                        None => true,
+                    },
+                )
                 .collect(),
-            Err(e) => {
-                tracing::error!(
-                    "[forward_to_mailbox] Failed to lock refused_forwards: {}",
-                    e
-                );
-                return false;
-            }
+            Err(_) => return lock_failed("refused_forwards"),
         };
         if pending.is_empty() {
-            return false;
+            return not_forwarded(notes.join("; "));
         }
 
         // The sender's Ed25519 private key signs the sealed envelope; without a keypair we cannot seal.
         let passphrase = match self.keypair.lock() {
             Ok(g) => g.as_ref().map(|k| k.passphrase.clone()),
-            Err(e) => {
-                tracing::error!("[forward_to_mailbox] Failed to lock keypair: {}", e);
-                return false;
-            }
+            Err(_) => return lock_failed("keypair"),
         };
         let Some(passphrase) = passphrase else {
             tracing::warn!("[forward_to_mailbox] no keypair; skipping store-and-forward post");
-            return false;
+            return not_forwarded("no keypair to sign the post".to_string());
         };
         let private_key = match AlgoOps::seed_from_passphrase(&passphrase) {
             Ok(k) => k,
             Err(e) => {
                 tracing::warn!("[forward_to_mailbox] cannot derive signing key ({e}); skipping");
-                return false;
+                return not_forwarded(format!("cannot derive the signing key ({e})"));
             }
         };
 
@@ -242,7 +275,7 @@ impl BingleApiLocalImpl {
             Ok(o) => o,
             Err(e) => {
                 tracing::warn!("[forward_to_mailbox] no keypair to post ({e}); skipping");
-                return false;
+                return not_forwarded(format!("no Algorand client ({e})"));
             }
         };
         let bgl = AlgoBingle::new(ops, self.config().app_id, self.config().asset_id);
@@ -252,7 +285,7 @@ impl BingleApiLocalImpl {
             Ok(m) => m,
             Err(e) => {
                 tracing::warn!("[forward_to_mailbox] no mailbox configured ({e}); skipping");
-                return false;
+                return not_forwarded(format!("Mailbox unavailable ({e})"));
             }
         };
 
@@ -264,12 +297,14 @@ impl BingleApiLocalImpl {
                     tracing::warn!(
                         "[forward_to_mailbox] no account for handle '{handle}'; skipping"
                     );
+                    notes.push(format!("no account for '{handle}'"));
                     continue;
                 }
                 Err(e) => {
                     tracing::warn!(
                         "[forward_to_mailbox] handle lookup failed for '{handle}' ({e}); will retry"
                     );
+                    notes.push(format!("could not look up '{handle}' ({e})"));
                     continue;
                 }
             };
@@ -279,6 +314,7 @@ impl BingleApiLocalImpl {
                     tracing::warn!(
                         "[forward_to_mailbox] bad recipient address '{address}' ({e}); skipping"
                     );
+                    notes.push(format!("invalid address for '{handle}' ({e})"));
                     continue;
                 }
             };
@@ -293,6 +329,7 @@ impl BingleApiLocalImpl {
                     tracing::warn!(
                         "[forward_to_mailbox] seal failed for '{handle}' ({e}); skipping"
                     );
+                    notes.push(format!("could not seal the message for '{handle}' ({e})"));
                     continue;
                 }
             };
@@ -306,33 +343,44 @@ impl BingleApiLocalImpl {
                     );
                 }
                 Ok(sidewinder::PostOutcome::Refused { stage, reason }) => {
-                    if let Ok(mut guard) = self.refused_forwards.lock() {
-                        guard.insert((message_id.to_string(), handle.clone()));
-                    }
+                    let reason = format!("{stage:?}: {reason}");
                     tracing::warn!(
                         "[forward_to_mailbox] Mailbox post to '{handle}' refused by the node \
-                         ({stage:?}: {reason}); not retrying this session"
+                         ({reason}); not retrying this session"
                     );
+                    notes.push(refused_note(&handle, &reason));
+                    if let Ok(mut guard) = self.refused_forwards.lock() {
+                        guard.insert((message_id.to_string(), handle.clone()), reason);
+                    }
                 }
                 Err(e) => {
                     if let Some(reason) = mailbox.identity_refusal() {
                         // The refusal is for this account, not this recipient: stop here.
                         self.note_mailbox_identity_refused("forward_to_mailbox", reason);
+                        notes.push(self.identity_refusal_note());
                         break;
                     }
                     tracing::warn!(
                         "[forward_to_mailbox] Mailbox post to '{handle}' failed ({e}); will retry"
                     );
+                    notes.push(format!("Mailbox post to '{handle}' failed ({e})"));
                 }
             }
         }
 
         // Fully handed off only when every recipient is now posted.
-        match self.forwarded_messages.lock() {
+        let all_posted = match self.forwarded_messages.lock() {
             Ok(guard) => recipient_handles
                 .iter()
                 .all(|h| guard.contains(&(message_id.to_string(), h.clone()))),
-            Err(_) => false,
+            Err(_) => return lock_failed("forwarded_messages"),
+        };
+        if all_posted {
+            ForwardOutcome::Forwarded
+        } else if notes.is_empty() {
+            not_forwarded("not every recipient was posted".to_string())
+        } else {
+            not_forwarded(notes.join("; "))
         }
     }
 
@@ -478,4 +526,9 @@ impl BingleApiLocalImpl {
         // The batch is already ordered by sent time by the map's key.
         Ok(read.into_values().collect())
     }
+}
+
+/// The reason reported for a recipient whose Mailbox post the node refused (#305, #349).
+fn refused_note(handle: &str, reason: &str) -> String {
+    format!("the Mailbox node refused the post to '{handle}' ({reason})")
 }

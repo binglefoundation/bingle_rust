@@ -27,6 +27,7 @@ fn message(timestamp: i64, sent_time: Option<i64>, delivered_time: Option<i64>) 
         delivered_time,
         signature: None,
         delivery_route: None,
+        store_and_forward_failure: None,
     }
 }
 
