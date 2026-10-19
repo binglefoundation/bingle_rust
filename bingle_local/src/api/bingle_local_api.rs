@@ -392,6 +392,16 @@ pub trait BingleLocalApi: Send + Sync {
     /// it is a safety net. The read messages also appear in [`get_messages`](Self::get_messages).
     fn poll_mailbox(&self) -> Result<Vec<Message>, BingleError>;
 
+    /// Offer every pending outbound message to its recipients' Sidewinder Mailboxes now, without
+    /// waiting for a direct send to fail (issue #352). The `bingle_jsi` client calls it on
+    /// `backgrounding()`: the app may be suspended or killed before a send in flight, or not yet
+    /// tried, fails, and only that failure would otherwise post it. Each message gets the same
+    /// outcome as the post-on-delivery-fail path: complete by store-and-forward once every recipient
+    /// is posted, otherwise still pending with why the post did not complete. Returns the number of
+    /// messages now complete by store-and-forward; zero when the send gate is off or no Sidewinder
+    /// node is configured.
+    fn forward_pending_to_mailbox(&self) -> Result<usize, BingleError>;
+
     /// Set the store-and-forward send / receive gates on a **running** session (epic #200, story
     /// #242). Takes effect on the next send (post-on-give-up) / poll without dropping the session:
     /// the keypair, contacts, message history, and active transport/relay connections are untouched —

@@ -55,8 +55,7 @@ const describeOrSkip = haveFixtures ? describe : describe.skip;
 // app run without a background task, so a hand-off that relies on borrowed time is not credited.
 const BACKGROUND_MS = 20000;
 const READ_TIMEOUT = 60000;
-// Two launches, the background wait and the Mailbox read can outlast Jest's default 120s; under
-// `it.failing` a timeout would count as the expected failure, so allow well over the worst case.
+// Two launches, the background wait and the Mailbox read can outlast Jest's default 120s.
 const TEST_TIMEOUT = 300000;
 
 async function launchReady(): Promise<void> {
@@ -68,10 +67,7 @@ async function launchReady(): Promise<void> {
 }
 
 describeOrSkip(`bingle_jsi backgrounding hand-off (${backend})`, () => {
-  // Known failure (#352): `it.failing` passes while the hand-off is broken and fails once it works,
-  // so switch it back to `it` with the fix. On the simulator the Mailbox post lands but the saved
-  // state still shows the message unsent.
-  it.failing('hands an unsent message to the Mailbox when the app backgrounds and is killed', async () => {
+  it('hands an unsent message to the Mailbox when the app backgrounds and is killed', async () => {
     const net = await resolveNetworkInputs(nodeFile, stunFile);
     const text = `e2e-background ${Date.now()}`;
     const senderState = localStatePath(`bingle_e2e_background_sender_${Date.now()}.json`);

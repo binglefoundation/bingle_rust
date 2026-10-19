@@ -370,7 +370,8 @@ export interface BingleJsiApi {
   // App lifecycle (call from the host app's AppState listener).
   // foregrounding refreshes the relay registration after background/idle so
   // inbound recovers immediately (issue #50); backgrounding lets the engine
-  // pause battery-costly work while suspended.
+  // pause battery-costly work while suspended and hands undelivered messages
+  // to the Mailbox (issue #352).
   foregrounding(): void;
   backgrounding(): void;
 }

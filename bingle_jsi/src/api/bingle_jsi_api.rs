@@ -284,6 +284,11 @@ pub trait BingleJsiApi: Send + Sync {
     /// Notify the engine that the host app has gone to the background.
     ///
     /// Lets the engine pause battery-costly background work (e.g. the relay
-    /// keep-alive) while suspended. Safe to call at any time.
+    /// keep-alive) while suspended, and hands every undelivered message to the
+    /// recipients' Mailboxes and saves the state, since the app may be killed
+    /// before a pending send fails (issue #352). Blocks for that hand-off, up to
+    /// [`BACKGROUND_FLUSH_TIMEOUT`](crate::api::bingle_jsi_api_impl::BACKGROUND_FLUSH_TIMEOUT),
+    /// so call it off the UI thread and, on iOS, inside a background task. Safe to
+    /// call at any time.
     fn backgrounding(&self);
 }

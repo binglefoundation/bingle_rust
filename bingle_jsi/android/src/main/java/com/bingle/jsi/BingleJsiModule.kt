@@ -698,7 +698,10 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
         }.start()
     }
 
-    /** App lifecycle: the host app calls this when it goes to the background. Stops the backstop poll. */
+    /**
+     * App lifecycle: the host app calls this when it goes to the background. Stops the backstop poll
+     * and hands undelivered messages to the Mailbox (issue #352); resolves when that is done.
+     */
     @ReactMethod
     fun backgrounding(promise: Promise) {
         val api = apiInstance
