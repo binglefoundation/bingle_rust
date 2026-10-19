@@ -4,7 +4,7 @@
 //! rather than in the core API file; as a child module it still reads the implementation's private
 //! state (the keypair, config, and the persisted posted-set).
 
-use super::BingleApiLocalImpl;
+use super::{BingleApiLocalImpl, holds_received_copy};
 use crate::api::bingle_local_api::{BingleLocalApi, Message};
 use crate::api::sidewinder;
 use algo_ops::AlgoOps;
@@ -511,13 +511,10 @@ impl BingleApiLocalImpl {
                 Message::from_opened(&opened, sender_handle, recipient_handles, delivered_time);
 
             // Persist-before-drop (at-most-once): record it locally now; the pop already removed it
-            // from the node. The message store is written to disk on the caller's next `save`.
-            if let Ok(mut guard) = self.messages.lock() {
-                guard.push(message.clone());
-            } else {
-                tracing::error!(
-                    "[poll_mailbox] Failed to lock messages; the message is not stored"
-                );
+            // from the node. A copy of a message already received directly is not returned, so the
+            // host is not told twice (issue #355).
+            if !self.record_mailbox_message(message.clone()) {
+                continue;
             }
             read.insert((message.order_time(), sequence), message);
             sequence += 1;
@@ -525,6 +522,33 @@ impl BingleApiLocalImpl {
 
         // The batch is already ordered by sent time by the map's key.
         Ok(read.into_values().collect())
+    }
+
+    /// Store a message read from the Mailbox, and return whether it was stored. A copy of a
+    /// message already received directly is dropped and returns `false` (issue #355); the pop has
+    /// already removed it from the node. The message store is written to disk on the caller's next
+    /// `save`. Public for tests, which cannot run a Mailbox read without a node.
+    #[doc(hidden)]
+    pub fn record_mailbox_message(&self, message: Message) -> bool {
+        let Ok(mut guard) = self.messages.lock() else {
+            tracing::error!("[poll_mailbox] Failed to lock messages; the message is not stored");
+            return true;
+        };
+        if holds_received_copy(
+            &guard,
+            &message.sender_handle,
+            message.sent_time,
+            &message.text,
+        ) {
+            tracing::debug!(
+                "[poll_mailbox] dropping a copy from {} sent at {:?}, already received",
+                message.sender_handle,
+                message.sent_time
+            );
+            return false;
+        }
+        guard.push(message);
+        true
     }
 }
 

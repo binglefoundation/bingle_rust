@@ -141,13 +141,14 @@ impl BingleLocalApi for DummyLocal {
         recipient_handles: Vec<String>,
         timestamp: i64,
         message: &serde_json::Value,
-    ) -> Result<(), BingleError> {
+    ) -> Result<bool, BingleError> {
         let text = message
             .get("text")
             .and_then(|v| v.as_str())
             .unwrap_or_default()
             .to_string();
         self.add_message(sender_handle, recipient_handles, timestamp, text, None)
+            .map(|()| true)
     }
 
     fn queue_message(

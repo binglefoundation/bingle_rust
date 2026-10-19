@@ -106,7 +106,7 @@ impl BingleLocalApi for ScriptedMailboxLocal {
         recipient_handles: Vec<String>,
         timestamp: i64,
         message: &serde_json::Value,
-    ) -> Result<(), BingleError> {
+    ) -> Result<bool, BingleError> {
         self.inner
             .add_received_message(sender_handle, recipient_handles, timestamp, message)
     }

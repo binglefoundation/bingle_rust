@@ -98,8 +98,8 @@ impl BingleLocalApi for ControllableLocalApi {
         _recipient_handles: Vec<String>,
         _timestamp: i64,
         _message: &serde_json::Value,
-    ) -> Result<(), BingleError> {
-        Ok(())
+    ) -> Result<bool, BingleError> {
+        Ok(true)
     }
     fn queue_message(
         &mut self,
