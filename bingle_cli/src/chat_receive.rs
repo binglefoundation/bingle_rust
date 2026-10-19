@@ -21,7 +21,8 @@ use crate::chat_state::ChatState;
 /// `Received` contact if it is new, appends the
 /// message to the history, saves the state file, and returns the stored [`Message`] for the caller
 /// to display (its `sender_handle` is the resolved handle, or the id when the sender is unknown).
-/// Non-plaintext or text-less messages are ignored (`None`).
+/// Non-plaintext or text-less messages are ignored (`None`), as is a copy of a message already
+/// received by the other route, e.g. read from the Mailbox (issue #355).
 ///
 /// Persistence failures are logged, not propagated: a receive callback must never panic or tear down
 /// the connection, so a save hiccup only costs durability of that one message.
@@ -70,7 +71,8 @@ pub fn receive_message(
     let recipient = state.opts.handle.clone();
     let stored = match state.record_message(display_handle, vec![recipient], now_millis(), message)
     {
-        Ok(msg) => msg,
+        Ok(Some(msg)) => msg,
+        Ok(None) => return None,
         Err(e) => {
             tracing::warn!("chat: could not persist incoming message: {}", e);
             return None;

@@ -251,6 +251,57 @@ fn note_peer_seen(sender: &Mutex<Option<PendingSender>>, id: &str, handle: &str)
     }
 }
 
+/// What [`store_received_message`] did with a live message.
+#[derive(Debug, PartialEq, Eq)]
+enum Stored {
+    /// Stored, or not stored for another reason (no local store, an error), so the host is told.
+    Kept,
+    /// A copy of a message already received by the other route (issue #355): not stored, and the
+    /// host is not told again.
+    Duplicate,
+}
+
+/// Store a message received over a live session in the local store, if one is configured, and save
+/// the state. `recipient` is this user's handle; without it the message is not stored.
+fn store_received_message(
+    local_api: &Option<Arc<Mutex<Box<dyn BingleLocalApi>>>>,
+    local_file: &Option<PathBuf>,
+    recipient: Option<String>,
+    sender_handle: &str,
+    message: &JsonValue,
+) -> Stored {
+    let Some(local_arc) = local_api else {
+        return Stored::Kept;
+    };
+    let Ok(mut guard) = local_arc.lock() else {
+        tracing::warn!("[on_message] local api lock poisoned; message not stored");
+        return Stored::Kept;
+    };
+    let Some(recipient) = recipient else {
+        tracing::error!("[on_message] get_handle returned None; message not stored");
+        return Stored::Kept;
+    };
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0);
+    // Keeps the sender's signature and sent time (issue #94).
+    match guard.add_received_message(
+        sender_handle.to_string(),
+        vec![recipient],
+        timestamp,
+        message,
+    ) {
+        Ok(true) => {}
+        Ok(false) => return Stored::Duplicate,
+        Err(e) => tracing::warn!("[on_message] failed to add message: {}", e),
+    }
+    if let Some(path) = local_file {
+        let _ = guard.save(path.to_string_lossy().as_ref());
+    }
+    Stored::Kept
+}
+
 /// Save local state if local_api and local_file are both configured.
 fn save_if_configured(
     local_api: &Option<Arc<Mutex<Box<dyn BingleLocalApi>>>>,
@@ -384,6 +435,66 @@ impl BingleJsiApiImpl {
         ));
         tracing::info!("[BingleJsiApiImpl] shared pending-message sender started");
         true
+    }
+
+    /// Handle a message received over a live session (the engine's `on_message`): drop it if the
+    /// sender is blocked, store it, then tell the host. A copy of a message already read from the
+    /// Mailbox is neither stored nor shown again (issue #355), so the store comes first.
+    fn on_live_message(&self, sender: String, sender_handle: String, message: JsonValue) {
+        // Drop a blocked sender's message before the app hears of it or it is stored
+        // (bingle_ux_rn #34).
+        if is_sender_blocked(&self.local_api, &sender) {
+            tracing::info!(
+                "[BingleJsiApiImpl][init handler] Dropping a message from blocked sender {}",
+                sender_handle
+            );
+            return;
+        }
+        tracing::info!(
+            "[BingleJsiApiImpl][init handler] Received message from {}: {}",
+            sender_handle,
+            message
+        );
+        // Hearing from a peer means it is online: end any offline window so the next send to it
+        // is attempted direct (issue #278).
+        note_peer_seen(&self.pending_sender, &sender, &sender_handle);
+        if store_received_message(
+            &self.local_api,
+            &self.local_file,
+            self.api.get_handle(),
+            &sender_handle,
+            &message,
+        ) == Stored::Duplicate
+        {
+            tracing::info!(
+                "[BingleJsiApiImpl][init handler] Dropping a copy of a message from {} already received",
+                sender_handle
+            );
+            return;
+        }
+        // Invoke user callback if registered
+        match self.message_callback.lock() {
+            Ok(guard) => match guard.as_ref() {
+                Some(callback) => {
+                    tracing::info!(
+                        "[BingleJsiApiImpl][init handler] Invoking user callback for message from {}",
+                        sender_handle
+                    );
+                    let bingle_msg = BingleMessage {
+                        delivery_route: Some(DeliveryRoute::Direct),
+                        ..json_to_message(&message)
+                    };
+                    callback.on_message(sender, sender_handle, bingle_msg);
+                }
+                None => {
+                    tracing::info!("[BingleJsiApiImpl][init handler] No user callback registered")
+                }
+            },
+            Err(_) => tracing::warn!("[BingleJsiApiImpl][init handler] Could not lock callback"),
+        }
+        if let Ok(mut m) = self.messages.lock() {
+            m.push(message);
+        }
     }
 
     /// Stop the backstop Mailbox poller if one is running (called on `backgrounding`). Signals the
@@ -773,78 +884,16 @@ impl BingleJsiApiImpl {
             });
         }
 
-        // Setup on-message handler to queue received messages
+        // Setup on-message handler to queue received messages. The handler holds a weak reference,
+        // since the instance owns the engine that owns the handler.
         {
-            let sender_slot = pending_sender.clone();
-            let msgs = messages.clone();
-            let local_api_for_closure = local_api.clone();
-            let local_file_for_closure = local_file.clone();
-            let api_for_handle = api.clone();
-            let cb = message_callback.clone();
+            let instance = Arc::downgrade(&api_instance);
             api.access(|api_mut| {
                 let on_message: Arc<bingle_core::api::bingle_api::OnMessageHandler> =
                     Arc::new(move |sender, sender_handle, message| {
-                        // Drop a blocked sender's message before the app hears of it or it is
-                        // stored (bingle_ux_rn #34).
-                        if is_sender_blocked(&local_api_for_closure, &sender) {
-                            tracing::info!("[BingleJsiApiImpl][init handler] Dropping a message from blocked sender {}", sender_handle);
-                            return;
+                        if let Some(instance) = instance.upgrade() {
+                            instance.on_live_message(sender, sender_handle, message);
                         }
-                        tracing::info!("[BingleJsiApiImpl][init handler] Received message from {}: {}", sender_handle, message);
-                        // Hearing from a peer means it is online: end any offline window so the
-                        // next send to it is attempted direct (issue #278).
-                        note_peer_seen(&sender_slot, &sender, &sender_handle);
-                        // Invoke user callback if registered
-                        if let Ok(guard) = cb.lock() {
-                            if let Some(ref callback) = *guard {
-                                tracing::info!("[BingleJsiApiImpl][init handler] Invoking user callback for message from {}", sender_handle);
-                                let bingle_msg = BingleMessage {
-                                    delivery_route: Some(DeliveryRoute::Direct),
-                                    ..json_to_message(&message)
-                                };
-                                callback.on_message(
-                                    sender.clone(),
-                                    sender_handle.clone(),
-                                    bingle_msg,
-                                );
-                            }
-                            else {
-                                tracing::info!("[BingleJsiApiImpl][init handler] No user callback registered");
-                            }
-                        }
-                        else {
-                            tracing::warn!("[BingleJsiApiImpl][init handler] Could not lock callback");
-                        }
-
-                        let mut m = msgs.lock().unwrap();
-                        m.push(message.clone());
-                        // Store message in local API if configured
-                        if let Some(local_arc) = &local_api_for_closure
-                            && let Ok(mut guard) = local_arc.lock() {
-                                let timestamp = std::time::SystemTime::now()
-                                    .duration_since(std::time::UNIX_EPOCH)
-                                    .map(|d| d.as_millis() as i64)
-                                    .unwrap_or(0);
-                                let recipient = match api_for_handle.get_handle() {
-                                    Some(h) => h,
-                                    None => {
-                                        tracing::error!("[on_message] get_handle returned None");
-                                        return;
-                                    }
-                                };
-                                // Keeps the sender's signature and sent time (issue #94).
-                                if let Err(e) = guard.add_received_message(
-                                    sender_handle.clone(),
-                                    vec![recipient],
-                                    timestamp,
-                                    &message,
-                                ) {
-                                    tracing::warn!("[on_message] failed to add message: {}", e);
-                                }
-                                if let Some(path) = &local_file_for_closure {
-                                    let _ = guard.save(path.to_string_lossy().as_ref());
-                                }
-                            }
                     });
                 api_mut.set_on_message(Some(on_message));
             });
@@ -1203,6 +1252,17 @@ impl BingleJsiApiImpl {
             .lock()
             .map(|g| g.is_some())
             .unwrap_or(false)
+    }
+
+    /// Test seam: deliver a message as the engine's `on_message` would, since a test-built
+    /// instance installs no engine handler.
+    pub fn receive_live_message_for_tests(
+        &self,
+        sender: String,
+        sender_handle: String,
+        message: JsonValue,
+    ) {
+        self.on_live_message(sender, sender_handle, message);
     }
 
     pub fn init_for_tests(

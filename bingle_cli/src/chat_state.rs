@@ -217,17 +217,19 @@ impl ChatState {
 
     /// Append a received message (the engine's `message` JSON) to the persistent history, keeping
     /// its cipher suite and the sender's signature and sent time (issue #94), and return the stored
-    /// [`Message`] record. The caller persists to disk via [`save_state`](ChatState::save_state).
+    /// [`Message`] record. Returns `None`, storing nothing, when the message is a copy of one
+    /// already received, e.g. read from the Mailbox (issue #355). The caller persists to disk via
+    /// [`save_state`](ChatState::save_state).
     pub fn record_message(
         &mut self,
         sender_handle: &str,
         recipient_handles: Vec<String>,
         timestamp: i64,
         message: &serde_json::Value,
-    ) -> Result<Message, String> {
+    ) -> Result<Option<Message>, String> {
         // The store is shared via `Arc`, so the `&mut self`-declared trait mutations are reached
         // through their `&self` cores (`*_shared`); see [`ChatState::local`].
-        let id = self
+        let Some(id) = self
             .local
             .add_received_message_shared(
                 sender_handle.to_string(),
@@ -235,7 +237,10 @@ impl ChatState {
                 timestamp,
                 message,
             )
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| e.to_string())?
+        else {
+            return Ok(None);
+        };
         // Return the record as stored (add_message fills in progress/failure_reason), so callers
         // display exactly what was persisted rather than reconstructing it.
         self.local
@@ -243,6 +248,7 @@ impl ChatState {
             .map_err(|e| e.to_string())?
             .into_iter()
             .find(|m| m.id == id)
+            .map(Some)
             .ok_or_else(|| "message missing after add_message".to_string())
     }
 

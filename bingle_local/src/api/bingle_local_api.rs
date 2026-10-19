@@ -346,13 +346,18 @@ pub trait BingleLocalApi: Send + Sync {
     /// [`sent_time`](Message::sent_time) and [`signature`](Message::signature) when the message
     /// carries them (issue #94), along with its `cipher_suite`. A message from a client that
     /// predates signing is stored without them.
+    ///
+    /// Returns `false`, storing nothing, when the message is a copy of one already received from
+    /// the same sender with the same send time and text, such as one already read from the
+    /// Mailbox (issue #355); the caller should then not tell the host about it again. A message
+    /// without a send time is always stored.
     fn add_received_message(
         &mut self,
         sender_handle: String,
         recipient_handles: Vec<String>,
         timestamp: i64,
         message: &serde_json::Value,
-    ) -> Result<(), BingleError>;
+    ) -> Result<bool, BingleError>;
 
     /// Queue a message to be sent by the background processor.
     fn queue_message(

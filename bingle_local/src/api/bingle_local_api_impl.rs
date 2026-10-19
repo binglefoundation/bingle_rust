@@ -572,18 +572,21 @@ impl BingleApiLocalImpl {
             cipher_suite,
             None,
             None,
-        )
+        )?
+        // Only a message with a send time can be a duplicate, and this one has none.
+        .ok_or_else(|| BingleError::Other("message treated as a duplicate".to_string()))
     }
 
     /// `&self` core of [`BingleLocalApi::add_received_message`]. Returns the stored message's new
-    /// [`id`](Message::id).
+    /// [`id`](Message::id), or `None` when the message is a copy of one already received by the
+    /// other route and was not stored (issue #355).
     pub fn add_received_message_shared(
         &self,
         sender_handle: String,
         recipient_handles: Vec<String>,
         timestamp: i64,
         message: &serde_json::Value,
-    ) -> Result<String, BingleError> {
+    ) -> Result<Option<String>, BingleError> {
         let field = |key: &str| {
             message
                 .get(key)
@@ -603,7 +606,8 @@ impl BingleApiLocalImpl {
     }
 
     /// Validate and store a message that travelled over a live session, as complete and `Direct`,
-    /// and return its new id.
+    /// and return its new id, or `None` when it is a copy of a message already received (issue
+    /// #355) and was not stored.
     #[allow(clippy::too_many_arguments)]
     fn store_live_message(
         &self,
@@ -614,7 +618,7 @@ impl BingleApiLocalImpl {
         cipher_suite: Option<String>,
         sent_time: Option<i64>,
         signature: Option<String>,
-    ) -> Result<String, BingleError> {
+    ) -> Result<Option<String>, BingleError> {
         tracing::debug!(
             "[BingleLocalApi] Adding message from: {} to: {:?}",
             sender_handle,
@@ -665,8 +669,18 @@ impl BingleApiLocalImpl {
                 return Err(BingleError::Other(msg));
             }
         };
+        // Checked under the same lock as the push, so a Mailbox read storing the other copy at the
+        // same moment cannot slip past (issue #355).
+        if holds_received_copy(&guard, &msg.sender_handle, msg.sent_time, &msg.text) {
+            tracing::debug!(
+                "[add_received_message] dropping a copy from {} sent at {:?}, already received",
+                msg.sender_handle,
+                msg.sent_time
+            );
+            return Ok(None);
+        }
         guard.push(msg);
-        Ok(id)
+        Ok(Some(id))
     }
 
     /// `&self` core of [`BingleLocalApi::update_message_status`].
@@ -1154,9 +1168,9 @@ impl BingleLocalApi for BingleApiLocalImpl {
         recipient_handles: Vec<String>,
         timestamp: i64,
         message: &serde_json::Value,
-    ) -> Result<(), BingleError> {
+    ) -> Result<bool, BingleError> {
         self.add_received_message_shared(sender_handle, recipient_handles, timestamp, message)
-            .map(|_| ())
+            .map(|id| id.is_some())
     }
 
     fn queue_message(
@@ -1907,4 +1921,25 @@ impl BingleLocalApi for BingleApiLocalImpl {
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
         self
     }
+}
+
+/// Whether `messages` already holds a received copy of the message from `sender_handle` sent at
+/// `sent_time` with `text` (issue #355). A message can reach the recipient both directly and from
+/// their Mailbox (a send still in flight when the sender backgrounds is posted too, #352). The two
+/// copies differ in id and signature, but both carry the sender's signed send time, the time it was
+/// queued. A message without a send time is never a copy, and that also leaves out this user's own
+/// outbound records, which have none. The store is in arrival order and a copy normally arrives
+/// soon after the first, so the scan runs newest first.
+pub(crate) fn holds_received_copy(
+    messages: &[Message],
+    sender_handle: &str,
+    sent_time: Option<i64>,
+    text: &str,
+) -> bool {
+    let Some(sent_time) = sent_time else {
+        return false;
+    };
+    messages.iter().rev().any(|m| {
+        m.sent_time == Some(sent_time) && m.sender_handle == sender_handle && m.text == text
+    })
 }
