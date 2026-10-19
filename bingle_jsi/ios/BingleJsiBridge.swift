@@ -1036,6 +1036,14 @@ class PushRegistrationCallbackBridge: PushRegistrationCallback {
 
 /// A UIKit background task that is ended exactly once: by `end()` when the work finishes, or by
 /// the expiration handler when iOS runs out of background time first (issue #352).
+///
+/// How long iOS lets the task run is not guaranteed or documented as a fixed number. Since iOS 13
+/// it is about 30 seconds after the app enters the background (it was up to about 3 minutes
+/// before then), and iOS may give less under load. The time left is reported by
+/// `UIApplication.shared.backgroundTimeRemaining`. iOS calls the expiration handler shortly before
+/// the time runs out; a task still open after that gets the app killed, which is why the handler
+/// ends it. The Rust side bounds the hand-off at `BACKGROUND_FLUSH_TIMEOUT` (20 seconds) to finish
+/// inside that window.
 final class BackgroundTask {
     private let lock = NSLock()
     private var identifier: UIBackgroundTaskIdentifier = .invalid

@@ -78,8 +78,10 @@ pub struct BingleJsiApiImpl {
 pub const DEFAULT_MAILBOX_POLL_SECS: u64 = 120;
 
 /// How long `backgrounding` waits for pending messages to be handed to the Mailbox (issue #352).
-/// iOS gives a backgrounded app with a background task about 30 seconds, so this leaves the bridge
-/// time to end its task; a flush still running after it carries on while the app has time.
+/// iOS gives a backgrounded app with a background task about 30 seconds (since iOS 13; not
+/// guaranteed, and it can be less), so this leaves the bridge time to end its task; a flush still
+/// running after it carries on while the app has time. See `BackgroundTask` in
+/// `ios/BingleJsiBridge.swift`.
 pub const BACKGROUND_FLUSH_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
 
 /// Convert a JSI NetworkSourceKey to the internal NetworkEndpoint type.
