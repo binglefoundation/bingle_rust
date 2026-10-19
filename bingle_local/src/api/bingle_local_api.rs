@@ -346,13 +346,18 @@ pub trait BingleLocalApi: Send + Sync {
     /// [`sent_time`](Message::sent_time) and [`signature`](Message::signature) when the message
     /// carries them (issue #94), along with its `cipher_suite`. A message from a client that
     /// predates signing is stored without them.
+    ///
+    /// Returns `false`, storing nothing, when the message is a copy of one already received from
+    /// the same sender with the same send time and text, such as one already read from the
+    /// Mailbox (issue #355); the caller should then not tell the host about it again. A message
+    /// without a send time is always stored.
     fn add_received_message(
         &mut self,
         sender_handle: String,
         recipient_handles: Vec<String>,
         timestamp: i64,
         message: &serde_json::Value,
-    ) -> Result<(), BingleError>;
+    ) -> Result<bool, BingleError>;
 
     /// Queue a message to be sent by the background processor.
     fn queue_message(
@@ -391,6 +396,16 @@ pub trait BingleLocalApi: Send + Sync {
     /// while foregrounded, stopped on `backgrounding()`. Real-time delivery normally beats the poll;
     /// it is a safety net. The read messages also appear in [`get_messages`](Self::get_messages).
     fn poll_mailbox(&self) -> Result<Vec<Message>, BingleError>;
+
+    /// Offer every pending outbound message to its recipients' Sidewinder Mailboxes now, without
+    /// waiting for a direct send to fail (issue #352). The `bingle_jsi` client calls it on
+    /// `backgrounding()`: the app may be suspended or killed before a send in flight, or not yet
+    /// tried, fails, and only that failure would otherwise post it. Each message gets the same
+    /// outcome as the post-on-delivery-fail path: complete by store-and-forward once every recipient
+    /// is posted, otherwise still pending with why the post did not complete. Returns the number of
+    /// messages now complete by store-and-forward; zero when the send gate is off or no Sidewinder
+    /// node is configured.
+    fn forward_pending_to_mailbox(&self) -> Result<usize, BingleError>;
 
     /// Set the store-and-forward send / receive gates on a **running** session (epic #200, story
     /// #242). Takes effect on the next send (post-on-give-up) / poll without dropping the session:

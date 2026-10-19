@@ -141,13 +141,14 @@ impl BingleLocalApi for DummyLocal {
         recipient_handles: Vec<String>,
         timestamp: i64,
         message: &serde_json::Value,
-    ) -> Result<(), BingleError> {
+    ) -> Result<bool, BingleError> {
         let text = message
             .get("text")
             .and_then(|v| v.as_str())
             .unwrap_or_default()
             .to_string();
         self.add_message(sender_handle, recipient_handles, timestamp, text, None)
+            .map(|()| true)
     }
 
     fn queue_message(
@@ -206,6 +207,11 @@ impl BingleLocalApi for DummyLocal {
     fn poll_mailbox(&self) -> Result<Vec<Message>, BingleError> {
         // This dummy does no store-and-forward reading.
         Ok(Vec::new())
+    }
+
+    fn forward_pending_to_mailbox(&self) -> Result<usize, BingleError> {
+        // This dummy does no store-and-forward posting.
+        Ok(0)
     }
 
     fn set_store_and_forward(&mut self, _send: bool, _receive: bool) {}

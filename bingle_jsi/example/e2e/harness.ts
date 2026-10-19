@@ -90,6 +90,21 @@ export function localStatePath(basename: string): string {
   return `/data/data/${ANDROID_PKG}/files/${basename}`;
 }
 
+/**
+ * Read the local-API state file the app saved at `path` (from {@link localStatePath}), parsed. On
+ * iOS the simulator shares the host filesystem; on Android the file is read with `run-as`. Lets a
+ * test check what the app persisted after it was backgrounded and killed (issue #352).
+ */
+export function readLocalState(path: string): any {
+  if (device.getPlatform() !== 'android') {
+    return JSON.parse(fs.readFileSync(path, 'utf8'));
+  }
+  const serial = androidSerial();
+  const adb = serial ? `adb -s ${serial}` : 'adb';
+  const relative = path.replace(`/data/data/${ANDROID_PKG}/`, '');
+  return JSON.parse(execSync(`${adb} shell "run-as ${ANDROID_PKG} cat ${relative}"`).toString());
+}
+
 /** Read an element's visible text (iOS exposes it as text/label/value depending on the element). */
 export async function textOf(testID: string): Promise<string> {
   const attrs = (await element(

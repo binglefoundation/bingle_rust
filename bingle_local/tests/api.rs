@@ -65,8 +65,14 @@ mod post_on_delivery_fail;
 #[path = "api/store_and_forward_feedback.rs"]
 mod store_and_forward_feedback;
 
+#[path = "api/forward_pending_to_mailbox.rs"]
+mod forward_pending_to_mailbox;
+
 #[path = "api/read_on_reconnect.rs"]
 mod read_on_reconnect;
+
+#[path = "api/receive_dedup.rs"]
+mod receive_dedup;
 
 #[path = "module_version.rs"]
 mod module_version;

@@ -98,8 +98,8 @@ impl BingleLocalApi for ControllableLocalApi {
         _recipient_handles: Vec<String>,
         _timestamp: i64,
         _message: &serde_json::Value,
-    ) -> Result<(), BingleError> {
-        Ok(())
+    ) -> Result<bool, BingleError> {
+        Ok(true)
     }
     fn queue_message(
         &mut self,
@@ -125,6 +125,9 @@ impl BingleLocalApi for ControllableLocalApi {
     }
     fn poll_mailbox(&self) -> Result<Vec<Message>, BingleError> {
         Ok(Vec::new())
+    }
+    fn forward_pending_to_mailbox(&self) -> Result<usize, BingleError> {
+        Ok(0)
     }
     fn set_store_and_forward(&mut self, _send: bool, _receive: bool) {}
     fn set_notify(&mut self, _enabled: bool, _gateway_url: Option<String>) {}

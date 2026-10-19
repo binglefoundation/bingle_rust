@@ -18,6 +18,9 @@ pub(crate) struct MockBingleApi {
     pub send_fail_count: Arc<std::sync::atomic::AtomicUsize>,
     // Every payload passed to send_message_to_handle, in order.
     pub payloads: Mutex<Vec<serde_json::Value>>,
+    // While true, send_message_to_handle does not return: a send stays in flight, as one does
+    // during a slow lookup or handshake (#352).
+    pub hold_sends: Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl BingleApiInternal for MockBingleApi {
@@ -78,6 +81,9 @@ impl BingleApi for MockBingleApi {
         use std::sync::atomic::Ordering;
         if let Ok(mut payloads) = self.payloads.lock() {
             payloads.push(payload);
+        }
+        while self.hold_sends.load(Ordering::SeqCst) {
+            std::thread::sleep(Duration::from_millis(20));
         }
         // Simulate an unreachable peer for the first `send_fail_count` attempts (transient), then
         // deliver. Lets a test observe the failure_reason being set and later cleared (#43).
@@ -157,6 +163,7 @@ fn test_handle_lookup_partial_maps_canonical_handle() {
         on_listening: Mutex::new(None),
         send_fail_count: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
         payloads: Mutex::new(Vec::new()),
+        hold_sends: Arc::new(std::sync::atomic::AtomicBool::new(false)),
     });
 
     let jsi = BingleJsiApiImpl::init_for_tests(mock_api, None);
@@ -176,6 +183,7 @@ fn test_message_queue_with_mock_progress() {
         on_listening: Mutex::new(None),
         send_fail_count: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
         payloads: Mutex::new(Vec::new()),
+        hold_sends: Arc::new(std::sync::atomic::AtomicBool::new(false)),
     });
 
     let local_api: Arc<Mutex<Box<dyn BingleLocalApi>>> = Arc::new(Mutex::new(Box::new(
@@ -258,6 +266,7 @@ fn queued_message_gains_failure_reason_then_clears_on_success() {
         on_listening: Mutex::new(None),
         send_fail_count: Arc::new(AtomicUsize::new(1)),
         payloads: Mutex::new(Vec::new()),
+        hold_sends: Arc::new(std::sync::atomic::AtomicBool::new(false)),
     });
 
     let local_api: Arc<Mutex<Box<dyn BingleLocalApi>>> = Arc::new(Mutex::new(Box::new(
@@ -358,12 +367,13 @@ fn queued_message_gains_failure_reason_then_clears_on_success() {
 
 // ── Shared pending-message sender (issue #283): `send_pending_messages` on ─────────────────────
 
-fn mock_api(progress_steps: Vec<u8>, fail_first: usize) -> Arc<MockBingleApi> {
+pub(crate) fn mock_api(progress_steps: Vec<u8>, fail_first: usize) -> Arc<MockBingleApi> {
     Arc::new(MockBingleApi {
         progress_steps,
         on_listening: Mutex::new(None),
         send_fail_count: Arc::new(std::sync::atomic::AtomicUsize::new(fail_first)),
         payloads: Mutex::new(Vec::new()),
+        hold_sends: Arc::new(std::sync::atomic::AtomicBool::new(false)),
     })
 }
 

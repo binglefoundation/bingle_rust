@@ -572,18 +572,21 @@ impl BingleApiLocalImpl {
             cipher_suite,
             None,
             None,
-        )
+        )?
+        // Only a message with a send time can be a duplicate, and this one has none.
+        .ok_or_else(|| BingleError::Other("message treated as a duplicate".to_string()))
     }
 
     /// `&self` core of [`BingleLocalApi::add_received_message`]. Returns the stored message's new
-    /// [`id`](Message::id).
+    /// [`id`](Message::id), or `None` when the message is a copy of one already received by the
+    /// other route and was not stored (issue #355).
     pub fn add_received_message_shared(
         &self,
         sender_handle: String,
         recipient_handles: Vec<String>,
         timestamp: i64,
         message: &serde_json::Value,
-    ) -> Result<String, BingleError> {
+    ) -> Result<Option<String>, BingleError> {
         let field = |key: &str| {
             message
                 .get(key)
@@ -603,7 +606,8 @@ impl BingleApiLocalImpl {
     }
 
     /// Validate and store a message that travelled over a live session, as complete and `Direct`,
-    /// and return its new id.
+    /// and return its new id, or `None` when it is a copy of a message already received (issue
+    /// #355) and was not stored.
     #[allow(clippy::too_many_arguments)]
     fn store_live_message(
         &self,
@@ -614,7 +618,7 @@ impl BingleApiLocalImpl {
         cipher_suite: Option<String>,
         sent_time: Option<i64>,
         signature: Option<String>,
-    ) -> Result<String, BingleError> {
+    ) -> Result<Option<String>, BingleError> {
         tracing::debug!(
             "[BingleLocalApi] Adding message from: {} to: {:?}",
             sender_handle,
@@ -665,8 +669,18 @@ impl BingleApiLocalImpl {
                 return Err(BingleError::Other(msg));
             }
         };
+        // Checked under the same lock as the push, so a Mailbox read storing the other copy at the
+        // same moment cannot slip past (issue #355).
+        if holds_received_copy(&guard, &msg.sender_handle, msg.sent_time, &msg.text) {
+            tracing::debug!(
+                "[add_received_message] dropping a copy from {} sent at {:?}, already received",
+                msg.sender_handle,
+                msg.sent_time
+            );
+            return Ok(None);
+        }
         guard.push(msg);
-        Ok(id)
+        Ok(Some(id))
     }
 
     /// `&self` core of [`BingleLocalApi::update_message_status`].
@@ -757,31 +771,61 @@ impl BingleApiLocalImpl {
             // retry but is idempotent per recipient, so it posts once per recipient and retries only
             // recipients whose post has not yet succeeded. Gated + best-effort; never affects delivery.
             let outcome = self.forward_message_to_mailbox(&id, sent_time, &recipients, &text);
-            if let Ok(mut guard) = self.messages.lock() {
-                if let Some(m) = guard.iter_mut().find(|m| m.id == id) {
-                    match outcome {
-                        ForwardOutcome::Forwarded => {
-                            // The message is now safely in every recipient's Mailbox, so stop
-                            // retrying direct Bingle delivery: mark it complete and clear the
-                            // transient failure. The recipient reads it from the Mailbox on
-                            // reconnect (#215).
-                            m.progress = Some(1.0);
-                            m.failure_reason = None;
-                            m.failure_kind = None;
-                            m.delivery_route = Some(DeliveryRoute::StoreAndForward);
-                            m.store_and_forward_failure = None;
-                        }
-                        ForwardOutcome::Disabled => m.store_and_forward_failure = None,
-                        // Keep why the post did not complete on the message, so a device without
-                        // log access can see it beside the send failure (#349).
-                        ForwardOutcome::NotForwarded(reason) => {
-                            m.store_and_forward_failure = Some(reason)
-                        }
-                    }
-                }
-            }
+            self.apply_forward_outcome(&id, outcome);
         }
         Ok(())
+    }
+
+    /// Record a store-and-forward attempt's outcome on the message, and return whether it is now
+    /// complete by store-and-forward.
+    fn apply_forward_outcome(&self, id: &str, outcome: ForwardOutcome) -> bool {
+        let Ok(mut guard) = self.messages.lock() else {
+            tracing::error!("[forward_to_mailbox] Failed to lock messages; outcome not recorded");
+            return false;
+        };
+        let Some(m) = guard.iter_mut().find(|m| m.id == id) else {
+            return false;
+        };
+        match outcome {
+            ForwardOutcome::Forwarded => {
+                // The message is now safely in every recipient's Mailbox, so stop retrying direct
+                // Bingle delivery: mark it complete and clear the transient failure. The recipient
+                // reads it from the Mailbox on reconnect (#215).
+                m.progress = Some(1.0);
+                m.failure_reason = None;
+                m.failure_kind = None;
+                m.delivery_route = Some(DeliveryRoute::StoreAndForward);
+                m.store_and_forward_failure = None;
+                true
+            }
+            ForwardOutcome::Disabled => {
+                m.store_and_forward_failure = None;
+                false
+            }
+            // Keep why the post did not complete on the message, so a device without log access
+            // can see it beside the send failure (#349).
+            ForwardOutcome::NotForwarded(reason) => {
+                m.store_and_forward_failure = Some(reason);
+                false
+            }
+        }
+    }
+
+    /// `&self` core of [`BingleLocalApi::forward_pending_to_mailbox`].
+    pub fn forward_pending_to_mailbox_shared(&self) -> Result<usize, BingleError> {
+        if !self.store_and_forward_send() {
+            return Ok(0);
+        }
+        let pending = self.get_pending_messages()?;
+        let mut forwarded = 0;
+        for m in pending {
+            let outcome =
+                self.forward_message_to_mailbox(&m.id, m.timestamp, &m.recipient_handles, &m.text);
+            if self.apply_forward_outcome(&m.id, outcome) {
+                forwarded += 1;
+            }
+        }
+        Ok(forwarded)
     }
 
     /// `&self` core of [`BingleLocalApi::import_keypair`].
@@ -1124,9 +1168,9 @@ impl BingleLocalApi for BingleApiLocalImpl {
         recipient_handles: Vec<String>,
         timestamp: i64,
         message: &serde_json::Value,
-    ) -> Result<(), BingleError> {
+    ) -> Result<bool, BingleError> {
         self.add_received_message_shared(sender_handle, recipient_handles, timestamp, message)
-            .map(|_| ())
+            .map(|id| id.is_some())
     }
 
     fn queue_message(
@@ -1234,6 +1278,10 @@ impl BingleLocalApi for BingleApiLocalImpl {
     fn poll_mailbox(&self) -> Result<Vec<Message>, BingleError> {
         // The read-on-reconnect logic lives in the `store_and_forward` child module (#215).
         self.poll_mailbox_inner()
+    }
+
+    fn forward_pending_to_mailbox(&self) -> Result<usize, BingleError> {
+        self.forward_pending_to_mailbox_shared()
     }
 
     fn set_store_and_forward(&mut self, send: bool, receive: bool) {
@@ -1873,4 +1921,25 @@ impl BingleLocalApi for BingleApiLocalImpl {
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
         self
     }
+}
+
+/// Whether `messages` already holds a received copy of the message from `sender_handle` sent at
+/// `sent_time` with `text` (issue #355). A message can reach the recipient both directly and from
+/// their Mailbox (a send still in flight when the sender backgrounds is posted too, #352). The two
+/// copies differ in id and signature, but both carry the sender's signed send time, the time it was
+/// queued. A message without a send time is never a copy, and that also leaves out this user's own
+/// outbound records, which have none. The store is in arrival order and a copy normally arrives
+/// soon after the first, so the scan runs newest first.
+pub(crate) fn holds_received_copy(
+    messages: &[Message],
+    sender_handle: &str,
+    sent_time: Option<i64>,
+    text: &str,
+) -> bool {
+    let Some(sent_time) = sent_time else {
+        return false;
+    };
+    messages.iter().rev().any(|m| {
+        m.sent_time == Some(sent_time) && m.sender_handle == sender_handle && m.text == text
+    })
 }

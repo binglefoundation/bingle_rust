@@ -106,7 +106,7 @@ impl BingleLocalApi for ScriptedMailboxLocal {
         recipient_handles: Vec<String>,
         timestamp: i64,
         message: &serde_json::Value,
-    ) -> Result<(), BingleError> {
+    ) -> Result<bool, BingleError> {
         self.inner
             .add_received_message(sender_handle, recipient_handles, timestamp, message)
     }
@@ -137,6 +137,9 @@ impl BingleLocalApi for ScriptedMailboxLocal {
         self.polls.fetch_add(1, Ordering::SeqCst);
         let mut batches = self.batches.lock().expect("batches lock");
         Ok(batches.pop_front().unwrap_or_default())
+    }
+    fn forward_pending_to_mailbox(&self) -> Result<usize, BingleError> {
+        self.inner.forward_pending_to_mailbox()
     }
     fn set_store_and_forward(&mut self, send: bool, receive: bool) {
         self.inner.set_store_and_forward(send, receive)
@@ -207,6 +210,7 @@ fn mock_api() -> Arc<MockBingleApi> {
         on_listening: Mutex::new(None),
         send_fail_count: Arc::new(AtomicUsize::new(0)),
         payloads: Mutex::new(Vec::new()),
+        hold_sends: Arc::new(std::sync::atomic::AtomicBool::new(false)),
     })
 }
 
