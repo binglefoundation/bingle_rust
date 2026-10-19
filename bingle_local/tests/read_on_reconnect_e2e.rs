@@ -23,7 +23,7 @@
 use algo_ops::AlgoOps;
 use base64::{Engine as _, engine::general_purpose};
 use bingle_local::api::sidewinder::{Mailbox, MailboxConfig};
-use bingle_local::api::{BingleApiLocalImpl, BingleLocalApi, LocalApiConfig};
+use bingle_local::api::{BingleApiLocalImpl, BingleLocalApi, LocalApiConfig, MailboxPollStatus};
 
 fn non_empty(key: &str) -> Option<String> {
     std::env::var(key).ok().filter(|s| !s.trim().is_empty())
@@ -133,9 +133,14 @@ fn poll_reads_decrypts_and_drops_a_mailbox_message() {
     );
 
     // Read-and-drop: a second poll finds nothing (the message is gone from the Mailbox).
-    let again = recipient.poll_mailbox().expect("second poll");
+    let again = recipient.poll_mailbox_outcome().expect("second poll");
     assert!(
-        again.is_empty(),
+        again.messages.is_empty(),
         "the message is not re-read on the next poll"
+    );
+    assert_eq!(
+        again.status,
+        MailboxPollStatus::Drained,
+        "a poll that reached the node reports it drained the Mailbox (issue #358)"
     );
 }

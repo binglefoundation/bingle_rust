@@ -8,8 +8,8 @@ use crate::api::notify::{
 use crate::api::sidewinder::MailboxConfig;
 use crate::api::{
     BingleLocalApi, ChainRegistrationOps, Contact, ContactSource, DeliveryRoute, Keypair,
-    KeypairStatus, Message, MessagingSettings, REQUIRED_ALGO, legacy_message_id, new_message_id,
-    run_registration,
+    KeypairStatus, MailboxPoll, Message, MessagingSettings, REQUIRED_ALGO, legacy_message_id,
+    new_message_id, run_registration,
 };
 use algo_ops::error::AlgoErrorKind;
 use algo_ops::{AlgoChainConfig, AlgoOps};
@@ -1277,6 +1277,10 @@ impl BingleLocalApi for BingleApiLocalImpl {
 
     fn poll_mailbox(&self) -> Result<Vec<Message>, BingleError> {
         // The read-on-reconnect logic lives in the `store_and_forward` child module (#215).
+        self.poll_mailbox_inner().map(|poll| poll.messages)
+    }
+
+    fn poll_mailbox_outcome(&self) -> Result<MailboxPoll, BingleError> {
         self.poll_mailbox_inner()
     }
 

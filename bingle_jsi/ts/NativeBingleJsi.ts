@@ -251,6 +251,12 @@ export interface ListeningCallback {
   onListening(listening: boolean, natType: string): void;
 }
 
+export interface MailboxCheckCallback {
+  /** Called after each store-and-forward Mailbox check that reached the node, with the number of
+   * new messages it read (0 when there were none) (issue #358). */
+  onMailboxChecked(read: number): void;
+}
+
 export interface PushRegistrationCallback {
   /** Called when the host should ask iOS for an APNs device token (permission prompt + register).
    * The thin Swift bridge does the platform calls; the token comes back via registerApnsToken. */
@@ -355,12 +361,14 @@ export interface BingleJsiApi {
   setMessageCallback(callback: MessageCallback): void;
   setLogCallback(callback: LogCallback): void;
   setListeningCallback(callback: ListeningCallback): void;
+  setMailboxCheckCallback(callback: MailboxCheckCallback): void;
   setPushRegistrationCallback(callback: PushRegistrationCallback): void;
 
   // Events (emitted by the native bridge)
   // onMessage: { sender_id: string; sender_handle: string; message: BingleMessage }
   // onLog: { timestamp: number; level: string; message: string }
   // onListening: { listening: boolean; nat_type: string }
+  // onMailboxChecked: { read: number }
 
   // Engine lifecycle
   start(): void;

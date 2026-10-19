@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use bingle_jsi::api::bingle_jsi_api::BingleJsiApi;
 use bingle_jsi::api::callback::{
-    ListeningCallback, LogCallback, MessageCallback, PushRegistrationCallback,
+    ListeningCallback, LogCallback, MailboxCheckCallback, MessageCallback, PushRegistrationCallback,
 };
 use bingle_jsi::api::error::BingleJsiError;
 use bingle_jsi::api::types::{
@@ -301,6 +301,10 @@ impl BingleJsiApi for StubApi {
     }
 
     fn set_log_callback(&self, _callback: Box<dyn LogCallback>) {
+        // no-op stub
+    }
+
+    fn set_mailbox_check_callback(&self, _callback: Box<dyn MailboxCheckCallback>) {
         // no-op stub
     }
 

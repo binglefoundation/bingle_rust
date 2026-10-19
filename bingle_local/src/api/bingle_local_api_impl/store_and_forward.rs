@@ -5,7 +5,7 @@
 //! state (the keypair, config, and the persisted posted-set).
 
 use super::{BingleApiLocalImpl, holds_received_copy};
-use crate::api::bingle_local_api::{BingleLocalApi, Message};
+use crate::api::bingle_local_api::{BingleLocalApi, MailboxPoll, MailboxPollStatus, Message};
 use crate::api::sidewinder;
 use algo_ops::AlgoOps;
 use bingle_core::api::bingle_api::BingleError;
@@ -397,14 +397,16 @@ impl BingleApiLocalImpl {
     /// first, so a crash before the next `save` loses that one message (acceptable for v0.0.3).
     ///
     /// Best-effort: the node being unreachable, a keypair being absent, or a message that fails to
-    /// decrypt stops / skips without error. Returns the messages read this poll (possibly empty).
-    pub(crate) fn poll_mailbox_inner(&self) -> Result<Vec<Message>, BingleError> {
+    /// decrypt stops / skips without error. Returns the messages read this poll (possibly empty)
+    /// and whether the poll reached the node and drained it, could not reach it, or did not run
+    /// (issue #358).
+    pub(crate) fn poll_mailbox_inner(&self) -> Result<MailboxPoll, BingleError> {
         if !self.config().store_and_forward_receive || self.config().sidewinder.is_none() {
-            return Ok(Vec::new());
+            return Ok(MailboxPoll::skipped());
         }
         // The node refused this client's identity recently: reading cannot succeed yet (#309).
         if self.mailbox_identity_refusal_holds() {
-            return Ok(Vec::new());
+            return Ok(MailboxPoll::skipped());
         }
 
         // This account's Ed25519 private key opens envelopes sealed to it; without a keypair we
@@ -413,18 +415,18 @@ impl BingleApiLocalImpl {
             Ok(g) => g.as_ref().map(|k| k.passphrase.clone()),
             Err(e) => {
                 tracing::error!("[poll_mailbox] Failed to lock keypair: {}", e);
-                return Ok(Vec::new());
+                return Ok(MailboxPoll::skipped());
             }
         };
         let Some(passphrase) = passphrase else {
             tracing::warn!("[poll_mailbox] no keypair; skipping store-and-forward read");
-            return Ok(Vec::new());
+            return Ok(MailboxPoll::skipped());
         };
         let private_key = match AlgoOps::seed_from_passphrase(&passphrase) {
             Ok(k) => k,
             Err(e) => {
                 tracing::warn!("[poll_mailbox] cannot derive opening key ({e}); skipping");
-                return Ok(Vec::new());
+                return Ok(MailboxPoll::skipped());
             }
         };
 
@@ -432,17 +434,22 @@ impl BingleApiLocalImpl {
             Ok(o) => o,
             Err(e) => {
                 tracing::warn!("[poll_mailbox] no keypair to read ({e}); skipping");
-                return Ok(Vec::new());
+                return Ok(MailboxPoll::skipped());
             }
         };
         let bgl = AlgoBingle::new(ops, self.config().app_id, self.config().asset_id);
         // `mut`: post/pop take `&mut self` — on the discovered transport they fail over to another
         // node and re-resolve, which mutates the retained node set / active client.
+        // A node is configured, so failing to build the client means none could be resolved or
+        // connected: unreachable rather than skipped, so the caller retries soon.
         let mut mailbox = match self.get_mailbox() {
             Ok(m) => m,
             Err(e) => {
-                tracing::warn!("[poll_mailbox] no mailbox configured ({e}); skipping");
-                return Ok(Vec::new());
+                tracing::warn!("[poll_mailbox] could not connect to a Mailbox node ({e})");
+                return Ok(MailboxPoll {
+                    messages: Vec::new(),
+                    status: MailboxPollStatus::Unreachable(e.to_string()),
+                });
             }
         };
         // Our own handle is the recipient of everything in our Mailbox.
@@ -453,21 +460,25 @@ impl BingleApiLocalImpl {
         // none are dropped.
         let mut read: BTreeMap<(i64, u64), Message> = BTreeMap::new();
         let mut sequence: u64 = 0;
-        loop {
+        let status = loop {
             let bytes = match mailbox.pop() {
                 Ok(Some(b)) => b,
-                Ok(None) => break, // the Mailbox is drained
+                Ok(None) => break MailboxPollStatus::Drained,
                 Err(BingleError::Retryable(reason)) => {
                     tracing::warn!("[poll_mailbox] node not reachable/ready: {reason}; stopping");
-                    break;
+                    break MailboxPollStatus::Unreachable(reason);
                 }
-                Err(e) => {
-                    match mailbox.identity_refusal() {
-                        Some(reason) => self.note_mailbox_identity_refused("poll_mailbox", reason),
-                        None => tracing::warn!("[poll_mailbox] pop failed ({e}); stopping"),
+                Err(e) => match mailbox.identity_refusal() {
+                    // The refusal has its own hold-off (#309), so the caller need not retry soon.
+                    Some(reason) => {
+                        self.note_mailbox_identity_refused("poll_mailbox", reason);
+                        break MailboxPollStatus::Skipped;
                     }
-                    break;
-                }
+                    None => {
+                        tracing::warn!("[poll_mailbox] pop failed ({e}); stopping");
+                        break MailboxPollStatus::Unreachable(e.to_string());
+                    }
+                },
             };
             let opened = match bingle_core::crypto::sealed_envelope::unseal_with_private_key(
                 private_key,
@@ -518,10 +529,13 @@ impl BingleApiLocalImpl {
             }
             read.insert((message.order_time(), sequence), message);
             sequence += 1;
-        }
+        };
 
         // The batch is already ordered by sent time by the map's key.
-        Ok(read.into_values().collect())
+        Ok(MailboxPoll {
+            messages: read.into_values().collect(),
+            status,
+        })
     }
 
     /// Store a message read from the Mailbox, and return whether it was stored. A copy of a
