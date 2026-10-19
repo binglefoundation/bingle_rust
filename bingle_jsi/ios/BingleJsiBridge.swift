@@ -784,15 +784,19 @@ class BingleJsiBridge: RCTEventEmitter {
     }
 
     /// App lifecycle: the host app calls this when it goes to the background. Stops the backstop
-    /// Mailbox poll (issue #215).
+    /// Mailbox poll (issue #215) and hands undelivered messages to the Mailbox (issue #352). iOS
+    /// suspends a backgrounded app within seconds, so this holds a background task until the
+    /// hand-off returns (bounded on the Rust side), or until iOS says the time is up.
     @objc
     func backgrounding(_ resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {
         guard let api = apiInstance else {
             resolve(nil)
             return
         }
+        let task = BackgroundTask.begin(name: "bingle.backgrounding")
         DispatchQueue.global(qos: .userInitiated).async {
             api.backgrounding()
+            task.end()
             resolve(nil)
         }
     }
@@ -1026,6 +1030,34 @@ class PushRegistrationCallbackBridge: PushRegistrationCallback {
                     UIApplication.shared.registerForRemoteNotifications()
                 }
             }
+        }
+    }
+}
+
+/// A UIKit background task that is ended exactly once: by `end()` when the work finishes, or by
+/// the expiration handler when iOS runs out of background time first (issue #352).
+final class BackgroundTask {
+    private let lock = NSLock()
+    private var identifier: UIBackgroundTaskIdentifier = .invalid
+
+    static func begin(name: String) -> BackgroundTask {
+        let task = BackgroundTask()
+        let identifier = UIApplication.shared.beginBackgroundTask(withName: name) { [weak task] in
+            task?.end()
+        }
+        task.lock.lock()
+        task.identifier = identifier
+        task.lock.unlock()
+        return task
+    }
+
+    func end() {
+        lock.lock()
+        let identifier = self.identifier
+        self.identifier = .invalid
+        lock.unlock()
+        if identifier != .invalid {
+            UIApplication.shared.endBackgroundTask(identifier)
         }
     }
 }

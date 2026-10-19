@@ -240,7 +240,8 @@ export const BingleJsi = BingleJsiNative as {
   isStarted(): Promise<boolean>;
   // App lifecycle (call from the host app's AppState listener). foregrounding refreshes the relay
   // registration and polls the store-and-forward Mailbox, keeping a backstop poll running while
-  // foregrounded; backgrounding stops that poll (issues #50, #215).
+  // foregrounded; backgrounding stops that poll and hands undelivered messages to the Mailbox,
+  // resolving once that is done (up to about 20 seconds) (issues #50, #215, #352).
   foregrounding(): Promise<void>;
   backgrounding(): Promise<void>;
 };

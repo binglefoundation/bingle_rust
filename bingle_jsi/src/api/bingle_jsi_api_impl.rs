@@ -77,6 +77,11 @@ pub struct BingleJsiApiImpl {
 /// foregrounded app normally receives messages in real time.
 pub const DEFAULT_MAILBOX_POLL_SECS: u64 = 120;
 
+/// How long `backgrounding` waits for pending messages to be handed to the Mailbox (issue #352).
+/// iOS gives a backgrounded app with a background task about 30 seconds, so this leaves the bridge
+/// time to end its task; a flush still running after it carries on while the app has time.
+pub const BACKGROUND_FLUSH_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
+
 /// Convert a JSI NetworkSourceKey to the internal NetworkEndpoint type.
 fn nsk_to_endpoint(nsk: &NetworkSourceKey) -> NetworkEndpoint {
     if let Some(relay_id) = &nsk.relay_id {
@@ -386,6 +391,37 @@ impl BingleJsiApiImpl {
             && let Some(stop) = guard.take()
         {
             stop.store(true, Ordering::Relaxed);
+        }
+    }
+
+    /// Offer every pending message to the Mailbox and save the state, waiting up to `timeout`
+    /// (called on `backgrounding`, issue #352). The app may be suspended or killed before a send in
+    /// flight, or not yet tried, fails, and that failure is what otherwise posts it. The work runs
+    /// on its own thread, so a slow node cannot hold the caller past `timeout`.
+    fn flush_pending_to_mailbox(&self, timeout: std::time::Duration) {
+        let Some(local) = self.local_api.clone() else {
+            return;
+        };
+        let local_file = self.local_file.clone();
+        let (done_tx, done_rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let forwarded = match local.lock() {
+                Ok(g) => g.forward_pending_to_mailbox(),
+                Err(e) => Err(BingleError::Other(format!("local api lock poisoned: {e}"))),
+            };
+            save_if_configured(&Some(local), &local_file);
+            let _ = done_tx.send(forwarded);
+        });
+        match done_rx.recv_timeout(timeout) {
+            Ok(Ok(n)) => tracing::info!(
+                "[BingleJsiApiImpl] backgrounding: {n} pending message(s) handed to the Mailbox"
+            ),
+            Ok(Err(e)) => {
+                tracing::warn!("[BingleJsiApiImpl] backgrounding: Mailbox hand-off failed: {e}")
+            }
+            Err(_) => tracing::warn!(
+                "[BingleJsiApiImpl] backgrounding: Mailbox hand-off still running after {timeout:?}"
+            ),
         }
     }
 }
@@ -900,6 +936,7 @@ impl BingleJsiApiImpl {
     fn run_processing_loop(
         api: Arc<dyn BingleApiBoth>,
         local_api: Option<Arc<Mutex<Box<dyn BingleLocalApi>>>>,
+        local_file: Option<PathBuf>,
         listening: Arc<AtomicBool>,
         nat_type: Arc<Mutex<String>>,
         started: Arc<Mutex<bool>>,
@@ -1069,6 +1106,9 @@ impl BingleJsiApiImpl {
                     if let Ok(mut guard) = local_api.lock() {
                         let _ = guard.update_message_status(&id, progress, reason, kind);
                     }
+                    // Save each outcome, so a kill after it (iOS ends a suspended app without
+                    // notice) does not lose it (issue #352).
+                    save_if_configured(&Some(local_api.clone()), &local_file);
                     // progress >= 1.0 is terminal (delivered or permanently failed): no more
                     // retries. Otherwise the message stays pending — back it off so it yields the
                     // head of the queue to other messages before its next attempt.
@@ -1861,6 +1901,7 @@ impl BingleJsiApi for BingleJsiApiImpl {
         // Start processing thread
         let api_inner = self.api.clone();
         let local_inner = self.local_api.clone();
+        let local_file_inner = self.local_file.clone();
         let listening_inner = self.listening.clone();
         let nat_type_inner = self.nat_type.clone();
         let started_inner = self.started.clone();
@@ -1869,6 +1910,7 @@ impl BingleJsiApi for BingleJsiApiImpl {
             Self::run_processing_loop(
                 api_inner,
                 local_inner,
+                local_file_inner,
                 listening_inner,
                 nat_type_inner,
                 started_inner,
@@ -1962,6 +2004,8 @@ impl BingleJsiApi for BingleJsiApiImpl {
         std::thread::spawn(move || {
             api.with_engine(&mut |e| e.on_background());
         });
+        // Hand undelivered messages to the Mailbox before the app is suspended (issue #352).
+        self.flush_pending_to_mailbox(BACKGROUND_FLUSH_TIMEOUT);
     }
 }
 

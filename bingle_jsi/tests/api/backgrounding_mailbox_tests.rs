@@ -7,10 +7,6 @@
 //! identity hold-off seam set, so a store-and-forward attempt records its reason on the message
 //! without a live node. A recorded `store_and_forward_failure` therefore shows that an attempt was
 //! made. The control tests check that a failed send makes that attempt today.
-//!
-//! The backgrounding tests are known failures until #352 is fixed: each is marked `should_panic`
-//! on its own assertion message, so it passes while the bug stands and fails once it is fixed, as
-//! a prompt to remove the marker.
 
 use super::message_queue_integration_tests::mock_api;
 use bingle_jsi::api::bingle_jsi_api::BingleJsiApi;
@@ -189,32 +185,24 @@ fn shared_sender_offers_a_failed_send_to_the_mailbox() {
 
 #[test]
 #[cfg(not(target_os = "ios"))]
-// known failure (#352): remove the should_panic when backgrounding hands the message off
-#[should_panic(expected = "backgrounding offers the in-flight message")]
 fn legacy_loop_backgrounding_offers_an_in_flight_send_to_the_mailbox() {
     a_send_in_flight_at_backgrounding_is_offered_to_the_mailbox(SendPath::Legacy, 35_203);
 }
 
 #[test]
 #[cfg(not(target_os = "ios"))]
-// known failure (#352): remove the should_panic when backgrounding hands the message off
-#[should_panic(expected = "backgrounding offers the in-flight message")]
 fn shared_sender_backgrounding_offers_an_in_flight_send_to_the_mailbox() {
     a_send_in_flight_at_backgrounding_is_offered_to_the_mailbox(SendPath::Shared, 35_204);
 }
 
 #[test]
 #[cfg(not(target_os = "ios"))]
-// known failure (#352): remove the should_panic when backgrounding hands the message off
-#[should_panic(expected = "backgrounding offers the unsent message")]
 fn legacy_loop_backgrounding_offers_an_untried_send_to_the_mailbox() {
     a_send_not_yet_tried_at_backgrounding_is_offered_to_the_mailbox(SendPath::Legacy, 35_205);
 }
 
 #[test]
 #[cfg(not(target_os = "ios"))]
-// known failure (#352): remove the should_panic when backgrounding hands the message off
-#[should_panic(expected = "backgrounding offers the unsent message")]
 fn shared_sender_backgrounding_offers_an_untried_send_to_the_mailbox() {
     a_send_not_yet_tried_at_backgrounding_is_offered_to_the_mailbox(SendPath::Shared, 35_206);
 }

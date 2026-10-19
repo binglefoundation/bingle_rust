@@ -757,31 +757,61 @@ impl BingleApiLocalImpl {
             // retry but is idempotent per recipient, so it posts once per recipient and retries only
             // recipients whose post has not yet succeeded. Gated + best-effort; never affects delivery.
             let outcome = self.forward_message_to_mailbox(&id, sent_time, &recipients, &text);
-            if let Ok(mut guard) = self.messages.lock() {
-                if let Some(m) = guard.iter_mut().find(|m| m.id == id) {
-                    match outcome {
-                        ForwardOutcome::Forwarded => {
-                            // The message is now safely in every recipient's Mailbox, so stop
-                            // retrying direct Bingle delivery: mark it complete and clear the
-                            // transient failure. The recipient reads it from the Mailbox on
-                            // reconnect (#215).
-                            m.progress = Some(1.0);
-                            m.failure_reason = None;
-                            m.failure_kind = None;
-                            m.delivery_route = Some(DeliveryRoute::StoreAndForward);
-                            m.store_and_forward_failure = None;
-                        }
-                        ForwardOutcome::Disabled => m.store_and_forward_failure = None,
-                        // Keep why the post did not complete on the message, so a device without
-                        // log access can see it beside the send failure (#349).
-                        ForwardOutcome::NotForwarded(reason) => {
-                            m.store_and_forward_failure = Some(reason)
-                        }
-                    }
-                }
-            }
+            self.apply_forward_outcome(&id, outcome);
         }
         Ok(())
+    }
+
+    /// Record a store-and-forward attempt's outcome on the message, and return whether it is now
+    /// complete by store-and-forward.
+    fn apply_forward_outcome(&self, id: &str, outcome: ForwardOutcome) -> bool {
+        let Ok(mut guard) = self.messages.lock() else {
+            tracing::error!("[forward_to_mailbox] Failed to lock messages; outcome not recorded");
+            return false;
+        };
+        let Some(m) = guard.iter_mut().find(|m| m.id == id) else {
+            return false;
+        };
+        match outcome {
+            ForwardOutcome::Forwarded => {
+                // The message is now safely in every recipient's Mailbox, so stop retrying direct
+                // Bingle delivery: mark it complete and clear the transient failure. The recipient
+                // reads it from the Mailbox on reconnect (#215).
+                m.progress = Some(1.0);
+                m.failure_reason = None;
+                m.failure_kind = None;
+                m.delivery_route = Some(DeliveryRoute::StoreAndForward);
+                m.store_and_forward_failure = None;
+                true
+            }
+            ForwardOutcome::Disabled => {
+                m.store_and_forward_failure = None;
+                false
+            }
+            // Keep why the post did not complete on the message, so a device without log access
+            // can see it beside the send failure (#349).
+            ForwardOutcome::NotForwarded(reason) => {
+                m.store_and_forward_failure = Some(reason);
+                false
+            }
+        }
+    }
+
+    /// `&self` core of [`BingleLocalApi::forward_pending_to_mailbox`].
+    pub fn forward_pending_to_mailbox_shared(&self) -> Result<usize, BingleError> {
+        if !self.store_and_forward_send() {
+            return Ok(0);
+        }
+        let pending = self.get_pending_messages()?;
+        let mut forwarded = 0;
+        for m in pending {
+            let outcome =
+                self.forward_message_to_mailbox(&m.id, m.timestamp, &m.recipient_handles, &m.text);
+            if self.apply_forward_outcome(&m.id, outcome) {
+                forwarded += 1;
+            }
+        }
+        Ok(forwarded)
     }
 
     /// `&self` core of [`BingleLocalApi::import_keypair`].
@@ -1234,6 +1264,10 @@ impl BingleLocalApi for BingleApiLocalImpl {
     fn poll_mailbox(&self) -> Result<Vec<Message>, BingleError> {
         // The read-on-reconnect logic lives in the `store_and_forward` child module (#215).
         self.poll_mailbox_inner()
+    }
+
+    fn forward_pending_to_mailbox(&self) -> Result<usize, BingleError> {
+        self.forward_pending_to_mailbox_shared()
     }
 
     fn set_store_and_forward(&mut self, send: bool, receive: bool) {

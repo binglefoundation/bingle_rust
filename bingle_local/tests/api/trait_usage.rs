@@ -208,6 +208,11 @@ impl BingleLocalApi for DummyLocal {
         Ok(Vec::new())
     }
 
+    fn forward_pending_to_mailbox(&self) -> Result<usize, BingleError> {
+        // This dummy does no store-and-forward posting.
+        Ok(0)
+    }
+
     fn set_store_and_forward(&mut self, _send: bool, _receive: bool) {}
 
     fn set_notify(&mut self, _enabled: bool, _gateway_url: Option<String>) {}

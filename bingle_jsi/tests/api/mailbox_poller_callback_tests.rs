@@ -138,6 +138,9 @@ impl BingleLocalApi for ScriptedMailboxLocal {
         let mut batches = self.batches.lock().expect("batches lock");
         Ok(batches.pop_front().unwrap_or_default())
     }
+    fn forward_pending_to_mailbox(&self) -> Result<usize, BingleError> {
+        self.inner.forward_pending_to_mailbox()
+    }
     fn set_store_and_forward(&mut self, send: bool, receive: bool) {
         self.inner.set_store_and_forward(send, receive)
     }
