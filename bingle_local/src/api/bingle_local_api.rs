@@ -141,6 +141,39 @@ pub struct Message {
     pub store_and_forward_failure: Option<String>,
 }
 
+/// How a Mailbox poll ended (issue #358).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MailboxPollStatus {
+    /// The poll reached the node and read the Mailbox until it was empty.
+    Drained,
+    /// The poll could not reach a node, or the node failed partway; the reason says why. Messages
+    /// read before the failure are still returned and stored.
+    Unreachable(String),
+    /// The poll did not run: the receive gate is off, no node is configured, there is no keypair,
+    /// or the node recently refused this account (#309).
+    Skipped,
+}
+
+/// The result of [`BingleLocalApi::poll_mailbox_outcome`] (issue #358): the messages read this poll,
+/// sorted by sent time, and how the poll ended.
+#[derive(Debug, Clone, PartialEq)]
+pub struct MailboxPoll {
+    /// The messages read and stored this poll (possibly empty).
+    pub messages: Vec<Message>,
+    /// How the poll ended.
+    pub status: MailboxPollStatus,
+}
+
+impl MailboxPoll {
+    /// A poll that did not run.
+    pub fn skipped() -> Self {
+        Self {
+            messages: Vec::new(),
+            status: MailboxPollStatus::Skipped,
+        }
+    }
+}
+
 /// A send failure reason with the store-and-forward failure, when there is one, appended in
 /// brackets (issue #349), for example
 /// `Recipient unreachable — will keep retrying (store-and-forward failed: no account for 'bob')`.
@@ -396,6 +429,12 @@ pub trait BingleLocalApi: Send + Sync {
     /// while foregrounded, stopped on `backgrounding()`. Real-time delivery normally beats the poll;
     /// it is a safety net. The read messages also appear in [`get_messages`](Self::get_messages).
     fn poll_mailbox(&self) -> Result<Vec<Message>, BingleError>;
+
+    /// As [`poll_mailbox`](Self::poll_mailbox), and also report whether the poll reached the node
+    /// (issue #358). A caller that polls on a cycle uses the [`MailboxPollStatus`] to retry soon
+    /// after a node it could not reach, rather than waiting a full cycle, and to tell the host a
+    /// check has finished.
+    fn poll_mailbox_outcome(&self) -> Result<MailboxPoll, BingleError>;
 
     /// Offer every pending outbound message to its recipients' Sidewinder Mailboxes now, without
     /// waiting for a direct send to fail (issue #352). The `bingle_jsi` client calls it on

@@ -5,9 +5,9 @@
  * `eval`, and it is unreliable on iOS), this harness exposes a single command box. You type a JSON
  * command `{ "method": "...", "args": [...] }`; a dispatch table calls the matching method on the
  * `BingleJsi` proxy (plus a couple of extras), awaits it, and renders the JSON result. Native
- * callbacks (onLog / onMessage / onListening) are appended to an event feed. Every element a test
- * drives or reads carries a stable `testID` so Detox can operate the whole API surface without any
- * per-method UI.
+ * callbacks (onLog / onMessage / onListening / onMailboxChecked) are appended to an event feed.
+ * Every element a test drives or reads carries a stable `testID` so Detox can operate the whole API
+ * surface without any per-method UI.
  */
 import React, {useCallback, useEffect, useRef, useState} from 'react';
 import {
@@ -116,6 +116,9 @@ function App(): React.JSX.Element {
           pushEvent(`onListening ${e.listening} ${e.nat_type}`);
         },
       ),
+      emitter.addListener('onMailboxChecked', (e: {read: number}) => {
+        pushEvent(`onMailboxChecked ${e.read}`);
+      }),
     ];
     // Route native logs into the event feed from the start (safe before init).
     BingleJsi.setLogCallback(defaultConfig.log_level)

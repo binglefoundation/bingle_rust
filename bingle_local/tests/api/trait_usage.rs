@@ -3,7 +3,8 @@ use std::collections::{HashMap, HashSet};
 use algo_ops::AlgoOps;
 use bingle_core::api::bingle_api::{BingleError, SendFailureKind};
 use bingle_local::api::{
-    BingleLocalApi, Contact, ContactSource, Keypair, KeypairStatus, Message, MessagingSettings,
+    BingleLocalApi, Contact, ContactSource, Keypair, KeypairStatus, MailboxPoll, Message,
+    MessagingSettings,
 };
 
 #[derive(Default)]
@@ -207,6 +208,10 @@ impl BingleLocalApi for DummyLocal {
     fn poll_mailbox(&self) -> Result<Vec<Message>, BingleError> {
         // This dummy does no store-and-forward reading.
         Ok(Vec::new())
+    }
+
+    fn poll_mailbox_outcome(&self) -> Result<MailboxPoll, BingleError> {
+        Ok(MailboxPoll::skipped())
     }
 
     fn forward_pending_to_mailbox(&self) -> Result<usize, BingleError> {

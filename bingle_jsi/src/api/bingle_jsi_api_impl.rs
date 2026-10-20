@@ -8,7 +8,7 @@ use serde_json::Value as JsonValue;
 
 use crate::api::bingle_jsi_api::BingleJsiApi;
 use crate::api::callback::{
-    ListeningCallback, LogCallback, MessageCallback, PushRegistrationCallback,
+    ListeningCallback, LogCallback, MailboxCheckCallback, MessageCallback, PushRegistrationCallback,
 };
 use crate::api::error::BingleJsiError;
 use crate::api::types::{
@@ -27,12 +27,12 @@ use bingle_core::util::config_utils::{
     check_node_and_cli_ids, parse_node_file_with_ids, parse_stun_file, parse_stun_list,
     resolve_app_asset_ids,
 };
-use bingle_local::api::MailboxConfig;
 use bingle_local::api::bingle_local_api::BingleLocalApi;
 use bingle_local::api::bingle_local_api_impl::{BingleApiLocalImpl, LocalApiConfig};
 use bingle_local::api::pending_sender::{
     LocalOutboundStore, MessageDelivery, PendingSender, PendingSenderOptions,
 };
+use bingle_local::api::{MailboxConfig, MailboxPoll, MailboxPollStatus};
 // Shared outbound-send retry policy (issue #82). Re-exported so existing
 // `bingle_jsi::api::bingle_jsi_api_impl::{is_transient_send_failure, pending_failure_reason}`
 // paths (and tests) keep resolving after the move to bingle_local.
@@ -57,10 +57,17 @@ pub struct BingleJsiApiImpl {
     opts: Arc<Mutex<StartOptions>>,
     /// Period of the store-and-forward backstop Mailbox poll while foregrounded (epic #200, #215).
     mailbox_poll_interval: std::time::Duration,
-    /// Stop flag of the running backstop poller — `Some` while it is active. `foregrounding` starts
-    /// the poller, `backgrounding` sets the flag so it exits. The inner `Arc` shares the flag with the
-    /// spawned poller thread; the field itself needs no `Arc` (the whole impl is already `Arc`-shared).
-    mailbox_poller: Mutex<Option<Arc<AtomicBool>>>,
+    /// First retry delay after a backstop poll that could not reach a node (issue #358); later
+    /// retries double it, up to `mailbox_poll_interval`. [`MAILBOX_RETRY_INITIAL`] outside tests.
+    mailbox_retry_initial: std::time::Duration,
+    /// Stop and wake flags of the running backstop poller — `Some` while it is active.
+    /// `foregrounding` starts the poller, or wakes it for an immediate poll when it is already
+    /// running (issue #358); `backgrounding` sets the stop flag so it exits. The inner `Arc` shares
+    /// the flags with the spawned poller thread; the field itself needs no `Arc` (the whole impl is
+    /// already `Arc`-shared).
+    mailbox_poller: Mutex<Option<Arc<MailboxPollerControl>>>,
+    /// The host's callback for finished Mailbox checks (issue #358).
+    mailbox_check_callback: Arc<Mutex<Option<Box<dyn MailboxCheckCallback>>>>,
     /// A lock-free handle on the local store for the shared pending-message sender (issue #283);
     /// `Some` when `local` is configured.
     outbound: Option<LocalOutboundStore>,
@@ -76,6 +83,27 @@ pub struct BingleJsiApiImpl {
 /// `BingleJsiConfig::store_and_forward_poll_interval_secs`. The poll is only a backstop — a
 /// foregrounded app normally receives messages in real time.
 pub const DEFAULT_MAILBOX_POLL_SECS: u64 = 120;
+
+/// First retry delay after a backstop Mailbox poll that could not reach a node (issue #358). The
+/// poll on resume often runs before the network is back, so it retries after this delay rather than
+/// a full poll interval, doubling on each further failure up to the interval.
+pub const MAILBOX_RETRY_INITIAL: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// The delay before the next backstop poll after `failures` consecutive polls that could not reach a
+/// node (issue #358): `initial` doubled per earlier failure, capped at `interval`. With no failures
+/// the poller waits the full `interval`.
+#[doc(hidden)]
+pub fn mailbox_retry_delay(
+    failures: u32,
+    initial: std::time::Duration,
+    interval: std::time::Duration,
+) -> std::time::Duration {
+    if failures == 0 {
+        return interval;
+    }
+    let factor = 2u32.saturating_pow(failures - 1);
+    initial.saturating_mul(factor).min(interval)
+}
 
 /// How long `backgrounding` waits for pending messages to be handed to the Mailbox (issue #352).
 /// iOS gives a backgrounded app with a background task about 30 seconds (since iOS 13; not
@@ -314,28 +342,56 @@ fn save_if_configured(
     }
 }
 
-/// Sleep for `total`, waking early (within the step granularity) once `stop` is set, so a
-/// backgrounding request stops the backstop poller promptly rather than after a full cycle.
-fn interruptible_sleep(total: std::time::Duration, stop: &AtomicBool) {
-    let step = std::time::Duration::from_millis(500);
-    let mut slept = std::time::Duration::ZERO;
-    while slept < total {
-        if stop.load(Ordering::Relaxed) {
-            return;
+/// Flags shared between the backstop Mailbox poller thread and the instance that controls it.
+#[derive(Default)]
+struct MailboxPollerControl {
+    /// Set by `backgrounding`: the poller exits at its next check.
+    stop: AtomicBool,
+    /// Set by `foregrounding` while the poller runs: it polls again at once (issue #358).
+    wake: AtomicBool,
+}
+
+impl MailboxPollerControl {
+    /// Sleep for `total`, returning early (within the step granularity) once `stop` or `wake` is
+    /// set, so backgrounding stops the poller promptly and foregrounding polls at once rather than
+    /// after a full cycle. Consumes the wake.
+    fn sleep(&self, total: std::time::Duration) {
+        let step = std::time::Duration::from_millis(100);
+        let mut slept = std::time::Duration::ZERO;
+        while slept < total {
+            if self.stop.load(Ordering::Relaxed) || self.wake.swap(false, Ordering::Relaxed) {
+                return;
+            }
+            let nap = step.min(total - slept);
+            std::thread::sleep(nap);
+            slept += nap;
         }
-        let nap = step.min(total - slept);
-        std::thread::sleep(nap);
-        slept += nap;
+    }
+}
+
+/// Tell the host a Mailbox check reached the node and read `read` new messages (issue #358).
+fn notify_mailbox_checked(callback: &Mutex<Option<Box<dyn MailboxCheckCallback>>>, read: usize) {
+    match callback.lock() {
+        Ok(guard) => {
+            if let Some(callback) = guard.as_ref() {
+                callback.on_mailbox_checked(u32::try_from(read).unwrap_or(u32::MAX));
+            }
+        }
+        Err(e) => tracing::warn!("[mailbox poller] could not lock mailbox check callback: {e}"),
     }
 }
 
 impl BingleJsiApiImpl {
     /// Start the store-and-forward backstop Mailbox poll (epic #200, #215): a foreground-only thread
     /// that drains the Mailbox immediately and then every [`mailbox_poll_interval`](Self) until
-    /// [`stop_mailbox_poller`](Self::stop_mailbox_poller) is called. Idempotent — a second call while
-    /// a poller is already running is a no-op. A no-op with no local API. Best-effort: `poll_mailbox`
-    /// itself is gated on the receive toggle and a configured node, so a poller with those off just
-    /// reads nothing each cycle.
+    /// [`stop_mailbox_poller`](Self::stop_mailbox_poller) is called. A second call while a poller is
+    /// already running wakes it for an immediate poll instead of starting another (issue #358). A
+    /// no-op with no local API. Best-effort: `poll_mailbox` itself is gated on the receive toggle and
+    /// a configured node, so a poller with those off just reads nothing each cycle.
+    ///
+    /// A poll that cannot reach a node is retried after [`MAILBOX_RETRY_INITIAL`], doubling up to
+    /// the interval, since the poll on resume often runs before the network is back. Each poll that
+    /// reaches the node is reported to the host's [`MailboxCheckCallback`] (issue #358).
     fn start_mailbox_poller(&self) {
         let Some(local) = self.local_api.clone() else {
             return;
@@ -347,27 +403,38 @@ impl BingleJsiApiImpl {
                 return;
             }
         };
-        if guard.is_some() {
-            return; // already running
+        if let Some(control) = guard.as_ref() {
+            // Already running: poll now rather than at the next cycle (issue #358).
+            tracing::info!("[mailbox poller] woken for an immediate poll");
+            control.wake.store(true, Ordering::Relaxed);
+            return;
         }
-        let stop = Arc::new(AtomicBool::new(false));
-        *guard = Some(stop.clone());
+        let control = Arc::new(MailboxPollerControl::default());
+        *guard = Some(control.clone());
         drop(guard);
 
         let interval = self.mailbox_poll_interval;
+        let retry_initial = self.mailbox_retry_initial;
         let local_file = self.local_file.clone();
         let sender_slot = self.pending_sender.clone();
         let message_callback = self.message_callback.clone();
+        let check_callback = self.mailbox_check_callback.clone();
         std::thread::spawn(move || {
             tracing::info!("[mailbox poller] started (every {:?})", interval);
-            while !stop.load(Ordering::Relaxed) {
-                let read = match local.lock() {
-                    Ok(g) => g.poll_mailbox().unwrap_or_default(),
+            // Consecutive polls that could not reach a node, which set the retry delay.
+            let mut failures: u32 = 0;
+            while !control.stop.load(Ordering::Relaxed) {
+                let poll = match local.lock() {
+                    Ok(g) => g.poll_mailbox_outcome().unwrap_or_else(|e| MailboxPoll {
+                        messages: Vec::new(),
+                        status: MailboxPollStatus::Unreachable(e.to_string()),
+                    }),
                     Err(e) => {
                         tracing::error!("[mailbox poller] local api lock poisoned: {e}");
-                        Vec::new()
+                        MailboxPoll::skipped()
                     }
                 };
+                let read = poll.messages;
                 // A Mailbox message shows its sender is back online (issue #278).
                 for msg in &read {
                     note_peer_seen(&sender_slot, "", &msg.sender_handle);
@@ -383,7 +450,21 @@ impl BingleJsiApiImpl {
                     // `read` holds only messages newly read this cycle.
                     notify_mailbox_messages(&message_callback, &read);
                 }
-                interruptible_sleep(interval, &stop);
+                match poll.status {
+                    MailboxPollStatus::Drained => {
+                        failures = 0;
+                        notify_mailbox_checked(&check_callback, read.len());
+                    }
+                    MailboxPollStatus::Unreachable(reason) => {
+                        failures = failures.saturating_add(1);
+                        tracing::info!(
+                            "[mailbox poller] node not reached ({reason}); retrying in {:?}",
+                            mailbox_retry_delay(failures, retry_initial, interval)
+                        );
+                    }
+                    MailboxPollStatus::Skipped => failures = 0,
+                }
+                control.sleep(mailbox_retry_delay(failures, retry_initial, interval));
             }
             tracing::debug!("[mailbox poller] stopped");
         });
@@ -501,9 +582,9 @@ impl BingleJsiApiImpl {
     /// poller thread to exit at its next wake; a no-op when none is running.
     fn stop_mailbox_poller(&self) {
         if let Ok(mut guard) = self.mailbox_poller.lock()
-            && let Some(stop) = guard.take()
+            && let Some(control) = guard.take()
         {
-            stop.store(true, Ordering::Relaxed);
+            control.stop.store(true, Ordering::Relaxed);
         }
     }
 
@@ -839,7 +920,9 @@ impl BingleJsiApiImpl {
             started: started.clone(),
             opts: opts_mutex,
             mailbox_poll_interval,
+            mailbox_retry_initial: MAILBOX_RETRY_INITIAL,
             mailbox_poller: Mutex::new(None),
+            mailbox_check_callback: Arc::new(Mutex::new(None)),
             outbound,
             send_pending_messages: config.send_pending_messages.unwrap_or(false),
             pending_sender: pending_sender.clone(),
@@ -1269,7 +1352,24 @@ impl BingleJsiApiImpl {
         api: Arc<dyn BingleApiBoth>,
         local_api: Option<Arc<Mutex<Box<dyn BingleLocalApi>>>>,
     ) -> Arc<Self> {
-        Self::build_for_tests(api, local_api, None, false)
+        Self::build_for_tests(api, local_api, None, false, MailboxTiming::default())
+    }
+
+    /// Test seam: as [`init_for_tests`](Self::init_for_tests), with the backstop poll `interval`
+    /// and first `retry_initial` delay after an unreachable poll set (issue #358), so the poller's
+    /// timing can be exercised quickly.
+    #[doc(hidden)]
+    pub fn init_for_tests_with_mailbox_timing(
+        api: Arc<dyn BingleApiBoth>,
+        local_api: Option<Arc<Mutex<Box<dyn BingleLocalApi>>>>,
+        interval: std::time::Duration,
+        retry_initial: std::time::Duration,
+    ) -> Arc<Self> {
+        let timing = MailboxTiming {
+            interval,
+            retry_initial,
+        };
+        Self::build_for_tests(api, local_api, None, false, timing)
     }
 
     /// Test seam: as [`init_for_tests`](Self::init_for_tests) over `local`, with
@@ -1281,7 +1381,13 @@ impl BingleJsiApiImpl {
     ) -> Arc<Self> {
         let outbound = LocalOutboundStore::new(local.clone(), None);
         let local_api: Arc<Mutex<Box<dyn BingleLocalApi>>> = Arc::new(Mutex::new(Box::new(local)));
-        Self::build_for_tests(api, Some(local_api), Some(outbound), true)
+        Self::build_for_tests(
+            api,
+            Some(local_api),
+            Some(outbound),
+            true,
+            MailboxTiming::default(),
+        )
     }
 
     fn build_for_tests(
@@ -1289,6 +1395,7 @@ impl BingleJsiApiImpl {
         local_api: Option<Arc<Mutex<Box<dyn BingleLocalApi>>>>,
         outbound: Option<LocalOutboundStore>,
         send_pending_messages: bool,
+        timing: MailboxTiming,
     ) -> Arc<Self> {
         let messages: Arc<Mutex<Vec<JsonValue>>> = Arc::new(Mutex::new(Vec::new()));
         let nat_type: Arc<Mutex<String>> = Arc::new(Mutex::new("Unknown".to_string()));
@@ -1318,8 +1425,10 @@ impl BingleJsiApiImpl {
             processing_thread: Arc::new(Mutex::new(None)),
             started,
             opts,
-            mailbox_poll_interval: std::time::Duration::from_secs(DEFAULT_MAILBOX_POLL_SECS),
+            mailbox_poll_interval: timing.interval,
+            mailbox_retry_initial: timing.retry_initial,
             mailbox_poller: Mutex::new(None),
+            mailbox_check_callback: Arc::new(Mutex::new(None)),
             outbound,
             send_pending_messages,
             pending_sender: Arc::new(Mutex::new(None)),
@@ -1330,6 +1439,21 @@ impl BingleJsiApiImpl {
         // This is safe because we are just replacing the Arc in the Option.
         // Wait, self.local_api is Option<Arc<Mutex<Box<dyn BingleLocalApi>>>>.
         // It is NOT behind a Mutex itself. So I can't change it if I only have &self.
+    }
+}
+
+/// The backstop Mailbox poll timing a test-built instance uses (issue #358).
+struct MailboxTiming {
+    interval: std::time::Duration,
+    retry_initial: std::time::Duration,
+}
+
+impl Default for MailboxTiming {
+    fn default() -> Self {
+        Self {
+            interval: std::time::Duration::from_secs(DEFAULT_MAILBOX_POLL_SECS),
+            retry_initial: MAILBOX_RETRY_INITIAL,
+        }
     }
 }
 
@@ -1844,6 +1968,17 @@ impl BingleJsiApi for BingleJsiApiImpl {
             );
         } else {
             tracing::error!("Failed to lock push_registration_callback");
+        }
+    }
+
+    fn set_mailbox_check_callback(&self, callback: Box<dyn MailboxCheckCallback>) {
+        if let Ok(mut guard) = self.mailbox_check_callback.lock() {
+            *guard = Some(callback);
+            tracing::info!(
+                "[BingleJsiApiImpl][set_mailbox_check_callback] Registered mailbox check callback"
+            );
+        } else {
+            tracing::error!("Failed to lock mailbox_check_callback");
         }
     }
 

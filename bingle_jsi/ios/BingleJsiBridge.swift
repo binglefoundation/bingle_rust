@@ -64,7 +64,7 @@ class BingleJsiBridge: RCTEventEmitter {
     }
 
     override func supportedEvents() -> [String] {
-        return ["onMessage", "onLog", "onListening"]
+        return ["onMessage", "onLog", "onListening", "onMailboxChecked"]
     }
 
     @objc
@@ -865,6 +865,17 @@ class BingleJsiBridge: RCTEventEmitter {
         resolve(nil)
     }
 
+    @objc(setMailboxCheckCallback:rejecter:)
+    func setMailboxCheckCallback(_ resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {
+        guard let api = apiInstance else {
+            reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.", nil)
+            return
+        }
+        let bridge = MailboxCheckCallbackBridge(emitter: self)
+        api.setMailboxCheckCallback(callback: bridge)
+        resolve(nil)
+    }
+
     // MARK: - Helper conversions
 
     private func dictToMessage(_ dict: NSDictionary) -> BingleMessage {
@@ -1010,6 +1021,24 @@ class ListeningCallbackBridge: ListeningCallback {
         emitter?.sendEvent(withName: "onListening", body: [
             "listening": listening,
             "nat_type": natType,
+        ])
+    }
+}
+
+/// Bridges uniffi's MailboxCheckCallback to RCTEventEmitter events (issue #358).
+///
+/// Each `onMailboxChecked` invocation sends an "onMailboxChecked" event with the
+/// number of messages the store-and-forward Mailbox check read.
+class MailboxCheckCallbackBridge: MailboxCheckCallback {
+    private weak var emitter: RCTEventEmitter?
+
+    init(emitter: RCTEventEmitter) {
+        self.emitter = emitter
+    }
+
+    func onMailboxChecked(read: UInt32) {
+        emitter?.sendEvent(withName: "onMailboxChecked", body: [
+            "read": read,
         ])
     }
 }

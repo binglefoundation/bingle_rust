@@ -777,6 +777,18 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
         promise.resolve(null)
     }
 
+    @ReactMethod
+    fun setMailboxCheckCallback(promise: Promise) {
+        val api = apiInstance
+        if (api == null) {
+            promise.reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.")
+            return
+        }
+        val bridge = MailboxCheckCallbackBridge(reactApplicationContext)
+        api.setMailboxCheckCallback(bridge)
+        promise.resolve(null)
+    }
+
     // Route engine logs into "onLog" events. Works before init: if the API is initialized, register
     // on the instance; otherwise set the global log callback so logs during init are captured
     // (mirrors the iOS bridge).
@@ -927,6 +939,23 @@ class ListeningCallbackBridge(private val reactContext: ReactApplicationContext)
         reactContext
             .getJSModule(com.facebook.react.modules.core.DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
             .emit("onListening", body)
+    }
+}
+
+/**
+ * Bridges uniffi's MailboxCheckCallback to React Native "onMailboxChecked" events (issue #358).
+ *
+ * Each [onMailboxChecked] invocation sends an "onMailboxChecked" event with the number of
+ * messages the store-and-forward Mailbox check read.
+ */
+class MailboxCheckCallbackBridge(private val reactContext: ReactApplicationContext) : MailboxCheckCallback {
+    override fun onMailboxChecked(read: UInt) {
+        val body = Arguments.createMap()
+        body.putInt("read", read.toInt())
+
+        reactContext
+            .getJSModule(com.facebook.react.modules.core.DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+            .emit("onMailboxChecked", body)
     }
 }
 

@@ -60,3 +60,18 @@ pub trait ListeningCallback: Send + Sync {
     ///   ("Unknown", "NoConnection", "Symmetric", "Restricted", "FullCone")
     fn on_listening(&self, listening: bool, nat_type: String);
 }
+
+/// Callback interface for finished Mailbox checks (issue #358).
+///
+/// Implement this trait on the React Native / TypeScript side to learn when a store-and-forward
+/// Mailbox check has finished, for example to clear a "checking for messages" indicator when
+/// nothing arrived. Register via `set_mailbox_check_callback`.
+#[uniffi::export(callback_interface)]
+pub trait MailboxCheckCallback: Send + Sync {
+    /// Called after each Mailbox poll that reached the node and read it until it was empty.
+    ///
+    /// Parameters:
+    /// - read: the number of new messages read by this check (0 when there were none); each one
+    ///   has already been passed to the message callback
+    fn on_mailbox_checked(&self, read: u32);
+}
