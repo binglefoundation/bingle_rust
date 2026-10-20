@@ -12,7 +12,7 @@ The app exposes a single command box instead of one screen per method. You type
 a JSON command `{ "method": "...", "args": [...] }`; a dispatch table calls the
 matching method on the `BingleJsi` proxy (plus `init` and the
 `failureKindIsRetryable` helper), awaits it, and renders the JSON result.
-Native callbacks (`onLog` / `onMessage` / `onListening`) append to an event
+Native callbacks (`onLog` / `onMessage` / `onListening` / `onMailboxChecked`) append to an event
 feed. Every element carries a stable `testID` so Detox can drive the entire API
 surface with no per-method UI:
 

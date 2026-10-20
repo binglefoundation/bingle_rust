@@ -164,6 +164,9 @@ RCT_EXTERN_METHOD(setMessageCallback:(RCTPromiseResolveBlock)resolve
 RCT_EXTERN_METHOD(setListeningCallback:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
+RCT_EXTERN_METHOD(setMailboxCheckCallback:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+
 RCT_EXTERN_METHOD(setPushRegistrationCallback:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 

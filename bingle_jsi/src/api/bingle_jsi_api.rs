@@ -1,5 +1,5 @@
 use crate::api::callback::{
-    ListeningCallback, LogCallback, MessageCallback, PushRegistrationCallback,
+    ListeningCallback, LogCallback, MailboxCheckCallback, MessageCallback, PushRegistrationCallback,
 };
 use crate::api::error::BingleJsiError;
 use crate::api::types::{
@@ -260,6 +260,11 @@ pub trait BingleJsiApi: Send + Sync {
     /// Register a callback invoked when [`request_push_registration`] asks the host to start iOS
     /// push registration. Replaces any previously registered callback.
     fn set_push_registration_callback(&self, callback: Box<dyn PushRegistrationCallback>);
+
+    /// Register a callback invoked after each store-and-forward Mailbox check that reached the
+    /// node, with the number of messages it read (issue #358). Replaces any previously registered
+    /// callback.
+    fn set_mailbox_check_callback(&self, callback: Box<dyn MailboxCheckCallback>);
 
     // ── Engine lifecycle ─────────────────────────────────────────────
 

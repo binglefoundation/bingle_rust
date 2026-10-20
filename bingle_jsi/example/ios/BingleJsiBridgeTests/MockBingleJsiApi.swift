@@ -40,6 +40,7 @@ class MockBingleJsiApi: BingleJsiApiProtocol {
     var messageCallback: MessageCallback?
     var logCallback: LogCallback?
     var listeningCallback: ListeningCallback?
+    var mailboxCheckCallback: MailboxCheckCallback?
 
     // MARK: - Configurable return values
 
@@ -228,6 +229,10 @@ class MockBingleJsiApi: BingleJsiApiProtocol {
 
     func setListeningCallback(callback: ListeningCallback) {
         listeningCallback = callback
+    }
+
+    func setMailboxCheckCallback(callback: MailboxCheckCallback) {
+        mailboxCheckCallback = callback
     }
 
     func start() throws {
