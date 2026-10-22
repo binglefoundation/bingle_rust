@@ -47,9 +47,9 @@ If we find that a user has broken these terms or the Community Guidelines, we ma
 
 You can also block a user yourself from within the app, so that you stop receiving their messages.
 
-## 5. Purchases and refunds
+## 5. Apple App Store purchases
 
-If you create your account with an in-app purchase, the store you bought it from (for the App Store, Apple) handles any refund. If you ask for a refund, you agree that we may send the store information about that purchase, such as whether it was delivered and your account created, to help it decide your request. We don't send your messages, your contacts or anything else about how you use Bingle.
+This section applies only if you got Bingle from Apple's App Store. If you create your account with an in-app purchase, Apple handles any refund. If you ask Apple for a refund, you agree that we may send Apple information about that purchase, such as whether it was delivered and your account created, to help it decide your request. We don't send Apple your messages, your contacts or anything else about how you use Bingle.
 
 ## 6. Changes to these terms
 
