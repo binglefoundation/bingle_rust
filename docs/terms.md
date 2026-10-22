@@ -47,10 +47,14 @@ If we find that a user has broken these terms or the Community Guidelines, we ma
 
 You can also block a user yourself from within the app, so that you stop receiving their messages.
 
-## 5. Changes to these terms
+## 5. Purchases and refunds
+
+If you create your account with an in-app purchase, the store you bought it from (for the App Store, Apple) handles any refund. If you ask for a refund, you agree that we may send the store information about that purchase, such as whether it was delivered and your account created, to help it decide your request. We don't send your messages, your contacts or anything else about how you use Bingle.
+
+## 6. Changes to these terms
 
 We may update these terms. When a change materially affects your rights or obligations, we increase the version number above and the app asks you to accept the new version before you can continue using it.
 
-## 6. Contact
+## 7. Contact
 
 Questions about these terms or the Community Guidelines: open an issue at [github.com/binglefoundation/bingle_rust](https://github.com/binglefoundation/bingle_rust/issues), or report a message from within the app.
