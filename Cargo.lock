@@ -48,9 +48,9 @@ dependencies = [
 
 [[package]]
 name = "algo_ops"
-version = "0.9.2"
+version = "0.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2b3b445a4820b6a3088f26db03efa0cc807b664e9fc5713a934ca5730dcd6d60"
+checksum = "23b269a645fc3c015f346dcf5d196cdb39e9785ea5450f6386384840d7cdabf2"
 dependencies = [
  "algonaut",
  "anyhow",
@@ -743,9 +743,9 @@ dependencies = [
 
 [[package]]
 name = "blockchain_ops"
-version = "0.9.2"
+version = "0.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ed7a7b64eb48517596cec29a7ecb62fd2a8d5f29645c9319bb7d6551eec74b5f"
+checksum = "c9ba0d37fb0b1a776bb7e833ba22b5ce9ccdf560fb8104aef225c7d8bea59088"
 dependencies = [
  "anyhow",
  "serde",
@@ -3520,9 +3520,9 @@ checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
 
 [[package]]
 name = "sidewinder_ops"
-version = "0.9.2"
+version = "0.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "21d2ef47bacc9c47aa500b3de455b12ad5194dfc9936a594c661341a6bf056f7"
+checksum = "f0bf2ceaab2098e0a368b43f9f003d78d556d08343014c8926e6fdbc19a8ff8c"
 dependencies = [
  "algo_ops",
  "anyhow",
@@ -3679,9 +3679,9 @@ checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 
 [[package]]
 name = "sw_identity_tls"
-version = "0.9.2"
+version = "0.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c2aa1d9cdc1556fefa79d6025941e1ed613bbe2cdb34ec4264083dd3f586f2a4"
+checksum = "7d2be0838ec8ee8f15cbda4d0e03dca5c179e78e4b2546c5a46728896393d3c9"
 dependencies = [
  "algo_ops",
  "anyhow",
