@@ -108,9 +108,10 @@ pub trait BingleJsiApi: Send + Sync {
     /// The signed message is the fixed, newline-delimited UTF-8 string
     /// `"bingle-notify:v1"\nroute\niss\naudience\nbodyHash\nnonce\nexp`, signed as
     /// `Ed25519(sk, "MX" || msg)` (the Algorand byte-signing prefix). `bodyHash` is the lowercase
-    /// hex SHA-256 of the route-specific body: for `"register"`, `sha256(token + "\n" + env)`; for
-    /// `"alert"`, `sha256("")` (in which case `audience` is the recipient handle and `token`/`env`
-    /// are ignored). Errors if no keypair is set.
+    /// hex SHA-256 of the route-specific body: for `"register"`, `sha256(token + "\n" + env)`, with
+    /// `"\n" + topic` appended when `topic` (the app's APNs topic, its bundle ID) is given; for
+    /// `"alert"`, `sha256("")` (in which case `audience` is the recipient handle, `token`/`env` are
+    /// ignored and `topic` must be `None`). Errors if no keypair is set.
     #[allow(clippy::too_many_arguments)]
     fn sign_notify_envelope(
         &self,
@@ -119,6 +120,7 @@ pub trait BingleJsiApi: Send + Sync {
         audience: String,
         token: String,
         env: String,
+        topic: Option<String>,
         nonce: String,
         exp: i64,
     ) -> Result<String, BingleJsiError>;

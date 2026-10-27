@@ -960,7 +960,9 @@ impl BingleLocalApi for BingleApiLocalImpl {
         let nonce = fresh_nonce();
         // Short freshness window (the contract allows up to 60s ahead), matching the alert envelope.
         let exp = now_secs() + 45;
-        let req = build_register_request(&ops, &iss, &token_hex, &env, &nonce, exp)?;
+        // No topic yet: the config has no field for it, so the gateway pushes to its default topic.
+        // The RN app registers through the bingle_jsi signer instead, which takes the topic (#372).
+        let req = build_register_request(&ops, &iss, &token_hex, &env, None, &nonce, exp)?;
 
         tracing::info!(
             "[notify][register] registering APNs token for '{}' (env {}) -> {}",

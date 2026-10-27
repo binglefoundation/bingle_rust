@@ -248,6 +248,7 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
         audience: String,
         token: String,
         env: String,
+        topic: String?,
         nonce: String,
         exp: Double,
         promise: Promise,
@@ -259,7 +260,7 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
         }
         Thread {
             try {
-                val sig = api.signNotifyEnvelope(route, iss, audience, token, env, nonce, exp.toLong())
+                val sig = api.signNotifyEnvelope(route, iss, audience, token, env, topic, nonce, exp.toLong())
                 promise.resolve(sig)
             } catch (e: Exception) {
                 promise.reject("BINGLE_ERROR", e.message, e)
