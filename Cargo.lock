@@ -48,9 +48,9 @@ dependencies = [
 
 [[package]]
 name = "algo_ops"
-version = "0.9.4"
+version = "0.9.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "23b269a645fc3c015f346dcf5d196cdb39e9785ea5450f6386384840d7cdabf2"
+checksum = "90c2d9c1584e87b259071eda6fd7cf1a66b75f8fdb906cb3d78bd9143dff87cb"
 dependencies = [
  "algonaut",
  "anyhow",
@@ -66,6 +66,7 @@ dependencies = [
  "tokio",
  "tracing",
  "uuid",
+ "visibility",
 ]
 
 [[package]]
@@ -743,9 +744,9 @@ dependencies = [
 
 [[package]]
 name = "blockchain_ops"
-version = "0.9.4"
+version = "0.9.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c9ba0d37fb0b1a776bb7e833ba22b5ce9ccdf560fb8104aef225c7d8bea59088"
+checksum = "728aa7b2917bc697faead019b4b0ef60483cf27a1a6defe2e56603e5e3d21527"
 dependencies = [
  "anyhow",
  "serde",
@@ -3520,9 +3521,9 @@ checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
 
 [[package]]
 name = "sidewinder_ops"
-version = "0.9.4"
+version = "0.9.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f0bf2ceaab2098e0a368b43f9f003d78d556d08343014c8926e6fdbc19a8ff8c"
+checksum = "f80defe36330e8ba36e63870156e81fcfb073ce19864819435ded40563c1afb9"
 dependencies = [
  "algo_ops",
  "anyhow",
@@ -3679,9 +3680,9 @@ checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 
 [[package]]
 name = "sw_identity_tls"
-version = "0.9.4"
+version = "0.9.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7d2be0838ec8ee8f15cbda4d0e03dca5c179e78e4b2546c5a46728896393d3c9"
+checksum = "02797c969e70c09088d9235fd72162c9d37397b1c67d1ae88d09f6da3f43e5f4"
 dependencies = [
  "algo_ops",
  "anyhow",
@@ -4462,6 +4463,17 @@ name = "version_check"
 version = "0.9.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
+
+[[package]]
+name = "visibility"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d674d135b4a8c1d7e813e2f8d1c9a58308aee4a680323066025e53132218bd91"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
+]
 
 [[package]]
 name = "walkdir"

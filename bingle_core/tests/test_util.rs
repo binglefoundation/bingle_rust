@@ -320,6 +320,18 @@ pub fn bingle_dapp_artifacts_dir() -> PathBuf {
         .join("dapp_projects/smart_contracts/artifacts/bingle_dapp")
 }
 
+/// Encoded application arguments for an ARC-4 call of `method`: the method selector, then `args`
+/// framed by AlgoOps (`byte[]` / `string` get their length prefix from the signature). For tests that
+/// build a raw `CallApplication` on purpose (for example a multi-signer group the AlgoOps group builder
+/// cannot express) without hand-rolling the ARC-4 framing.
+#[allow(dead_code)]
+pub fn arc4_app_args(method: &str, args: &[AppArg]) -> Vec<Vec<u8>> {
+    let framed = algo_ops::arc4_frame_args(Some(method), args).expect("ARC-4 frame app args");
+    std::iter::once(AlgoOps::arc4_selector(method).to_vec())
+        .chain(framed.iter().map(AppArg::to_bytes))
+        .collect()
+}
+
 #[allow(dead_code)]
 pub fn deploy_bingle_app(ops: &AlgoOps) -> u64 {
     let artifacts_dir = bingle_dapp_artifacts_dir();
