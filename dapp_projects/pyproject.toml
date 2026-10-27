@@ -7,7 +7,7 @@ readme = "README.md"
 package-mode = false
 
 [tool.poetry.dependencies]
-python = "^3.12"
+python = ">=3.12,<3.14"
 algokit-utils = "^4.0.0"
 python-dotenv = "^1.0.0"
 # algorand-python 4.0.x is the range puyapy 5.10.x (AlgoKit >= 2.10) compiles against;

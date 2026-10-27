@@ -888,32 +888,16 @@ impl AlgoBingle {
         if app_id == 0 {
             bail!("app_id must be > 0");
         }
-        // Build ARC-4 arguments manually to ensure correct string encoding (2-byte length prefix)
-        let client = self.ops.algod_client()?;
-        let params = self.params(&client)?;
-        let (account, sender) = self.sender_account()?;
-        let mut app_args: Vec<Vec<u8>> = Vec::new();
-        app_args.push(AlgoOps::arc4_selector("register_endpoint(string)void").to_vec());
-        let ep_bytes = endpoint_advert_record_compact.as_bytes();
-        if ep_bytes.len() > u16::MAX as usize {
-            bail!("endpoint too long");
-        }
-        let mut arg = Vec::with_capacity(2 + ep_bytes.len());
-        arg.extend_from_slice(&(ep_bytes.len() as u16).to_be_bytes());
-        arg.extend_from_slice(ep_bytes);
-        app_args.push(arg);
-        let tx = CallApplication::new(sender, AppId(app_id))
-            .app_arguments(app_args)
-            .note(AlgoOps::unique_note())
-            .build(&params)
-            .map_err(|e| anyhow!("build app call: {e}"))?;
-        algo_log!("register_endpoint tx: {:?}", tx);
-        let signed = account
-            .sign(tx)
-            .map_err(|e| anyhow!("sign app call: {e}"))?
-            .to_msg_pack()
-            .map_err(|e| anyhow!("encode signed app call: {e}"))?;
-        self.broadcast_group(&client, vec![signed])
+        // AlgoOps frames the `string` argument (2-byte big-endian length prefix) from the method
+        // signature, and errors if the record is over the u16 length limit.
+        let endpoint_record_bytes = endpoint_advert_record_compact.as_bytes().to_vec();
+        let (txid, _logs) = self.ops.call_app_arc4_args(
+            app_id,
+            None,
+            Some("register_endpoint(string)void"),
+            &[AppArg::Bytes(endpoint_record_bytes)],
+        )?;
+        Ok(txid)
     }
 
     /// Read the static endpoint record currently registered on-chain by `address`.
@@ -986,35 +970,19 @@ impl AlgoBingle {
             bail!("app_id must be > 0");
         }
         // All-None => empty byte-slice => clear the key; otherwise the base64-wrapped record.
-        let payload = SidewinderEndpointRecord::from_socket_addrs(ipv4, ipv6)
+        let sidewinder_record_payload = SidewinderEndpointRecord::from_socket_addrs(ipv4, ipv6)
             .map(|record| record.encode())
             .unwrap_or_default();
-        let client = self.ops.algod_client()?;
-        let params = self.params(&client)?;
-        let (account, sender) = self.sender_account()?;
-        let mut app_args: Vec<Vec<u8>> = Vec::new();
-        app_args.push(AlgoOps::arc4_selector("register_sidewinder_endpoint(byte[])void").to_vec());
-        // ARC-4 `byte[]` (like `string`): a 2-byte big-endian length prefix followed by the bytes.
-        let payload_bytes = payload.as_bytes();
-        if payload_bytes.len() > u16::MAX as usize {
-            bail!("sidewinder endpoint record too long");
-        }
-        let mut arg = Vec::with_capacity(2 + payload_bytes.len());
-        arg.extend_from_slice(&(payload_bytes.len() as u16).to_be_bytes());
-        arg.extend_from_slice(payload_bytes);
-        app_args.push(arg);
-        let tx = CallApplication::new(sender, AppId(app_id))
-            .app_arguments(app_args)
-            .note(AlgoOps::unique_note())
-            .build(&params)
-            .map_err(|e| anyhow!("build app call: {e}"))?;
-        algo_log!("register_sidewinder_endpoint tx: {:?}", tx);
-        let signed = account
-            .sign(tx)
-            .map_err(|e| anyhow!("sign app call: {e}"))?
-            .to_msg_pack()
-            .map_err(|e| anyhow!("encode signed app call: {e}"))?;
-        self.broadcast_group(&client, vec![signed])
+        // AlgoOps frames the `byte[]` argument (2-byte big-endian length prefix) from the method
+        // signature; an empty payload frames to `[0, 0]`, the empty byte-slice that clears the key.
+        let sidewinder_record_bytes = sidewinder_record_payload.into_bytes();
+        let (txid, _logs) = self.ops.call_app_arc4_args(
+            app_id,
+            None,
+            Some("register_sidewinder_endpoint(byte[])void"),
+            &[AppArg::Bytes(sidewinder_record_bytes)],
+        )?;
+        Ok(txid)
     }
 
     /// Read the Sidewinder endpoint record currently published on-chain by `address` (issue #237).
@@ -1791,24 +1759,17 @@ impl AlgoBingle {
         self.ops.opt_in_app(app_id)?;
         let app_addr = self.app_address(app_id)?.to_string();
 
-        // ARC-4 string encoding for the `handle` argument: 2-byte big-endian length prefix + UTF-8.
-        let handle_bytes = handle.as_bytes();
-        if handle_bytes.len() > u16::MAX as usize {
-            bail!("handle too long");
-        }
-        let mut handle_arg = Vec::with_capacity(2 + handle_bytes.len());
-        handle_arg.extend_from_slice(&(handle_bytes.len() as u16).to_be_bytes());
-        handle_arg.extend_from_slice(handle_bytes);
-
         // Atomic group: ASA fee transfer (sender -> app, `price_units`) + `register(string)void`
         // app-call carrying the handle as its ARC-4 string argument, with the ASA as a foreign asset.
+        // `call_app_arc4_args` frames the handle from the method signature; a handle longer than
+        // the ARC-4 length field fails the group before anything is submitted.
         self.ops
             .transaction_group()
             .asset_transfer(asset_id, price_units, &app_addr)
-            .call_app(
+            .call_app_arc4_args(
                 app_id,
                 Some("register(string)void"),
-                &[AppArg::Bytes(handle_arg)],
+                &[AppArg::Bytes(handle.as_bytes().to_vec())],
             )
             .foreign_asset(asset_id)
             .sign_and_send()

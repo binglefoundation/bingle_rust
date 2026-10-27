@@ -6,7 +6,7 @@ This project has been generated using AlgoKit. See below for default getting sta
 
 ### Pre-requisites
 
-- [Python 3.12 or 3.13](https://www.python.org/downloads/) (3.12 recommended). Avoid 3.14 for now — a
+- [Python 3.12 or 3.13](https://www.python.org/downloads/) (3.12 recommended; `pyproject.toml` enforces `>=3.12,<3.14`, and CI pins 3.13). Avoid 3.14 for now — a
   transitive dependency (`coincurve`) has no 3.14 wheel yet, so `poetry install` fails on it. See
   [Troubleshooting](#troubleshooting).
 - [Docker](https://www.docker.com/) (only required for LocalNet)

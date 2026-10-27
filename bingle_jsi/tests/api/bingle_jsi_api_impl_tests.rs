@@ -456,12 +456,9 @@ fn runtime_messaging_settings_toggle_preserves_session() {
     );
 }
 
-#[test]
-fn sign_notify_envelope_matches_the_committed_parity_vector() {
-    // Full-stack parity check: import the test-vector account, then sign the register envelope
-    // through the JSI primitive. Ed25519 is deterministic, so the signature must be byte-for-byte
-    // identical to the committed vector (bingle_notify/test/fixtures/verify-vector.json) — which is
-    // exactly what the notify gateway's algosdk.verifyBytes accepts.
+/// The committed parity vector's account (bingle_notify/test/fixtures/verify-vector.json), imported
+/// so the JSI primitive signs with its key.
+fn api_with_vector_keypair() -> std::sync::Arc<BingleJsiApiImpl> {
     let api = init_with_local_helper();
     let mnemonic = "square flat curtain negative three april hobby culture unit fit drip bronze cactus stage vault pluck captain nation pond pizza grief domain coin abstract path";
     let imported = api
@@ -471,17 +468,34 @@ fn sign_notify_envelope_matches_the_committed_parity_vector() {
         imported.id,
         "JH2CPATVR25EJ4B2CQD7P5436MHXJOU2MZGIWPFPAB3JBNVX3CGQDLDENU"
     );
+    api
+}
 
-    let sig = api
-        .sign_notify_envelope(
-            "register".to_string(),
-            "alice".to_string(),
-            "".to_string(),
-            "device-token-abc".to_string(),
-            "sandbox".to_string(),
-            "BBBBBBBBBBBBBBBBBBBBBB".to_string(),
-            1893456000,
-        )
+/// Sign the vector's register envelope (token `device-token-abc`, env `sandbox`) with `topic`.
+fn sign_vector_register(
+    api: &BingleJsiApiImpl,
+    topic: Option<&str>,
+) -> Result<String, BingleJsiError> {
+    api.sign_notify_envelope(
+        "register".to_string(),
+        "alice".to_string(),
+        "".to_string(),
+        "device-token-abc".to_string(),
+        "sandbox".to_string(),
+        topic.map(str::to_string),
+        "BBBBBBBBBBBBBBBBBBBBBB".to_string(),
+        1893456000,
+    )
+}
+
+#[test]
+fn sign_notify_envelope_matches_the_committed_parity_vector() {
+    // Full-stack parity check: import the test-vector account, then sign the register envelope
+    // through the JSI primitive. Ed25519 is deterministic, so the signature must be byte-for-byte
+    // identical to the committed vector (bingle_notify/test/fixtures/verify-vector.json) — which is
+    // exactly what the notify gateway's algosdk.verifyBytes accepts.
+    let api = api_with_vector_keypair();
+    let sig = sign_vector_register(&api, None)
         .expect("sign_notify_envelope should succeed with an imported keypair");
     assert_eq!(
         sig,
@@ -490,19 +504,47 @@ fn sign_notify_envelope_matches_the_committed_parity_vector() {
 }
 
 #[test]
+fn sign_notify_envelope_signs_the_register_topic() {
+    // With a topic, the gateway's register preimage is token\nenv\ntopic (bingle_notify #36). The
+    // expected signatures were computed independently with algosdk.signBytes over the gateway's own
+    // bodyHash and buildSignedMessage, with the vector key (#372). An empty topic still appends the
+    // delimiter, so it differs from no topic.
+    let api = api_with_vector_keypair();
+    assert_eq!(
+        sign_vector_register(&api, Some("com.creatotronik.bingler")).expect("sign with topic"),
+        "84j9avKnz5r7dnpqq11vjbpI7xJ7Nh7oqQSW9zWtNnPJ4qvnpKghAsr16Q9cMOjJqZg5LFIJyhsx5rHuqrAdAA=="
+    );
+    assert_eq!(
+        sign_vector_register(&api, Some("")).expect("sign with an empty topic"),
+        "rnro0UmYJf7j9bC8fxqB91N6hu1oEU7RRLNYRDtOed/PqVcAHnxYFO0Sc9hhQ66nhsIq/qCD8HNU1L+NetX4BA=="
+    );
+}
+
+#[test]
+fn sign_notify_envelope_refuses_a_topic_on_an_alert() {
+    let api = api_with_vector_keypair();
+    let result = api.sign_notify_envelope(
+        "alert".to_string(),
+        "alice".to_string(),
+        "bob".to_string(),
+        "".to_string(),
+        "".to_string(),
+        Some("com.creatotronik.bingler".to_string()),
+        "AAAAAAAAAAAAAAAAAAAAAA".to_string(),
+        1893456000,
+    );
+    assert!(
+        matches!(result, Err(BingleJsiError::InvalidRequest { .. })),
+        "a topic on an alert must be refused, got {result:?}"
+    );
+}
+
+#[test]
 fn sign_notify_envelope_fails_without_a_keypair() {
     // With no keypair set there is no signing key, so the primitive must error rather than
     // fabricate a signature.
     let api = init_with_local_helper();
-    let result = api.sign_notify_envelope(
-        "register".to_string(),
-        "alice".to_string(),
-        "".to_string(),
-        "device-token-abc".to_string(),
-        "sandbox".to_string(),
-        "BBBBBBBBBBBBBBBBBBBBBB".to_string(),
-        1893456000,
-    );
+    let result = sign_vector_register(&api, None);
     assert!(result.is_err(), "signing without a keypair must fail");
 }
 

@@ -29,6 +29,7 @@ use bingle_core::util::config_utils::{
 };
 use bingle_local::api::bingle_local_api::BingleLocalApi;
 use bingle_local::api::bingle_local_api_impl::{BingleApiLocalImpl, LocalApiConfig};
+use bingle_local::api::notify::sign_register_envelope;
 use bingle_local::api::pending_sender::{
     LocalOutboundStore, MessageDelivery, PendingSender, PendingSenderOptions,
 };
@@ -1686,6 +1687,7 @@ impl BingleJsiApi for BingleJsiApiImpl {
         audience: String,
         token: String,
         env: String,
+        topic: Option<String>,
         nonce: String,
         exp: i64,
     ) -> Result<String, BingleJsiError> {
@@ -1694,6 +1696,16 @@ impl BingleJsiApi for BingleJsiApiImpl {
         // maps to a typed jsi error rather than signing with a bogus key.
         let ops = guard.get_algo_ops().map_err(bingle_error_to_jsi)?;
         drop(guard);
+        if route == "register" {
+            // The register preimage, with or without a topic, is built in one place (#372).
+            return sign_register_envelope(&ops, &iss, &token, &env, topic.as_deref(), &nonce, exp)
+                .map_err(bingle_error_to_jsi);
+        }
+        if topic.is_some() {
+            return Err(BingleJsiError::InvalidRequest {
+                reason: format!("a topic applies only to the register route, not '{route}'"),
+            });
+        }
         ops.sign_notify_envelope(&route, &iss, &audience, &token, &env, &nonce, exp)
             .map_err(|e| BingleJsiError::InternalError {
                 reason: e.to_string(),

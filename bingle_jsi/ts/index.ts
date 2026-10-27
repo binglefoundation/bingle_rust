@@ -147,6 +147,7 @@ export const BingleJsi = BingleJsiNative as {
     audience: string,
     token: string,
     env: string,
+    topic: string | null,
     nonce: string,
     exp: number,
   ): Promise<string>;

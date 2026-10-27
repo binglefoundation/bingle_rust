@@ -290,7 +290,7 @@ class MockBingleJsiApi: BingleJsiApiProtocol {
 
     func apnsRegistrationFailed(reason: String) {}
 
-    func signNotifyEnvelope(route: String, iss: String, audience: String, token: String, env: String, nonce: String, exp: Int64) throws -> String {
+    func signNotifyEnvelope(route: String, iss: String, audience: String, token: String, env: String, topic: String?, nonce: String, exp: Int64) throws -> String {
         return ""
     }
 }

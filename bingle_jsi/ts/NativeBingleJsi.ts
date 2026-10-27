@@ -297,6 +297,7 @@ export interface BingleJsiApi {
     audience: string,
     token: string,
     env: string,
+    topic: string | null,
     nonce: string,
     exp: number,
   ): string;
