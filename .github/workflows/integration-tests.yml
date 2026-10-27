@@ -83,10 +83,20 @@ jobs:
       # build outputs (dapp_projects/README.md). Compile them with puya directly (skips typed-client
       # generation — the Rust harness only reads .approval.teal/.clear.teal/.arc56.json). Mirrors
       # e2e-android.yml.
+      # Pin the Python that builds the dapp: the runner default is now 3.14, where coincurve (via
+      # algorand-python-testing) has no wheel and its source build fails (#368). pipx keeps the default
+      # Python; only Poetry's virtual environment uses 3.13. Revisit when coincurve ships cp314 wheels.
+      - name: Set up Python for the dapp build
+        id: dapp-python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
       - name: Build the dapp artifacts (puya)
         working-directory: dapp_projects
         run: |
           pipx install poetry
+          poetry env use "${{ steps.dapp-python.outputs.python-path }}"
           poetry install
           poetry run algokit --no-color compile python \
             smart_contracts/bingle_dapp/contract.py \
