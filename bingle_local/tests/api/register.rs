@@ -96,6 +96,14 @@ fn register_posts_signed_envelope_with_hex_token() {
     assert_eq!(url, GATEWAY);
     assert_eq!(req.iss, ISS);
     assert_eq!(req.env, "sandbox");
+    // The Rust-side path names no topic yet, so the gateway uses its default (#372), and the body
+    // leaves the field out rather than sending null.
+    assert_eq!(req.topic, None);
+    let body = serde_json::to_value(req).expect("serialise the request");
+    assert!(
+        body.get("topic").is_none(),
+        "an absent topic must not be serialised"
+    );
     assert_eq!(
         req.token, "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
         "token must be the lowercase-hex of the raw bytes"

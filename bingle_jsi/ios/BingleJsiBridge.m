@@ -54,6 +54,7 @@ RCT_EXTERN_METHOD(signNotifyEnvelope:(NSString *)route
                   audience:(NSString *)audience
                   token:(NSString *)token
                   env:(NSString *)env
+                  topic:(NSString *)topic
                   nonce:(NSString *)nonce
                   exp:(nonnull NSNumber *)exp
                   resolver:(RCTPromiseResolveBlock)resolve

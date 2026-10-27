@@ -248,6 +248,7 @@ impl BingleJsiApi for StubApi {
         _audience: String,
         _token: String,
         _env: String,
+        _topic: Option<String>,
         _nonce: String,
         _exp: i64,
     ) -> Result<String, BingleJsiError> {
