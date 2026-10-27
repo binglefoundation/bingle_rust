@@ -1,5 +1,5 @@
 // tests/blockchain/algo_bingle/register_collision.rs
-use algo_ops::AlgoOps;
+use algo_ops::{AlgoOps, AppArg};
 use algonaut::core::{Address, AppId, AssetId, ToMsgPack};
 use algonaut::transaction::{TransferAsset, builder::CallApplication};
 use bingle_core::blockchain::algo_bingle::AlgoBingle;
@@ -71,18 +71,15 @@ pub fn test_register_collision_same_block() {
         .build(&params)
         .unwrap();
 
-    // A: AppCall register("foo")
-    let mut args_a: Vec<Vec<u8>> = Vec::new();
-    args_a.push(AlgoOps::arc4_selector("register(string)void").to_vec());
+    // A: AppCall register("foo"). The group mixes two signers, which the AlgoOps group builder
+    // cannot express, so the app call is built raw with AlgoOps-framed arguments.
     let handle = "foo";
-    let handle_bytes = handle.as_bytes();
-    let h_len = handle_bytes.len();
-    let mut arg_a = Vec::with_capacity(2 + h_len);
-    arg_a.extend_from_slice(&(h_len as u16).to_be_bytes());
-    arg_a.extend_from_slice(handle_bytes);
-    args_a.push(arg_a);
+    let register_args = test_util::arc4_app_args(
+        "register(string)void",
+        &[AppArg::Bytes(handle.as_bytes().to_vec())],
+    );
     let tx_app_a = CallApplication::new(addr_a, AppId(app_id))
-        .app_arguments(args_a)
+        .app_arguments(register_args.clone())
         .foreign_assets(vec![AssetId(asset_id)])
         .note(AlgoOps::unique_note())
         .build(&params)
@@ -95,14 +92,8 @@ pub fn test_register_collision_same_block() {
         .unwrap();
 
     // B: AppCall register("foo")
-    let mut args_b: Vec<Vec<u8>> = Vec::new();
-    args_b.push(AlgoOps::arc4_selector("register(string)void").to_vec());
-    let mut arg_b = Vec::with_capacity(2 + h_len);
-    arg_b.extend_from_slice(&(h_len as u16).to_be_bytes());
-    arg_b.extend_from_slice(handle_bytes);
-    args_b.push(arg_b);
     let tx_app_b = CallApplication::new(addr_b, AppId(app_id))
-        .app_arguments(args_b)
+        .app_arguments(register_args)
         .foreign_assets(vec![AssetId(asset_id)])
         .note(AlgoOps::unique_note())
         .build(&params)

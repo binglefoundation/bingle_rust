@@ -1759,24 +1759,17 @@ impl AlgoBingle {
         self.ops.opt_in_app(app_id)?;
         let app_addr = self.app_address(app_id)?.to_string();
 
-        // ARC-4 string encoding for the `handle` argument: 2-byte big-endian length prefix + UTF-8.
-        let handle_bytes = handle.as_bytes();
-        if handle_bytes.len() > u16::MAX as usize {
-            bail!("handle too long");
-        }
-        let mut handle_arg = Vec::with_capacity(2 + handle_bytes.len());
-        handle_arg.extend_from_slice(&(handle_bytes.len() as u16).to_be_bytes());
-        handle_arg.extend_from_slice(handle_bytes);
-
         // Atomic group: ASA fee transfer (sender -> app, `price_units`) + `register(string)void`
         // app-call carrying the handle as its ARC-4 string argument, with the ASA as a foreign asset.
+        // `call_app_arc4_args` frames the handle from the method signature; a handle longer than
+        // the ARC-4 length field fails the group before anything is submitted.
         self.ops
             .transaction_group()
             .asset_transfer(asset_id, price_units, &app_addr)
-            .call_app(
+            .call_app_arc4_args(
                 app_id,
                 Some("register(string)void"),
-                &[AppArg::Bytes(handle_arg)],
+                &[AppArg::Bytes(handle.as_bytes().to_vec())],
             )
             .foreign_asset(asset_id)
             .sign_and_send()
