@@ -219,8 +219,8 @@ else
   fi
   ok "npm authenticated as '$npm_user'"
   warn "no NPM_TOKEN set — the final 'npm publish' will require an interactive 2FA browser click."
-  warn "It is gated on a keypress (so the short-lived window opens only when you're present) and"
-  warn "retried on failure, so a missed window is recoverable. For a fully unattended release,"
+  warn "npm waits for Enter before opening it (so the short-lived window opens only when you're"
+  warn "present) and it is retried on failure, so a missed window is recoverable. For a fully unattended release,"
   warn "create an npm Automation token (npmjs.com > Access Tokens) and re-run with NPM_TOKEN=... set."
 fi
 
@@ -256,21 +256,18 @@ npm_version_exists() { # <pkg> <version>
   [[ -n "$(npm view "$1@$2" version 2>/dev/null || true)" ]]
 }
 
-# Publish the npm module on the interactive (no-NPM_TOKEN) path. The 2FA browser
-# window npm opens is short-lived, so we gate each attempt on an operator keypress —
-# the window then opens only when someone is present to approve it, not unattended at
-# an unpredictable point after the long build — and retry on failure so a missed or
-# expired window is recoverable without re-running the whole build. Token publishes
-# are non-interactive and never call this.
+# Publish the npm module on the interactive (no-NPM_TOKEN) path. npm itself waits on
+# "Press ENTER to open in the browser" before opening its short-lived 2FA window, so
+# the window opens only when someone is present to approve it; adding our own keypress
+# first just asked twice. We retry on failure so a missed or expired window is
+# recoverable without re-running the whole build. Token publishes are non-interactive
+# and never call this.
 publish_npm_interactive() { # <pkg> <version>
   local attempt=1 ans
   while true; do
-    if [[ -t 0 ]]; then
-      printf '\n'
-      info "ready to publish $1@$2 to npm (attempt $attempt)."
-      warn "npm will open a browser 2FA window that expires quickly — be ready to approve it."
-      read -rp "    press Enter to start the npm publish (Ctrl-C to abort): " _ || return 1
-    fi
+    printf '\n'
+    info "publishing $1@$2 to npm (attempt $attempt)."
+    warn "npm will ask for Enter, then open a browser 2FA window that expires quickly — approve it promptly."
     if ( cd "$NPM_DIR" && npm publish ${NPM_PUBLISH_ARGS[@]+"${NPM_PUBLISH_ARGS[@]}"} ); then
       return 0
     fi
