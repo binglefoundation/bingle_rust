@@ -10,3 +10,7 @@ pub mod algo_bingle;
 /// ([`SidewinderEndpointRecord`](crate::blockchain::sidewinder_endpoint::SidewinderEndpointRecord)),
 /// byte-compatible with Sidewinder `sw-membership`'s `EndpointRecord` (issue #237).
 pub mod sidewinder_endpoint;
+
+/// Checking and co-signing the registration service's unsigned registration and handle clash
+/// recovery groups (issue #344).
+pub mod registration_group;

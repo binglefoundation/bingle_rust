@@ -15,6 +15,10 @@ use std::sync::{Arc, Mutex, RwLock, RwLockReadGuard};
 /// Internal; reached only through the handle.
 pub struct LocalState {
     pub(super) keypair: Mutex<Option<Keypair>>, // interior mutability to allow &self methods to ensure keypair exists
+    // The fresh account a handle clash recovery moves to, kept until the recovery completes
+    // (issue #344). Persisted, since once the recovery group is signed the current account may
+    // already have closed into it.
+    pub(super) recovery_keypair: Mutex<Option<Keypair>>,
     pub(super) algo_ops: Mutex<Option<AlgoOps>>, // cache constructed AlgoOps for current keypair
     // Read per operation; the store-and-forward and notify setters swap fields live (story #242).
     pub(super) config: RwLock<LocalApiConfig>,
@@ -78,6 +82,7 @@ impl LocalState {
     pub(super) fn new(config: LocalApiConfig) -> Self {
         Self {
             keypair: Mutex::new(None),
+            recovery_keypair: Mutex::new(None),
             algo_ops: Mutex::new(None),
             config: RwLock::new(config),
             contacts: Mutex::new(HashMap::new()),

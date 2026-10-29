@@ -293,4 +293,20 @@ class MockBingleJsiApi: BingleJsiApiProtocol {
     func signNotifyEnvelope(route: String, iss: String, audience: String, token: String, env: String, topic: String?, nonce: String, exp: Int64) throws -> String {
         return ""
     }
+
+    func signRegistrationGroup(transactions: [String], signIndexes: [UInt32], handle: String) throws -> [String] {
+        return []
+    }
+
+    func beginRecoveryKeypair() throws -> Keypair {
+        return keypairResult
+    }
+
+    func signRecoveryGroup(transactions: [String], signIndexes: [UInt32], handle: String) throws -> [String] {
+        return []
+    }
+
+    func completeRecoveryKeypair() throws -> Keypair {
+        return keypairResult
+    }
 }

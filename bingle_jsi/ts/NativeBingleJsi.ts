@@ -301,6 +301,11 @@ export interface BingleJsiApi {
     nonce: string,
     exp: number,
   ): string;
+  // App-store registration groups (#344)
+  signRegistrationGroup(transactions: string[], signIndexes: number[], handle: string): string[];
+  beginRecoveryKeypair(): Keypair;
+  signRecoveryGroup(transactions: string[], signIndexes: number[], handle: string): string[];
+  completeRecoveryKeypair(): Keypair;
   requestPushRegistration(): void;
   registerApnsToken(token: Uint8Array): boolean;
   apnsRegistrationFailed(reason: string): void;

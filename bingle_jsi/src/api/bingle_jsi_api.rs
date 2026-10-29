@@ -125,6 +125,45 @@ pub trait BingleJsiApi: Send + Sync {
         exp: i64,
     ) -> Result<String, BingleJsiError>;
 
+    /// Sign the client's transactions in an app-store registration group built by the registration
+    /// service (issue #344), with the current keypair. `transactions` is the service's whole
+    /// unsigned group (base64 msgpack) and `sign_indexes` the positions the client signs. Every
+    /// client transaction is checked against the registration template first (Bingle$ opt-in,
+    /// Bingle DApp opt-in, 1 Bingle$ to the DApp, `register(handle)` with exactly this `handle`, the
+    /// configured app and asset), and anything unexpected (receivers, amounts, rekeys, close-to
+    /// addresses, extra fields) is refused with nothing signed. Returns the signed transactions as
+    /// base64 msgpack, in `sign_indexes` order, for the service's `signed_transactions`.
+    fn sign_registration_group(
+        &self,
+        transactions: Vec<String>,
+        sign_indexes: Vec<u32>,
+        handle: String,
+    ) -> Result<Vec<String>, BingleJsiError>;
+
+    /// Start (or resume) a handle clash recovery (issue #344): return the pending recovery keypair,
+    /// the fresh account the current one moves to, whose address is the recovery request's
+    /// `new_address`. It is generated offline, kept beside the current keypair and saved to the
+    /// state file before this returns; if it can't be saved, this errors. Calling it again before
+    /// [`complete_recovery_keypair`](Self::complete_recovery_keypair) returns the same keypair.
+    fn begin_recovery_keypair(&self) -> Result<Keypair, BingleJsiError>;
+
+    /// Sign the client's transactions in a handle clash recovery group (issue #344): positions 0–2
+    /// with the current keypair and 3, 5, 6 and 7 with the pending recovery keypair. The template
+    /// check is as for [`sign_registration_group`](Self::sign_registration_group), plus the old
+    /// account's ClearState, its Bingle$ close-out to the funder (the sender of position 4's
+    /// 1 Bingle$ transfer to the new address) and its Algo close to the new address. Errors if no
+    /// recovery has begun.
+    fn sign_recovery_group(
+        &self,
+        transactions: Vec<String>,
+        sign_indexes: Vec<u32>,
+        handle: String,
+    ) -> Result<Vec<String>, BingleJsiError>;
+
+    /// Finish a handle clash recovery once the registration service reports it `registered`: make
+    /// the pending recovery keypair current and save it. Errors if no recovery is pending.
+    fn complete_recovery_keypair(&self) -> Result<Keypair, BingleJsiError>;
+
     /// Ask the host to begin iOS push registration (bingle_notify #i). Invokes the registered
     /// [`PushRegistrationCallback`] so the thin Swift bridge performs the platform calls
     /// (`requestAuthorization` + `registerForRemoteNotifications`). Returns once the callback has

@@ -76,3 +76,6 @@ mod receive_dedup;
 
 #[path = "module_version.rs"]
 mod module_version;
+
+#[path = "api/local_impl_recovery_keypair.rs"]
+mod local_impl_recovery_keypair;

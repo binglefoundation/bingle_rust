@@ -151,6 +151,23 @@ export const BingleJsi = BingleJsiNative as {
     nonce: string,
     exp: number,
   ): Promise<string>;
+  /** Sign the client's transactions in the registration service's app-store registration group
+   * (#344) with the current keypair, after checking them against the registration template.
+   * `transactions` is the service's whole unsigned group (base64 msgpack) and `signIndexes` its
+   * `sign_indexes`. Resolves to the signed transactions (base64 msgpack) in `signIndexes` order,
+   * for `signed_transactions`. Rejects, signing nothing, if any client transaction is unexpected. */
+  signRegistrationGroup(transactions: string[], signIndexes: number[], handle: string): Promise<string[]>;
+  /** Start or resume a handle clash recovery (#344): resolves to the pending recovery keypair, whose
+   * id is the recovery request's `new_address`. It is saved beside the current keypair before this
+   * resolves, and returned again until completeRecoveryKeypair. */
+  beginRecoveryKeypair(): Promise<{ id: string; passphrase: string }>;
+  /** Sign the client's transactions in a handle clash recovery group (#344): the old account's with
+   * the current keypair, the new account's with the pending recovery keypair. Rejects if no
+   * recovery has begun or any client transaction is unexpected. */
+  signRecoveryGroup(transactions: string[], signIndexes: number[], handle: string): Promise<string[]>;
+  /** Finish a handle clash recovery once the service reports it `registered`: the pending recovery
+   * keypair becomes current. Rejects if no recovery is pending. */
+  completeRecoveryKeypair(): Promise<{ id: string; passphrase: string }>;
   /** Ask the host to begin iOS push registration (bingle_notify #i). Invokes the registered
    * PushRegistrationCallback so the thin Swift bridge performs the platform calls; the token arrives
    * asynchronously via registerApnsToken. Rejects if no push-registration callback is set. */
