@@ -895,6 +895,48 @@ impl BingleLocalApi for BingleApiLocalImpl {
         self.import_keypair_shared(passphrase)
     }
 
+    fn begin_recovery_keypair(&mut self) -> Result<Keypair, BingleError> {
+        let current = self.get_keypair()?.ok_or_else(|| {
+            BingleError::Other("no keypair to recover: generate or import one first".to_string())
+        })?;
+        let mut pending = self
+            .recovery_keypair
+            .lock()
+            .map_err(|e| BingleError::Other(format!("mutex poisoned: {}", e)))?;
+        if let Some(kp) = pending.as_ref() {
+            tracing::info!("[BingleLocalApi] Resuming recovery to {}", kp.id);
+            return Ok(kp.clone());
+        }
+        let (id, passphrase) = AlgoOps::generate_keypair();
+        let kp = Keypair { id, passphrase };
+        tracing::info!(
+            "[BingleLocalApi] Beginning recovery from {} to {}",
+            current.id,
+            kp.id
+        );
+        *pending = Some(kp.clone());
+        Ok(kp)
+    }
+
+    fn get_recovery_keypair(&self) -> Result<Option<Keypair>, BingleError> {
+        self.recovery_keypair
+            .lock()
+            .map(|g| g.clone())
+            .map_err(|e| BingleError::Other(format!("mutex poisoned: {}", e)))
+    }
+
+    fn complete_recovery_keypair(&mut self) -> Result<Keypair, BingleError> {
+        let pending = self
+            .get_recovery_keypair()?
+            .ok_or_else(|| BingleError::Other("no recovery is pending".to_string()))?;
+        let kp = self.import_keypair_shared(pending.passphrase)?;
+        if let Ok(mut g) = self.recovery_keypair.lock() {
+            *g = None;
+        }
+        tracing::info!("[BingleLocalApi] Completed recovery to {}", kp.id);
+        Ok(kp)
+    }
+
     fn register_keypair(&self, handle: String) -> Result<bool, BingleError> {
         tracing::info!(
             "[BingleLocalApi] Registering keypair with handle: {}",
@@ -1342,6 +1384,9 @@ impl BingleLocalApi for BingleApiLocalImpl {
         #[derive(Debug, Clone, Serialize, Deserialize)]
         struct LocalState {
             keypair: Option<Keypair>,
+            // A handle clash recovery's pending keypair (issue #344); omitted when none is pending.
+            #[serde(default, skip_serializing_if = "Option::is_none")]
+            recovery_keypair: Option<Keypair>,
             contacts: Vec<ContactEntry>,
             messages: Vec<Message>,
             // The registered handle, memoized once ACTIVE so status survives restart with no
@@ -1370,6 +1415,14 @@ impl BingleLocalApi for BingleApiLocalImpl {
                 }
             };
             g.clone()
+        };
+        let recovery_keypair = match self.recovery_keypair.lock() {
+            Ok(g) => g.clone(),
+            Err(e) => {
+                let msg = format!("mutex poisoned: {}", e);
+                tracing::error!("[save] Failed to lock recovery keypair: {}", msg);
+                return Err(BingleError::Other(msg));
+            }
         };
         let contacts_vec: Vec<ContactEntry> = {
             let map = match self.contacts.lock() {
@@ -1418,6 +1471,7 @@ impl BingleLocalApi for BingleApiLocalImpl {
 
         let state = LocalState {
             keypair,
+            recovery_keypair,
             contacts: contacts_vec,
             messages,
             own_handle,
@@ -1494,6 +1548,8 @@ impl BingleLocalApi for BingleApiLocalImpl {
             #[serde(default)]
             keypair: Option<Keypair>,
             #[serde(default)]
+            recovery_keypair: Option<Keypair>,
+            #[serde(default)]
             contacts: Vec<ContactEntry>,
             #[serde(default)]
             messages: Vec<Message>,
@@ -1527,6 +1583,12 @@ impl BingleLocalApi for BingleApiLocalImpl {
             *k = state.keypair.clone();
         } else {
             tracing::error!("[load] Failed to lock keypair: mutex poisoned");
+            return Err(BingleError::Other("mutex poisoned".to_string()));
+        }
+        if let Ok(mut k) = self.recovery_keypair.lock() {
+            *k = state.recovery_keypair.clone();
+        } else {
+            tracing::error!("[load] Failed to lock recovery keypair: mutex poisoned");
             return Err(BingleError::Other("mutex poisoned".to_string()));
         }
         // Invalidate cached AlgoOps since keypair may have changed

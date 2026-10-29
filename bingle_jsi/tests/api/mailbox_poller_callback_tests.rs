@@ -50,6 +50,15 @@ impl BingleLocalApi for ScriptedMailboxLocal {
     fn import_keypair(&mut self, passphrase: String) -> Result<Keypair, BingleError> {
         self.inner.import_keypair(passphrase)
     }
+    fn begin_recovery_keypair(&mut self) -> Result<Keypair, BingleError> {
+        self.inner.begin_recovery_keypair()
+    }
+    fn get_recovery_keypair(&self) -> Result<Option<Keypair>, BingleError> {
+        self.inner.get_recovery_keypair()
+    }
+    fn complete_recovery_keypair(&mut self) -> Result<Keypair, BingleError> {
+        self.inner.complete_recovery_keypair()
+    }
     fn register_keypair(&self, handle: String) -> Result<bool, BingleError> {
         self.inner.register_keypair(handle)
     }

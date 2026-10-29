@@ -575,6 +575,10 @@ The full API is defined in `src/api/bingle_jsi_api.rs`. Key methods:
 | `getNatType()` | Get detected NAT type |
 | `generateKeypair()` | Generate a new Algorand keypair |
 | `registerKeypair(handle)` | Register keypair on-chain |
+| `signRegistrationGroup(transactions, signIndexes, handle)` | Check and sign the client's transactions in the registration service's registration group |
+| `beginRecoveryKeypair()` | Start or resume a handle clash recovery: the pending new keypair, saved beside the current one |
+| `signRecoveryGroup(transactions, signIndexes, handle)` | Check and sign a handle clash recovery group with the current and pending keypairs |
+| `completeRecoveryKeypair()` | Make the pending recovery keypair current once the recovery is registered |
 | `addContact(handle, id, source)` | Add a contact |
 | `blockContact(id)` | Block a contact; its live and Mailbox messages are dropped on receipt |
 | `unblockContact(id)` | Unblock a contact |
