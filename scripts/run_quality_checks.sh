@@ -66,16 +66,8 @@ GATED_CLIPPY_TARGETS=(-p bingle_cli --features sidewinder_localnet,sidewinder_te
 # but not auto-fixed; apply those manually or restructure the duplicate #[path] mods.
 FIX_TARGETS=(--workspace --lib --bins)
 
-# rustfmt package set: every workspace member except bingle_test. bingle_test's
-# lib.rs declares iOS-only modules via `#[cfg(target_os = "ios")] #[path =
-# "../../tests/..."]`; `cargo fmt` does not evaluate cfg, so on a non-iOS host it
-# tries to resolve those paths and fails with "No such file or directory".
-# Derived from the workspace member list so it stays correct as crates are added.
-FMT_ARGS=()
-while IFS= read -r pkg; do
-  [[ -n "${pkg}" && "${pkg}" != "bingle_test" ]] && FMT_ARGS+=(-p "${pkg}")
-done < <(sed -n '/members = \[/,/\]/p' Cargo.toml | grep -oE '"[^"]+"' | tr -d '"')
-[[ "${#FMT_ARGS[@]}" -eq 0 ]] && FMT_ARGS=(--all)  # fallback if parsing found nothing
+# rustfmt package set: the whole workspace.
+FMT_ARGS=(--all)
 
 section() { echo -e "\n${BOLD}${YELLOW}== $1 ==${NC}"; }
 
