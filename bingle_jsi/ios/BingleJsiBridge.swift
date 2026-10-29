@@ -299,6 +299,74 @@ class BingleJsiBridge: RCTEventEmitter {
         }
     }
 
+    // MARK: - App-store registration groups (#344)
+
+    @objc
+    func signRegistrationGroup(_ transactions: [String], signIndexes: [NSNumber], handle: String, resolver resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {
+        guard let api = apiInstance else {
+            reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.", nil)
+            return
+        }
+        let indexes = signIndexes.map { $0.uint32Value }
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                let signed = try api.signRegistrationGroup(transactions: transactions, signIndexes: indexes, handle: handle)
+                resolve(signed)
+            } catch {
+                reject("BINGLE_ERROR", "\(error)", error)
+            }
+        }
+    }
+
+    @objc
+    func beginRecoveryKeypair(_ resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {
+        guard let api = apiInstance else {
+            reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.", nil)
+            return
+        }
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                let kp = try api.beginRecoveryKeypair()
+                resolve(["id": kp.id, "passphrase": kp.passphrase])
+            } catch {
+                reject("BINGLE_ERROR", "\(error)", error)
+            }
+        }
+    }
+
+    @objc
+    func signRecoveryGroup(_ transactions: [String], signIndexes: [NSNumber], handle: String, resolver resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {
+        guard let api = apiInstance else {
+            reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.", nil)
+            return
+        }
+        let indexes = signIndexes.map { $0.uint32Value }
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                let signed = try api.signRecoveryGroup(transactions: transactions, signIndexes: indexes, handle: handle)
+                resolve(signed)
+            } catch {
+                reject("BINGLE_ERROR", "\(error)", error)
+            }
+        }
+    }
+
+    @objc
+    func completeRecoveryKeypair(_ resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {
+        guard let api = apiInstance else {
+            reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.", nil)
+            return
+        }
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                let kp = try api.completeRecoveryKeypair()
+                resolve(["id": kp.id, "passphrase": kp.passphrase])
+            } catch {
+                reject("BINGLE_ERROR", "\(error)", error)
+            }
+        }
+    }
+
     // MARK: - iOS push registration (bingle_notify #i)
     //
     // Pure bridge: the raw APNs token bytes cross to Rust untouched (hex-encoding, envelope

@@ -175,6 +175,18 @@ impl BingleLocalApi for ControllableLocalApi {
         Ok(self.keypair.clone())
     }
 
+    fn begin_recovery_keypair(&mut self) -> Result<Keypair, BingleError> {
+        Err(BingleError::Other("begin_recovery_keypair".to_string()))
+    }
+
+    fn get_recovery_keypair(&self) -> Result<Option<Keypair>, BingleError> {
+        Ok(None)
+    }
+
+    fn complete_recovery_keypair(&mut self) -> Result<Keypair, BingleError> {
+        Err(BingleError::Other("complete_recovery_keypair".to_string()))
+    }
+
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
         self
     }

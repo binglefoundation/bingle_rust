@@ -52,3 +52,6 @@ pub mod sidewinder_endpoint_test;
 
 #[path = "blockchain_ops_trait.rs"]
 pub mod blockchain_ops_trait;
+
+#[path = "registration_group.rs"]
+pub mod registration_group;

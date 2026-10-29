@@ -310,6 +310,21 @@ pub trait BingleLocalApi: Send + Sync {
     /// passphrase.
     fn import_keypair(&mut self, passphrase: String) -> Result<Keypair, BingleError>;
 
+    /// Start a handle clash recovery (issue #344): return the pending recovery keypair, the fresh
+    /// account the current one moves to, generating it if none is pending. It is kept beside the
+    /// current keypair, not in place of it, and persisted with it, so a recovery interrupted after
+    /// signing (when the current account may already have closed into it) resumes with both keys.
+    /// Generated offline; errors if there is no current keypair to recover.
+    fn begin_recovery_keypair(&mut self) -> Result<Keypair, BingleError>;
+
+    /// The pending recovery keypair, if a recovery has begun and not completed.
+    fn get_recovery_keypair(&self) -> Result<Option<Keypair>, BingleError>;
+
+    /// Finish a handle clash recovery once the service reports the registration `registered`: make
+    /// the pending recovery keypair current, as [`import_keypair`](Self::import_keypair) would, and
+    /// clear it. Errors if no recovery is pending.
+    fn complete_recovery_keypair(&mut self) -> Result<Keypair, BingleError>;
+
     /// Register the current keypair with Bingle (requires credited funds).
     /// Returns Ok(()) on success, or Err(message) on failure.
     /// Parameter:

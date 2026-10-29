@@ -22,6 +22,7 @@ use bingle_core::api::bingle_api::{
 };
 use bingle_core::api::bingle_api_impl::BingleApiImpl;
 use bingle_core::api::network_endpoint::NetworkEndpoint;
+use bingle_core::blockchain::registration_group::{self, RegistrationGroupIds, SigningKey};
 use bingle_core::engine::BingleAccess;
 use bingle_core::util::config_utils::{
     check_node_and_cli_ids, parse_node_file_with_ids, parse_stun_file, parse_stun_list,
@@ -332,6 +333,41 @@ fn store_received_message(
 }
 
 /// Save local state if local_api and local_file are both configured.
+/// Saves the local state, failing if there is no state file or the write fails: for state that
+/// must not be lost, such as a recovery keypair (issue #344). `what` names it in the error.
+fn save_strictly(
+    local_api: &dyn BingleLocalApi,
+    local_file: &Option<PathBuf>,
+    what: &str,
+) -> Result<(), BingleJsiError> {
+    let path = local_file
+        .as_ref()
+        .ok_or_else(|| BingleJsiError::InvalidRequest {
+            reason: format!(
+                "{what} must be saved, but no state file is set ('local' in BingleJsiConfig)"
+            ),
+        })?;
+    local_api
+        .save(path.to_string_lossy().as_ref())
+        .map_err(|e| BingleJsiError::InternalError {
+            reason: format!("couldn't save {what}: {e}"),
+        })
+}
+
+/// The error for an operation that needs the current keypair when there is none.
+fn no_keypair(operation: &str) -> BingleJsiError {
+    BingleJsiError::InvalidRequest {
+        reason: format!("no keypair to {operation}: generate or import one first"),
+    }
+}
+
+/// The signing key for a stored keypair's passphrase.
+fn signing_key(passphrase: &str) -> Result<SigningKey, BingleJsiError> {
+    registration_group::signing_key(passphrase).map_err(|e| BingleJsiError::InternalError {
+        reason: format!("the stored keypair can't sign: {e}"),
+    })
+}
+
 fn save_if_configured(
     local_api: &Option<Arc<Mutex<Box<dyn BingleLocalApi>>>>,
     local_file: &Option<PathBuf>,
@@ -383,6 +419,32 @@ fn notify_mailbox_checked(callback: &Mutex<Option<Box<dyn MailboxCheckCallback>>
 }
 
 impl BingleJsiApiImpl {
+    /// The Bingle DApp and Bingle$ asset a registration group must use: this instance's configured
+    /// (or node-file) IDs (issue #344).
+    fn registration_group_ids(&self) -> Result<RegistrationGroupIds, BingleJsiError> {
+        let opts = self
+            .opts
+            .lock()
+            .map_err(|_| BingleJsiError::InternalError {
+                reason: "options lock poisoned".to_string(),
+            })?;
+        match (opts.app_id, opts.asset_id) {
+            (Some(bingle_app_id), Some(bingle_asset_id))
+                if bingle_app_id != 0 && bingle_asset_id != 0 =>
+            {
+                Ok(RegistrationGroupIds {
+                    bingle_app_id,
+                    bingle_asset_id,
+                })
+            }
+            _ => Err(BingleJsiError::InvalidRequest {
+                reason:
+                    "no Bingle app and asset IDs are configured (node_file, or app_id and asset_id)"
+                        .to_string(),
+            }),
+        }
+    }
+
     /// Start the store-and-forward backstop Mailbox poll (epic #200, #215): a foreground-only thread
     /// that drains the Mailbox immediately and then every [`mailbox_poll_interval`](Self) until
     /// [`stop_mailbox_poller`](Self::stop_mailbox_poller) is called. A second call while a poller is
@@ -1710,6 +1772,92 @@ impl BingleJsiApi for BingleJsiApiImpl {
             .map_err(|e| BingleJsiError::InternalError {
                 reason: e.to_string(),
             })
+    }
+
+    fn sign_registration_group(
+        &self,
+        transactions: Vec<String>,
+        sign_indexes: Vec<u32>,
+        handle: String,
+    ) -> Result<Vec<String>, BingleJsiError> {
+        let ids = self.registration_group_ids()?;
+        let guard = local_api_guard(&self.local_api)?;
+        let current = guard
+            .get_keypair()
+            .map_err(bingle_error_to_jsi)?
+            .ok_or_else(|| no_keypair("sign a registration group"))?;
+        drop(guard);
+        let key = signing_key(&current.passphrase)?;
+        registration_group::sign_registration_group(
+            &transactions,
+            &sign_indexes,
+            ids,
+            &handle,
+            &key,
+        )
+        .map_err(|e| BingleJsiError::InvalidRequest {
+            reason: e.to_string(),
+        })
+    }
+
+    fn begin_recovery_keypair(&self) -> Result<Keypair, BingleJsiError> {
+        let mut guard = local_api_guard(&self.local_api)?;
+        let kp = guard
+            .begin_recovery_keypair()
+            .map_err(bingle_error_to_jsi)?;
+        // The recovery moves the current account's funds to this key, so it must be on disk before
+        // the app can sign anything with it.
+        save_strictly(guard.as_ref(), &self.local_file, "a recovery keypair")?;
+        Ok(Keypair {
+            id: kp.id,
+            passphrase: kp.passphrase,
+        })
+    }
+
+    fn sign_recovery_group(
+        &self,
+        transactions: Vec<String>,
+        sign_indexes: Vec<u32>,
+        handle: String,
+    ) -> Result<Vec<String>, BingleJsiError> {
+        let ids = self.registration_group_ids()?;
+        let guard = local_api_guard(&self.local_api)?;
+        let current = guard
+            .get_keypair()
+            .map_err(bingle_error_to_jsi)?
+            .ok_or_else(|| no_keypair("sign a recovery group"))?;
+        let pending = guard
+            .get_recovery_keypair()
+            .map_err(bingle_error_to_jsi)?
+            .ok_or_else(|| BingleJsiError::InvalidRequest {
+                reason: "no recovery has begun: call beginRecoveryKeypair first".to_string(),
+            })?;
+        drop(guard);
+        let old_key = signing_key(&current.passphrase)?;
+        let new_key = signing_key(&pending.passphrase)?;
+        registration_group::sign_recovery_group(
+            &transactions,
+            &sign_indexes,
+            ids,
+            &handle,
+            &old_key,
+            &new_key,
+        )
+        .map_err(|e| BingleJsiError::InvalidRequest {
+            reason: e.to_string(),
+        })
+    }
+
+    fn complete_recovery_keypair(&self) -> Result<Keypair, BingleJsiError> {
+        let mut guard = local_api_guard(&self.local_api)?;
+        let kp = guard
+            .complete_recovery_keypair()
+            .map_err(bingle_error_to_jsi)?;
+        save_strictly(guard.as_ref(), &self.local_file, "the recovered keypair")?;
+        Ok(Keypair {
+            id: kp.id,
+            passphrase: kp.passphrase,
+        })
     }
 
     fn request_push_registration(&self) -> Result<(), BingleJsiError> {

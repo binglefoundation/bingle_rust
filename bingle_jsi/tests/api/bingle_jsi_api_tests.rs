@@ -257,6 +257,40 @@ impl BingleJsiApi for StubApi {
         })
     }
 
+    fn sign_registration_group(
+        &self,
+        _transactions: Vec<String>,
+        _sign_indexes: Vec<u32>,
+        _handle: String,
+    ) -> Result<Vec<String>, BingleJsiError> {
+        Err(BingleJsiError::NotImplemented {
+            reason: "sign_registration_group".to_string(),
+        })
+    }
+
+    fn begin_recovery_keypair(&self) -> Result<Keypair, BingleJsiError> {
+        Err(BingleJsiError::NotImplemented {
+            reason: "begin_recovery_keypair".to_string(),
+        })
+    }
+
+    fn sign_recovery_group(
+        &self,
+        _transactions: Vec<String>,
+        _sign_indexes: Vec<u32>,
+        _handle: String,
+    ) -> Result<Vec<String>, BingleJsiError> {
+        Err(BingleJsiError::NotImplemented {
+            reason: "sign_recovery_group".to_string(),
+        })
+    }
+
+    fn complete_recovery_keypair(&self) -> Result<Keypair, BingleJsiError> {
+        Err(BingleJsiError::NotImplemented {
+            reason: "complete_recovery_keypair".to_string(),
+        })
+    }
+
     fn keypair_status(&self) -> Result<KeypairStatusResponse, BingleJsiError> {
         Err(BingleJsiError::NotImplemented {
             reason: "keypair_status".to_string(),

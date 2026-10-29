@@ -268,6 +268,93 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
         }.start()
     }
 
+    // App-store registration groups (#344)
+
+    private fun strings(array: ReadableArray): List<String> =
+        (0 until array.size()).map { requireNotNull(array.getString(it)) { "transaction $it is not a string" } }
+
+    private fun indexes(array: ReadableArray): List<UInt> =
+        (0 until array.size()).map { array.getInt(it).toUInt() }
+
+    private fun stringArray(values: List<String>): WritableArray {
+        val arr = Arguments.createArray()
+        values.forEach { arr.pushString(it) }
+        return arr
+    }
+
+    private fun keypairMap(kp: Keypair): WritableMap {
+        val map = Arguments.createMap()
+        map.putString("id", kp.id)
+        map.putString("passphrase", kp.passphrase)
+        return map
+    }
+
+    @ReactMethod
+    fun signRegistrationGroup(transactions: ReadableArray, signIndexes: ReadableArray, handle: String, promise: Promise) {
+        val api = apiInstance
+        if (api == null) {
+            promise.reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.")
+            return
+        }
+        Thread {
+            try {
+                val signed = api.signRegistrationGroup(strings(transactions), indexes(signIndexes), handle)
+                promise.resolve(stringArray(signed))
+            } catch (e: Exception) {
+                promise.reject("BINGLE_ERROR", e.message, e)
+            }
+        }.start()
+    }
+
+    @ReactMethod
+    fun beginRecoveryKeypair(promise: Promise) {
+        val api = apiInstance
+        if (api == null) {
+            promise.reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.")
+            return
+        }
+        Thread {
+            try {
+                promise.resolve(keypairMap(api.beginRecoveryKeypair()))
+            } catch (e: Exception) {
+                promise.reject("BINGLE_ERROR", e.message, e)
+            }
+        }.start()
+    }
+
+    @ReactMethod
+    fun signRecoveryGroup(transactions: ReadableArray, signIndexes: ReadableArray, handle: String, promise: Promise) {
+        val api = apiInstance
+        if (api == null) {
+            promise.reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.")
+            return
+        }
+        Thread {
+            try {
+                val signed = api.signRecoveryGroup(strings(transactions), indexes(signIndexes), handle)
+                promise.resolve(stringArray(signed))
+            } catch (e: Exception) {
+                promise.reject("BINGLE_ERROR", e.message, e)
+            }
+        }.start()
+    }
+
+    @ReactMethod
+    fun completeRecoveryKeypair(promise: Promise) {
+        val api = apiInstance
+        if (api == null) {
+            promise.reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.")
+            return
+        }
+        Thread {
+            try {
+                promise.resolve(keypairMap(api.completeRecoveryKeypair()))
+            } catch (e: Exception) {
+                promise.reject("BINGLE_ERROR", e.message, e)
+            }
+        }.start()
+    }
+
     @ReactMethod
     fun registerKeypair(handle: String, promise: Promise) {
         val api = apiInstance
