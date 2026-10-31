@@ -48,9 +48,9 @@ dependencies = [
 
 [[package]]
 name = "algo_ops"
-version = "0.9.5"
+version = "0.9.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "90c2d9c1584e87b259071eda6fd7cf1a66b75f8fdb906cb3d78bd9143dff87cb"
+checksum = "ccdcbf604a3bfb24266b551b5af3aa5965fb50bf1f4544b81aebec0523721dac"
 dependencies = [
  "algonaut",
  "anyhow",
@@ -747,9 +747,9 @@ dependencies = [
 
 [[package]]
 name = "blockchain_ops"
-version = "0.9.5"
+version = "0.9.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "728aa7b2917bc697faead019b4b0ef60483cf27a1a6defe2e56603e5e3d21527"
+checksum = "e6e97d4b2977ca26aaebb05d9c686c0f134c065dec5d8abfa5e70da6c9226b87"
 dependencies = [
  "anyhow",
  "serde",
@@ -1893,7 +1893,7 @@ dependencies = [
  "libc",
  "percent-encoding",
  "pin-project-lite",
- "socket2 0.6.4",
+ "socket2 0.5.10",
  "system-configuration 0.7.0",
  "tokio",
  "tower-service",
@@ -2780,7 +2780,7 @@ dependencies = [
  "quinn-udp",
  "rustc-hash",
  "rustls",
- "socket2 0.6.4",
+ "socket2 0.5.10",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
@@ -2818,7 +2818,7 @@ dependencies = [
  "cfg_aliases",
  "libc",
  "once_cell",
- "socket2 0.6.4",
+ "socket2 0.5.10",
  "tracing",
  "windows-sys 0.60.2",
 ]
@@ -3533,9 +3533,9 @@ checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
 
 [[package]]
 name = "sidewinder_ops"
-version = "0.9.5"
+version = "0.9.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f80defe36330e8ba36e63870156e81fcfb073ce19864819435ded40563c1afb9"
+checksum = "022d60a32542ac7cb3c6347498841a17814f0ac92f84e379872a8a50bad86394"
 dependencies = [
  "algo_ops",
  "anyhow",
@@ -3692,9 +3692,9 @@ checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 
 [[package]]
 name = "sw_identity_tls"
-version = "0.9.5"
+version = "0.9.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "02797c969e70c09088d9235fd72162c9d37397b1c67d1ae88d09f6da3f43e5f4"
+checksum = "6623e6aff42248cf6749ee5e9b4faa36dcecf12ef49f96ba91b0d151154f49c4"
 dependencies = [
  "algo_ops",
  "anyhow",
@@ -4663,7 +4663,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]

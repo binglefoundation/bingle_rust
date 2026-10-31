@@ -27,7 +27,7 @@ ed25519-dalek = { version = "2", features = ["rand_core"] }
 
 # Depend on the main crate for real backend access to AlgoOps
 bingle_core = { path = "../bingle_core" }
-algo_ops = "0.9.5"
+algo_ops = "0.9.6"
 # The Sidewinder Mailbox client, for the localnet e2e echo peer's store-and-forward reply (#210).
 # Optional and only under `localnet`: bingle_local's own tests use this crate without it.
 bingle_local = { path = "../bingle_local", optional = true }

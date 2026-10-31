@@ -21,12 +21,12 @@ crate-type = ["rlib"]
 
 [dependencies]
 # Core deps kept iOS-friendly; heavy platform-specific deps remain gated below.
-blockchain_ops = "0.9.5"
+blockchain_ops = "0.9.6"
 # 0.8.0 adds fetch_opted_in_accounts_cached (delegated to by indexer_query_opted_in_accounts_sync,
 # issue #231); 0.8.1 adds AccountScanCache::clear() (used by clear_accounts_cache); 0.8.2 adds
 # call_app_with_accounts (used by the set_allow_* bindings) and auto-sizes extra program pages so the
 # larger allow-flags contract deploys (issue #232).
-algo_ops = "0.9.5"
+algo_ops = "0.9.6"
 algonaut = "0.8.0"
 anyhow = "1"
 thiserror = "1"
@@ -86,7 +86,7 @@ serial_test = "3"
 bingle_core = { path = ".", features = ["test-hooks"] }
 # `test-support` exposes `arc4_frame_args`, so tests that build raw app calls on purpose (the
 # multi-signer register collision group, issue #366) frame ARC-4 args through AlgoOps, not by hand.
-algo_ops = { version = "0.9.5", features = ["test-support"] }
+algo_ops = { version = "0.9.6", features = ["test-support"] }
 # Tampering with the registration service's msgpack transactions in the #344 tests.
 rmpv = "1"
 
