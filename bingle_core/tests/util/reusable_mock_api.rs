@@ -439,6 +439,10 @@ impl bingle_core::api::bingle_api::BingleApiInternal for MockApiBoth {
             .ddb_register_ip(endpoint, am_relay)
     }
 
+    fn with_engine(&self, f: &mut dyn FnMut(&bingle_core::engine::Engine)) {
+        self.inner_bingle_api_internal.with_engine(f)
+    }
+
     fn ddb_register_relay(
         &self,
         relay_id: String,
@@ -567,6 +571,8 @@ impl bingle_core::api::bingle_api::BingleApiInternal for MockApiBoth {
 /// Delegating trait: mirrors `bingle_core::api::bingle_api::BingleApiInternal` but provides defaults,
 /// so test mocks can override only the methods they care about.
 pub trait InnerBingleApiInternal {
+    fn with_engine(&self, _f: &mut dyn FnMut(&bingle_core::engine::Engine)) {}
+
     fn get_relay_state(&self) -> String {
         "off".to_string()
     }

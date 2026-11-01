@@ -57,6 +57,13 @@ impl Engine {
             });
             // Register outside with_engine: it waits on a relay's response.
             if let Some((registration, client)) = work {
+                if matches!(registration, crate::ddb::AdvertRegistration::Relay { .. }) {
+                    let mut advertise = true;
+                    api.with_engine(&mut |e| advertise = e.renew_home_relay_listen());
+                    if !advertise {
+                        return true;
+                    }
+                }
                 match registration.register(client.as_ref()) {
                     Ok(()) => tracing::debug!(
                         "[Engine::advert_refresh] refreshed advert {:?}",

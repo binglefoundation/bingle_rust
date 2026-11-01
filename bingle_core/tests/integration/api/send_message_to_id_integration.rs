@@ -117,6 +117,18 @@ fn start_client(
     app_id: u64,
     cfg: algo_ops::AlgoChainConfig,
 ) -> Arc<BingleApiImpl> {
+    start_client_with_advert_ttl(name, passphrase, stun_list, app_id, cfg, None)
+}
+
+// Helper: start a client that refreshes its advert every third of `advert_ttl`.
+fn start_client_with_advert_ttl(
+    name: &str,
+    passphrase: &str,
+    stun_list: Vec<SocketAddr>,
+    app_id: u64,
+    cfg: algo_ops::AlgoChainConfig,
+    advert_ttl: Option<Duration>,
+) -> Arc<BingleApiImpl> {
     tracing::info!(
         "[Test] start_client name={} stun_list={:?} app_id={}",
         name,
@@ -140,7 +152,7 @@ fn start_client(
         // Short response timeout so a transient relay non-response fails fast and the bounded
         // Listen retry in registration gets multiple attempts within the test's registration wait.
         wait_response_timeout: Some(Duration::from_secs(20)),
-        advert_ttl: None,
+        advert_ttl,
     };
     let api = BingleApiImpl::new(&opts);
     api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.start(&opts))
@@ -1722,6 +1734,161 @@ pub fn client_recovers_from_dropped_listen_via_retry_localnet() {
     );
 
     client_a.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.stop());
+    relay1.access_unsafe_for_tests(|r: &mut BingleApiImpl| r.stop());
+    relay2.access_unsafe_for_tests(|r: &mut BingleApiImpl| r.stop());
+    s1.stop();
+    s2.stop();
+}
+
+/// Issue #381: a relayed client whose home relay restarts, losing its listen and advert, is
+/// reachable again without restarting. Without the renewal it stays unreachable until its next
+/// keep-alive, 10 minutes after the last one.
+// ntest::timeout must sit ABOVE serial; see bingle_api_send_message_after_client_restart_localnet.
+#[ntest::timeout(300_000)]
+#[serial(send_message_to_id)]
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn relayed_client_is_reachable_after_home_relay_restart_localnet() {
+    test_util::init_test_logging_with_filter("info,bingle_core::dtls=info");
+    test_util::assert_localnet_available();
+
+    const ADVERT_TTL: Duration = Duration::from_secs(15);
+    const RECOVERY_DEADLINE: Duration = Duration::from_secs(150);
+
+    let relay1_addr = SocketAddr::new(
+        IpAddr::V4(Ipv4Addr::LOCALHOST),
+        test_util::find_unused_loopback_port(),
+    );
+    let relay2_addr = SocketAddr::new(
+        IpAddr::V4(Ipv4Addr::LOCALHOST),
+        test_util::find_unused_loopback_port(),
+    );
+
+    let cfg = test_util::localnet_config();
+    let creator = test_util::ops_from_mnemonic(
+        test_util::ADDRESS_SPEND,
+        test_util::PASSPHRASE_SPEND,
+        cfg.clone(),
+    );
+    let (app_id, asset_id) = test_util::deploy_bingle_app_and_asset(&creator, "BINGLE$", 1_000_000);
+    register_relays(app_id, asset_id, relay1_addr, relay2_addr);
+
+    let mut relay1 = test_util::start_root_relay(
+        "relay1",
+        relay1_addr,
+        test_util::PASSPHRASE_SPEND,
+        app_id,
+        cfg.clone(),
+    );
+    let mut relay2 = test_util::start_root_relay(
+        "relay2",
+        relay2_addr,
+        test_util::PASSPHRASE_RECEIVE,
+        app_id,
+        cfg.clone(),
+    );
+
+    // Broken NAT forces both clients onto relays, through the triangle path a first registration
+    // takes.
+    let (mut s1, mut s2, stun_list) = setup_stun_servers(true);
+    register_client_on_blockchain(
+        test_util::ADDRESS_10MIL,
+        test_util::PASSPHRASE_10MIL,
+        "client_a",
+        app_id,
+        asset_id,
+        &creator,
+        cfg.clone(),
+    );
+    register_client_on_blockchain(
+        ADDRESS_B,
+        PASSPHRASE_B,
+        "client_b",
+        app_id,
+        asset_id,
+        &creator,
+        cfg.clone(),
+    );
+    let client_a = start_client_with_advert_ttl(
+        "client_a",
+        test_util::PASSPHRASE_10MIL,
+        stun_list.clone(),
+        app_id,
+        cfg.clone(),
+        Some(ADVERT_TTL),
+    );
+    let client_b = start_client_with_advert_ttl(
+        "client_b",
+        PASSPHRASE_B,
+        stun_list.clone(),
+        app_id,
+        cfg.clone(),
+        Some(ADVERT_TTL),
+    );
+    assert!(
+        test_util::wait_for_registered(&client_a, Duration::from_secs(120)),
+        "client A did not reach Registered"
+    );
+    assert!(
+        test_util::wait_for_registered(&client_b, Duration::from_secs(120)),
+        "client B did not reach Registered"
+    );
+
+    let a_id = client_a.get_my_id().expect("client A id");
+    let received = Arc::new(AtomicBool::new(false));
+    let payload: Arc<Mutex<Option<serde_json::Value>>> = Arc::new(Mutex::new(None));
+    let who: Arc<Mutex<Option<(String, String)>>> = Arc::new(Mutex::new(None));
+    setup_on_message(&client_a, &received, &payload, &who);
+
+    // Sends may fail or be lost while the relays and sessions recover, so keep trying.
+    let deliver_to_a = |text: &str, deadline: Duration| -> bool {
+        let started = Instant::now();
+        reset_message_state(&received, &payload, &who);
+        while started.elapsed() < deadline {
+            let message = json!({ "text": text });
+            let sent = client_b.access_unsafe_for_tests(|c: &mut BingleApiImpl| {
+                c.send_message_to_id(&a_id, message.clone(), None)
+            });
+            tracing::info!("[Test] send {:?}: {:?}", text, sent);
+            if wait_for_message(&received, Duration::from_secs(5)) {
+                return true;
+            }
+        }
+        false
+    };
+    assert!(
+        deliver_to_a("before restart", Duration::from_secs(60)),
+        "client A did not receive a message before the relay restart"
+    );
+
+    // Restart A's home relay on the same address, as a redeployed relay comes back.
+    let (home_id, home_addr) = client_a
+        .engine_for_tests()
+        .relay_keep_alive_target_for_tests()
+        .expect("client A is relayed, so it has a home relay");
+    let (home, name, passphrase) = if home_addr == relay1_addr {
+        (&mut relay1, "relay1", test_util::PASSPHRASE_SPEND)
+    } else {
+        assert_eq!(home_addr, relay2_addr);
+        (&mut relay2, "relay2", test_util::PASSPHRASE_RECEIVE)
+    };
+    tracing::info!("[Test] restarting home relay {} ({})", name, home_id);
+    home.access_unsafe_for_tests(|r: &mut BingleApiImpl| r.stop());
+    *home = test_util::start_root_relay(name, home_addr, passphrase, app_id, cfg.clone());
+
+    let restarted_at = Instant::now();
+    assert!(
+        deliver_to_a("after restart", RECOVERY_DEADLINE),
+        "client A was not reachable within {:?} of its home relay restarting",
+        RECOVERY_DEADLINE
+    );
+    tracing::info!(
+        "[Test] client A reachable {:?} after the relay restart",
+        restarted_at.elapsed()
+    );
+
+    client_a.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.stop());
+    client_b.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.stop());
     relay1.access_unsafe_for_tests(|r: &mut BingleApiImpl| r.stop());
     relay2.access_unsafe_for_tests(|r: &mut BingleApiImpl| r.stop());
     s1.stop();
