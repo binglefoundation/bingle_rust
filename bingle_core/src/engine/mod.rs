@@ -3,7 +3,7 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::{Arc, Condvar, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
-use crate::api::bingle_api::{BingleError, NetworkEndpoint, StartOptions, UserId};
+use crate::api::bingle_api::{BingleApiBoth, BingleError, NetworkEndpoint, StartOptions, UserId};
 use crate::themes;
 
 use crate::blockchain::algo_bingle::RelayGate;
@@ -2196,8 +2196,9 @@ impl Engine {
                     relay.address(),
                     relay.id()
                 );
-                self.register_with_relay(Some(relay));
-                return;
+                if self.reregister_or_switch(relay) {
+                    return;
+                }
             }
         }
 
@@ -2425,7 +2426,7 @@ impl Engine {
     ///
     /// `relay_info_override`: when Some, skips relay discovery and uses the provided relay directly
     /// (used by test helpers to avoid real network relay checks).
-    fn register_with_relay(&self, relay_info_override: Option<RelayInfo>) {
+    pub(crate) fn register_with_relay(&self, relay_info_override: Option<RelayInfo>) -> bool {
         use crate::relay::relay_finder::RelayInfo;
 
         // Resolve my_id from issuer (strip suffix) or options handle.
@@ -2447,7 +2448,7 @@ impl Engine {
                         "[Engine::register_with_relay] find_relay (cached finder) failed: {}",
                         e
                     );
-                    return;
+                    return false;
                 }
             }
         } else {
@@ -2462,7 +2463,7 @@ impl Engine {
                     tracing::warn!(
                         "[Engine::register_with_relay] app_id missing; cannot discover relay"
                     );
-                    return;
+                    return false;
                 }
             };
             let api = match self.bingle_api.upgrade() {
@@ -2471,7 +2472,7 @@ impl Engine {
                     tracing::error!(
                         "[Engine::register_with_relay] bingle_api upgrade failed for accounts cache"
                     );
-                    return;
+                    return false;
                 }
             };
             let cache = api.get_accounts_cache();
@@ -2485,7 +2486,7 @@ impl Engine {
                 Ok(info) => info,
                 Err(e) => {
                     tracing::warn!("[Engine::register_with_relay] find_relay failed: {}", e);
-                    return;
+                    return false;
                 }
             }
         };
@@ -2501,65 +2502,12 @@ impl Engine {
             Some(a) => a,
             None => {
                 tracing::error!("[Engine::register_with_relay] bingle_api weak reference is gone");
-                return;
+                return false;
             }
         };
 
-        // Send Relay::Listen and expect a ListenResponse. Retry a bounded number of times so a
-        // transient relay non-response doesn't strand us in NATRestricted (registration is
-        // otherwise one-shot). Mirrors the retry in handlers::post_triangle_relay_register.
-        let nsk = NetworkEndpoint::new_direct(relay_info.address());
-        let uid = relay_info.id().to_string();
-        const LISTEN_ATTEMPTS: usize = 3;
-        let mut listen_ok = false;
-        for attempt in 1..=LISTEN_ATTEMPTS {
-            let listen = crate::messages::types::RelayListen {
-                app: None,
-                tag: None,
-            };
-            let json = crate::messages::marshal::to_json_value(&Message::Relay(
-                RelayMessage::Listen(listen),
-            ));
-            match api.send_message_to_network_with_response(&nsk, &uid, json, None) {
-                Ok(resp) => {
-                    let ty_ok = resp.get("type").and_then(|v| v.as_str()) == Some("ListenResponse");
-                    if !ty_ok {
-                        tracing::warn!(
-                            "[Engine::register_with_relay] unexpected response to Listen: {}",
-                            resp
-                        );
-                        return;
-                    }
-                    tracing::info!(
-                        "[Engine::register_with_relay] Relay ListenResponse received (attempt {}); registering relay listener",
-                        attempt
-                    );
-                    api.turn_client_handle_listen_response(
-                        relay_info.address(),
-                        relay_info.id().to_string(),
-                    );
-                    listen_ok = true;
-                    break;
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        "[Engine::register_with_relay] Listen attempt {}/{} failed: {}",
-                        attempt,
-                        LISTEN_ATTEMPTS,
-                        e
-                    );
-                    if attempt < LISTEN_ATTEMPTS {
-                        std::thread::sleep(Duration::from_secs(2));
-                    }
-                }
-            }
-        }
-        if !listen_ok {
-            tracing::warn!(
-                "[Engine::register_with_relay] Listen failed after {} attempts",
-                LISTEN_ATTEMPTS
-            );
-            return;
+        if !self.send_relay_listen(&api, &relay_info) {
+            return false;
         }
 
         // Register relay association in DDB and mark registered.
@@ -2581,7 +2529,85 @@ impl Engine {
             // Keep the NAT mapping towards this relay alive so inbound relayed data
             // is deliverable even after long idle periods.
             self.start_relay_keep_alive(relay_info.id().to_string(), relay_info.address());
+            return true;
         }
+        false
+    }
+
+    /// Re-register with `relay` directly; if that fails, stop using it and register with another
+    /// relay found by discovery, so a home relay that has gone doesn't leave this client
+    /// unreachable (issue #381). Returns whether the client is registered with a relay.
+    fn reregister_or_switch(&self, relay: RelayInfo) -> bool {
+        let relay_id = relay.id().to_string();
+        self.register_with_relay(Some(relay)) || self.switch_home_relay(&relay_id)
+    }
+
+    /// Drop a home relay that failed to register us and register with another (issue #381).
+    fn switch_home_relay(&self, failed_relay_id: &str) -> bool {
+        tracing::warn!(
+            "[Engine::switch_home_relay] home relay {} failed; finding another",
+            failed_relay_id
+        );
+        self.relay_finder_remove_relay(failed_relay_id);
+        self.register_with_relay(None)
+    }
+
+    /// Send Relay::Listen to `relay`, with the bounded retry registration uses, and record the
+    /// listener mapping on success.
+    fn send_relay_listen(&self, api: &Arc<dyn BingleApiBoth>, relay: &RelayInfo) -> bool {
+        // Send Relay::Listen and expect a ListenResponse. Retry a bounded number of times so a
+        // transient relay non-response doesn't strand us in NATRestricted (registration is
+        // otherwise one-shot). Mirrors the retry in handlers::post_triangle_relay_register.
+        let nsk = NetworkEndpoint::new_direct(relay.address());
+        let uid = relay.id().to_string();
+        const LISTEN_ATTEMPTS: usize = 3;
+        let mut listen_ok = false;
+        for attempt in 1..=LISTEN_ATTEMPTS {
+            let listen = crate::messages::types::RelayListen {
+                app: None,
+                tag: None,
+            };
+            let json = crate::messages::marshal::to_json_value(&Message::Relay(
+                RelayMessage::Listen(listen),
+            ));
+            match api.send_message_to_network_with_response(&nsk, &uid, json, None) {
+                Ok(resp) => {
+                    let ty_ok = resp.get("type").and_then(|v| v.as_str()) == Some("ListenResponse");
+                    if !ty_ok {
+                        tracing::warn!(
+                            "[Engine::send_relay_listen] unexpected response to Listen: {}",
+                            resp
+                        );
+                        return false;
+                    }
+                    tracing::info!(
+                        "[Engine::send_relay_listen] Relay ListenResponse received (attempt {}); registering relay listener",
+                        attempt
+                    );
+                    api.turn_client_handle_listen_response(relay.address(), relay.id().to_string());
+                    listen_ok = true;
+                    break;
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        "[Engine::send_relay_listen] Listen attempt {}/{} failed: {}",
+                        attempt,
+                        LISTEN_ATTEMPTS,
+                        e
+                    );
+                    if attempt < LISTEN_ATTEMPTS {
+                        std::thread::sleep(Duration::from_secs(2));
+                    }
+                }
+            }
+        }
+        if !listen_ok {
+            tracing::warn!(
+                "[Engine::send_relay_listen] Listen failed after {} attempts",
+                LISTEN_ATTEMPTS
+            );
+        }
+        listen_ok
     }
 
     /// Handle the notification that a fresh outbound DTLS session was established to `endpoint`
@@ -2651,7 +2677,30 @@ impl Engine {
             relay.id(),
             reason
         );
-        self.register_with_relay(Some(relay));
+        self.reregister_or_switch(relay);
+    }
+
+    /// Renew the listen on the home relay ahead of an advert refresh, so a relay that restarted
+    /// and lost its listener table has it back before the advert sends senders there (issue #381).
+    /// Returns whether the caller should go on to repeat its advert. If the home relay doesn't
+    /// answer, this switches relay, which publishes a new advert, and returns false. A client not
+    /// registered with a known relay has no listen to renew.
+    pub(crate) fn renew_home_relay_listen(&self) -> bool {
+        if self.state() != EngineState::Registered {
+            return true;
+        }
+        let remembered = self.last_registered_relay.lock().unwrap().clone();
+        let Some(relay) = remembered else {
+            return true;
+        };
+        let Some(api) = self.bingle_api.upgrade() else {
+            return true;
+        };
+        if self.send_relay_listen(&api, &relay) {
+            return true;
+        }
+        self.switch_home_relay(relay.id());
+        false
     }
 
     /// Start (or restart) the periodic keep-alive towards the relay we just registered
@@ -3138,6 +3187,11 @@ impl Engine {
             Arc::new(move || relays.clone());
         let finder = RelayFinder::new(api, discover);
         *self.relay_finder.lock().unwrap() = Some(Arc::new(finder));
+    }
+
+    /// Test helper: remember a home relay without registering with it (#381).
+    pub fn test_set_last_registered_relay(&self, relay: RelayInfo) {
+        *self.last_registered_relay.lock().unwrap() = Some(relay);
     }
 
     /// Test helper: override the relay keep-alive interval (short for sender tests,

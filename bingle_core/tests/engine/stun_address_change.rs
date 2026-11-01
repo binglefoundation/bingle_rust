@@ -206,7 +206,7 @@ fn build_engine_with_relay_status(dtls: TrackingDtls, response: serde_json::Valu
     eng
 }
 
-fn relays_status_response(relay_id: &str, relay_addr: SocketAddr) -> serde_json::Value {
+pub fn relays_status_response(relay_id: &str, relay_addr: SocketAddr) -> serde_json::Value {
     to_json_value(&Message::Ddb(DdbMessage::RelaysStatusResponse(
         DdbRelaysStatusResponse {
             app: "ddb".to_string(),
