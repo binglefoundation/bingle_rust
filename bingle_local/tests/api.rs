@@ -28,8 +28,8 @@ mod message_id;
 #[path = "api/local_impl_keypair_status.rs"]
 mod local_impl_keypair_status;
 
-#[path = "api/account_status.rs"]
-mod account_status;
+#[path = "api/inspect_passphrase.rs"]
+mod inspect_passphrase;
 #[path = "api/local_impl_persistence.rs"]
 mod local_impl_persistence;
 

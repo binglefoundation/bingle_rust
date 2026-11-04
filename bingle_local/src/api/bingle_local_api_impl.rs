@@ -1,7 +1,6 @@
 //! The concrete [`BingleLocalApi`] implementation [`BingleApiLocalImpl`] and its
 //! [`LocalApiConfig`].
 
-use crate::api::account_status::{ChainAccountStatusReads, resolve_account_status};
 use crate::api::notify::envelope::{fresh_nonce, now_secs};
 use crate::api::notify::{
     AlertPoster, RegisterPoster, build_register_request, encode_apns_token, post_giveup_alerts,
@@ -9,12 +8,13 @@ use crate::api::notify::{
 use crate::api::sidewinder::MailboxConfig;
 use crate::api::{
     BingleLocalApi, ChainRegistrationOps, Contact, ContactSource, DeliveryRoute, Keypair,
-    KeypairStatus, MailboxPoll, Message, MessagingSettings, legacy_message_id, new_message_id,
-    run_registration,
+    KeypairStatus, MailboxPoll, Message, MessagingSettings, REQUIRED_ALGO, legacy_message_id,
+    new_message_id, run_registration,
 };
 use algo_ops::error::AlgoErrorKind;
 use algo_ops::{AlgoChainConfig, AlgoOps};
 use bingle_core::api::bingle_api::{BingleError, SendFailureKind};
+use bingle_core::blockchain::account_status::{StatusReadFailure, resolve_account_status};
 use bingle_core::blockchain::algo_bingle::AlgoBingle;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -171,6 +171,26 @@ impl LocalApiConfig {
         }
         Ok(())
     }
+}
+
+/// Resolve `address`'s status from chain through bingle_core's [`resolve_account_status`], for the
+/// account `ops` is built for, falling back to [`REQUIRED_ALGO`] when the live funding target can't
+/// be read. Shared by `keypair_status` and `inspect_passphrase` (issue #388).
+fn account_status_from_chain(
+    ops: AlgoOps,
+    app_id: u64,
+    asset_id: u64,
+    address: String,
+) -> Result<KeypairStatus, StatusReadFailure> {
+    let bgl = AlgoBingle::new(ops, app_id, asset_id);
+    let facts = resolve_account_status(&bgl, address, app_id, asset_id, REQUIRED_ALGO)?;
+    Ok(keypair_status_from_facts(
+        facts.address,
+        facts.has_asset,
+        facts.handle,
+        facts.balance_algos,
+        facts.required_funding_algos,
+    ))
 }
 
 /// Decide the keypair status from resolved on-chain facts.
@@ -1859,15 +1879,17 @@ impl BingleLocalApi for BingleApiLocalImpl {
 
         // 3) Resolve registration and funding from chain; a failed read falls back to the
         // last-known status during an outage.
-        let reads = ChainAccountStatusReads::new(ops, configured_app_id, self.config().asset_id);
-        let status = match resolve_account_status(
-            &reads,
-            algorand_id,
+        let status = match account_status_from_chain(
+            ops,
             configured_app_id,
             self.config().asset_id,
+            algorand_id,
         ) {
             Ok(s) => s,
-            Err(failure) => return self.fallback_status(&failure.context, failure.error),
+            Err(failure) => {
+                return self
+                    .fallback_status(&failure.context, BingleError::from_anyhow(failure.error));
+            }
         };
         self.cache_status(&status);
         Ok(status)
@@ -1890,14 +1912,13 @@ impl BingleLocalApi for BingleApiLocalImpl {
         );
         let app_id = self.config().app_id;
         let asset_id = self.config().asset_id;
-        let reads = ChainAccountStatusReads::new(ops, app_id, asset_id);
-        resolve_account_status(&reads, address, app_id, asset_id).map_err(|failure| {
+        account_status_from_chain(ops, app_id, asset_id, address).map_err(|failure| {
             tracing::warn!(
                 "[BingleLocalApi][inspect_passphrase] {}: {}",
                 failure.context,
                 failure.error
             );
-            failure.error
+            BingleError::from_anyhow(failure.error)
         })
     }
 

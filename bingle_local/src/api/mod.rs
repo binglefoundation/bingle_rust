@@ -16,12 +16,6 @@ pub use bingle_local_api::*;
 pub mod bingle_local_api_impl;
 pub use bingle_local_api_impl::*;
 
-// On-chain account status resolution, shared by keypair_status and inspect_passphrase (issue #388).
-pub mod account_status;
-pub use account_status::{
-    AccountStatusReads, ChainAccountStatusReads, StatusReadFailure, resolve_account_status,
-};
-
 // On-chain registration seam (see issue #15, step A4).
 pub mod registration;
 pub use registration::{ChainRegistrationOps, RegistrationOps, run_registration};
