@@ -399,6 +399,41 @@ fn import_keypair_rejects_invalid_passphrase() {
 }
 
 #[test]
+fn inspect_passphrase_rejects_invalid_passphrase() {
+    let api = init_with_local_helper();
+    let result = api.inspect_passphrase("not a valid mnemonic".to_string());
+    assert!(result.is_err(), "an invalid mnemonic must be rejected");
+}
+
+/// Inspecting a phrase (issue #388) never adopts it: the stored keypair is the one generated before,
+/// whether or not the chain read succeeds (there is no Algorand node in unit tests).
+#[test]
+fn inspect_passphrase_leaves_stored_keypair_unchanged() {
+    let api = init_with_local_helper();
+    let kp = api
+        .generate_keypair()
+        .expect("generate_keypair should succeed");
+    let other = init_with_local_helper()
+        .generate_keypair()
+        .expect("generate_keypair should succeed");
+
+    if let Ok(status) = api.inspect_passphrase(other.passphrase) {
+        assert_eq!(status.id.as_deref(), Some(other.id.as_str()));
+    }
+
+    let local = api.local_api_for_tests().expect("local api present");
+    let guard = local.lock().expect("local lock");
+    let stored = guard
+        .get_keypair()
+        .expect("get_keypair")
+        .expect("keypair present after generate");
+    assert_eq!(
+        stored.id, kp.id,
+        "inspect must not replace the stored keypair"
+    );
+}
+
+#[test]
 fn runtime_messaging_settings_toggle_preserves_session() {
     // Story #242: the Settings screen changes store-and-forward + notify on a running session via the
     // JSI runtime-update API, and the change takes effect without dropping the session.

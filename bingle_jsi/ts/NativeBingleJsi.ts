@@ -290,6 +290,12 @@ export interface BingleJsiApi {
   // Local storage and contacts
   generateKeypair(): Keypair;
   importKeypair(passphrase: string): Keypair;
+  /**
+   * The address (`id`) and on-chain status of the account a recovery phrase belongs to, on the
+   * configured network, without importing it: the stored keypair is unchanged (issue #388).
+   * Rejects an invalid phrase as `importKeypair` does.
+   */
+  inspectPassphrase(passphrase: string): KeypairStatusResponse;
   registerKeypair(handle: string): boolean;
   signNotifyEnvelope(
     route: string,

@@ -98,6 +98,15 @@ pub trait BingleJsiApi: Send + Sync {
     /// current. Errors if the passphrase is not a valid mnemonic.
     fn import_keypair(&self, passphrase: String) -> Result<Keypair, BingleJsiError>;
 
+    /// Inspect the account a 25-word Algorand mnemonic passphrase belongs to without importing it
+    /// (issue #388): its address (`id`) and on-chain status on the configured network, as
+    /// `keypair_status` reports them (`Active` when registered). The stored keypair is unchanged.
+    /// Errors as `import_keypair` does for an invalid passphrase, and on a failed chain read.
+    fn inspect_passphrase(
+        &self,
+        passphrase: String,
+    ) -> Result<KeypairStatusResponse, BingleJsiError>;
+
     /// Register the current keypair with Bingle using the provided handle.
     fn register_keypair(&self, handle: String) -> Result<(), BingleJsiError>;
 

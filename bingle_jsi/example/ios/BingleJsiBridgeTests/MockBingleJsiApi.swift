@@ -267,6 +267,10 @@ class MockBingleJsiApi: BingleJsiApiProtocol {
         return keypairResult
     }
 
+    func inspectPassphrase(passphrase: String) throws -> KeypairStatusResponse {
+        return keypairStatusResult
+    }
+
     func messagingSettings() throws -> MessagingSettings {
         return MessagingSettings(
             storeAndForwardSend: false,

@@ -394,6 +394,30 @@ final class BingleJsiBridgeTests: XCTestCase {
         XCTAssertEqual(dict?["handle"] as? String, "test-handle")
     }
 
+    // MARK: - inspectPassphrase
+
+    func testInspectPassphrase_resolvesWithStatusFields() {
+        mockApi.keypairStatusResult = KeypairStatusResponse(
+            status: .unfunded, id: "inspected-id", handle: nil, requiredAlgo: 0.5, stale: false
+        )
+        let expectation = self.expectation(description: "resolve called")
+        var resolvedDict: [String: Any]?
+
+        bridge.inspectPassphrase(
+            "a recovery phrase",
+            resolver: { value in
+                resolvedDict = value as? [String: Any]
+                expectation.fulfill()
+            },
+            rejecter: { _, _, _ in XCTFail("unexpected rejection") }
+        )
+
+        waitForExpectations(timeout: 2.0)
+        XCTAssertEqual(resolvedDict?["status"] as? String, "Unfunded")
+        XCTAssertEqual(resolvedDict?["id"] as? String, "inspected-id")
+        XCTAssertEqual(resolvedDict?["stale"] as? Bool, false)
+    }
+
     // MARK: - getNatType
 
     func testGetNatType_resolvesWithNatTypeString() {

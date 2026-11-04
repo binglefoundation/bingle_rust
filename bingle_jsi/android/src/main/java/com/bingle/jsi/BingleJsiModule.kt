@@ -241,6 +241,23 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
         }.start()
     }
 
+    // Inspect the account a recovery phrase belongs to without importing it (issue #388).
+    @ReactMethod
+    fun inspectPassphrase(passphrase: String, promise: Promise) {
+        val api = apiInstance
+        if (api == null) {
+            promise.reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.")
+            return
+        }
+        Thread {
+            try {
+                promise.resolve(keypairStatusToMap(api.inspectPassphrase(passphrase)))
+            } catch (e: Exception) {
+                promise.reject("BINGLE_ERROR", e.message, e)
+            }
+        }.start()
+    }
+
     @ReactMethod
     fun signNotifyEnvelope(
         route: String,
@@ -700,13 +717,7 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
         }
         Thread {
             try {
-                val status = api.keypairStatus()
-                val map = Arguments.createMap()
-                map.putString("status", keypairStatusToString(status.status))
-                if (status.id != null) map.putString("id", status.id) else map.putNull("id")
-                if (status.handle != null) map.putString("handle", status.handle) else map.putNull("handle")
-                if (status.requiredAlgo != null) map.putDouble("required_algo", status.requiredAlgo!!) else map.putNull("required_algo")
-                promise.resolve(map)
+                promise.resolve(keypairStatusToMap(api.keypairStatus()))
             } catch (e: Exception) {
                 promise.reject("BINGLE_ERROR", e.message, e)
             }
@@ -941,6 +952,18 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
         NatType.SYMMETRIC -> "Symmetric"
         NatType.RESTRICTED -> "Restricted"
         NatType.FULL_CONE -> "FullCone"
+    }
+
+    // The map keypairStatus and inspectPassphrase resolve with (KeypairStatusResponse in
+    // ts/NativeBingleJsi.ts).
+    private fun keypairStatusToMap(status: KeypairStatusResponse): WritableMap {
+        val map = Arguments.createMap()
+        map.putString("status", keypairStatusToString(status.status))
+        if (status.id != null) map.putString("id", status.id) else map.putNull("id")
+        if (status.handle != null) map.putString("handle", status.handle) else map.putNull("handle")
+        if (status.requiredAlgo != null) map.putDouble("required_algo", status.requiredAlgo!!) else map.putNull("required_algo")
+        map.putBoolean("stale", status.stale)
+        return map
     }
 
     private fun keypairStatusToString(status: KeypairStatus): String = when (status) {
