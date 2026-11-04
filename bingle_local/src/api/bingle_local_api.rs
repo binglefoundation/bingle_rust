@@ -310,6 +310,15 @@ pub trait BingleLocalApi: Send + Sync {
     /// passphrase.
     fn import_keypair(&mut self, passphrase: String) -> Result<Keypair, BingleError>;
 
+    /// Inspect the account a 25-word Algorand mnemonic `passphrase` belongs to, without importing
+    /// it (issue #388): derive its address and resolve its on-chain status (`ACTIVE`, `FUNDED` or
+    /// `UNFUNDED`, with the same checks as [`keypair_status`](BingleLocalApi::keypair_status)) on
+    /// the configured network. The stored keypair, cached `AlgoOps` and memoized status are left
+    /// untouched. Errors as `import_keypair` does if `passphrase` is not a valid mnemonic, and
+    /// returns a failed chain read as an error rather than any last-known status. Never logs the
+    /// passphrase.
+    fn inspect_passphrase(&self, passphrase: String) -> Result<KeypairStatus, BingleError>;
+
     /// Start a handle clash recovery (issue #344): return the pending recovery keypair, the fresh
     /// account the current one moves to, generating it if none is pending. It is kept beside the
     /// current keypair, not in place of it, and persisted with it, so a recovery interrupted after

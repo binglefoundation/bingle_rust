@@ -140,6 +140,17 @@ export const BingleJsi = BingleJsiNative as {
   getNatType(): Promise<{ nat_type: string }>;
   generateKeypair(): Promise<{ id: string; passphrase: string }>;
   importKeypair(passphrase: string): Promise<{ id: string; passphrase: string }>;
+  /** The address (`id`) and on-chain status of the account a recovery phrase belongs to, on the
+   * configured network, without importing it: the stored keypair is unchanged (issue #388).
+   * `status` is as for keypairStatus (`Active` when registered). Rejects an invalid phrase as
+   * importKeypair does. */
+  inspectPassphrase(passphrase: string): Promise<{
+    status: string;
+    id: string | null;
+    handle: string | null;
+    required_algo: number | null;
+    stale: boolean;
+  }>;
   registerKeypair(handle: string): Promise<boolean>;
   signNotifyEnvelope(
     route: string,

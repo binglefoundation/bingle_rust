@@ -683,6 +683,17 @@ impl BingleJsiApiImpl {
     }
 }
 
+/// Map a [`bingle_local::api::KeypairStatus`] to the FFI [`KeypairStatusResponse`].
+fn keypair_status_response(status: bingle_local::api::KeypairStatus) -> KeypairStatusResponse {
+    KeypairStatusResponse {
+        status: parse_keypair_status(&status.status),
+        id: status.id,
+        handle: status.handle,
+        required_algo: status.required_algo,
+        stale: status.stale,
+    }
+}
+
 /// Parse a keypair status string (from BingleLocalApi) into a KeypairStatus enum.
 fn parse_keypair_status(status: &str) -> KeypairStatus {
     match status {
@@ -2092,13 +2103,18 @@ impl BingleJsiApi for BingleJsiApiImpl {
     fn keypair_status(&self) -> Result<KeypairStatusResponse, BingleJsiError> {
         let guard = local_api_guard(&self.local_api)?;
         let status = guard.keypair_status().map_err(bingle_error_to_jsi)?;
-        Ok(KeypairStatusResponse {
-            status: parse_keypair_status(&status.status),
-            id: status.id,
-            handle: status.handle,
-            required_algo: status.required_algo,
-            stale: status.stale,
-        })
+        Ok(keypair_status_response(status))
+    }
+
+    fn inspect_passphrase(
+        &self,
+        passphrase: String,
+    ) -> Result<KeypairStatusResponse, BingleJsiError> {
+        let guard = local_api_guard(&self.local_api)?;
+        let status = guard
+            .inspect_passphrase(passphrase)
+            .map_err(bingle_error_to_jsi)?;
+        Ok(keypair_status_response(status))
     }
 
     fn save(&self, path: String) -> Result<(), BingleJsiError> {

@@ -283,6 +283,23 @@ class BingleJsiBridge: RCTEventEmitter {
         }
     }
 
+    /// Inspect the account a recovery phrase belongs to without importing it (issue #388).
+    @objc
+    func inspectPassphrase(_ passphrase: String, resolver resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {
+        guard let api = apiInstance else {
+            reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.", nil)
+            return
+        }
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                let status = try api.inspectPassphrase(passphrase: passphrase)
+                resolve(self.keypairStatusToDict(status))
+            } catch {
+                reject("BINGLE_ERROR", "\(error)", error)
+            }
+        }
+    }
+
     @objc
     func signNotifyEnvelope(_ route: String, iss: String, audience: String, token: String, env: String, topic: String?, nonce: String, exp: NSNumber, resolver resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {
         guard let api = apiInstance else {
@@ -776,12 +793,7 @@ class BingleJsiBridge: RCTEventEmitter {
         DispatchQueue.global(qos: .userInitiated).async {
             do {
                 let status = try api.keypairStatus()
-                resolve([
-                    "status": self.keypairStatusToString(status.status),
-                    "id": status.id as Any,
-                    "handle": status.handle as Any,
-                    "required_algo": status.requiredAlgo as Any,
-                ])
+                resolve(self.keypairStatusToDict(status))
             } catch {
                 reject("BINGLE_ERROR", "\(error)", error)
             }
@@ -978,6 +990,18 @@ class BingleJsiBridge: RCTEventEmitter {
         case .restricted: return "Restricted"
         case .fullCone: return "FullCone"
         }
+    }
+
+    /// The dictionary `keypairStatus` and `inspectPassphrase` resolve with (KeypairStatusResponse in
+    /// ts/NativeBingleJsi.ts).
+    private func keypairStatusToDict(_ status: KeypairStatusResponse) -> [String: Any] {
+        return [
+            "status": keypairStatusToString(status.status),
+            "id": status.id as Any,
+            "handle": status.handle as Any,
+            "required_algo": status.requiredAlgo as Any,
+            "stale": status.stale,
+        ]
     }
 
     private func keypairStatusToString(_ status: KeypairStatus) -> String {

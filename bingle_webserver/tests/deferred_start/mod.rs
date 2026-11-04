@@ -157,6 +157,16 @@ impl BingleLocalApi for ControllableLocalApi {
         Ok(true)
     }
 
+    fn inspect_passphrase(&self, _passphrase: String) -> Result<KeypairStatus, BingleError> {
+        Ok(KeypairStatus {
+            status: "UNFUNDED".to_string(),
+            id: Some("INSPECTED_ID".to_string()),
+            handle: None,
+            required_algo: None,
+            stale: false,
+        })
+    }
+
     fn keypair_status(&self) -> Result<KeypairStatus, BingleError> {
         Ok(KeypairStatus {
             status: self.status_override.clone(),

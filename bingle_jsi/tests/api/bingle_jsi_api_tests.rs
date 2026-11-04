@@ -131,6 +131,15 @@ impl BingleJsiApi for StubApi {
         })
     }
 
+    fn inspect_passphrase(
+        &self,
+        _passphrase: String,
+    ) -> Result<KeypairStatusResponse, BingleJsiError> {
+        Err(BingleJsiError::NotImplemented {
+            reason: "inspect_passphrase".to_string(),
+        })
+    }
+
     fn register_keypair(&self, _handle: String) -> Result<(), BingleJsiError> {
         Err(BingleJsiError::NotImplemented {
             reason: "register_keypair".to_string(),
@@ -481,6 +490,13 @@ fn stub_save_returns_not_implemented() {
 fn stub_load_returns_not_implemented() {
     let api = StubApi;
     let result = api.load("/tmp/state.json".to_string());
+    assert!(result.is_err());
+}
+
+#[test]
+fn stub_inspect_passphrase_returns_not_implemented() {
+    let api = StubApi;
+    let result = api.inspect_passphrase("phrase".to_string());
     assert!(result.is_err());
 }
 
