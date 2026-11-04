@@ -55,3 +55,6 @@ pub mod blockchain_ops_trait;
 
 #[path = "registration_group.rs"]
 pub mod registration_group;
+
+#[path = "account_status.rs"]
+pub mod account_status;

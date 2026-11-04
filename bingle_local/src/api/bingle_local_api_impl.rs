@@ -14,6 +14,7 @@ use crate::api::{
 use algo_ops::error::AlgoErrorKind;
 use algo_ops::{AlgoChainConfig, AlgoOps};
 use bingle_core::api::bingle_api::{BingleError, SendFailureKind};
+use bingle_core::blockchain::account_status::{StatusReadFailure, resolve_account_status};
 use bingle_core::blockchain::algo_bingle::AlgoBingle;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -170,6 +171,26 @@ impl LocalApiConfig {
         }
         Ok(())
     }
+}
+
+/// Resolve `address`'s status from chain through bingle_core's [`resolve_account_status`], for the
+/// account `ops` is built for, falling back to [`REQUIRED_ALGO`] when the live funding target can't
+/// be read. Shared by `keypair_status` and `inspect_passphrase` (issue #388).
+fn account_status_from_chain(
+    ops: AlgoOps,
+    app_id: u64,
+    asset_id: u64,
+    address: String,
+) -> Result<KeypairStatus, StatusReadFailure> {
+    let bgl = AlgoBingle::new(ops, app_id, asset_id);
+    let facts = resolve_account_status(&bgl, address, app_id, asset_id, REQUIRED_ALGO)?;
+    Ok(keypair_status_from_facts(
+        facts.address,
+        facts.has_asset,
+        facts.handle,
+        facts.balance_algos,
+        facts.required_funding_algos,
+    ))
 }
 
 /// Decide the keypair status from resolved on-chain facts.
@@ -1856,122 +1877,49 @@ impl BingleLocalApi for BingleApiLocalImpl {
             }
         };
 
-        // 3) Check if the account has opted in to the Bingle$ asset
-        let asset_id = self.config().asset_id;
-        let has_asset = if asset_id > 0 {
-            match ops.is_account_opted_in_to_asset(&algorand_id, asset_id) {
-                Ok(v) => v,
-                Err(e) => {
-                    return self.fallback_status(
-                        &format!(
-                            "Failed to check asset opt-in for {} (asset {})",
-                            algorand_id, asset_id
-                        ),
-                        BingleError::from_anyhow(e),
-                    );
-                }
-            }
-        } else {
-            false
-        };
-
-        // If the account holds the Bingle$ asset, look up its handle from on-chain local state
-        let handle = if has_asset {
-            let app_id = self.config().app_id;
-            if app_id > 0 {
-                let local_state = match ops.local_state_for_account(app_id, &algorand_id) {
-                    Ok(s) => s,
-                    Err(e) => {
-                        return self.fallback_status(
-                            &format!(
-                                "Failed to get local state for {} (app {})",
-                                algorand_id, app_id
-                            ),
-                            BingleError::from_anyhow(e),
-                        );
-                    }
-                };
-                local_state.and_then(|entries| {
-                    entries
-                        .into_iter()
-                        .find(|(k, _)| k == "Handle")
-                        .map(|(_, v)| v)
-                })
-            } else {
-                None
-            }
-        } else {
-            None
-        };
-
-        // ACTIVE requires both the Bingle$ asset and a registered handle. If the
-        // account holds the asset but has no Handle entry, fall through to the
-        // balance check rather than reporting ACTIVE.
-        if has_asset && handle.is_none() {
-            tracing::debug!(
-                "[BingleLocalApi][keypair_status] Account {} holds Bingle$ asset but no Handle entry found; falling through to balance check",
-                algorand_id
-            );
-        }
-
-        // Balance is only needed when the account is not ACTIVE; skip the query otherwise.
-        let balance_algos = if has_asset && handle.is_some() {
-            0.0
-        } else {
-            let balance = match ops.account_balance() {
-                Ok(b) => b,
-                Err(e) => {
-                    return self.fallback_status(
-                        "Failed to get account balance",
-                        BingleError::from_anyhow(e),
-                    );
-                }
-            };
-            let balance_algos = balance.unwrap_or(0.0);
-            tracing::info!(
-                "[BingleLocalApi][keypair_status] Balance: {} ALGOs (raw: {:?})",
-                balance_algos,
-                balance
-            );
-            balance_algos
-        };
-
-        // Derive the adequate-funding target from live cost (AlgoBingle::required_funding reads
-        // the Bingle$ price + the app's local-schema MBR + fees), falling back to the flat
-        // REQUIRED_ALGO if the chain read fails so a transient hiccup never blocks the status
-        // (issue #15, A3b). Only needed when not ACTIVE; skip the read otherwise.
-        let required_target_algos = if has_asset && handle.is_some() {
-            REQUIRED_ALGO
-        } else {
-            let bgl = AlgoBingle::new(ops.clone(), self.config().app_id, self.config().asset_id);
-            match bgl.required_funding() {
-                Ok(target) => {
-                    tracing::info!(
-                        "[BingleLocalApi][keypair_status] derived required funding {} ALGO",
-                        target
-                    );
-                    target
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        "[BingleLocalApi][keypair_status] could not derive required funding ({}); falling back to REQUIRED_ALGO {}",
-                        e,
-                        REQUIRED_ALGO
-                    );
-                    REQUIRED_ALGO
-                }
-            }
-        };
-
-        let status = keypair_status_from_facts(
+        // 3) Resolve registration and funding from chain; a failed read falls back to the
+        // last-known status during an outage.
+        let status = match account_status_from_chain(
+            ops,
+            configured_app_id,
+            self.config().asset_id,
             algorand_id,
-            has_asset,
-            handle,
-            balance_algos,
-            required_target_algos,
-        );
+        ) {
+            Ok(s) => s,
+            Err(failure) => {
+                return self
+                    .fallback_status(&failure.context, BingleError::from_anyhow(failure.error));
+            }
+        };
         self.cache_status(&status);
         Ok(status)
+    }
+
+    fn inspect_passphrase(&self, passphrase: String) -> Result<KeypairStatus, BingleError> {
+        // Validate the mnemonic and derive the account id exactly as import_keypair does. The
+        // passphrase itself is never logged.
+        let address = AlgoOps::address_from_passphrase(&passphrase)
+            .map_err(|e| BingleError::Other(e.to_string()))?;
+        tracing::info!(
+            "[BingleLocalApi][inspect_passphrase] Inspecting account {}",
+            address
+        );
+        // A throwaway AlgoOps for this phrase: the cached one belongs to the stored keypair.
+        let ops = AlgoOps::new_for_algorand(
+            Some(passphrase),
+            None,
+            Some(self.config().algo_config.clone()),
+        );
+        let app_id = self.config().app_id;
+        let asset_id = self.config().asset_id;
+        account_status_from_chain(ops, app_id, asset_id, address).map_err(|failure| {
+            tracing::warn!(
+                "[BingleLocalApi][inspect_passphrase] {}: {}",
+                failure.context,
+                failure.error
+            );
+            BingleError::from_anyhow(failure.error)
+        })
     }
 
     fn get_keypair(&self) -> Result<Option<Keypair>, BingleError> {
