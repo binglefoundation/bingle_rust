@@ -1,9 +1,9 @@
 //! The concrete [`BingleLocalApi`] implementation [`BingleApiLocalImpl`] and its
 //! [`LocalApiConfig`].
 
-use crate::api::notify::envelope::{fresh_nonce, now_secs};
 use crate::api::notify::{
-    AlertPoster, RegisterPoster, build_register_request, encode_apns_token, post_giveup_alerts,
+    AlertPoster, RegisterPoster, build_fresh_register_request, encode_apns_token,
+    post_giveup_alerts,
 };
 use crate::api::sidewinder::MailboxConfig;
 use crate::api::{
@@ -1020,12 +1020,9 @@ impl BingleLocalApi for BingleApiLocalImpl {
         let iss = self.sender_handle()?;
         let ops = self.get_algo_ops()?;
 
-        let nonce = fresh_nonce();
-        // Short freshness window (the contract allows up to 60s ahead), matching the alert envelope.
-        let exp = now_secs() + 45;
         // No topic yet: the config has no field for it, so the gateway pushes to its default topic.
-        // The RN app registers through the bingle_jsi signer instead, which takes the topic (#372).
-        let req = build_register_request(&ops, &iss, &token_hex, &env, None, &nonce, exp)?;
+        // The RN app registers through bingle_jsi instead, which takes the topic (#372, #392).
+        let req = build_fresh_register_request(&ops, &iss, &token_hex, &env, None)?;
 
         tracing::info!(
             "[notify][register] registering APNs token for '{}' (env {}) -> {}",

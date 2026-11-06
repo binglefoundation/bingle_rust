@@ -5,7 +5,7 @@ use crate::api::error::BingleJsiError;
 use crate::api::types::{
     BingleMessage, Contact, ContactSource, HandleLookupPartialResult, Keypair,
     KeypairStatusResponse, Message, MessagingSettings, NatTypeResponse, NetworkSourceKey,
-    VersionInfo,
+    NotifyRegisterRequest, VersionInfo,
 };
 
 /// Primary Bingle API exposed over JSI / uniffi.
@@ -112,7 +112,9 @@ pub trait BingleJsiApi: Send + Sync {
 
     /// Sign the canonical bingle-notify envelope with the active keypair and return the base64
     /// signature. This is the signing primitive the RN app (which has no algosdk) uses to build
-    /// the `/register` (and `/alert`) envelopes the notify gateway verifies.
+    /// the `/register` (and `/alert`) envelopes the notify gateway verifies. For `/register`, prefer
+    /// [`build_notify_register_request`](Self::build_notify_register_request), which sets the nonce
+    /// and `exp` after the lock is held (#392).
     ///
     /// The signed message is the fixed, newline-delimited UTF-8 string
     /// `"bingle-notify:v1"\nroute\niss\naudience\nbodyHash\nnonce\nexp`, signed as
@@ -133,6 +135,21 @@ pub trait BingleJsiApi: Send + Sync {
         nonce: String,
         exp: i64,
     ) -> Result<String, BingleJsiError>;
+
+    /// Build the signed `/register` body for the notify gateway with the active keypair (issue
+    /// #392): `iss` is the local handle, `token` the lowercase-hex APNs device token, `env`
+    /// `"sandbox"` or `"production"`, and `topic` the app's bundle ID (or `None` for the gateway's
+    /// default). The nonce (from the OS CSPRNG) and `exp` are set here, after the engine's lock is
+    /// held, so the envelope can't expire while the call waits. Prefer this to
+    /// [`sign_notify_envelope`](Self::sign_notify_envelope) for registration. Errors if no keypair
+    /// is set.
+    fn build_notify_register_request(
+        &self,
+        iss: String,
+        token: String,
+        env: String,
+        topic: Option<String>,
+    ) -> Result<NotifyRegisterRequest, BingleJsiError>;
 
     /// Sign the client's transactions in an app-store registration group built by the registration
     /// service (issue #344), with the current keypair. `transactions` is the service's whole

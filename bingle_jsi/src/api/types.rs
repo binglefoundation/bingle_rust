@@ -72,6 +72,19 @@ pub struct HandleLookupPartialResult {
     pub canonical_handle: String,
 }
 
+/// A signed `POST /register` body for the notify gateway, ready to send as JSON (issue #392). The
+/// field names are the gateway's; `topic` is omitted from the JSON when `None`.
+#[derive(uniffi::Record, Debug, Clone)]
+pub struct NotifyRegisterRequest {
+    pub iss: String,
+    pub token: String,
+    pub env: String,
+    pub topic: Option<String>,
+    pub nonce: String,
+    pub exp: i64,
+    pub sig: String,
+}
+
 /// How a contact was added.
 #[derive(uniffi::Enum, Debug, Clone, PartialEq)]
 pub enum ContactSource {

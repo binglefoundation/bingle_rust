@@ -285,6 +285,37 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
         }.start()
     }
 
+    @ReactMethod
+    fun buildNotifyRegisterRequest(
+        iss: String,
+        token: String,
+        env: String,
+        topic: String?,
+        promise: Promise,
+    ) {
+        val api = apiInstance
+        if (api == null) {
+            promise.reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.")
+            return
+        }
+        Thread {
+            try {
+                val req = api.buildNotifyRegisterRequest(iss, token, env, topic)
+                val map = Arguments.createMap()
+                map.putString("iss", req.iss)
+                map.putString("token", req.token)
+                map.putString("env", req.env)
+                req.topic?.let { map.putString("topic", it) }
+                map.putString("nonce", req.nonce)
+                map.putDouble("exp", req.exp.toDouble())
+                map.putString("sig", req.sig)
+                promise.resolve(map)
+            } catch (e: Exception) {
+                promise.reject("BINGLE_ERROR", e.message, e)
+            }
+        }.start()
+    }
+
     // App-store registration groups (#344)
 
     private fun strings(array: ReadableArray): List<String> =

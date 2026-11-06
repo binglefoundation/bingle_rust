@@ -64,6 +64,13 @@ RCT_EXTERN_METHOD(signNotifyEnvelope:(NSString *)route
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
+RCT_EXTERN_METHOD(buildNotifyRegisterRequest:(NSString *)iss
+                  token:(NSString *)token
+                  env:(NSString *)env
+                  topic:(NSString *)topic
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+
 RCT_EXTERN_METHOD(signRegistrationGroup:(NSArray *)transactions
                   signIndexes:(NSArray *)signIndexes
                   handle:(NSString *)handle

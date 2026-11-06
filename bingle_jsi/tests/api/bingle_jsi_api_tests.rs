@@ -8,7 +8,7 @@ use bingle_jsi::api::error::BingleJsiError;
 use bingle_jsi::api::types::{
     BingleMessage, Contact, ContactSource, HandleLookupPartialResult, Keypair,
     KeypairStatusResponse, Message, MessagingSettings, NatTypeResponse, NetworkSourceKey,
-    VersionInfo,
+    NotifyRegisterRequest, VersionInfo,
 };
 
 /// Stub implementation where every method returns NotImplemented.
@@ -263,6 +263,18 @@ impl BingleJsiApi for StubApi {
     ) -> Result<String, BingleJsiError> {
         Err(BingleJsiError::NotImplemented {
             reason: "sign_notify_envelope".to_string(),
+        })
+    }
+
+    fn build_notify_register_request(
+        &self,
+        _iss: String,
+        _token: String,
+        _env: String,
+        _topic: Option<String>,
+    ) -> Result<NotifyRegisterRequest, BingleJsiError> {
+        Err(BingleJsiError::NotImplemented {
+            reason: "build_notify_register_request".to_string(),
         })
     }
 
