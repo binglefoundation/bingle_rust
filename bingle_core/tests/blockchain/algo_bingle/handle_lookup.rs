@@ -208,26 +208,26 @@ pub fn test_pick_oldest_match_collision() {
     assert_eq!(result_rev, Some("ADDR1".to_string()));
 }
 
-// The MainNet case behind #390: searching "richdrich" must offer the exact "Rich.D.Rich" first,
+// The case behind #390: searching "samplee" must offer the exact "Sam.P.Lee" first,
 // although two longer handles are older.
-fn richdrich_matches() -> Vec<(String, String, u64)> {
+fn samplee_matches() -> Vec<(String, String, u64)> {
     vec![
-        ("TUTO".to_string(), "Rich.D.Rich".to_string(), 1793914611),
-        ("UAHX".to_string(), "richdrich4".to_string(), 1786335829),
-        ("JWPY".to_string(), "richdrich2".to_string(), 1791925257),
+        ("ADDR_EXACT".to_string(), "Sam.P.Lee".to_string(), 3000),
+        ("ADDR_OLDEST".to_string(), "samplee4".to_string(), 1000),
+        ("ADDR_NEWER".to_string(), "samplee2".to_string(), 2000),
     ]
 }
 
 #[test]
 #[cfg(not(target_os = "ios"))]
 pub fn test_rank_prefix_matches_puts_the_exact_match_first() {
-    let ranked = AlgoBingle::rank_prefix_matches(richdrich_matches(), "richdrich", 10);
+    let ranked = AlgoBingle::rank_prefix_matches(samplee_matches(), "samplee", 10);
     assert_eq!(
         ranked,
         vec![
-            ("TUTO".to_string(), "Rich.D.Rich".to_string(), true),
-            ("UAHX".to_string(), "richdrich4".to_string(), false),
-            ("JWPY".to_string(), "richdrich2".to_string(), false),
+            ("ADDR_EXACT".to_string(), "Sam.P.Lee".to_string(), true),
+            ("ADDR_OLDEST".to_string(), "samplee4".to_string(), false),
+            ("ADDR_NEWER".to_string(), "samplee2".to_string(), false),
         ]
     );
 }
@@ -236,8 +236,8 @@ pub fn test_rank_prefix_matches_puts_the_exact_match_first() {
 #[cfg(not(target_os = "ios"))]
 pub fn test_rank_prefix_matches_normalises_the_search() {
     // Typed with dots and capitals, the search still finds the exact match.
-    let ranked = AlgoBingle::rank_prefix_matches(richdrich_matches(), "@Rich.D.Rich", 10);
-    assert_eq!(ranked[0].1, "Rich.D.Rich");
+    let ranked = AlgoBingle::rank_prefix_matches(samplee_matches(), "@Sam.P.Lee", 10);
+    assert_eq!(ranked[0].1, "Sam.P.Lee");
     assert!(ranked[0].2);
 }
 
@@ -263,15 +263,15 @@ pub fn test_rank_prefix_matches_orders_exact_matches_oldest_first() {
 #[test]
 #[cfg(not(target_os = "ios"))]
 pub fn test_rank_prefix_matches_honours_the_limit() {
-    let ranked = AlgoBingle::rank_prefix_matches(richdrich_matches(), "rich", 2);
+    let ranked = AlgoBingle::rank_prefix_matches(samplee_matches(), "sam", 2);
     assert_eq!(ranked.len(), 2);
     // With no exact match, the oldest prefix matches come first.
-    assert_eq!(ranked[0].1, "richdrich4");
-    assert_eq!(ranked[1].1, "richdrich2");
+    assert_eq!(ranked[0].1, "samplee4");
+    assert_eq!(ranked[1].1, "samplee2");
 }
 
 #[test]
 #[cfg(not(target_os = "ios"))]
 pub fn test_rank_prefix_matches_empty() {
-    assert!(AlgoBingle::rank_prefix_matches(Vec::new(), "rich", 10).is_empty());
+    assert!(AlgoBingle::rank_prefix_matches(Vec::new(), "sam", 10).is_empty());
 }
