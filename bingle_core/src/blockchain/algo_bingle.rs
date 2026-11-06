@@ -1216,7 +1216,9 @@ impl AlgoBingle {
     ///
     /// # Errors
     ///
-    /// Errors if `app_id` is 0, if the indexer query fails, or if `f` returns an error.
+    /// Errors if `app_id` is 0, or if `f` returns an error. A failed indexer query is an error only
+    /// when the cache has never completed a scan; once it has, a failed refresh logs a warning and
+    /// `f` runs over the last good account set (#380).
     pub fn indexer_query_opted_in_accounts_sync<F>(
         &self,
         app_id: u64,
@@ -1246,13 +1248,31 @@ impl AlgoBingle {
 
         // Cache each opted-in account as its decoded `ScannedAccount`; the caller decodes its own
         // field (endpoint, handle) from `local_state`, so the cache stays schema-agnostic.
-        self.ops.fetch_opted_in_accounts_cached(
+        if let Err(e) = self.ops.fetch_opted_in_accounts_cached(
             app_id,
             cache,
             mode,
             cache_lifetime_secs,
             |acct| Some(acct.clone()),
-        )?;
+        ) {
+            // A failed refresh falls back to the last good account set (#380): a long-running
+            // relay or bot keeps discovering relays and resolving handles through an indexer
+            // outage, instead of finding none until it restarts. A cache that has never completed
+            // a scan has nothing to fall back to, so that failure is still returned.
+            let filled = cache
+                .lock()
+                .map_err(|_| anyhow!("account scan cache mutex poisoned"))?
+                .last_updated
+                > 0;
+            if !filled {
+                return Err(e);
+            }
+            tracing::warn!(
+                "[AlgoBingle][indexer_query_opted_in_accounts_sync] app_id={} refresh failed, using the cached accounts: {:#}",
+                app_id,
+                e
+            );
+        }
 
         let cache = cache
             .lock()
