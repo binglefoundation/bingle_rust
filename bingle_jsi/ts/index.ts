@@ -12,6 +12,8 @@ import type {
   BingleJsiConfig,
   BingleJsiApi,
   DeliveryRoute,
+  HandleLookupMatch,
+  NotifyRegisterRequest,
   FailureKind,
   MessagingSettings,
 } from "./NativeBingleJsi";
@@ -24,6 +26,8 @@ export type {
   Keypair,
   Contact,
   HandleLookupPartialResult,
+  HandleLookupMatch,
+  NotifyRegisterRequest,
   Message,
   FailureKind,
   DeliveryRoute,
@@ -128,6 +132,9 @@ export const BingleJsi = BingleJsiNative as {
   handleLookupPartial(
     handle: string
   ): Promise<{ id: string; canonical_handle: string }>;
+  /** Handle search (#390): up to `limit` handles starting with `prefix`, exact matches first,
+   *  then the rest, each group oldest first. An empty array when nothing matches. */
+  handleLookupMatches(prefix: string, limit: number): Promise<HandleLookupMatch[]>;
   sendMessageToId(userId: string, message: Record<string, unknown>): Promise<boolean>;
   sendMessageToHandle(handle: string, message: Record<string, unknown>): Promise<boolean>;
   version(): Promise<{
@@ -162,6 +169,16 @@ export const BingleJsi = BingleJsiNative as {
     nonce: string,
     exp: number,
   ): Promise<string>;
+  /** Build the signed notify-gateway `/register` body with the active keypair (#392). The nonce
+   *  and `exp` are set natively once the engine's lock is held, so the envelope can't expire while
+   *  the call waits. Send the result as the request's JSON body; `topic` is absent when not given.
+   *  Prefer this to `signNotifyEnvelope` for registration. */
+  buildNotifyRegisterRequest(
+    iss: string,
+    token: string,
+    env: string,
+    topic: string | null,
+  ): Promise<NotifyRegisterRequest>;
   /** Sign the client's transactions in the registration service's app-store registration group
    * (#344) with the current keypair, after checking them against the registration template.
    * `transactions` is the service's whole unsigned group (base64 msgpack) and `signIndexes` its

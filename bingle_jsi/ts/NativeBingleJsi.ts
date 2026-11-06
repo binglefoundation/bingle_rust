@@ -81,6 +81,32 @@ export interface HandleLookupPartialResult {
   canonical_handle: string;
 }
 
+/** One result of a handle search (#390). */
+export interface HandleLookupMatch {
+  /** Algorand address of the matching account. */
+  id: string;
+  /** The handle exactly as written in the account's blockchain local state. */
+  canonical_handle: string;
+  /** Whether the handle's normalised form equals the normalised search text. */
+  exact: boolean;
+}
+
+/** A signed notify-gateway `POST /register` body (#392), ready to send as JSON. */
+export interface NotifyRegisterRequest {
+  iss: string;
+  /** Lowercase-hex APNs device token. */
+  token: string;
+  /** "sandbox" or "production". */
+  env: string;
+  /** The app's APNs topic (bundle ID); absent when none was given. */
+  topic?: string;
+  nonce: string;
+  /** Absolute expiry, unix seconds. */
+  exp: number;
+  /** Base64 Ed25519 signature over the canonical register envelope. */
+  sig: string;
+}
+
 /** Typed cause of a send failure (issue #99). Mirrors the Rust `FailureKind`; use this to process
  * failures reliably instead of parsing `failure_reason`. Whether a kind is retryable is derived via
  * the `failureKindIsRetryable` helper, not stored per message. */
@@ -269,6 +295,7 @@ export interface BingleJsiApi {
   // Core messaging
   handleLookup(handle: string): string;
   handleLookupPartial(handle: string): HandleLookupPartialResult;
+  handleLookupMatches(prefix: string, limit: number): HandleLookupMatch[];
   sendMessageToId(userId: string, message: BingleMessage): boolean;
   sendMessageToHandle(handle: string, message: BingleMessage): boolean;
   sendMessageToNetwork(
@@ -307,6 +334,12 @@ export interface BingleJsiApi {
     nonce: string,
     exp: number,
   ): string;
+  buildNotifyRegisterRequest(
+    iss: string,
+    token: string,
+    env: string,
+    topic: string | null,
+  ): NotifyRegisterRequest;
   // App-store registration groups (#344)
   signRegistrationGroup(transactions: string[], signIndexes: number[], handle: string): string[];
   beginRecoveryKeypair(): Keypair;

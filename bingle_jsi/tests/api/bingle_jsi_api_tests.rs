@@ -6,9 +6,9 @@ use bingle_jsi::api::callback::{
 };
 use bingle_jsi::api::error::BingleJsiError;
 use bingle_jsi::api::types::{
-    BingleMessage, Contact, ContactSource, HandleLookupPartialResult, Keypair,
+    BingleMessage, Contact, ContactSource, HandleLookupMatch, HandleLookupPartialResult, Keypair,
     KeypairStatusResponse, Message, MessagingSettings, NatTypeResponse, NetworkSourceKey,
-    VersionInfo,
+    NotifyRegisterRequest, VersionInfo,
 };
 
 /// Stub implementation where every method returns NotImplemented.
@@ -19,6 +19,16 @@ impl BingleJsiApi for StubApi {
     fn handle_lookup(&self, _handle: String) -> Result<String, BingleJsiError> {
         Err(BingleJsiError::NotImplemented {
             reason: "handle_lookup".to_string(),
+        })
+    }
+
+    fn handle_lookup_matches(
+        &self,
+        _prefix: String,
+        _limit: u32,
+    ) -> Result<Vec<HandleLookupMatch>, BingleJsiError> {
+        Err(BingleJsiError::NotImplemented {
+            reason: "handle_lookup_matches".to_string(),
         })
     }
 
@@ -263,6 +273,18 @@ impl BingleJsiApi for StubApi {
     ) -> Result<String, BingleJsiError> {
         Err(BingleJsiError::NotImplemented {
             reason: "sign_notify_envelope".to_string(),
+        })
+    }
+
+    fn build_notify_register_request(
+        &self,
+        _iss: String,
+        _token: String,
+        _env: String,
+        _topic: Option<String>,
+    ) -> Result<NotifyRegisterRequest, BingleJsiError> {
+        Err(BingleJsiError::NotImplemented {
+            reason: "build_notify_register_request".to_string(),
         })
     }
 

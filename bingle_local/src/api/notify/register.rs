@@ -6,6 +6,8 @@
 //! committed cross-impl vector. No new crypto lives here.
 
 use algo_ops::AlgoOps;
+
+use super::envelope::{fresh_nonce, now_secs};
 use bingle_core::api::bingle_api::BingleError;
 use serde::Serialize;
 
@@ -103,4 +105,26 @@ pub fn build_register_request(
         exp,
         sig,
     })
+}
+
+/// How far ahead a register envelope's `exp` is set by [`build_fresh_register_request`]. The same
+/// short window as an alert; the gateway accepts up to 60 s ahead.
+const REGISTER_EXP_SECS: i64 = 45;
+
+/// Build and sign the `/register` envelope with a fresh nonce (from the OS CSPRNG) and an `exp`
+/// counted from now (issue #392).
+///
+/// Call this once the signing ops are in hand, so the expiry window starts when the envelope is
+/// signed: a caller that set `exp` before waiting for the engine's lock could sign an envelope that
+/// had already expired.
+pub fn build_fresh_register_request(
+    ops: &AlgoOps,
+    iss: &str,
+    token: &str,
+    env: &str,
+    topic: Option<&str>,
+) -> Result<RegisterRequest, BingleError> {
+    let nonce = fresh_nonce();
+    let exp = now_secs() + REGISTER_EXP_SECS;
+    build_register_request(ops, iss, token, env, topic, &nonce, exp)
 }

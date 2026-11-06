@@ -83,6 +83,10 @@ class MockBingleJsiApi: BingleJsiApiProtocol {
         return handleLookupResult
     }
 
+    func handleLookupMatches(prefix: String, limit: UInt32) throws -> [HandleLookupMatch] {
+        return []
+    }
+
     func handleLookupPartial(handle: String) throws -> HandleLookupPartialResult {
         handleLookupPartialCalls.append(handle)
         if let error = handleLookupPartialError { throw error }
@@ -296,6 +300,10 @@ class MockBingleJsiApi: BingleJsiApiProtocol {
 
     func signNotifyEnvelope(route: String, iss: String, audience: String, token: String, env: String, topic: String?, nonce: String, exp: Int64) throws -> String {
         return ""
+    }
+
+    func buildNotifyRegisterRequest(iss: String, token: String, env: String, topic: String?) throws -> NotifyRegisterRequest {
+        return NotifyRegisterRequest(iss: iss, token: token, env: env, topic: topic, nonce: "", exp: 0, sig: "")
     }
 
     func signRegistrationGroup(transactions: [String], signIndexes: [UInt32], handle: String) throws -> [String] {

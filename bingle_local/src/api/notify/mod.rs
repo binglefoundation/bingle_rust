@@ -27,7 +27,9 @@ pub use http_register_poster::HttpRegisterPoster;
 pub use nudge_helper::post_giveup_alerts;
 pub use register::RegisterRequest;
 #[doc(hidden)]
-pub use register::{build_register_request, encode_apns_token, sign_register_envelope};
+pub use register::{
+    build_fresh_register_request, build_register_request, encode_apns_token, sign_register_envelope,
+};
 
 /// Best-effort delivery of an `/alert` POST to the notify gateway.
 ///

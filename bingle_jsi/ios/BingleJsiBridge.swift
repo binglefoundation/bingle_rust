@@ -140,6 +140,28 @@ class BingleJsiBridge: RCTEventEmitter {
     }
 
     @objc
+    func handleLookupMatches(_ prefix: String, limit: NSNumber, resolver resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {
+        guard let api = apiInstance else {
+            reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.", nil)
+            return
+        }
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                let matches = try api.handleLookupMatches(prefix: prefix, limit: limit.uint32Value)
+                resolve(matches.map { match in
+                    [
+                        "id": match.id,
+                        "canonical_handle": match.canonicalHandle,
+                        "exact": match.exact,
+                    ] as [String: Any]
+                })
+            } catch {
+                reject("BINGLE_ERROR", "\(error)", error)
+            }
+        }
+    }
+
+    @objc
     func sendMessageToId(_ userId: String, message: NSDictionary, resolver resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {
         guard let api = apiInstance else {
             reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.", nil)
@@ -310,6 +332,33 @@ class BingleJsiBridge: RCTEventEmitter {
             do {
                 let sig = try api.signNotifyEnvelope(route: route, iss: iss, audience: audience, token: token, env: env, topic: topic, nonce: nonce, exp: exp.int64Value)
                 resolve(sig)
+            } catch {
+                reject("BINGLE_ERROR", "\(error)", error)
+            }
+        }
+    }
+
+    @objc
+    func buildNotifyRegisterRequest(_ iss: String, token: String, env: String, topic: String?, resolver resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {
+        guard let api = apiInstance else {
+            reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.", nil)
+            return
+        }
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                let req = try api.buildNotifyRegisterRequest(iss: iss, token: token, env: env, topic: topic)
+                var body: [String: Any] = [
+                    "iss": req.iss,
+                    "token": req.token,
+                    "env": req.env,
+                    "nonce": req.nonce,
+                    "exp": NSNumber(value: req.exp),
+                    "sig": req.sig,
+                ]
+                if let topic = req.topic {
+                    body["topic"] = topic
+                }
+                resolve(body)
             } catch {
                 reject("BINGLE_ERROR", "\(error)", error)
             }

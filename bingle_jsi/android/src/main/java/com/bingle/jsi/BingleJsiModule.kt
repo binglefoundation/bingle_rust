@@ -91,6 +91,31 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
         }.start()
     }
 
+
+    @ReactMethod
+    fun handleLookupMatches(prefix: String, limit: Double, promise: Promise) {
+        val api = apiInstance
+        if (api == null) {
+            promise.reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.")
+            return
+        }
+        Thread {
+            try {
+                val matches = api.handleLookupMatches(prefix, limit.toLong().toUInt())
+                val array = Arguments.createArray()
+                for (match in matches) {
+                    val map = Arguments.createMap()
+                    map.putString("id", match.id)
+                    map.putString("canonical_handle", match.canonicalHandle)
+                    map.putBoolean("exact", match.exact)
+                    array.pushMap(map)
+                }
+                promise.resolve(array)
+            } catch (e: Exception) {
+                promise.reject("BINGLE_ERROR", e.message, e)
+            }
+        }.start()
+    }
     @ReactMethod
     fun sendMessageToId(userId: String, message: ReadableMap, promise: Promise) {
         val api = apiInstance
@@ -279,6 +304,37 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
             try {
                 val sig = api.signNotifyEnvelope(route, iss, audience, token, env, topic, nonce, exp.toLong())
                 promise.resolve(sig)
+            } catch (e: Exception) {
+                promise.reject("BINGLE_ERROR", e.message, e)
+            }
+        }.start()
+    }
+
+    @ReactMethod
+    fun buildNotifyRegisterRequest(
+        iss: String,
+        token: String,
+        env: String,
+        topic: String?,
+        promise: Promise,
+    ) {
+        val api = apiInstance
+        if (api == null) {
+            promise.reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.")
+            return
+        }
+        Thread {
+            try {
+                val req = api.buildNotifyRegisterRequest(iss, token, env, topic)
+                val map = Arguments.createMap()
+                map.putString("iss", req.iss)
+                map.putString("token", req.token)
+                map.putString("env", req.env)
+                req.topic?.let { map.putString("topic", it) }
+                map.putString("nonce", req.nonce)
+                map.putDouble("exp", req.exp.toDouble())
+                map.putString("sig", req.sig)
+                promise.resolve(map)
             } catch (e: Exception) {
                 promise.reject("BINGLE_ERROR", e.message, e)
             }

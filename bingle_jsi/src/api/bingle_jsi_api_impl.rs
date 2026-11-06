@@ -13,8 +13,9 @@ use crate::api::callback::{
 use crate::api::error::BingleJsiError;
 use crate::api::types::{
     BingleJsiConfig, BingleMessage, Contact, ContactSource, DeliveryRoute, FailureKind,
-    HandleLookupPartialResult, InetSocketAddress, Keypair, KeypairStatus, KeypairStatusResponse,
-    Message, MessagingSettings, NatType, NatTypeResponse, NetworkSourceKey, VersionInfo,
+    HandleLookupMatch, HandleLookupPartialResult, InetSocketAddress, Keypair, KeypairStatus,
+    KeypairStatusResponse, Message, MessagingSettings, NatType, NatTypeResponse, NetworkSourceKey,
+    NotifyRegisterRequest, VersionInfo,
 };
 use algo_ops::error::AlgoErrorKind;
 use bingle_core::api::bingle_api::{
@@ -30,7 +31,7 @@ use bingle_core::util::config_utils::{
 };
 use bingle_local::api::bingle_local_api::BingleLocalApi;
 use bingle_local::api::bingle_local_api_impl::{BingleApiLocalImpl, LocalApiConfig};
-use bingle_local::api::notify::sign_register_envelope;
+use bingle_local::api::notify::{build_fresh_register_request, sign_register_envelope};
 use bingle_local::api::pending_sender::{
     LocalOutboundStore, MessageDelivery, PendingSender, PendingSenderOptions,
 };
@@ -1572,6 +1573,25 @@ impl BingleJsiApi for BingleJsiApiImpl {
         }
     }
 
+    fn handle_lookup_matches(
+        &self,
+        prefix: String,
+        limit: u32,
+    ) -> Result<Vec<HandleLookupMatch>, BingleJsiError> {
+        let matches = self
+            .api
+            .handle_lookup_matches(&prefix, limit as usize)
+            .map_err(bingle_error_to_jsi)?;
+        Ok(matches
+            .into_iter()
+            .map(|m| HandleLookupMatch {
+                id: m.id,
+                canonical_handle: m.canonical_handle,
+                exact: m.exact,
+            })
+            .collect())
+    }
+
     fn send_message_to_id(
         &self,
         user_id: String,
@@ -1783,6 +1803,31 @@ impl BingleJsiApi for BingleJsiApiImpl {
             .map_err(|e| BingleJsiError::InternalError {
                 reason: e.to_string(),
             })
+    }
+
+    fn build_notify_register_request(
+        &self,
+        iss: String,
+        token: String,
+        env: String,
+        topic: Option<String>,
+    ) -> Result<NotifyRegisterRequest, BingleJsiError> {
+        let guard = local_api_guard(&self.local_api)?;
+        let ops = guard.get_algo_ops().map_err(bingle_error_to_jsi)?;
+        drop(guard);
+        // The nonce and exp are set only now, with the signing ops in hand, so time spent waiting
+        // for the lock can't eat the envelope's freshness window (#392).
+        let req = build_fresh_register_request(&ops, &iss, &token, &env, topic.as_deref())
+            .map_err(bingle_error_to_jsi)?;
+        Ok(NotifyRegisterRequest {
+            iss: req.iss,
+            token: req.token,
+            env: req.env,
+            topic: req.topic,
+            nonce: req.nonce,
+            exp: req.exp,
+            sig: req.sig,
+        })
     }
 
     fn sign_registration_group(
