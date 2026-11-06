@@ -432,6 +432,17 @@ macro_rules! impl_bingle_api_internal_noop {
 pub type UserId = String; // Algorand address (base32, 36-byte decoded)
 /// A user handle: the human-readable name a user registers on-chain and is addressed by.
 pub type Handle = String; // User handle string
+
+/// One result of a handle search ([`BingleApi::handle_lookup_matches`], issue #390).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HandleMatch {
+    /// The matching account's id (Algorand address).
+    pub id: UserId,
+    /// The handle exactly as written in the account's blockchain local state.
+    pub canonical_handle: Handle,
+    /// Whether the handle's normalised form equals the normalised search text.
+    pub exact: bool,
+}
 pub use super::network_endpoint::{NetworkEndpoint, NetworkEndpointKey};
 
 /// Composite trait required by message handlers: implements both the public API and internal controls.
@@ -641,6 +652,21 @@ pub trait BingleApi: Send + Sync {
         &self,
         handle: &Handle,
     ) -> Result<Option<(UserId, Handle)>, BingleError>;
+
+    /// Handle search (issue #390): up to `limit` registered handles whose normalised form starts
+    /// with the normalised `prefix`, exact normalised matches first, then the rest, each group
+    /// oldest first. Returns an empty list when nothing matches, or Err on failure.
+    ///
+    /// The default exists only so the many test doubles of this trait needn't implement it; it
+    /// panics, and every production implementation overrides it.
+    fn handle_lookup_matches(
+        &self,
+        prefix: &Handle,
+        limit: usize,
+    ) -> Result<Vec<HandleMatch>, BingleError> {
+        let _ = (prefix, limit);
+        unimplemented!("handle_lookup_matches is not implemented by this BingleApi")
+    }
 
     /// Reverse lookup: given a user id (Algorand address), obtain the corresponding handle if known.
     /// Implementations may consult an in-memory cache and/or blockchain local state.

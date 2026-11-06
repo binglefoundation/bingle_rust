@@ -15,6 +15,11 @@ RCT_EXTERN_METHOD(handleLookupPartial:(NSString *)handle
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
+RCT_EXTERN_METHOD(handleLookupMatches:(NSString *)prefix
+                  limit:(nonnull NSNumber *)limit
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+
 RCT_EXTERN_METHOD(sendMessageToId:(NSString *)userId
                   message:(NSDictionary *)message
                   resolver:(RCTPromiseResolveBlock)resolve

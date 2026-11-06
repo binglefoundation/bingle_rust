@@ -12,6 +12,7 @@ import type {
   BingleJsiConfig,
   BingleJsiApi,
   DeliveryRoute,
+  HandleLookupMatch,
   NotifyRegisterRequest,
   FailureKind,
   MessagingSettings,
@@ -25,6 +26,7 @@ export type {
   Keypair,
   Contact,
   HandleLookupPartialResult,
+  HandleLookupMatch,
   NotifyRegisterRequest,
   Message,
   FailureKind,
@@ -130,6 +132,9 @@ export const BingleJsi = BingleJsiNative as {
   handleLookupPartial(
     handle: string
   ): Promise<{ id: string; canonical_handle: string }>;
+  /** Handle search (#390): up to `limit` handles starting with `prefix`, exact matches first,
+   *  then the rest, each group oldest first. An empty array when nothing matches. */
+  handleLookupMatches(prefix: string, limit: number): Promise<HandleLookupMatch[]>;
   sendMessageToId(userId: string, message: Record<string, unknown>): Promise<boolean>;
   sendMessageToHandle(handle: string, message: Record<string, unknown>): Promise<boolean>;
   version(): Promise<{

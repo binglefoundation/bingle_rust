@@ -83,6 +83,10 @@ class MockBingleJsiApi: BingleJsiApiProtocol {
         return handleLookupResult
     }
 
+    func handleLookupMatches(prefix: String, limit: UInt32) throws -> [HandleLookupMatch] {
+        return []
+    }
+
     func handleLookupPartial(handle: String) throws -> HandleLookupPartialResult {
         handleLookupPartialCalls.append(handle)
         if let error = handleLookupPartialError { throw error }

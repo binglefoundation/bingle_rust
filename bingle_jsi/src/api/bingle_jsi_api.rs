@@ -3,7 +3,7 @@ use crate::api::callback::{
 };
 use crate::api::error::BingleJsiError;
 use crate::api::types::{
-    BingleMessage, Contact, ContactSource, HandleLookupPartialResult, Keypair,
+    BingleMessage, Contact, ContactSource, HandleLookupMatch, HandleLookupPartialResult, Keypair,
     KeypairStatusResponse, Message, MessagingSettings, NatTypeResponse, NetworkSourceKey,
     NotifyRegisterRequest, VersionInfo,
 };
@@ -30,6 +30,15 @@ pub trait BingleJsiApi: Send + Sync {
         &self,
         handle: String,
     ) -> Result<HandleLookupPartialResult, BingleJsiError>;
+
+    /// Handle search (issue #390): up to `limit` registered handles starting with `prefix` (both
+    /// normalised by the handle matching rules), exact matches first, then the rest, each group
+    /// oldest first. Returns an empty list when nothing matches.
+    fn handle_lookup_matches(
+        &self,
+        prefix: String,
+        limit: u32,
+    ) -> Result<Vec<HandleLookupMatch>, BingleJsiError>;
 
     /// Send a message to a user id.
     fn send_message_to_id(

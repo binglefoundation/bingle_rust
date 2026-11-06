@@ -6,7 +6,7 @@ use bingle_jsi::api::callback::{
 };
 use bingle_jsi::api::error::BingleJsiError;
 use bingle_jsi::api::types::{
-    BingleMessage, Contact, ContactSource, HandleLookupPartialResult, Keypair,
+    BingleMessage, Contact, ContactSource, HandleLookupMatch, HandleLookupPartialResult, Keypair,
     KeypairStatusResponse, Message, MessagingSettings, NatTypeResponse, NetworkSourceKey,
     NotifyRegisterRequest, VersionInfo,
 };
@@ -19,6 +19,16 @@ impl BingleJsiApi for StubApi {
     fn handle_lookup(&self, _handle: String) -> Result<String, BingleJsiError> {
         Err(BingleJsiError::NotImplemented {
             reason: "handle_lookup".to_string(),
+        })
+    }
+
+    fn handle_lookup_matches(
+        &self,
+        _prefix: String,
+        _limit: u32,
+    ) -> Result<Vec<HandleLookupMatch>, BingleJsiError> {
+        Err(BingleJsiError::NotImplemented {
+            reason: "handle_lookup_matches".to_string(),
         })
     }
 
