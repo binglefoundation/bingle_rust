@@ -271,6 +271,13 @@ impl BingleApi for BothAsApi {
     > {
         self.inner.handle_lookup_partial(handle)
     }
+    fn handle_lookup_matches(
+        &self,
+        prefix: &crate::api::bingle_api::Handle,
+        limit: usize,
+    ) -> Result<Vec<crate::api::bingle_api::HandleMatch>, BingleError> {
+        self.inner.handle_lookup_matches(prefix, limit)
+    }
     fn handle_lookup_by_id(
         &self,
         user_id: &crate::api::bingle_api::UserId,

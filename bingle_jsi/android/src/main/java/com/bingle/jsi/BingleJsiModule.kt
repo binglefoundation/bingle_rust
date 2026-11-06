@@ -91,6 +91,31 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
         }.start()
     }
 
+
+    @ReactMethod
+    fun handleLookupMatches(prefix: String, limit: Double, promise: Promise) {
+        val api = apiInstance
+        if (api == null) {
+            promise.reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.")
+            return
+        }
+        Thread {
+            try {
+                val matches = api.handleLookupMatches(prefix, limit.toLong().toUInt())
+                val array = Arguments.createArray()
+                for (match in matches) {
+                    val map = Arguments.createMap()
+                    map.putString("id", match.id)
+                    map.putString("canonical_handle", match.canonicalHandle)
+                    map.putBoolean("exact", match.exact)
+                    array.pushMap(map)
+                }
+                promise.resolve(array)
+            } catch (e: Exception) {
+                promise.reject("BINGLE_ERROR", e.message, e)
+            }
+        }.start()
+    }
     @ReactMethod
     fun sendMessageToId(userId: String, message: ReadableMap, promise: Promise) {
         val api = apiInstance

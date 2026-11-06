@@ -136,6 +136,15 @@ impl BingleApi for LockingApiWrapper {
             .ok_or_else(|| BingleError::Other("API dropped".to_string()))
             .and_then(|a| a.handle_lookup_partial(handle))
     }
+    fn handle_lookup_matches(
+        &self,
+        prefix: &Handle,
+        limit: usize,
+    ) -> Result<Vec<crate::api::bingle_api::HandleMatch>, BingleError> {
+        self.api("handle_lookup_matches")
+            .ok_or_else(|| BingleError::Other("API dropped".to_string()))
+            .and_then(|a| a.handle_lookup_matches(prefix, limit))
+    }
     fn handle_lookup_by_id(&self, user_id: &UserId) -> Option<Handle> {
         self.api("handle_lookup_by_id")
             .and_then(|a| a.handle_lookup_by_id(user_id))

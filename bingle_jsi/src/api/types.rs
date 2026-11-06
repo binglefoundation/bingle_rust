@@ -72,6 +72,15 @@ pub struct HandleLookupPartialResult {
     pub canonical_handle: String,
 }
 
+/// One result of a handle search (issue #390): the account's id, its handle exactly as written in
+/// its blockchain local state, and whether that handle's normalised form equals the search text's.
+#[derive(uniffi::Record, Debug, Clone)]
+pub struct HandleLookupMatch {
+    pub id: String,
+    pub canonical_handle: String,
+    pub exact: bool,
+}
+
 /// A signed `POST /register` body for the notify gateway, ready to send as JSON (issue #392). The
 /// field names are the gateway's; `topic` is omitted from the JSON when `None`.
 #[derive(uniffi::Record, Debug, Clone)]

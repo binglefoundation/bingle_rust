@@ -13,9 +13,9 @@ use crate::api::callback::{
 use crate::api::error::BingleJsiError;
 use crate::api::types::{
     BingleJsiConfig, BingleMessage, Contact, ContactSource, DeliveryRoute, FailureKind,
-    HandleLookupPartialResult, InetSocketAddress, Keypair, KeypairStatus, KeypairStatusResponse,
-    Message, MessagingSettings, NatType, NatTypeResponse, NetworkSourceKey, NotifyRegisterRequest,
-    VersionInfo,
+    HandleLookupMatch, HandleLookupPartialResult, InetSocketAddress, Keypair, KeypairStatus,
+    KeypairStatusResponse, Message, MessagingSettings, NatType, NatTypeResponse, NetworkSourceKey,
+    NotifyRegisterRequest, VersionInfo,
 };
 use algo_ops::error::AlgoErrorKind;
 use bingle_core::api::bingle_api::{
@@ -1571,6 +1571,25 @@ impl BingleJsiApi for BingleJsiApiImpl {
             }),
             Err(e) => Err(bingle_error_to_jsi(e)),
         }
+    }
+
+    fn handle_lookup_matches(
+        &self,
+        prefix: String,
+        limit: u32,
+    ) -> Result<Vec<HandleLookupMatch>, BingleJsiError> {
+        let matches = self
+            .api
+            .handle_lookup_matches(&prefix, limit as usize)
+            .map_err(bingle_error_to_jsi)?;
+        Ok(matches
+            .into_iter()
+            .map(|m| HandleLookupMatch {
+                id: m.id,
+                canonical_handle: m.canonical_handle,
+                exact: m.exact,
+            })
+            .collect())
     }
 
     fn send_message_to_id(

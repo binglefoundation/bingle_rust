@@ -207,3 +207,71 @@ pub fn test_pick_oldest_match_collision() {
     let result_rev = AlgoBingle::pick_oldest_match(matches_rev);
     assert_eq!(result_rev, Some("ADDR1".to_string()));
 }
+
+// The MainNet case behind #390: searching "richdrich" must offer the exact "Rich.D.Rich" first,
+// although two longer handles are older.
+fn richdrich_matches() -> Vec<(String, String, u64)> {
+    vec![
+        ("TUTO".to_string(), "Rich.D.Rich".to_string(), 1793914611),
+        ("UAHX".to_string(), "richdrich4".to_string(), 1786335829),
+        ("JWPY".to_string(), "richdrich2".to_string(), 1791925257),
+    ]
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn test_rank_prefix_matches_puts_the_exact_match_first() {
+    let ranked = AlgoBingle::rank_prefix_matches(richdrich_matches(), "richdrich", 10);
+    assert_eq!(
+        ranked,
+        vec![
+            ("TUTO".to_string(), "Rich.D.Rich".to_string(), true),
+            ("UAHX".to_string(), "richdrich4".to_string(), false),
+            ("JWPY".to_string(), "richdrich2".to_string(), false),
+        ]
+    );
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn test_rank_prefix_matches_normalises_the_search() {
+    // Typed with dots and capitals, the search still finds the exact match.
+    let ranked = AlgoBingle::rank_prefix_matches(richdrich_matches(), "@Rich.D.Rich", 10);
+    assert_eq!(ranked[0].1, "Rich.D.Rich");
+    assert!(ranked[0].2);
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn test_rank_prefix_matches_orders_exact_matches_oldest_first() {
+    let matches = vec![
+        ("B".to_string(), "al_ice".to_string(), 2000),
+        ("A".to_string(), "Alice".to_string(), 3000),
+        ("C".to_string(), "alice2".to_string(), 1000),
+        ("D".to_string(), "alice".to_string(), 2000),
+    ];
+    let ranked = AlgoBingle::rank_prefix_matches(matches, "alice", 10);
+    let order: Vec<&str> = ranked.iter().map(|m| m.0.as_str()).collect();
+    // Exact matches by HandleTime then address (B and D tie on time), then the prefix match.
+    assert_eq!(order, vec!["B", "D", "A", "C"]);
+    assert_eq!(
+        ranked.iter().map(|m| m.2).collect::<Vec<_>>(),
+        vec![true, true, true, false]
+    );
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn test_rank_prefix_matches_honours_the_limit() {
+    let ranked = AlgoBingle::rank_prefix_matches(richdrich_matches(), "rich", 2);
+    assert_eq!(ranked.len(), 2);
+    // With no exact match, the oldest prefix matches come first.
+    assert_eq!(ranked[0].1, "richdrich4");
+    assert_eq!(ranked[1].1, "richdrich2");
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn test_rank_prefix_matches_empty() {
+    assert!(AlgoBingle::rank_prefix_matches(Vec::new(), "rich", 10).is_empty());
+}

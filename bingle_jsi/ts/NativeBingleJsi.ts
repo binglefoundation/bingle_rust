@@ -81,6 +81,16 @@ export interface HandleLookupPartialResult {
   canonical_handle: string;
 }
 
+/** One result of a handle search (#390). */
+export interface HandleLookupMatch {
+  /** Algorand address of the matching account. */
+  id: string;
+  /** The handle exactly as written in the account's blockchain local state. */
+  canonical_handle: string;
+  /** Whether the handle's normalised form equals the normalised search text. */
+  exact: boolean;
+}
+
 /** A signed notify-gateway `POST /register` body (#392), ready to send as JSON. */
 export interface NotifyRegisterRequest {
   iss: string;
@@ -285,6 +295,7 @@ export interface BingleJsiApi {
   // Core messaging
   handleLookup(handle: string): string;
   handleLookupPartial(handle: string): HandleLookupPartialResult;
+  handleLookupMatches(prefix: string, limit: number): HandleLookupMatch[];
   sendMessageToId(userId: string, message: BingleMessage): boolean;
   sendMessageToHandle(handle: string, message: BingleMessage): boolean;
   sendMessageToNetwork(

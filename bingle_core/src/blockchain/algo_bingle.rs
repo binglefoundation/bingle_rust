@@ -1325,10 +1325,11 @@ impl AlgoBingle {
     ///
     /// The `prefix` is normalised by the handle matching rules (lowercase, alphanumeric
     /// only) and matched against the start of each registered handle's normalised form,
-    /// so `"abc"` matches a registered `"ab_cd"`. Returns the oldest matching account as a
-    /// tuple of `(id, canonical_handle)`, where `canonical_handle` is the handle exactly as
-    /// written in the account's local state on the blockchain. Returns `Ok(None)` if no
-    /// handle starts with the prefix.
+    /// so `"abc"` matches a registered `"ab_cd"`. Returns the best match as a tuple of
+    /// `(id, canonical_handle)`, where `canonical_handle` is the handle exactly as written in the
+    /// account's local state on the blockchain: an exact normalised match if there is one,
+    /// otherwise the oldest prefix match (#390). Returns `Ok(None)` if no handle starts with the
+    /// prefix. [`handle_lookup_matches`](Self::handle_lookup_matches) returns every match.
     pub fn handle_lookup_partial(&self, prefix: &str) -> Result<Option<(String, String)>> {
         let app_id = if self.app_id != 0 {
             self.app_id
@@ -1363,7 +1364,94 @@ impl AlgoBingle {
             prefix,
             matches
         );
-        Ok(Self::pick_oldest_prefix_match(matches))
+        // An exact (normalised) match wins over older handles that merely start with the prefix
+        // (#390).
+        Ok(Self::rank_prefix_matches(matches, prefix, 1)
+            .into_iter()
+            .next()
+            .map(|(id, handle, _)| (id, handle)))
+    }
+
+    /// Search registered handles by prefix, returning up to `limit` matches (issue #390).
+    ///
+    /// The `prefix` is normalised by the handle matching rules, as in
+    /// [`handle_lookup_partial`](Self::handle_lookup_partial). Matches come back as
+    /// `(id, canonical_handle, exact)`, ordered by [`rank_prefix_matches`](Self::rank_prefix_matches):
+    /// exact normalised matches first, then the other prefix matches, each group oldest first.
+    pub fn handle_lookup_matches(
+        &self,
+        prefix: &str,
+        limit: usize,
+    ) -> Result<Vec<(String, String, bool)>> {
+        let app_id = if self.app_id != 0 {
+            self.app_id
+        } else {
+            self.ops
+                .config
+                .app_id
+                .ok_or_else(|| anyhow!("app_id not configured in AlgoOps config"))?
+        };
+        if tokio::runtime::Handle::try_current().is_ok() {
+            return std::thread::scope(|s| {
+                s.spawn(|| self.handle_lookup_matches_sync(app_id, prefix, limit))
+                    .join()
+                    .unwrap_or_else(|_| Err(anyhow!("indexer thread panicked")))
+            });
+        }
+        self.handle_lookup_matches_sync(app_id, prefix, limit)
+    }
+
+    fn handle_lookup_matches_sync(
+        &self,
+        app_id: u64,
+        prefix: &str,
+        limit: usize,
+    ) -> Result<Vec<(String, String, bool)>> {
+        let mut matches: Vec<(String, String, u64)> = Vec::new();
+        self.indexer_query_opted_in_accounts_sync(app_id, QueryMode::Refresh, Some(30), |acct| {
+            Self::handle_prefix_match(acct, prefix, &mut matches);
+            Ok(())
+        })?;
+        algo_log!(
+            "[handle_lookup_matches_sync] prefix={} limit={} matches={:?}",
+            prefix,
+            limit,
+            matches
+        );
+        Ok(Self::rank_prefix_matches(matches, prefix, limit))
+    }
+
+    /// Order prefix matches `(address, handle, handle_time)` for a handle search (issue #390):
+    /// accounts whose normalised handle equals the normalised `prefix` first, then the rest; within
+    /// each group the oldest `HandleTime` first, then by address. Returns at most `limit` entries as
+    /// `(address, handle, exact)`.
+    pub fn rank_prefix_matches(
+        matches: Vec<(String, String, u64)>,
+        prefix: &str,
+        limit: usize,
+    ) -> Vec<(String, String, bool)> {
+        let wanted = Self::normalize_handle(prefix);
+        let mut ranked: Vec<(bool, String, String, u64)> = matches
+            .into_iter()
+            .map(|(address, handle, time)| {
+                (
+                    Self::normalize_handle(&handle) == wanted,
+                    address,
+                    handle,
+                    time,
+                )
+            })
+            .collect();
+        ranked.sort_by(|a, b| {
+            b.0.cmp(&a.0)
+                .then(a.3.cmp(&b.3))
+                .then_with(|| a.1.cmp(&b.1))
+        });
+        ranked
+            .into_iter()
+            .take(limit)
+            .map(|(exact, address, handle, _)| (address, handle, exact))
+            .collect()
     }
 
     /// Normalises a handle for comparison: lowercase and alphanumeric characters only.

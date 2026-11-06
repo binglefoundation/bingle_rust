@@ -9,8 +9,8 @@ use tracing::warn;
 use uuid::Uuid;
 
 use crate::api::bingle_api::{
-    BingleApi, BingleError, Handle, NetworkEndpoint, OnConnectHandler, OnMessageHandler,
-    ProgressCallback, SendFailureKind, StartOptions, UserId,
+    BingleApi, BingleError, Handle, HandleMatch, NetworkEndpoint, OnConnectHandler,
+    OnMessageHandler, ProgressCallback, SendFailureKind, StartOptions, UserId,
 };
 use crate::api::pki::generate_pki_from_ops;
 use crate::blockchain::algo_bingle::AccountsCache;
@@ -1048,6 +1048,43 @@ impl BingleApi for BingleApiImpl {
         info_theme!(
             themes::API,
             "[BingleApiImpl::handle_lookup_partial][exit] return={:?}",
+            res
+        );
+        res
+    }
+
+    fn handle_lookup_matches(
+        &self,
+        prefix: &Handle,
+        limit: usize,
+    ) -> Result<Vec<HandleMatch>, BingleError> {
+        let span = self.span();
+        let _guard = span.enter();
+        info_theme!(
+            themes::API,
+            "[BingleApiImpl::handle_lookup_matches][enter] prefix={} limit={}",
+            prefix,
+            limit
+        );
+
+        let ab = self.build_indexer_algo_bingle()?;
+        let res = ab
+            .handle_lookup_matches(prefix, limit)
+            .map(|matches| {
+                matches
+                    .into_iter()
+                    .map(|(id, canonical_handle, exact)| HandleMatch {
+                        id,
+                        canonical_handle,
+                        exact,
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .map_err(BingleError::from_anyhow);
+
+        info_theme!(
+            themes::API,
+            "[BingleApiImpl::handle_lookup_matches][exit] return={:?}",
             res
         );
         res
