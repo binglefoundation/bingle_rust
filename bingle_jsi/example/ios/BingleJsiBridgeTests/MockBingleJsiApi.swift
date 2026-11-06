@@ -298,6 +298,10 @@ class MockBingleJsiApi: BingleJsiApiProtocol {
         return ""
     }
 
+    func buildNotifyRegisterRequest(iss: String, token: String, env: String, topic: String?) throws -> NotifyRegisterRequest {
+        return NotifyRegisterRequest(iss: iss, token: token, env: env, topic: topic, nonce: "", exp: 0, sig: "")
+    }
+
     func signRegistrationGroup(transactions: [String], signIndexes: [UInt32], handle: String) throws -> [String] {
         return []
     }

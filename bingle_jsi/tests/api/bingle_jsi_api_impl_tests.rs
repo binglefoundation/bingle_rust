@@ -583,6 +583,83 @@ fn sign_notify_envelope_fails_without_a_keypair() {
     assert!(result.is_err(), "signing without a keypair must fail");
 }
 
+fn unix_now() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("clock after the epoch")
+        .as_secs() as i64
+}
+
+#[test]
+fn build_notify_register_request_signs_its_own_fields() {
+    // The body's signature must be the register envelope over its own nonce and exp, topic
+    // included, so the gateway accepts it as sent (#392).
+    let api = api_with_vector_keypair();
+    let req = api
+        .build_notify_register_request(
+            "alice".to_string(),
+            "device-token-abc".to_string(),
+            "production".to_string(),
+            Some("com.creatotronik.bingler".to_string()),
+        )
+        .expect("build with an imported keypair");
+    assert_eq!(req.iss, "alice");
+    assert_eq!(req.token, "device-token-abc");
+    assert_eq!(req.env, "production");
+    assert_eq!(req.topic.as_deref(), Some("com.creatotronik.bingler"));
+    let expected = api
+        .sign_notify_envelope(
+            "register".to_string(),
+            req.iss.clone(),
+            "".to_string(),
+            req.token.clone(),
+            req.env.clone(),
+            req.topic.clone(),
+            req.nonce.clone(),
+            req.exp,
+        )
+        .expect("re-sign the same fields");
+    assert_eq!(req.sig, expected);
+}
+
+#[test]
+fn build_notify_register_request_sets_a_fresh_exp_and_nonce() {
+    let api = api_with_vector_keypair();
+    let build = || {
+        api.build_notify_register_request(
+            "alice".to_string(),
+            "device-token-abc".to_string(),
+            "sandbox".to_string(),
+            None,
+        )
+        .expect("build")
+    };
+    let before = unix_now();
+    let first = build();
+    let second = build();
+    let after = unix_now();
+    // Counted from when it signs: ahead of now, and within the gateway's 60 s limit.
+    assert!(
+        first.exp > after && first.exp <= before + 60,
+        "exp {}",
+        first.exp
+    );
+    assert_eq!(first.topic, None);
+    assert_ne!(first.nonce, second.nonce, "each request gets its own nonce");
+}
+
+#[test]
+fn build_notify_register_request_fails_without_a_keypair() {
+    let api = init_with_local_helper();
+    let result = api.build_notify_register_request(
+        "alice".to_string(),
+        "device-token-abc".to_string(),
+        "sandbox".to_string(),
+        None,
+    );
+    assert!(result.is_err(), "building without a keypair must fail");
+}
+
 #[test]
 #[ignore] // needs localnet
 fn generate_keypair_changes_status_to_unfunded() {

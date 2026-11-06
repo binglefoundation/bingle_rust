@@ -4,7 +4,10 @@ use std::sync::{Arc, Mutex};
 
 use bingle_core::api::bingle_api::BingleError;
 use bingle_local::api::notify::RegisterPoster;
-use bingle_local::api::notify::register::{RegisterRequest, encode_apns_token};
+use bingle_local::api::notify::now_secs;
+use bingle_local::api::notify::register::{
+    RegisterRequest, build_fresh_register_request, encode_apns_token, sign_register_envelope,
+};
 use bingle_local::api::{BingleApiLocalImpl, BingleLocalApi, LocalApiConfig};
 
 const TEST_MNEMONIC: &str = "square flat curtain negative three april hobby culture unit fit drip bronze cactus stage vault pluck captain nation pond pizza grief domain coin abstract path";
@@ -170,4 +173,61 @@ fn register_without_gateway_url_errors() {
         poster.calls().is_empty(),
         "nothing posted without a gateway"
     );
+}
+
+const TOPIC: &str = "com.creatotronik.bingler";
+
+/// The fresh builder sets `exp` from the moment it signs, inside the gateway's window (#392).
+#[test]
+#[cfg(not(target_os = "ios"))]
+fn fresh_register_request_expires_within_the_gateway_window() {
+    let (api, _poster) = register_api(Some(GATEWAY), "production");
+    let ops = api.get_algo_ops().expect("ops");
+    let before = now_secs();
+    let req =
+        build_fresh_register_request(&ops, ISS, "abcd", "production", Some(TOPIC)).expect("build");
+    let after = now_secs();
+    assert!(
+        req.exp > after && req.exp <= before + 60,
+        "exp {} must be ahead of now and at most 60 s ahead",
+        req.exp
+    );
+    assert_eq!(req.iss, ISS);
+    assert_eq!(req.token, "abcd");
+    assert_eq!(req.env, "production");
+    assert_eq!(req.topic.as_deref(), Some(TOPIC));
+}
+
+/// Each fresh request carries its own nonce, so the gateway's replay guard never sees a repeat.
+#[test]
+#[cfg(not(target_os = "ios"))]
+fn fresh_register_requests_have_distinct_nonces() {
+    let (api, _poster) = register_api(Some(GATEWAY), "production");
+    let ops = api.get_algo_ops().expect("ops");
+    let first = build_fresh_register_request(&ops, ISS, "abcd", "production", None).expect("first");
+    let second =
+        build_fresh_register_request(&ops, ISS, "abcd", "production", None).expect("second");
+    assert_ne!(first.nonce, second.nonce);
+    assert!(!first.nonce.is_empty());
+}
+
+/// The signature is the register envelope over the request's own fields, topic included.
+#[test]
+#[cfg(not(target_os = "ios"))]
+fn fresh_register_request_signature_covers_its_fields() {
+    let (api, _poster) = register_api(Some(GATEWAY), "production");
+    let ops = api.get_algo_ops().expect("ops");
+    let req =
+        build_fresh_register_request(&ops, ISS, "abcd", "production", Some(TOPIC)).expect("build");
+    let expected = sign_register_envelope(
+        &ops,
+        ISS,
+        &req.token,
+        &req.env,
+        req.topic.as_deref(),
+        &req.nonce,
+        req.exp,
+    )
+    .expect("re-sign");
+    assert_eq!(req.sig, expected);
 }
