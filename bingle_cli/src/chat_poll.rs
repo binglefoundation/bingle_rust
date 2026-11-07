@@ -73,7 +73,9 @@ pub fn poll_shared(local: &BingleApiLocalImpl, state_file: Option<&str>) -> Vec<
     if !local.store_and_forward_receive() {
         return Vec::new();
     }
-    tracing::info!("chat: polling mailbox");
+    // Routine, every poll cycle: trace keeps it out of the debug log (issue #402). A poll that reads
+    // messages or fails still logs below.
+    tracing::trace!("chat: polling mailbox");
     let read = match local.poll_mailbox() {
         Ok(read) => read,
         Err(e) => {
@@ -81,6 +83,9 @@ pub fn poll_shared(local: &BingleApiLocalImpl, state_file: Option<&str>) -> Vec<
             return Vec::new();
         }
     };
+    if !read.is_empty() {
+        tracing::info!("chat: read {} message(s) from the mailbox", read.len());
+    }
     if !read.is_empty()
         && let Some(path) = state_file
         && let Err(e) = local.save(path)
