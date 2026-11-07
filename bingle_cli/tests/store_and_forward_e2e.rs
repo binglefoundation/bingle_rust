@@ -10,7 +10,7 @@
 //! are missing.
 //!
 //! Prerequisites (see the script header):
-//!   - the pinned `sw-node` on PATH (`cargo install sidewinder-node --version 0.1.0 --locked`),
+//!   - the pinned `sw-node` on PATH (`cargo install sidewinder-node --version 0.1.1 --locked`),
 //!   - algokit LocalNet up (`algokit localnet start`), and `curl`.
 //!
 //! Run it explicitly (single-threaded — the node binds fixed ports):

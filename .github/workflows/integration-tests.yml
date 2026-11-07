@@ -36,7 +36,7 @@ jobs:
       # Version of the sidewinder-node crate (it installs the `sw-node` binary) for the
       # store-and-forward e2e (issue #224). Bump deliberately, together with the same pin in
       # e2e-android.yml: scripts/e2e_sidewinder_localnet.sh drives the node's CLI and config.
-      SW_NODE_VERSION: "0.1.0"
+      SW_NODE_VERSION: "0.1.1"
     steps:
       - name: Checkout
         uses: actions/checkout@v7

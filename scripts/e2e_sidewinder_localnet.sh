@@ -38,10 +38,12 @@ PEER_PORT=${PEER_PORT:-9101}
 FUND_ALGOS=${FUND_ALGOS:-100}
 # the installed binary by default; override with a path (e.g. a repo build) if you prefer.
 SW_NODE=${SW_NODE:-sw-node}
-# the sw-node version this script's node config is written for. The config below loads on 0.1.x only:
-# the first release after sidewinder#562 rejects `api.auth_token`, so drop that line when moving the pin.
+# the sw-node version this script's node config is written for. 0.1.1 is the first release that admits
+# transactions from on-chain-enrolled clients (0.1.0 still checks the allowlist's `callers:`). The
+# config below loads on 0.1.x only: the first release after sidewinder#562 rejects `api.auth_token`, so
+# drop that line when moving the pin past 0.1.x.
 # Set SW_NODE_VERSION= (empty) to skip the check, e.g. for a repo build.
-SW_NODE_VERSION=${SW_NODE_VERSION-0.1.0}
+SW_NODE_VERSION=${SW_NODE_VERSION-0.1.1}
 # the Bingle DApp app id the node authorizes clients against and publishes its endpoint to (`up` only).
 BINGLE_APP_ID=${BINGLE_APP_ID:-}
 # the host clients reach the node's client API at, published on-chain for discovery. Loopback by

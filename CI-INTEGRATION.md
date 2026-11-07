@@ -99,7 +99,7 @@ cargo nextest run --profile integration -p bingle_core -p bingle_cli --test inte
 
 The dapp artifacts must exist first (`scripts/build_dapp.sh`, or the puya compile in the workflow).
 
-To include the store-and-forward cases, install the node (`cargo install sidewinder-node --version 0.1.0 --locked`) and add the feature:
+To include the store-and-forward cases, install the node (`cargo install sidewinder-node --version 0.1.1 --locked`) and add the feature:
 
 ```bash
 cargo nextest run --profile integration -p bingle_core -p bingle_cli --features bingle_cli/sidewinder_localnet --test integration
