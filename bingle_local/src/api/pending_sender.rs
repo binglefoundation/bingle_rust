@@ -19,6 +19,12 @@
 //! timeouts — and go straight to their Mailbox. A delivered send, or the client reporting that it
 //! heard from the peer ([`PendingSender::peer_seen`]), ends the window early.
 //!
+//! While the transport is not ready (for example, the node is not listening after a public address
+//! change), nothing is sent direct. Each message queued meanwhile is reported once as
+//! [`SendOutcome::Queued`], and, with the store-and-forward send gate on, one still waiting after
+//! [`PendingSenderOptions::not_ready_timeout`] is handed to its recipients' Mailboxes, which do not
+//! need the node to be listening (issue #400).
+//!
 //! On exit, a client calls [`PendingSender::shutdown`] rather than [`stop`](PendingSender::stop):
 //! it lets an in-flight send finish, then hands every message still pending to its recipients'
 //! Mailboxes, so a message queued just before exit is not left stranded (issue #282).
@@ -174,6 +180,9 @@ pub enum SendOutcome {
     /// A permanent failure (or any failure with retries disabled): marked failed. Carries the
     /// human-readable reason.
     Failed(String),
+    /// Not attempted: the transport is not ready, so the message waits in the queue (issue #400).
+    /// Reported once per message, when it is first seen waiting. Carries the human-readable reason.
+    Queued(String),
 }
 
 /// One attempt's outcome, passed to the [`PendingSender`]'s outcome callback.
@@ -204,17 +213,21 @@ pub struct PendingSenderOptions {
     /// How long a recipient is treated as offline after a send to them fails because they could not
     /// be reached (issue #278).
     pub offline_window: Duration,
+    /// How long a message waits while the transport is not ready before, with the store-and-forward
+    /// send gate on, it is handed to its recipients' Mailboxes (issue #400).
+    pub not_ready_timeout: Duration,
 }
 
 impl PendingSenderOptions {
-    /// Defaults matching the React Native client: a 200ms tick, retries on, a 45s watchdog, and
-    /// the shared [`OFFLINE_WINDOW`].
+    /// Defaults matching the React Native client: a 200ms tick, retries on, a 45s watchdog, the
+    /// shared [`OFFLINE_WINDOW`], and [`NOT_READY_TIMEOUT`].
     pub fn new() -> Self {
         Self {
             tick: Duration::from_millis(200),
             retries_enabled: true,
             watchdog: Duration::from_secs(45),
             offline_window: OFFLINE_WINDOW,
+            not_ready_timeout: NOT_READY_TIMEOUT,
         }
     }
 }
@@ -224,6 +237,15 @@ impl Default for PendingSenderOptions {
         Self::new()
     }
 }
+
+/// Default [`PendingSenderOptions::not_ready_timeout`]: how long a message queued while the transport
+/// is not ready waits before it goes to the Mailbox (issue #400).
+pub const NOT_READY_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// The reason carried by [`SendOutcome::Queued`], and by [`SendOutcome::Forwarded`] for a message
+/// handed to the Mailbox because the transport was not ready (issue #400), so a client can word
+/// its report for that case.
+pub const NOT_CONNECTED: &str = "not connected";
 
 /// Readiness check: whether the transport can deliver right now (for example, listening and not
 /// in `NoConnection`). Nothing is handed to the worker while it returns `false`.
@@ -269,6 +291,15 @@ pub struct ShutdownReport {
 /// flushed), cleared by the worker once the outcome is recorded.
 type InFlight = (Mutex<Option<String>>, Condvar);
 
+/// Worker input.
+enum Work {
+    /// Attempt the message direct, falling back to the Mailbox as the send path decides.
+    Send(Message),
+    /// Skip the direct attempt and hand the message to its recipients' Mailboxes: the transport has
+    /// not been ready for [`PendingSenderOptions::not_ready_timeout`] (issue #400).
+    Forward(Message),
+}
+
 /// Scheduler input.
 enum Event {
     /// The worker finished a message.
@@ -304,7 +335,7 @@ impl PendingSender {
         on_outcome: Arc<OutcomeCallback>,
     ) -> PendingSender {
         let (event_tx, event_rx) = mpsc::channel::<Event>();
-        let (work_tx, work_rx) = mpsc::channel::<Message>();
+        let (work_tx, work_rx) = mpsc::channel::<Work>();
         let running = Arc::new(AtomicBool::new(true));
 
         let offline = Arc::new(Mutex::new(OfflineWindow::new(options.offline_window)));
@@ -317,15 +348,18 @@ impl PendingSender {
         let spawned_worker = std::thread::Builder::new()
             .name("bingle-pending-sender".to_string())
             .spawn(move || {
-                while let Ok(msg) = work_rx.recv() {
-                    let id = msg.id.clone();
-                    let report = send_one(
-                        &worker_store,
-                        &*delivery,
-                        &worker_offline,
-                        &msg,
-                        retries_enabled,
-                    );
+                while let Ok(work) = work_rx.recv() {
+                    let report = match &work {
+                        Work::Send(msg) => send_one(
+                            &worker_store,
+                            &*delivery,
+                            &worker_offline,
+                            msg,
+                            retries_enabled,
+                        ),
+                        Work::Forward(msg) => forward_one(&*worker_store, msg),
+                    };
+                    let id = report.id.clone();
                     // The outcome is recorded: the message is no longer in flight.
                     let (lock, finished) = &*worker_in_flight;
                     if let Ok(mut current) = lock.lock() {
@@ -432,21 +466,9 @@ impl PendingSender {
             } else if Instant::now() >= until {
                 Some(NotSentReason::DeadlineReached)
             } else {
-                // Record it as unreachable: that drives the post to the recipients' Mailboxes. It
-                // stays pending (retryable) if the post does not complete.
-                let failure = classify_send_error(&Err(BingleError::Send {
-                    kind: SendFailureKind::PeerUnreachable,
-                    detail: "not delivered before exit".to_string(),
-                }));
-                if let Some(failure) = failure {
-                    let _ = self.store.update_message_status(
-                        &msg.id,
-                        0.0,
-                        Some(failure.reason),
-                        Some(failure.kind),
-                    );
-                }
-                (!self.store.is_handed_off(&msg.id)).then_some(NotSentReason::PostFailed)
+                let forwarded =
+                    hand_off_to_mailbox(&*self.store, &msg.id, "not delivered before exit").is_ok();
+                (!forwarded).then_some(NotSentReason::PostFailed)
             };
             match not_sent {
                 None => report.forwarded.push(entry),
@@ -515,7 +537,7 @@ fn run_scheduler(
     ready: &ReadyCheck,
     on_outcome: &OutcomeCallback,
     events: mpsc::Receiver<Event>,
-    work: mpsc::Sender<Message>,
+    work: mpsc::Sender<Work>,
     running: &AtomicBool,
 ) {
     tracing::info!("[PendingSender] started");
@@ -523,6 +545,9 @@ fn run_scheduler(
     let mut warned_stuck = false;
     // Per-message backoff deadlines, so a repeatedly failing recipient yields the head of the queue.
     let mut retry_after: HashMap<String, Instant> = HashMap::new();
+    // When each pending message was first seen waiting while the transport was not ready (issue
+    // #400). Cleared once it is ready again.
+    let mut waiting_since: HashMap<String, Instant> = HashMap::new();
 
     while running.load(Ordering::SeqCst) {
         match events.recv_timeout(options.tick) {
@@ -558,34 +583,161 @@ fn run_scheduler(
             warned_stuck = true;
         }
 
-        if in_flight.is_none() && ready() {
-            let pending = match store.pending_messages() {
-                Ok(pending) => pending,
-                Err(e) => {
-                    tracing::error!("[PendingSender] could not read pending messages: {e}");
-                    Vec::new()
+        if in_flight.is_some() {
+            continue;
+        }
+        let is_ready = ready();
+        if is_ready {
+            waiting_since.clear();
+        }
+        let pending = match store.pending_messages() {
+            Ok(pending) => pending,
+            Err(e) => {
+                tracing::error!("[PendingSender] could not read pending messages: {e}");
+                Vec::new()
+            }
+        };
+        // Forget deadlines for messages no longer pending, so the maps stay bounded.
+        retry_after.retain(|id, _| pending.iter().any(|m| m.id == *id));
+        waiting_since.retain(|id, _| pending.iter().any(|m| m.id == *id));
+
+        let next = if is_ready {
+            select_sendable_message(pending, &retry_after, Instant::now()).map(Work::Send)
+        } else {
+            note_waiting(&pending, &mut waiting_since, on_outcome);
+            if store.store_and_forward_send() {
+                select_overdue_message(
+                    pending,
+                    &waiting_since,
+                    &retry_after,
+                    options.not_ready_timeout,
+                )
+                .map(Work::Forward)
+            } else {
+                None
+            }
+        };
+        if let Some(next) = next {
+            let id = match &next {
+                Work::Send(msg) => {
+                    tracing::debug!("[PendingSender] sending message {}", msg.id);
+                    msg.id.clone()
+                }
+                Work::Forward(msg) => {
+                    tracing::info!(
+                        "[PendingSender] message {} waited {:?} while not connected; forwarding to the mailbox",
+                        msg.id,
+                        options.not_ready_timeout
+                    );
+                    msg.id.clone()
                 }
             };
-            // Forget deadlines for messages no longer pending, so the map stays bounded.
-            retry_after.retain(|id, _| pending.iter().any(|m| m.id == *id));
-            if let Some(msg) = select_sendable_message(pending, &retry_after, Instant::now()) {
-                tracing::debug!("[PendingSender] sending message {}", msg.id);
-                in_flight = Some((msg.id.clone(), Instant::now()));
-                // Mark it in flight before the hand-off, so a shutdown flush cannot also send it.
+            in_flight = Some((id.clone(), Instant::now()));
+            // Mark it in flight before the hand-off, so a shutdown flush cannot also send it.
+            if let Ok(mut current) = in_flight_shared.0.lock() {
+                *current = Some(id);
+            }
+            if work.send(next).is_err() {
+                tracing::error!("[PendingSender] worker gone; stopping");
                 if let Ok(mut current) = in_flight_shared.0.lock() {
-                    *current = Some(msg.id.clone());
+                    *current = None;
                 }
-                if work.send(msg).is_err() {
-                    tracing::error!("[PendingSender] worker gone; stopping");
-                    if let Ok(mut current) = in_flight_shared.0.lock() {
-                        *current = None;
-                    }
-                    break;
-                }
+                break;
             }
         }
     }
     tracing::info!("[PendingSender] stopped");
+}
+
+/// Note pending messages first seen waiting while the transport is not ready, and report each one
+/// once as [`SendOutcome::Queued`] (issue #400). A message already failing is not reported again:
+/// its earlier failure was.
+fn note_waiting(
+    pending: &[Message],
+    waiting_since: &mut HashMap<String, Instant>,
+    on_outcome: &OutcomeCallback,
+) {
+    for msg in pending {
+        if waiting_since.contains_key(&msg.id) {
+            continue;
+        }
+        waiting_since.insert(msg.id.clone(), Instant::now());
+        if msg.failure_reason.is_none() {
+            on_outcome(SendReport {
+                id: msg.id.clone(),
+                recipients: msg.recipient_handles.clone(),
+                outcome: SendOutcome::Queued(NOT_CONNECTED.to_string()),
+                previously_failed: false,
+            });
+        }
+    }
+}
+
+/// The oldest pending message that has waited at least `timeout` while the transport was not
+/// ready, and is not backing off after a failed hand-off (issue #400).
+fn select_overdue_message(
+    pending: Vec<Message>,
+    waiting_since: &HashMap<String, Instant>,
+    retry_after: &HashMap<String, Instant>,
+    timeout: Duration,
+) -> Option<Message> {
+    let now = Instant::now();
+    pending
+        .into_iter()
+        .filter(|m| {
+            waiting_since
+                .get(&m.id)
+                .is_some_and(|since| now.duration_since(*since) >= timeout)
+        })
+        .filter(|m| retry_after.get(&m.id).is_none_or(|until| now >= *until))
+        .min_by_key(|m| m.timestamp)
+}
+
+/// Record message `id` as unreachable, which drives the post to its recipients' Mailboxes when the
+/// store-and-forward send gate is on. `Ok` with the recorded reason when the message was handed off;
+/// `Err` with the reason to show (including why the post failed, #349) when it stays pending.
+fn hand_off_to_mailbox(
+    store: &dyn OutboundStore,
+    id: &str,
+    detail: &str,
+) -> Result<String, String> {
+    let failure = classify_send_error(&Err(BingleError::Send {
+        kind: SendFailureKind::PeerUnreachable,
+        detail: detail.to_string(),
+    }));
+    let reason = match failure {
+        Some(failure) => {
+            let _ = store.update_message_status(
+                id,
+                0.0,
+                Some(failure.reason.clone()),
+                Some(failure.kind),
+            );
+            failure.reason
+        }
+        None => detail.to_string(),
+    };
+    if store.is_handed_off(id) {
+        Ok(reason)
+    } else {
+        Err(store.display_failure_reason(id).unwrap_or(reason))
+    }
+}
+
+/// Hand a message that waited too long while the transport was not ready to its recipients'
+/// Mailboxes, and report it (issue #400). A post that does not complete leaves it pending, to be
+/// retried after the usual backoff, or sent direct once the transport is ready.
+fn forward_one(store: &dyn OutboundStore, msg: &Message) -> SendReport {
+    let outcome = match hand_off_to_mailbox(store, &msg.id, NOT_CONNECTED) {
+        Ok(_) => SendOutcome::Forwarded(NOT_CONNECTED.to_string()),
+        Err(reason) => SendOutcome::Retrying(reason),
+    };
+    SendReport {
+        id: msg.id.clone(),
+        recipients: msg.recipient_handles.clone(),
+        outcome,
+        previously_failed: msg.failure_reason.is_some(),
+    }
 }
 
 /// Send one message to each of its recipients, record the outcome in the store, and report it.

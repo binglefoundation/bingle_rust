@@ -16,7 +16,7 @@ use std::time::Duration;
 
 use bingle_core::api::bingle_api::{BingleApi, BingleError, ProgressCallback};
 use bingle_local::api::pending_sender::{
-    MessageDelivery, NotSentReason, SendOutcome, SendReport, ShutdownReport,
+    MessageDelivery, NOT_CONNECTED, NotSentReason, SendOutcome, SendReport, ShutdownReport,
 };
 use serde_json::Value as JsonValue;
 
@@ -110,15 +110,34 @@ pub fn shutdown_lines(report: &ShutdownReport) -> Vec<String> {
     forwarded.chain(not_sent).collect()
 }
 
+/// The transcript line when the node stops or starts listening, or `None` when nothing changed
+/// (issue #400). `was` is the previous state; `connected_before` is whether the session had
+/// connected at least once, so the first connection at startup (already announced by the
+/// "Connected — ready to chat." line) is not reported again.
+pub fn listening_line(was: bool, now: bool, connected_before: bool) -> Option<&'static str> {
+    match (was, now) {
+        (true, false) => Some("! connection lost — messages you send will be queued"),
+        (false, true) if connected_before => Some("✓ reconnected"),
+        _ => None,
+    }
+}
+
 /// The transcript line for a send outcome, or `None` to stay quiet.
 ///
-/// A delivery is silent unless an earlier attempt had failed (the terminal already echoed the typed
-/// line); a transient failure is reported once, on the message's first failure, not on every retry.
+/// Every delivery is confirmed, so a delivered message never looks the same as a stuck one (issue
+/// #400). A message queued while not connected is reported when it is queued and again when it is
+/// handed to the Mailbox. A transient failure is reported once, on the message's first failure,
+/// not on every retry.
 pub fn report_line(report: &SendReport) -> Option<String> {
     let to = report.recipients.join(", ");
     match (&report.outcome, report.previously_failed) {
-        (SendOutcome::Delivered, false) => None,
-        (SendOutcome::Delivered, true) => Some(format!("✓ delivered to {to}")),
+        (SendOutcome::Delivered, _) => Some(format!("✓ delivered to {to}")),
+        (SendOutcome::Queued(reason), _) => Some(format!(
+            "… {reason}; message to {to} queued — it will be sent when the connection is back"
+        )),
+        (SendOutcome::Forwarded(reason), _) if reason == NOT_CONNECTED => Some(format!(
+            "↪ {reason}; message to {to} sent to their mailbox — they'll get it when they next check"
+        )),
         (SendOutcome::Forwarded(_), _) => Some(format!(
             "↪ {to} is offline; queued to their mailbox — they'll get it when they reconnect"
         )),
