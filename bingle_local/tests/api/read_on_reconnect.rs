@@ -15,7 +15,7 @@ const TEST_MNEMONIC: &str = "square flat curtain negative three april hobby cult
 fn poll_is_a_no_op_when_receive_gate_off() {
     // Node configured and a keypair present, but the receive gate is off (the default): no read.
     let config = LocalApiConfig {
-        sidewinder: Some(MailboxConfig::new("http://localhost:9", "tok")),
+        sidewinder: Some(MailboxConfig::discovered(1)),
         store_and_forward_receive: false,
         ..LocalApiConfig::default()
     };
@@ -56,7 +56,7 @@ fn poll_is_a_no_op_when_no_node_configured() {
 fn poll_is_a_no_op_without_a_keypair() {
     // Gate on and a node configured, but no keypair to open envelopes with: no read, no panic.
     let config = LocalApiConfig {
-        sidewinder: Some(MailboxConfig::new("http://localhost:9", "tok")),
+        sidewinder: Some(MailboxConfig::discovered(1)),
         store_and_forward_receive: true,
         ..LocalApiConfig::default()
     };
@@ -73,7 +73,7 @@ fn poll_is_a_no_op_without_a_keypair() {
 #[test]
 fn poll_outcome_is_skipped_when_the_poll_does_not_run() {
     let gated_off = BingleApiLocalImpl::new(LocalApiConfig {
-        sidewinder: Some(MailboxConfig::new("http://localhost:9", "tok")),
+        sidewinder: Some(MailboxConfig::discovered(1)),
         store_and_forward_receive: false,
         ..LocalApiConfig::default()
     });
@@ -83,7 +83,7 @@ fn poll_outcome_is_skipped_when_the_poll_does_not_run() {
         ..LocalApiConfig::default()
     });
     let no_keypair = BingleApiLocalImpl::new(LocalApiConfig {
-        sidewinder: Some(MailboxConfig::new("http://localhost:9", "tok")),
+        sidewinder: Some(MailboxConfig::discovered(1)),
         store_and_forward_receive: true,
         ..LocalApiConfig::default()
     });
@@ -101,7 +101,7 @@ fn poll_outcome_is_skipped_when_the_poll_does_not_run() {
 fn poll_outcome_is_unreachable_when_the_node_cannot_be_reached() {
     let config = LocalApiConfig {
         // Nothing listens on the discard port.
-        sidewinder: Some(MailboxConfig::new("http://localhost:9", "tok")),
+        sidewinder: Some(MailboxConfig::discovered(1)),
         store_and_forward_receive: true,
         ..LocalApiConfig::default()
     };

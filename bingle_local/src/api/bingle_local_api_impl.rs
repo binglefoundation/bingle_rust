@@ -52,11 +52,10 @@ pub struct LocalApiConfig {
     /// APNs environment a `/register` token is registered under: `"sandbox"` or `"production"`.
     /// Defaults to [`default_notify_env`] (sandbox); a production build overrides it.
     pub notify_env: String,
-    /// Sidewinder Mailbox connection for store-and-forward (epic #200): how to reach the node (either
-    /// a bearer-token endpoint override or on-chain discovery + mutual TLS from the Bingle app id,
-    /// story #244) plus the operation-type bindings the offline path posts to and reads from. `None`
-    /// when the deployment configured neither a node URL/token nor a Bingle app id, in which case
-    /// store-and-forward is unavailable. Whether it is *used* when available is the separate on/off
+    /// Sidewinder Mailbox connection for store-and-forward (epic #200): the Bingle app id the node is
+    /// discovered from and reached over mutual TLS (story #244), plus the operation-type bindings the
+    /// offline path posts to and reads from. `None` when the deployment has no Bingle app id, in
+    /// which case store-and-forward is unavailable. Whether it is *used* when available is the separate on/off
     /// toggle (#212).
     pub sidewinder: Option<MailboxConfig>,
     /// Send-side store-and-forward gate (epic #200, story #212): when `true`, a give-up on direct
@@ -154,18 +153,17 @@ impl LocalApiConfig {
     /// and shared by the CLI, webserver, and JSI call sites; each surfaces the error the way its
     /// runtime expects (exit, log, ...).
     ///
-    /// "A Mailbox is configured" now means either the `SIDEWINDER_NODE_URL` + `SIDEWINDER_TOKEN`
-    /// bearer override **or** the Bingle DApp app id (which drives on-chain discovery + mutual TLS) —
-    /// see [`MailboxConfig::select`](crate::api::sidewinder::MailboxConfig::select). This supersedes
-    /// the CLI-only, env-var-only wording of #241, which should defer to this check on rebase.
+    /// "A Mailbox is configured" means the deployment has a Bingle DApp app id, which drives on-chain
+    /// discovery + mutual TLS — see
+    /// [`MailboxConfig::from_app_id`](crate::api::sidewinder::MailboxConfig::from_app_id).
     pub fn validate_store_and_forward(&self) -> Result<(), String> {
         if (self.store_and_forward_send || self.store_and_forward_receive)
             && self.sidewinder.is_none()
         {
             return Err(
                 "store-and-forward is enabled but no Sidewinder Mailbox is configured: set the \
-                 Bingle app id (for on-chain discovery + mutual TLS) or SIDEWINDER_NODE_URL + \
-                 SIDEWINDER_TOKEN (bearer override), or disable store-and-forward"
+                 Bingle app id (the node is discovered on-chain from it and reached over mutual \
+                 TLS), or disable store-and-forward"
                     .to_string(),
             );
         }

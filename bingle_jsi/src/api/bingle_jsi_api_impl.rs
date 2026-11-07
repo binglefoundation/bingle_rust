@@ -930,15 +930,10 @@ impl BingleJsiApiImpl {
             if let Some(env) = config.notify_env.clone() {
                 cfg.notify_env = env;
             }
-            // Store-and-forward (epic #200): configure the Sidewinder Mailbox. `sidewinder_node_url`
-            // + `sidewinder_token` select the bearer (plaintext) override; otherwise the Bingle DApp
-            // app id drives on-chain discovery + identity-pinned mutual TLS (story #244). Neither
-            // available leaves store-and-forward unconfigured.
-            cfg = cfg.with_sidewinder(MailboxConfig::select(
-                config.sidewinder_node_url.clone(),
-                config.sidewinder_token.clone(),
-                opts.app_id,
-            ));
+            // Store-and-forward (epic #200): configure the Sidewinder Mailbox. The Bingle DApp app
+            // id drives on-chain discovery + identity-pinned mutual TLS (story #244); no app id
+            // leaves store-and-forward unconfigured.
+            cfg = cfg.with_sidewinder(MailboxConfig::from_app_id(opts.app_id));
             // Store-and-forward gates (#212): each side is independent and defaults off when unset.
             cfg = cfg.with_store_and_forward(
                 config.store_and_forward_send,

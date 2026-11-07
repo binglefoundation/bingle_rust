@@ -17,7 +17,7 @@ use bingle_local::api::bingle_local_api_impl::{BingleApiLocalImpl, LocalApiConfi
 /// validation) so a test can exercise the poll path with an arbitrary config. Store is in-memory.
 fn alice_state_receive(receive_gate: bool) -> ChatState {
     let mut local = BingleApiLocalImpl::new(LocalApiConfig {
-        sidewinder: Some(MailboxConfig::new("http://localhost:9", "tok")),
+        sidewinder: Some(MailboxConfig::discovered(1)),
         store_and_forward_receive: receive_gate,
         ..LocalApiConfig::default()
     });

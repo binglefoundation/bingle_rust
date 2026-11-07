@@ -120,7 +120,7 @@ fn gate_off_attempts_no_post_on_delivery_failure() {
     // Send gate off (the default): a failed delivery must not post anything, so the posted-set stays
     // empty even though a Sidewinder node is configured.
     let config = LocalApiConfig {
-        sidewinder: Some(MailboxConfig::new("http://localhost:9", "tok")),
+        sidewinder: Some(MailboxConfig::discovered(1)),
         store_and_forward_send: false,
         ..LocalApiConfig::default()
     };
@@ -156,7 +156,7 @@ fn a_fully_forwarded_message_stops_retrying_direct_delivery() {
     // message is marked complete and its transient failure cleared, so it leaves the pending set.
     // Simulate the "already forwarded" state with the seam so no live node is needed.
     let config = LocalApiConfig {
-        sidewinder: Some(MailboxConfig::new("http://localhost:9", "tok")),
+        sidewinder: Some(MailboxConfig::discovered(1)),
         store_and_forward_send: true,
         ..LocalApiConfig::default()
     };
@@ -206,7 +206,7 @@ fn a_refused_recipient_is_not_treated_as_handed_off() {
     // #305: a recipient whose Mailbox post the node refused terminally is skipped for the rest of
     // the session, but a refusal is not a hand-off, so direct delivery keeps retrying the message.
     let config = LocalApiConfig {
-        sidewinder: Some(MailboxConfig::new("http://localhost:9", "tok")),
+        sidewinder: Some(MailboxConfig::discovered(1)),
         store_and_forward_send: true,
         ..LocalApiConfig::default()
     };
@@ -253,7 +253,7 @@ fn an_identity_refusal_holds_off_mailbox_posts_and_reads() {
     // #309: after the node refuses this client's identity, store-and-forward leaves the Mailbox
     // alone for the back-off window: a failed delivery is not handed off and a poll reads nothing.
     let config = LocalApiConfig {
-        sidewinder: Some(MailboxConfig::new("http://localhost:9", "tok")),
+        sidewinder: Some(MailboxConfig::discovered(1)),
         store_and_forward_send: true,
         store_and_forward_receive: true,
         ..LocalApiConfig::default()

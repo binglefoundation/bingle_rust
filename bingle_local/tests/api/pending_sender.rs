@@ -398,7 +398,7 @@ fn previously_failed_is_reported_on_a_later_success() {
 fn a_handed_off_failure_is_reported_forwarded() {
     // Send gate on and the recipient already posted (test seam), so the forward completes offline.
     let local = local_store(LocalApiConfig {
-        sidewinder: Some(MailboxConfig::new("http://localhost:9", "tok")),
+        sidewinder: Some(MailboxConfig::discovered(1)),
         store_and_forward_send: true,
         ..LocalApiConfig::default()
     });
@@ -421,7 +421,7 @@ fn a_handed_off_failure_is_reported_forwarded() {
 fn a_retrying_report_says_why_the_mailbox_post_failed() {
     // Issue #349: the post was refused (test seam), so the retrying line carries the reason too.
     let local = local_store(LocalApiConfig {
-        sidewinder: Some(MailboxConfig::new("http://localhost:9", "tok")),
+        sidewinder: Some(MailboxConfig::discovered(1)),
         store_and_forward_send: true,
         ..LocalApiConfig::default()
     });
@@ -549,7 +549,7 @@ fn with_the_send_gate_on_an_offline_recipient_gets_no_direct_attempt() {
 
 #[test]
 fn with_the_send_gate_on_an_offline_recipient_is_forwarded_to_their_mailbox() {
-    let local = gated_store(Some(MailboxConfig::new("http://localhost:9", "tok")));
+    let local = gated_store(Some(MailboxConfig::discovered(1)));
     queue(&local, 1, &["bob"], "first");
     let delivery = MockDelivery::new();
     delivery.script("bob", vec![Scripted::Transient]);
@@ -643,7 +643,7 @@ fn entry(local: &BingleApiLocalImpl, timestamp: i64, recipient: &str) -> Shutdow
 fn shutdown_forwards_pending_messages_to_the_mailbox() {
     // Not ready, so nothing is sent before shutdown; pre-marked posted (test seam) so the forward
     // completes without a node.
-    let local = gated_store(Some(MailboxConfig::new("http://localhost:9", "tok")));
+    let local = gated_store(Some(MailboxConfig::discovered(1)));
     queue(&local, 1, &["bob"], "queued just before exit");
     local.mark_forwarded_for_tests(&local.id_of_timestamp_for_tests(1), "bob");
     let delivery = MockDelivery::new();
@@ -709,7 +709,7 @@ fn shutdown_with_the_send_gate_off_leaves_messages_pending() {
 fn shutdown_waits_for_an_in_flight_send_before_flushing() {
     // The first message's direct send is in flight when shutdown starts; it completes (delivered),
     // so it is neither flushed nor delivered twice. The second, never attempted, is forwarded.
-    let local = gated_store(Some(MailboxConfig::new("http://localhost:9", "tok")));
+    let local = gated_store(Some(MailboxConfig::discovered(1)));
     queue(&local, 1, &["bob"], "in flight");
     let release = Arc::new(AtomicBool::new(false));
     let delivery = MockDelivery::new();
@@ -748,7 +748,7 @@ fn shutdown_waits_for_an_in_flight_send_before_flushing() {
 
 #[test]
 fn shutdown_leaves_a_send_still_in_flight_at_the_deadline_alone() {
-    let local = gated_store(Some(MailboxConfig::new("http://localhost:9", "tok")));
+    let local = gated_store(Some(MailboxConfig::discovered(1)));
     queue(&local, 1, &["bob"], "slow");
     let release = Arc::new(AtomicBool::new(false));
     let delivery = MockDelivery::new();
@@ -776,7 +776,7 @@ fn shutdown_leaves_a_send_still_in_flight_at_the_deadline_alone() {
 
 #[test]
 fn shutdown_stops_handing_off_at_the_deadline() {
-    let local = gated_store(Some(MailboxConfig::new("http://localhost:9", "tok")));
+    let local = gated_store(Some(MailboxConfig::discovered(1)));
     queue(&local, 1, &["bob"], "queued");
     local.mark_forwarded_for_tests(&local.id_of_timestamp_for_tests(1), "bob");
     let (sender, _rx) = start(

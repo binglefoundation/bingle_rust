@@ -33,7 +33,9 @@ in-flight run rather than queueing behind it ("heap not queue", issue #136).
 2. Caches the cargo registry and `target/` (`Swatinem/rust-cache`) and installs `cargo-nextest`.
 3. **Installs `sw-node`**, the Sidewinder node binary, from crates.io: `cargo install sidewinder-node`
    at the version pinned in `SW_NODE_VERSION`, cached by that version (issue #224). The
-   store-and-forward e2e starts a one-node Mailbox network with it.
+   store-and-forward e2e starts a one-node Mailbox network with it, in `on-chain-identity` mode
+   (mutual TLS, #246). `scripts/e2e_sidewinder_localnet.sh` reads the same `SW_NODE_VERSION` and
+   refuses any other installed version, because its node config is written for that release.
 4. **Starts `algokit localnet`** (native Docker) and waits until algod (`localhost:4001`) and the
    indexer (`8980`) are reachable. This wait is a real gate: the tests probe algod and *skip cleanly*
    when it is down, so without it a broken localnet would silently pass.
@@ -97,7 +99,7 @@ cargo nextest run --profile integration -p bingle_core -p bingle_cli --test inte
 
 The dapp artifacts must exist first (`scripts/build_dapp.sh`, or the puya compile in the workflow).
 
-To include the store-and-forward cases, install the node (`cargo install sidewinder-node --version 0.1.0 --locked`) and add the feature:
+To include the store-and-forward cases, install the node (`cargo install sidewinder-node --version 0.1.1 --locked`) and add the feature:
 
 ```bash
 cargo nextest run --profile integration -p bingle_core -p bingle_cli --features bingle_cli/sidewinder_localnet --test integration

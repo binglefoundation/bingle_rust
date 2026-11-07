@@ -34,10 +34,13 @@ Not on pull requests: emulator runs are heavy, so this is a post-merge check on 
    `localhost:4001`, which Detox adb-reverses to the runner host.
 3. Installs the pinned `sidewinder-node` crate's `sw-node` binary (`SW_NODE_VERSION`, cached by version) and starts the localnet
    provisioner in emulator mode with `BINGLE_E2E_SIDEWINDER=1`. Besides the app, relays, STUN, echo
-   peer and fixtures, it starts a one-node Sidewinder Mailbox (`scripts/e2e_sidewinder_localnet.sh`,
-   client API on `10.0.2.2:1080`, bearer token) with the sender, echo and `e2e-offline` accounts
-   enrolled, and writes `BINGLE_E2E_STORE_FORWARD=1` / `BINGLE_E2E_SIDEWINDER_URL` /
-   `BINGLE_E2E_SIDEWINDER_TOKEN` to its env file (issue #284).
+   peer and fixtures, it starts a one-node Sidewinder Mailbox (`scripts/e2e_sidewinder_localnet.sh`)
+   in `on-chain-identity` mode on the deployed app: the node account is enrolled with
+   `allow_sw_node`, and the node publishes its client API endpoint (`10.0.2.2:1080`) on-chain. The
+   sender, echo and `e2e-offline` accounts are its clients because registering a handle grants
+   `allow_sw_client`. The app reaches the node by app id only, over mutual TLS (#246). The
+   provisioner writes `BINGLE_E2E_STORE_FORWARD=1` to its env file once the node is reachable
+   (issue #284).
 4. Builds the Android native library (`build_android.sh`) and the Detox app + `androidTest` APKs.
 5. Boots a KVM-accelerated x86_64 emulator (`reactivecircus/android-emulator-runner`) and runs
    `bingle_jsi/example/scripts/ci_run_android_e2e.sh`: harden the emulator, stage the testnet
@@ -95,10 +98,10 @@ grows materially.
   `bingle_local` sender: delivery with the echo, a message to `BINGLE_E2E_OFFLINE_HANDLE` staying
   pending with a retryable cause, and the local store staying responsive while that send is in
   flight. The offline cases skip when `BINGLE_E2E_OFFLINE_HANDLE` is unset. `BINGLE_E2E_STORE_FORWARD=1`
-  also turns on store-and-forward (Mailbox from the app id, or `BINGLE_E2E_SIDEWINDER_URL` /
-  `BINGLE_E2E_SIDEWINDER_TOKEN`) and runs the offline-window case: a message to the offline peer is
+  also turns on store-and-forward (the Mailbox is discovered from the app id) and runs the
+  offline-window case: a message to the offline peer is
   handed off to its Mailbox, and a second one sent straight after is handed off promptly (#278). On
-  localnet, including this CI job, the provisioner's Sidewinder node sets these (#284).
+  localnet, including this CI job, the provisioner sets it once its Sidewinder node is up (#284).
 - `BINGLE_E2E_SEND_PENDING_MESSAGES=1` runs **messaging**, **send_variants** and **failure_causes**
   against the shared sender too (`withSenderSelection` in `e2e/harness.ts`). Unset, they use the
   legacy loop, which is the default until the app switches over.

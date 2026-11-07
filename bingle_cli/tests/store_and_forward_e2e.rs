@@ -4,11 +4,13 @@
 //! **not** compiled or run by the unit/quality gates. The integration workflow turns the feature on
 //! (issue #224, see CI-INTEGRATION.md). It stands up a one-node Sidewinder Mailbox network
 //! on algokit LocalNet via `scripts/e2e_sidewinder_localnet.sh` (which drives the installed `sw-node`
-//! binary), then drives the store-and-forward path against it. Per the LocalNet-suite policy it
-//! **fails, not skips**, when the prerequisites are missing.
+//! binary), then drives the store-and-forward path against it. The node runs in `on-chain-identity`
+//! mode on a freshly deployed Bingle app, and every client reaches it by app id only: discovery +
+//! mutual TLS (#246). Per the LocalNet-suite policy it **fails, not skips**, when the prerequisites
+//! are missing.
 //!
 //! Prerequisites (see the script header):
-//!   - `sw-node` on PATH (`cargo install sidewinder-node`),
+//!   - the pinned `sw-node` on PATH (`cargo install sidewinder-node --version 0.1.1 --locked`),
 //!   - algokit LocalNet up (`algokit localnet start`), and `curl`.
 //!
 //! Run it explicitly (single-threaded — the node binds fixed ports):
@@ -21,59 +23,68 @@
 use algo_ops::{AlgoChainConfig, AlgoOps};
 use bingle_local::api::sidewinder::{Mailbox, MailboxConfig};
 use bingle_local::api::{BingleApiLocalImpl, BingleLocalApi, LocalApiConfig};
+use bingle_test::localnet::sidewinder::{
+    SidewinderAccount, SidewinderAccounts, SidewinderScript, connect_mailbox, enrol_node,
+};
 use bingle_test::localnet::test_util;
-use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::path::Path;
+use std::time::Duration;
 
-/// Access details printed by `e2e_sidewinder_localnet.sh up`.
-struct Endpoints {
-    api_url: String,
-    token: String,
-    sender_mnemonic: String,
-    receiver_mnemonic: String,
-    receiver_address: String,
-}
+/// How long to wait for the node's published endpoint to become discoverable (indexer lag).
+const DISCOVERY_TIMEOUT: Duration = Duration::from_secs(60);
 
-/// A running one-node Sidewinder Mailbox network, torn down (`script down`) on drop.
+/// A running one-node Sidewinder Mailbox network in `on-chain-identity` mode, on a freshly deployed
+/// Bingle app, with the sender and receiver registered (which enrols them as Sidewinder clients).
+/// Torn down (`script down`) on drop.
 struct Cluster {
-    script: PathBuf,
-    work: PathBuf,
-    endpoints: Endpoints,
+    script: SidewinderScript,
+    accounts: SidewinderAccounts,
+    app_id: u64,
+    asset_id: u64,
 }
 
 impl Cluster {
-    /// Stand up the network via the script, failing (not skipping) with the script's diagnostics when
-    /// a prerequisite is missing.
-    fn up() -> Cluster {
-        let script =
-            Path::new(env!("CARGO_MANIFEST_DIR")).join("../scripts/e2e_sidewinder_localnet.sh");
-        assert!(
-            script.exists(),
-            "harness script not found at {} — it is vendored from the sidewinder repo",
-            script.display()
-        );
-        let work = Path::new(env!("CARGO_TARGET_TMPDIR")).join("sw-e2e");
+    /// Generate the accounts, deploy the Bingle app, register `sender_handle` / `receiver_handle`,
+    /// enrol the node, start it, and wait until both clients can reach it by app id. Fails (does not
+    /// skip) with the script's diagnostics when a prerequisite is missing.
+    fn up(sender_handle: &str, receiver_handle: &str) -> Cluster {
+        let script = SidewinderScript::new(Path::new(env!("CARGO_TARGET_TMPDIR")).join("sw-e2e"));
+        script.down();
+        let accounts = script.accounts().unwrap_or_else(|e| panic!("{e}"));
+        let cfg = test_util::localnet_config();
 
-        let output = Command::new("sh")
-            .arg(&script)
-            .arg("up")
-            .env("WORK", &work)
-            .output()
-            .expect("run e2e_sidewinder_localnet.sh up");
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        assert!(
-            output.status.success(),
-            "e2e_sidewinder_localnet.sh up failed (is sw-node installed and algokit localnet running?).\n\
-             --- stdout ---\n{stdout}\n--- stderr ---\n{stderr}"
-        );
-        let endpoints = parse_endpoints(&stdout)
-            .unwrap_or_else(|| panic!("could not parse endpoints from script output:\n{stdout}"));
-        Cluster {
-            script,
-            work,
-            endpoints,
+        let sender_ops = ops(&accounts.sender, &cfg);
+        let (app_id, asset_id) =
+            test_util::deploy_bingle_app_and_asset(&sender_ops, "Bingle$", 1_000_000);
+        for (account, handle) in [
+            (&accounts.sender, sender_handle),
+            (&accounts.receiver, receiver_handle),
+        ] {
+            test_util::register_client_on_blockchain(
+                &account.address,
+                &account.mnemonic,
+                handle,
+                app_id,
+                asset_id,
+                &sender_ops,
+                cfg.clone(),
+            );
         }
+        enrol_node(&cfg, app_id, &accounts.node).unwrap_or_else(|e| panic!("{e}"));
+
+        let cluster = Cluster {
+            script,
+            accounts,
+            app_id,
+            asset_id,
+        };
+        cluster.script.up(app_id).unwrap_or_else(|e| panic!("{e}"));
+        for account in [&cluster.accounts.sender, &cluster.accounts.receiver] {
+            connect_mailbox(ops(account, &cfg), app_id, DISCOVERY_TIMEOUT).unwrap_or_else(|e| {
+                panic!("{} cannot reach the node by app id: {e}", account.address)
+            });
+        }
+        cluster
     }
 }
 
@@ -83,67 +94,17 @@ impl Drop for Cluster {
         // integration workflow to upload (issue #224).
         if std::thread::panicking() {
             let _ = std::fs::copy(
-                self.work.join("node.log"),
+                self.script.work().join("node.log"),
                 Path::new(env!("CARGO_TARGET_TMPDIR")).join("sw-e2e-node.log"),
             );
         }
-        let _ = Command::new("sh")
-            .arg(&self.script)
-            .arg("down")
-            .env("WORK", &self.work)
-            .output();
+        self.script.down();
     }
 }
 
-/// Parse the `key : value` block the script prints (endpoint, token, and the sender/receiver address
-/// + mnemonic under their `[sender]` / `[receiver]` sections).
-fn parse_endpoints(stdout: &str) -> Option<Endpoints> {
-    let mut api_url = None;
-    let mut token = None;
-    let mut sender_mnemonic = None;
-    let mut receiver_mnemonic = None;
-    let mut receiver_address = None;
-    let mut section = "";
-
-    for line in stdout.lines() {
-        let trimmed = line.trim();
-        match trimmed {
-            "[sender]" => section = "sender",
-            "[receiver]" => section = "receiver",
-            _ => {}
-        }
-        if let Some(value) = after_key(trimmed, "API endpoint") {
-            api_url = Some(value);
-        } else if let Some(value) = after_key(trimmed, "Bearer token") {
-            token = Some(value);
-        } else if let Some(value) = after_key(trimmed, "mnemonic") {
-            match section {
-                "sender" => sender_mnemonic = Some(value),
-                "receiver" => receiver_mnemonic = Some(value),
-                _ => {}
-            }
-        } else if let Some(value) = after_key(trimmed, "address") {
-            if section == "receiver" {
-                receiver_address = Some(value);
-            }
-        }
-    }
-
-    Some(Endpoints {
-        api_url: api_url?,
-        token: token?,
-        sender_mnemonic: sender_mnemonic?,
-        receiver_mnemonic: receiver_mnemonic?,
-        receiver_address: receiver_address?,
-    })
-}
-
-/// If `line` is `<key> ... : <value>`, return the trimmed value. Tolerates the variable spacing the
-/// script uses before the colon (`address  :`, `mnemonic :`).
-fn after_key(line: &str, key: &str) -> Option<String> {
-    let rest = line.strip_prefix(key)?;
-    let value = rest.trim_start().strip_prefix(':')?.trim();
-    (!value.is_empty()).then(|| value.to_string())
+/// A LocalNet [`AlgoOps`] signing as `account`.
+fn ops(account: &SidewinderAccount, cfg: &AlgoChainConfig) -> AlgoOps {
+    test_util::ops_from_mnemonic(&account.address, &account.mnemonic, cfg.clone())
 }
 
 /// Whether `popped` carries `message`, tolerating an ARC-4 `byte[]` length prefix around the payload
@@ -164,24 +125,26 @@ fn payload_matches(popped: &[u8], message: &[u8]) -> bool {
 #[serial_test::serial(sidewinder_e2e)]
 #[test]
 fn mailbox_round_trips_against_a_real_localnet_node() {
-    let cluster = Cluster::up();
-    let e = &cluster.endpoints;
+    let cluster = Cluster::up("rt-sender", "rt-receiver");
+    let cfg = test_util::localnet_config();
+    let accounts = &cluster.accounts;
 
-    // Sender posts to the receiver's Mailbox (keyed by the receiver's address).
+    // Sender posts to the receiver's Mailbox (keyed by the receiver's address), reaching the node by
+    // app id only.
     let mut sender = Mailbox::new(
-        AlgoOps::new_for_algorand(Some(e.sender_mnemonic.clone()), None, None),
-        MailboxConfig::new(e.api_url.clone(), e.token.clone()),
+        ops(&accounts.sender, &cfg),
+        MailboxConfig::discovered(cluster.app_id),
     )
     .expect("sender mailbox");
     let message = b"store-and-forward end-to-end #216 (stage A)".to_vec();
     sender
-        .post(&e.receiver_address, &message)
+        .post(&accounts.receiver.address, &message)
         .expect("post to the receiver's mailbox");
 
     // Receiver pops its own Mailbox and reads the message back.
     let mut receiver = Mailbox::new(
-        AlgoOps::new_for_algorand(Some(e.receiver_mnemonic.clone()), None, None),
-        MailboxConfig::new(e.api_url.clone(), e.token.clone()),
+        ops(&accounts.receiver, &cfg),
+        MailboxConfig::discovered(cluster.app_id),
     )
     .expect("receiver mailbox");
     let popped = receiver
@@ -202,15 +165,9 @@ fn mailbox_round_trips_against_a_real_localnet_node() {
 }
 
 /// Build a bingle_local config for LocalNet + this cluster: the localnet algod (with the deployed
-/// app/asset ids) and the cluster's Sidewinder Mailbox, with `send`/`receive` set as given.
-fn local_config(
-    api_url: &str,
-    token: &str,
-    app_id: u64,
-    asset_id: u64,
-    send: bool,
-    receive: bool,
-) -> LocalApiConfig {
+/// app/asset ids) and the cluster's Sidewinder Mailbox, discovered from the app id, with
+/// `send`/`receive` set as given.
+fn local_config(app_id: u64, asset_id: u64, send: bool, receive: bool) -> LocalApiConfig {
     let algo_config = AlgoChainConfig {
         app_id: Some(app_id),
         asset_id: Some(asset_id),
@@ -220,7 +177,7 @@ fn local_config(
         algo_config,
         app_id,
         asset_id,
-        sidewinder: Some(MailboxConfig::new(api_url.to_string(), token.to_string())),
+        sidewinder: Some(MailboxConfig::discovered(app_id)),
         store_and_forward_send: send,
         store_and_forward_receive: receive,
         ..LocalApiConfig::default()
@@ -247,48 +204,17 @@ fn fail_delivery_twice(sender: &mut BingleApiLocalImpl, timestamp: i64) {
 #[serial_test::serial(sidewinder_e2e)]
 #[test]
 fn offline_send_survives_and_is_read_on_reconnect() {
-    let cluster = Cluster::up();
-    let e = &cluster.endpoints;
-    let cfg = test_util::localnet_config();
-
-    // Deploy the Bingle app + asset, and register a handle for the sender and the receiver so the
-    // sender's give-up post can resolve the recipient handle → address (and the reader can attribute
-    // the sender). The two accounts are the cluster's enrolled Mailbox callers.
-    let sender_ops = test_util::ops_from_mnemonic(
-        // address is derived from the mnemonic; a placeholder label is fine here.
-        &AlgoOps::address_from_passphrase(&e.sender_mnemonic).expect("sender address"),
-        &e.sender_mnemonic,
-        cfg.clone(),
-    );
-    let (app_id, asset_id) =
-        test_util::deploy_bingle_app_and_asset(&sender_ops, "Bingle$", 1_000_000);
-
-    let sender_address = AlgoOps::address_from_passphrase(&e.sender_mnemonic).expect("sender addr");
-    test_util::register_client_on_blockchain(
-        &sender_address,
-        &e.sender_mnemonic,
-        "sf-sender",
-        app_id,
-        asset_id,
-        &sender_ops,
-        cfg.clone(),
-    );
-    test_util::register_client_on_blockchain(
-        &e.receiver_address,
-        &e.receiver_mnemonic,
-        "sf-receiver",
-        app_id,
-        asset_id,
-        &sender_ops,
-        cfg.clone(),
-    );
+    // The cluster registers a handle for the sender and the receiver, so the sender's give-up post
+    // can resolve the recipient handle → address (and the reader can attribute the sender);
+    // registering is also what enrols them as Sidewinder clients.
+    let cluster = Cluster::up("sf-sender", "sf-receiver");
+    let (app_id, asset_id) = (cluster.app_id, cluster.asset_id);
+    let accounts = &cluster.accounts;
 
     // ── sender: two offline sends give up and are posted to the receiver's Mailbox ──────────────
-    let mut sender = BingleApiLocalImpl::new(local_config(
-        &e.api_url, &e.token, app_id, asset_id, true, false,
-    ));
+    let mut sender = BingleApiLocalImpl::new(local_config(app_id, asset_id, true, false));
     sender
-        .import_keypair(e.sender_mnemonic.clone())
+        .import_keypair(accounts.sender.mnemonic.clone())
         .expect("import sender keypair");
 
     // The earlier-sent message is added second and posted first, so a correct read must reorder by
@@ -318,11 +244,9 @@ fn offline_send_survives_and_is_read_on_reconnect() {
     fail_delivery_twice(&mut sender, earlier_ts);
 
     // ── receiver: reconnect, poll, read, decrypt ─────────────────────────────────────────────────
-    let mut receiver = BingleApiLocalImpl::new(local_config(
-        &e.api_url, &e.token, app_id, asset_id, false, true,
-    ));
+    let mut receiver = BingleApiLocalImpl::new(local_config(app_id, asset_id, false, true));
     receiver
-        .import_keypair(e.receiver_mnemonic.clone())
+        .import_keypair(accounts.receiver.mnemonic.clone())
         .expect("import receiver keypair");
 
     let read = receiver.poll_mailbox().expect("poll");
@@ -385,39 +309,14 @@ fn exit_flush_posts_a_queued_message_to_the_offline_peers_mailbox() {
     };
     use std::sync::Arc;
 
-    let cluster = Cluster::up();
-    let e = &cluster.endpoints;
-    let cfg = test_util::localnet_config();
-
-    let sender_address = AlgoOps::address_from_passphrase(&e.sender_mnemonic).expect("sender addr");
-    let sender_ops = test_util::ops_from_mnemonic(&sender_address, &e.sender_mnemonic, cfg.clone());
-    let (app_id, asset_id) =
-        test_util::deploy_bingle_app_and_asset(&sender_ops, "Bingle$", 1_000_000);
-    test_util::register_client_on_blockchain(
-        &sender_address,
-        &e.sender_mnemonic,
-        "exit-sender",
-        app_id,
-        asset_id,
-        &sender_ops,
-        cfg.clone(),
-    );
-    test_util::register_client_on_blockchain(
-        &e.receiver_address,
-        &e.receiver_mnemonic,
-        "exit-receiver",
-        app_id,
-        asset_id,
-        &sender_ops,
-        cfg.clone(),
-    );
+    let cluster = Cluster::up("exit-sender", "exit-receiver");
+    let (app_id, asset_id) = (cluster.app_id, cluster.asset_id);
+    let accounts = &cluster.accounts;
 
     // ── sender: queue a message, then exit before any direct attempt ─────────────────────────────
-    let mut sender = BingleApiLocalImpl::new(local_config(
-        &e.api_url, &e.token, app_id, asset_id, true, false,
-    ));
+    let mut sender = BingleApiLocalImpl::new(local_config(app_id, asset_id, true, false));
     sender
-        .import_keypair(e.sender_mnemonic.clone())
+        .import_keypair(accounts.sender.mnemonic.clone())
         .expect("import sender keypair");
     let ts = 1_726_700_000_000;
     sender
@@ -456,11 +355,9 @@ fn exit_flush_posts_a_queued_message_to_the_offline_peers_mailbox() {
     );
 
     // ── receiver: next start reads it from the Mailbox ───────────────────────────────────────────
-    let mut receiver = BingleApiLocalImpl::new(local_config(
-        &e.api_url, &e.token, app_id, asset_id, false, true,
-    ));
+    let mut receiver = BingleApiLocalImpl::new(local_config(app_id, asset_id, false, true));
     receiver
-        .import_keypair(e.receiver_mnemonic.clone())
+        .import_keypair(accounts.receiver.mnemonic.clone())
         .expect("import receiver keypair");
     let read = receiver.poll_mailbox().expect("poll");
     assert_eq!(read.len(), 1);

@@ -11,14 +11,13 @@
 //!
 //! | Variable | Meaning |
 //! |---|---|
-//! | `SIDEWINDER_NODE_URL` | Base URL of a Sidewinder node. |
-//! | `SIDEWINDER_TOKEN` | Bearer token the node accepts. |
-//! | `SIDEWINDER_ACCOUNT_MNEMONIC` | 25-word mnemonic of the (enrolled) account. |
-//! | `SANDF_APP_ID` | Optional Bingle app id for sender-handle resolution; defaults to 0 (falls back to the address). |
+//! | `SIDEWINDER_DISCOVERY_APP_ID` | Bingle DApp app id: the node is discovered on-chain from it and reached over mutual TLS, and the sender handle is resolved under it. |
+//! | `SIDEWINDER_ACCOUNT_MNEMONIC` | 25-word mnemonic of the account, a permitted Sidewinder client of that app; its key signs and is the mutual-TLS identity. |
 //!
-//! Run, for example:
+//! The process must be able to reach the app's chain (an algod/indexer the default `AlgoOps` config
+//! points at). Run, for example:
 //!
-//! `SIDEWINDER_NODE_URL=... SIDEWINDER_TOKEN=... SIDEWINDER_ACCOUNT_MNEMONIC="..." cargo test -p bingle_local --test read_on_reconnect_e2e -- --nocapture`
+//! `SIDEWINDER_DISCOVERY_APP_ID=1234 SIDEWINDER_ACCOUNT_MNEMONIC="..." cargo test -p bingle_local --test read_on_reconnect_e2e -- --nocapture`
 
 use algo_ops::AlgoOps;
 use base64::{Engine as _, engine::general_purpose};
@@ -31,20 +30,16 @@ fn non_empty(key: &str) -> Option<String> {
 
 #[test]
 fn poll_reads_decrypts_and_drops_a_mailbox_message() {
-    let (Some(node_url), Some(token), Some(mnemonic)) = (
-        non_empty("SIDEWINDER_NODE_URL"),
-        non_empty("SIDEWINDER_TOKEN"),
+    let (Some(app_id), Some(mnemonic)) = (
+        non_empty("SIDEWINDER_DISCOVERY_APP_ID").and_then(|s| s.parse::<u64>().ok()),
         non_empty("SIDEWINDER_ACCOUNT_MNEMONIC"),
     ) else {
         eprintln!(
-            "skipping poll_reads_decrypts_and_drops_a_mailbox_message: set SIDEWINDER_NODE_URL, \
-             SIDEWINDER_TOKEN and SIDEWINDER_ACCOUNT_MNEMONIC to run (see the module docs)"
+            "skipping poll_reads_decrypts_and_drops_a_mailbox_message: set \
+             SIDEWINDER_DISCOVERY_APP_ID and SIDEWINDER_ACCOUNT_MNEMONIC to run (see the module docs)"
         );
         return;
     };
-    let app_id: u64 = non_empty("SANDF_APP_ID")
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(0);
 
     let address = AlgoOps::address_from_passphrase(&mnemonic).expect("address from mnemonic");
     let private_key = AlgoOps::seed_from_passphrase(&mnemonic).expect("private key from mnemonic");
@@ -52,11 +47,14 @@ fn poll_reads_decrypts_and_drops_a_mailbox_message() {
 
     // A Mailbox client for posting (and for draining first, so we count only what we post).
     let poster_algo = AlgoOps::new_for_algorand(Some(mnemonic.clone()), None, None);
-    let mut poster = Mailbox::new(
-        poster_algo,
-        MailboxConfig::new(node_url.clone(), token.clone()),
-    )
-    .expect("poster mailbox");
+    // A discovery/connect failure is a clean skip (node/chain not ready).
+    let mut poster = match Mailbox::new(poster_algo, MailboxConfig::discovered(app_id)) {
+        Ok(mailbox) => mailbox,
+        Err(e) => {
+            eprintln!("skipping: sidewinder discovery/connect not ready: {e}");
+            return;
+        }
+    };
     loop {
         match poster.pop() {
             Ok(Some(_)) => {}
@@ -88,7 +86,7 @@ fn poll_reads_decrypts_and_drops_a_mailbox_message() {
     // A recipient client configured to read store-and-forward messages.
     let config = LocalApiConfig {
         app_id,
-        sidewinder: Some(MailboxConfig::new(node_url, token)),
+        sidewinder: Some(MailboxConfig::discovered(app_id)),
         store_and_forward_receive: true,
         ..LocalApiConfig::default()
     };

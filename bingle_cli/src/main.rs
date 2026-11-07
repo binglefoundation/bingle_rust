@@ -676,7 +676,7 @@ fn cmd_chat(args: Vec<String>) {
     // readability in source; each keeps its trailing `\n` except the last.
     const USAGE: &str = concat!(
         "Usage: bingle_cli chat [--handle <handle>|<handle>] [--passphrase <text>] [--to <handle> | --to-id <id>] [--state_file <file>] [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--stun-servers <list>] [--stun-servers-file <file>] [--no-retries] [--store-forward <both|send|receive|none>] [--notify <url>] [--auto-migrate] [--info|--debug]\n",
-        "  --store-forward: enable Sidewinder Mailbox store-and-forward. The node is discovered on-chain from the Bingle app id and reached over mutual TLS; set SIDEWINDER_NODE_URL + SIDEWINDER_TOKEN to override with a plaintext bearer node instead. both=send+receive, send=post on give-up, receive=poll inbox, none=off (default).\n",
+        "  --store-forward: enable Sidewinder Mailbox store-and-forward. The node is discovered on-chain from the Bingle app id and reached over mutual TLS. both=send+receive, send=post on give-up, receive=poll inbox, none=off (default).\n",
         "  --notify <url>: nudge the bingle_notify gateway at <url> when a direct send gives up.",
     );
 

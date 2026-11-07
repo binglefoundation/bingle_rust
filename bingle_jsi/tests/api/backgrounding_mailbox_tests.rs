@@ -32,7 +32,7 @@ enum SendPath {
 /// one pending message to `bob` queued at `timestamp`. Returns the store and the id.
 fn store_with_pending_message(timestamp: i64) -> (BingleApiLocalImpl, String) {
     let config = LocalApiConfig {
-        sidewinder: Some(MailboxConfig::new("http://localhost:9", "tok")),
+        sidewinder: Some(MailboxConfig::discovered(1)),
         store_and_forward_send: true,
         ..LocalApiConfig::default()
     };

@@ -14,7 +14,7 @@
  * `mailbox-echo` only when a Mailbox is running), so it skips cleanly without them:
  *   BINGLE_E2E_BACKEND=localnet, BINGLE_E2E_NODE_FILE, BINGLE_E2E_STUN_FILE, BINGLE_E2E_PASSPHRASE,
  *   BINGLE_E2E_HANDLE, BINGLE_E2E_ECHO_TO   as for messaging.test.ts
- *   BINGLE_E2E_STORE_FORWARD=1, BINGLE_E2E_SIDEWINDER_URL / _TOKEN   see harness.storeForwardConfig
+ *   BINGLE_E2E_STORE_FORWARD=1   see harness.storeForwardConfig
  */
 import {describe, it, beforeAll, afterAll} from '@jest/globals';
 import assert from 'assert';
@@ -41,7 +41,7 @@ const haveMailboxEcho =
   handle &&
   echoTo &&
   nodeFile &&
-  storeForwardInit?.sidewinder_node_url;
+  storeForwardInit != null;
 const describeOrSkip = haveMailboxEcho ? describe : describe.skip;
 
 const LISTEN_TIMEOUT = 90000;

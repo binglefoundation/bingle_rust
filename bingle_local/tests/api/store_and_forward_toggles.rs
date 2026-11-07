@@ -71,22 +71,15 @@ fn validate_fails_when_a_gate_is_on_but_no_mailbox_configured() {
             .validate_store_and_forward()
             .expect_err("a gate on with no Mailbox must fail loudly");
         assert!(
-            err.contains("SIDEWINDER_NODE_URL")
-                && err.contains("SIDEWINDER_TOKEN")
-                && err.contains("app id"),
-            "error names both the app-id and the bearer inputs; got: {err}"
+            err.contains("app id") && !err.contains("SIDEWINDER_"),
+            "error names the app id as the only input, not the removed env vars; got: {err}"
         );
     }
 }
 
 #[test]
 fn validate_passes_when_a_gate_is_on_and_a_mailbox_is_configured() {
-    // Either a bearer override or the discovery (app-id) connection satisfies the check.
-    let bearer = LocalApiConfig::with_notify(AlgoChainConfig::default(), 0, 0, None, None)
-        .with_sidewinder(Some(MailboxConfig::new("http://n:9101", "tok")))
-        .with_store_and_forward(Some(true), Some(true));
-    assert!(bearer.validate_store_and_forward().is_ok());
-
+    // The discovery (app-id) connection satisfies the check.
     let discovered = LocalApiConfig::with_notify(AlgoChainConfig::default(), 42, 0, None, None)
         .with_sidewinder(Some(MailboxConfig::discovered(42)))
         .with_store_and_forward(Some(false), Some(true));

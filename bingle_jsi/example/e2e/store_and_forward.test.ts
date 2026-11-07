@@ -13,7 +13,7 @@
  * `mailbox-echo` only when a Mailbox is running), so it skips cleanly without them:
  *   BINGLE_E2E_BACKEND=localnet, BINGLE_E2E_NODE_FILE, BINGLE_E2E_STUN_FILE, BINGLE_E2E_PASSPHRASE,
  *   BINGLE_E2E_HANDLE, BINGLE_E2E_ECHO_TO   as for messaging.test.ts
- *   BINGLE_E2E_STORE_FORWARD=1, BINGLE_E2E_SIDEWINDER_URL / _TOKEN   see harness.storeForwardConfig
+ *   BINGLE_E2E_STORE_FORWARD=1   see harness.storeForwardConfig
  */
 import {describe, it, beforeAll, afterAll} from '@jest/globals';
 import assert from 'assert';
@@ -35,14 +35,14 @@ const stunFile = process.env.BINGLE_E2E_STUN_FILE || '';
 const storeForwardInit = storeForwardConfig();
 
 // The `mailbox-echo` command is answered only by the localnet provisioner's echo peer, and only
-// when it runs a Sidewinder node (it then sets the URL).
+// when it runs a Sidewinder node (it then sets BINGLE_E2E_STORE_FORWARD=1).
 const haveMailboxEcho =
   backend === 'localnet' &&
   passphrase &&
   handle &&
   echoTo &&
   nodeFile &&
-  storeForwardInit?.sidewinder_node_url;
+  storeForwardInit != null;
 const describeOrSkip = haveMailboxEcho ? describe : describe.skip;
 
 const LISTEN_TIMEOUT = 90000;

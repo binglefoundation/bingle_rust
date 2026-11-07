@@ -1,41 +1,61 @@
 #!/usr/bin/env sh
 # Single-node Sidewinder network on LocalNet for bingle_core end-to-end testing.
 #
-# Generates (and funds) a node anchoring account and two client accounts — a **sender** and a
-# **receiver** — sets up the one-node network (BLS key, allowlist enrolling the two clients as callers,
-# node config against the LocalNet parent chain), starts the node with its client REST API, and prints
-# the endpoint + address + mnemonic for the sender and receiver. Run two bingle_core instances against
-# those to post and pop on the local network.
+# The node runs in `on-chain-identity` mode (#246): it authorizes its clients from the Bingle DApp's
+# on-chain allow bits and serves the client API over identity-bound mutual Transport Layer Security
+# (mTLS). There is no bearer token and no plaintext client API. A client finds the node on-chain from
+# the Bingle app id (the node publishes its endpoint at boot) and connects by app id only.
+#
+# Bringing a node up is two steps, because the on-chain enrolment needs a Bingle tool and this script
+# drives only `sw-node`:
+#
+#   1. `accounts` generates (or reuses) and funds a **node** account and two client accounts — a
+#      **sender** and a **receiver** — and prints their addresses and mnemonics.
+#   2. The caller deploys (or picks) a Bingle app and enrols the accounts on it: the node account is
+#      opted in and given `allow_sw_node` by the app admin, and each client registers a handle (which
+#      grants `allow_sw_client`). The bingle_test `localnet::sidewinder` helpers do this.
+#   3. `up` (with BINGLE_APP_ID set) writes the node config, starts the node and waits until its
+#      client API is listening. The node publishes its endpoint once, at boot, and only an account
+#      holding `allow_sw_node` may publish, so step 2 must come first.
 #
 # Self-contained: it drives the **installed `sw-node`** binary and carries its own application config,
 # so it needs no repository checkout or build — copy this one file anywhere and run it.
 #
 # Prereqs:
-#   - sw-node on PATH:        cargo install sidewinder-node   (crates.io), or `cargo install --path sw-node` from the repo
+#   - sw-node on PATH:        cargo install sidewinder-node --version "$SW_NODE_VERSION" --locked
 #   - algokit LocalNet up:    algokit localnet start
-#   - curl                    (to probe the node's health endpoint)
+#   - curl                    (for the LocalNet reachability check)
 #
 # Usage:
-#   e2e_sidewinder_localnet.sh [up]    # generate/reuse accounts, start the node, print access details
-#                                      # (EXTRA_CALLERS="ADDR1 ADDR2" enrols more caller accounts)
-#   e2e_sidewinder_localnet.sh down    # stop the node and remove the work dir
+#   e2e_sidewinder_localnet.sh accounts   # generate/reuse + fund the accounts, print their details
+#   BINGLE_APP_ID=<id> e2e_sidewinder_localnet.sh up   # start the node (accounts enrolled on <id>)
+#   e2e_sidewinder_localnet.sh down       # stop the node and remove the work dir
 set -eu
 
 WORK=${WORK:-./tmp/bingle-e2e}
 API_PORT=${API_PORT:-1080}
 PEER_PORT=${PEER_PORT:-9101}
-AUTH_TOKEN=${AUTH_TOKEN:-bingle-localnet-token}
 FUND_ALGOS=${FUND_ALGOS:-100}
 # the installed binary by default; override with a path (e.g. a repo build) if you prefer.
 SW_NODE=${SW_NODE:-sw-node}
+# the sw-node version this script's node config is written for. 0.1.1 is the first release that admits
+# transactions from on-chain-enrolled clients (0.1.0 still checks the allowlist's `callers:`). The
+# config below loads on 0.1.x only: the first release after sidewinder#562 rejects `api.auth_token`, so
+# drop that line when moving the pin past 0.1.x.
+# Set SW_NODE_VERSION= (empty) to skip the check, e.g. for a repo build.
+SW_NODE_VERSION=${SW_NODE_VERSION-0.1.1}
+# the Bingle DApp app id the node authorizes clients against and publishes its endpoint to (`up` only).
+BINGLE_APP_ID=${BINGLE_APP_ID:-}
+# the host clients reach the node's client API at, published on-chain for discovery. Loopback by
+# default; an Android emulator e2e sets the emulator's host alias (10.0.2.2).
+ADVERTISE_HOST=${ADVERTISE_HOST:-127.0.0.1}
+# how often (seconds) the node refreshes its membership cache from the chain.
+MEMBERSHIP_POLL_SECS=${MEMBERSHIP_POLL_SECS:-2}
 # LocalNet algod, used only for the pre-flight reachability check (funding goes via sw-node → kmd).
 ALGOD_URL=${ALGOD_URL:-http://localhost:4001}
 ALGOD_TOKEN=${ALGOD_TOKEN:-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa}
 # optional: an application config file to use instead of the built-in Mailbox registry.
 APP_CONFIG=${APP_CONFIG:-}
-# optional: space-separated addresses of further accounts to enrol as callers, alongside the
-# generated sender and receiver — e.g. the Bingle accounts the localnet e2e provisioner uses (#284).
-EXTRA_CALLERS=${EXTRA_CALLERS:-}
 
 die() { echo "e2e_sidewinder_localnet: $1" >&2; exit 1; }
 
@@ -73,20 +93,35 @@ YAML
 
 stop_node() { [ -f "$WORK/node.pid" ] && kill "$(cat "$WORK/node.pid")" 2>/dev/null || true; }
 
-if [ "${1:-up}" = "down" ]; then
-  stop_node
-  rm -rf "$WORK"
-  echo "e2e down: stopped the node and removed $WORK" >&2
-  exit 0
-fi
+ACTION=${1:-up}
+case "$ACTION" in
+  accounts|up) ;;
+  down)
+    stop_node
+    rm -rf "$WORK"
+    echo "e2e down: stopped the node and removed $WORK" >&2
+    exit 0
+    ;;
+  *) die "unknown action '$ACTION' (accounts | up | down)" ;;
+esac
 
-# --- pre-flight: prereqs present and LocalNet reachable ---
+# --- pre-flight: prereqs present, the pinned sw-node version, and LocalNet reachable ---
 command -v "$SW_NODE" >/dev/null 2>&1 \
-  || die "sw-node not found ('$SW_NODE') — install it: cargo install --path sw-node, or set SW_NODE=/path/to/sw-node"
-command -v curl >/dev/null 2>&1 || die "curl not found — needed to probe the node's health endpoint"
+  || die "sw-node not found ('$SW_NODE') — install it: cargo install sidewinder-node --version $SW_NODE_VERSION --locked, or set SW_NODE=/path/to/sw-node"
+command -v curl >/dev/null 2>&1 || die "curl not found — needed for the LocalNet reachability check"
+if [ -n "$SW_NODE_VERSION" ]; then
+  installed=$("$SW_NODE" --version 2>/dev/null | sed -n 's/^sw-node //p')
+  [ "$installed" = "$SW_NODE_VERSION" ] \
+    || die "sw-node is version '${installed:-unknown}', this script needs $SW_NODE_VERSION — cargo install sidewinder-node --version $SW_NODE_VERSION --locked (or set SW_NODE_VERSION= to skip the check)"
+fi
 [ -z "$APP_CONFIG" ] || [ -f "$APP_CONFIG" ] || die "application config not found: $APP_CONFIG"
 curl -fsS -o /dev/null -H "X-Algo-API-Token: $ALGOD_TOKEN" "$ALGOD_URL/v2/status" 2>/dev/null \
   || die "LocalNet algod unreachable at $ALGOD_URL — start it: algokit localnet start"
+if [ "$ACTION" = "up" ]; then
+  case "$BINGLE_APP_ID" in
+    ''|0|*[!0-9]*) die "up needs BINGLE_APP_ID=<Bingle app id> with the node account enrolled on it (see the header)" ;;
+  esac
+fi
 
 stop_node                       # stop a node from a previous `up` (keeps the account files for reuse)
 mkdir -p "$WORK/etc" "$WORK/data"
@@ -103,9 +138,30 @@ sender_out=$("$SW_NODE" account --out "$WORK/sender.key" --fund-localnet --amoun
 receiver_out=$("$SW_NODE" account --out "$WORK/receiver.key" --fund-localnet --amount "$FUND_ALGOS") \
   || die "receiver account generate/fund failed"
 
-NODE_ADDR=$(field "$node_out" address)
+NODE_ADDR=$(field "$node_out" address);       NODE_MN=$(field "$node_out" mnemonic)
 SENDER_ADDR=$(field "$sender_out" address);   SENDER_MN=$(field "$sender_out" mnemonic)
 RECEIVER_ADDR=$(field "$receiver_out" address); RECEIVER_MN=$(field "$receiver_out" mnemonic)
+
+print_accounts() {
+  cat <<EOF
+[node]
+  address  : $NODE_ADDR
+  mnemonic : $NODE_MN
+
+[sender]
+  address  : $SENDER_ADDR
+  mnemonic : $SENDER_MN
+
+[receiver]
+  address  : $RECEIVER_ADDR
+  mnemonic : $RECEIVER_MN
+EOF
+}
+
+if [ "$ACTION" = "accounts" ]; then
+  print_accounts
+  exit 0
+fi
 
 # --- network setup: BLS consensus key, allowlist, parent-chain, node config ---
 "$SW_NODE" keygen --out "$WORK/etc/consensus.key" --account "$NODE_ADDR" > "$WORK/keygen.out" 2>&1 \
@@ -117,18 +173,15 @@ if [ -n "$APP_CONFIG" ]; then cp "$APP_CONFIG" "$WORK/etc/application.yaml"; els
 cat > "$WORK/etc/parent-chain.json" <<EOF
 { "network": "localnet", "client_api_url": "http://localhost", "client_api_port": 4001, "token": "$ALGOD_TOKEN" }
 EOF
+# the node set only: in on-chain-identity mode clients are enrolled by their on-chain allow bit.
 cat > "$WORK/etc/allowlist.yaml" <<EOF
 nodes:
   - account: "$NODE_ADDR"
     bls_public_key: "$BLS"
     proof_of_possession: "$POP"
-callers:
-  - "$SENDER_ADDR"
-  - "$RECEIVER_ADDR"
 EOF
-for addr in $EXTRA_CALLERS; do
-  printf '  - "%s"\n' "$addr" >> "$WORK/etc/allowlist.yaml"
-done
+# `api.auth_token` is required by sw-node 0.1.x and ignored under mutual TLS; the release after
+# sidewinder#562 rejects it, so remove that line when moving SW_NODE_VERSION past 0.1.x.
 cat > "$WORK/etc/node.yaml" <<EOF
 index: 0
 data_dir: $(cd "$WORK/data" && pwd)
@@ -138,38 +191,43 @@ parent_chain: parent-chain.json
 consensus_key: consensus.key
 account_key: account.key
 listen: "0.0.0.0:$PEER_PORT"
+auth_mode:
+  mode: on-chain-identity
+  app_id: $BINGLE_APP_ID
+  poll_interval_secs: $MEMBERSHIP_POLL_SECS
+  dapp: bingle
+advertise:
+  ipv4: "$ADVERTISE_HOST:$API_PORT"
 api:
   listen: "0.0.0.0:$API_PORT"
-  auth_token: "$AUTH_TOKEN"
+  auth_token: ""
 EOF
 
 # --- start the node (background local process; survives this script, stopped by `down`) ---
 nohup "$SW_NODE" run --node-file "$WORK/etc/node.yaml" > "$WORK/node.log" 2>&1 &
 echo $! > "$WORK/node.pid"
 
-# wait for the client API to answer /health.
+# wait for the node's single readiness line. The client API is mutual TLS only, so a plain probe of
+# /health cannot tell a ready node from a refused handshake.
 ready=""
 i=0
-while [ "$i" -lt 30 ]; do
-  if curl -fsS -o /dev/null "http://127.0.0.1:$API_PORT/health" 2>/dev/null; then ready=1; break; fi
+while [ "$i" -lt 60 ]; do
+  if grep -q 'NODE READY' "$WORK/node.log" 2>/dev/null; then ready=1; break; fi
+  kill -0 "$(cat "$WORK/node.pid")" 2>/dev/null || break
   sleep 1; i=$((i + 1))
 done
-[ -n "$ready" ] || { tail -20 "$WORK/node.log" >&2; stop_node; die "node did not become healthy — see $WORK/node.log"; }
+[ -n "$ready" ] || { tail -20 "$WORK/node.log" >&2; stop_node; die "node did not become ready — see $WORK/node.log"; }
 
 cat <<EOF
 
 === bingle_core LocalNet endpoints ===
-API endpoint : http://127.0.0.1:$API_PORT
-Bearer token : $AUTH_TOKEN
-Application  : Mailbox — post(recipient, msg) / pop() / drain()
+Bingle app id : $BINGLE_APP_ID
+API endpoint  : https://$ADVERTISE_HOST:$API_PORT (mutual TLS; discovered on-chain from the app id)
+Application   : Mailbox — post(recipient, msg) / pop() / drain()
 
-[sender]
-  address  : $SENDER_ADDR
-  mnemonic : $SENDER_MN
-
-[receiver]
-  address  : $RECEIVER_ADDR
-  mnemonic : $RECEIVER_MN
+EOF
+print_accounts
+cat <<EOF
 
 node pid $(cat "$WORK/node.pid") — logs: $WORK/node.log
 stop with: $0 down

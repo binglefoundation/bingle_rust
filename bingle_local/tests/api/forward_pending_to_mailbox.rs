@@ -12,7 +12,7 @@ const TEST_MNEMONIC: &str = "square flat curtain negative three april hobby cult
 /// message to `bob` (no send tried yet). Returns the store and the message id.
 fn store_with_pending_message(send_gate: bool) -> (BingleApiLocalImpl, String) {
     let config = LocalApiConfig {
-        sidewinder: Some(MailboxConfig::new("http://localhost:9", "tok")),
+        sidewinder: Some(MailboxConfig::discovered(1)),
         store_and_forward_send: send_gate,
         ..LocalApiConfig::default()
     };

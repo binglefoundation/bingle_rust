@@ -23,8 +23,8 @@ set -euo pipefail
 #                                         pending-message sender instead of the legacy loop (#283);
 #                                         pending_sender.test.ts always uses the shared sender
 #   BINGLE_E2E_STORE_FORWARD=1            (optional) pending_sender.test.ts also turns on the
-#                                         store-and-forward send gate (testnet: Mailbox discovered
-#                                         from the app id; or set BINGLE_E2E_SIDEWINDER_URL/_TOKEN)
+#                                         store-and-forward send gate (the Mailbox is discovered
+#                                         on-chain from the app id)
 # The messaging/failure tests skip cleanly when these are unset; the smoke test ignores them.
 #
 # localnet (issue #123) is self-provisioning: a Rust provisioner binary (bingle_test

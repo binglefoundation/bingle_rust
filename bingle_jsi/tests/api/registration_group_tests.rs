@@ -55,8 +55,6 @@ fn config(local: Option<String>, ids: Option<(u64, u64)>) -> BingleJsiConfig {
         notify_gateway_url: None,
         notify_on_giveup: None,
         notify_env: None,
-        sidewinder_node_url: None,
-        sidewinder_token: None,
         store_and_forward_send: None,
         store_and_forward_receive: None,
         store_and_forward_poll_interval_secs: None,

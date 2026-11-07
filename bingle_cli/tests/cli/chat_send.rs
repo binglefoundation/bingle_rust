@@ -205,7 +205,7 @@ pub fn no_retries_marks_a_transient_failure_terminal() {
 pub fn send_gate_on_failed_send_forwards_to_mailbox() {
     // Issue #272: with the store-and-forward SEND gate on, a failed direct send to an offline
     // recipient is handed to their Mailbox. Pre-mark it posted (test seam) so no node is needed.
-    let mut state = alice_state_gated(true, Some(MailboxConfig::new("http://localhost:9", "tok")));
+    let mut state = alice_state_gated(true, Some(MailboxConfig::discovered(1)));
     let ts = state
         .queue_outbound("bob", "hi while offline")
         .expect("queue");
@@ -379,7 +379,7 @@ pub fn shutdown_lines_are_empty_when_nothing_was_queued() {
 pub fn exit_flush_forwards_a_message_queued_just_before_exit() {
     // Issue #282: the message is queued, and the session exits before any send; the exit flush
     // hands it to the Mailbox (pre-marked posted via the test seam, so no node is needed).
-    let mut state = alice_state_gated(true, Some(MailboxConfig::new("http://localhost:9", "tok")));
+    let mut state = alice_state_gated(true, Some(MailboxConfig::discovered(1)));
     let ts = state.queue_outbound("bob", "bye").expect("queue");
     state.mark_forwarded_for_tests(&ts, "bob");
     let sender = PendingSender::start(

@@ -36,8 +36,6 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
                     notifyGatewayUrl = config.tryGetString("notify_gateway_url"),
                     notifyOnGiveup = config.tryGetBoolean("notify_on_giveup"),
                     notifyEnv = config.tryGetString("notify_env"),
-                    sidewinderNodeUrl = config.tryGetString("sidewinder_node_url"),
-                    sidewinderToken = config.tryGetString("sidewinder_token"),
                     storeAndForwardSend = config.tryGetBoolean("store_and_forward_send"),
                     storeAndForwardReceive = config.tryGetBoolean("store_and_forward_receive"),
                     storeAndForwardPollIntervalSecs = config.tryGetULong("store_and_forward_poll_interval_secs"),

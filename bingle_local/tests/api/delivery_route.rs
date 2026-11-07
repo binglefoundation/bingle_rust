@@ -20,7 +20,7 @@ const UNREACHABLE: &str = "Recipient unreachable — will keep retrying";
 /// A local store with the store-and-forward send gate on and a (never contacted) node configured.
 fn forwarding_store() -> BingleApiLocalImpl {
     BingleApiLocalImpl::new(LocalApiConfig {
-        sidewinder: Some(MailboxConfig::new("http://localhost:9", "tok")),
+        sidewinder: Some(MailboxConfig::discovered(1)),
         store_and_forward_send: true,
         ..LocalApiConfig::default()
     })

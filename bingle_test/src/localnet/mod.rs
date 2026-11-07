@@ -12,4 +12,5 @@
 pub mod provision;
 pub mod relay_test_util;
 pub mod setup_localnet;
+pub mod sidewinder;
 pub mod test_util;
