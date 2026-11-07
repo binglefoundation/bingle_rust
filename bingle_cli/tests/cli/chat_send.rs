@@ -7,15 +7,17 @@ use std::sync::{Arc, Mutex, mpsc};
 use std::time::Duration;
 
 use bingle_cli::chat::parse_chat_args;
-use bingle_cli::chat_send::{SendTarget, is_account_id, report_line, shutdown_lines};
+use bingle_cli::chat_send::{
+    SendTarget, is_account_id, listening_line, report_line, shutdown_lines,
+};
 use bingle_cli::chat_state::ChatState;
 use bingle_core::api::bingle_api::{BingleError, ProgressCallback, SendFailureKind, StartOptions};
 use bingle_local::api::MailboxConfig;
 use bingle_local::api::bingle_local_api::BingleLocalApi;
 use bingle_local::api::bingle_local_api_impl::{BingleApiLocalImpl, LocalApiConfig};
 use bingle_local::api::pending_sender::{
-    MessageDelivery, NotSentReason, PendingSender, PendingSenderOptions, SendOutcome, SendReport,
-    ShutdownEntry, ShutdownReport,
+    MessageDelivery, NOT_CONNECTED, NotSentReason, PendingSender, PendingSenderOptions,
+    SendOutcome, SendReport, ShutdownEntry, ShutdownReport,
 };
 use serde_json::Value;
 use tempfile::TempDir;
@@ -280,8 +282,47 @@ pub fn messages_queued_in_the_same_millisecond_get_distinct_timestamps() {
 }
 
 #[test]
-pub fn report_line_is_quiet_for_a_first_time_delivery() {
-    assert_eq!(report_line(&report(SendOutcome::Delivered, false)), None);
+pub fn report_line_confirms_a_first_time_delivery() {
+    assert_eq!(
+        report_line(&report(SendOutcome::Delivered, false)).as_deref(),
+        Some("✓ delivered to bob")
+    );
+}
+
+#[test]
+pub fn report_line_says_a_message_is_queued_while_not_connected() {
+    assert_eq!(
+        report_line(&report(SendOutcome::Queued(NOT_CONNECTED.into()), false)).as_deref(),
+        Some(
+            "… not connected; message to bob queued — it will be sent when the connection is back"
+        )
+    );
+}
+
+#[test]
+pub fn report_line_says_a_message_went_to_the_mailbox_while_not_connected() {
+    assert_eq!(
+        report_line(&report(SendOutcome::Forwarded(NOT_CONNECTED.into()), false)).as_deref(),
+        Some(
+            "↪ not connected; message to bob sent to their mailbox — they'll get it when they next check"
+        )
+    );
+}
+
+#[test]
+pub fn listening_line_reports_a_lost_and_a_restored_connection() {
+    assert_eq!(
+        listening_line(true, false, true),
+        Some("! connection lost — messages you send will be queued")
+    );
+    assert_eq!(listening_line(false, true, true), Some("✓ reconnected"));
+}
+
+#[test]
+pub fn listening_line_is_quiet_for_the_first_connection_and_no_change() {
+    assert_eq!(listening_line(false, true, false), None);
+    assert_eq!(listening_line(true, true, true), None);
+    assert_eq!(listening_line(false, false, true), None);
 }
 
 #[test]

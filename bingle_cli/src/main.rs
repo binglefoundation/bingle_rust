@@ -855,6 +855,7 @@ fn run_chat_session(
         let sender_for_msg = pending_sender.clone();
         let listening_gate_cb = listening_gate.clone();
         let listening_now_cb = listening_now.clone();
+        let prompt_for_listening = prompt_line.clone();
         api.access(|api_mut| {
             let on_message: Arc<OnMessageHandler> =
                 Arc::new(move |sender, sender_handle, message| {
@@ -899,7 +900,20 @@ fn run_chat_session(
 
             let on_listening: Arc<OnListeningHandler> = Arc::new(move |listening, _nat_type| {
                 tracing::debug!("chat: listening={}", listening);
-                listening_now_cb.store(listening, std::sync::atomic::Ordering::SeqCst);
+                let was = listening_now_cb.swap(listening, std::sync::atomic::Ordering::SeqCst);
+                // Say when the connection drops or comes back, so a queued message is explained
+                // without --debug (issue #400).
+                let connected_before = listening_gate_cb.0.lock().map(|g| *g).unwrap_or(false);
+                if let Some(line) =
+                    bingle_cli::chat_send::listening_line(was, listening, connected_before)
+                {
+                    println!("\n{line}");
+                    let prompt = prompt_for_listening
+                        .lock()
+                        .map(|g| g.clone())
+                        .unwrap_or_default();
+                    reprint_prompt(&prompt);
+                }
                 // Signal the readiness gate once (and only once) the node is listening, so the REPL
                 // can stop waiting and show the prompt (issue #91).
                 if listening

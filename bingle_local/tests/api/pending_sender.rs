@@ -9,8 +9,8 @@ use std::time::Duration;
 use bingle_core::api::bingle_api::{BingleError, ProgressCallback, SendFailureKind};
 use bingle_local::api::bingle_local_api::BingleLocalApi;
 use bingle_local::api::pending_sender::{
-    LocalOutboundStore, MessageDelivery, NotSentReason, PendingSender, PendingSenderOptions,
-    SendOutcome, SendReport, ShutdownEntry,
+    LocalOutboundStore, MessageDelivery, NOT_CONNECTED, NotSentReason, PendingSender,
+    PendingSenderOptions, SendOutcome, SendReport, ShutdownEntry,
 };
 use bingle_local::api::{BingleApiLocalImpl, DeliveryRoute, LocalApiConfig, MailboxConfig};
 use serde_json::Value as JsonValue;
@@ -312,6 +312,12 @@ fn nothing_is_sent_until_ready() {
     let (sender, rx) = start(&local, delivery.clone(), fast_options(), is_ready.clone());
     sender.wake();
 
+    // Reported as queued (issue #400), but nothing is attempted.
+    let queued = rx.recv_timeout(REPORT_TIMEOUT).expect("queued report");
+    assert!(
+        matches!(queued.outcome, SendOutcome::Queued(_)),
+        "{queued:?}"
+    );
     assert!(rx.recv_timeout(Duration::from_millis(200)).is_err());
     assert!(delivery.calls().is_empty());
 
@@ -792,4 +798,149 @@ fn shutdown_stops_handing_off_at_the_deadline() {
         vec![(entry(&local, 1, "bob"), NotSentReason::DeadlineReached)]
     );
     assert_eq!(local.get_pending_messages().expect("pending").len(), 1);
+}
+
+// ── Not ready: queued report and Mailbox hand-off (issue #400) ────────────────────────────────
+
+/// Fast options with a short not-ready timeout.
+fn not_ready_options(timeout: Duration) -> PendingSenderOptions {
+    PendingSenderOptions {
+        not_ready_timeout: timeout,
+        ..fast_options()
+    }
+}
+
+fn not_ready() -> Arc<AtomicBool> {
+    Arc::new(AtomicBool::new(false))
+}
+
+#[test]
+fn a_message_queued_while_not_ready_is_reported_queued_once() {
+    let local = local_store(LocalApiConfig::default());
+    let ts = queue(&local, 1, &["bob"], "hi");
+    let (sender, rx) = start(&local, MockDelivery::new(), fast_options(), not_ready());
+    sender.wake();
+
+    let report = rx.recv_timeout(REPORT_TIMEOUT).expect("queued report");
+    assert_eq!(report.id, local.id_of_timestamp_for_tests(ts));
+    assert_eq!(
+        report.outcome,
+        SendOutcome::Queued(NOT_CONNECTED.to_string())
+    );
+    assert_eq!(report.recipients, vec!["bob".to_string()]);
+    // Not repeated on later ticks.
+    assert!(rx.recv_timeout(Duration::from_millis(300)).is_err());
+}
+
+#[test]
+fn with_the_send_gate_on_a_message_waiting_while_not_ready_is_forwarded() {
+    // Pre-marked posted (test seam), so the forward completes without a node.
+    let local = gated_store(Some(MailboxConfig::discovered(1)));
+    let ts = queue(&local, 1, &["bob"], "hi");
+    local.mark_forwarded_for_tests(&local.id_of_timestamp_for_tests(ts), "bob");
+    let delivery = MockDelivery::new();
+    let (_sender, rx) = start(
+        &local,
+        delivery.clone(),
+        not_ready_options(Duration::from_millis(100)),
+        not_ready(),
+    );
+
+    let queued = rx.recv_timeout(REPORT_TIMEOUT).expect("queued report");
+    assert!(
+        matches!(queued.outcome, SendOutcome::Queued(_)),
+        "{queued:?}"
+    );
+    let forwarded = rx.recv_timeout(REPORT_TIMEOUT).expect("forwarded report");
+    assert_eq!(forwarded.id, local.id_of_timestamp_for_tests(ts));
+    assert_eq!(
+        forwarded.outcome,
+        SendOutcome::Forwarded(NOT_CONNECTED.to_string())
+    );
+    assert!(
+        delivery.calls().is_empty(),
+        "no direct attempt while not ready"
+    );
+    assert!(local.get_pending_messages().expect("pending").is_empty());
+}
+
+#[test]
+fn a_waiting_message_is_not_forwarded_before_the_timeout() {
+    let local = gated_store(Some(MailboxConfig::discovered(1)));
+    let ts = queue(&local, 1, &["bob"], "hi");
+    local.mark_forwarded_for_tests(&local.id_of_timestamp_for_tests(ts), "bob");
+    let (_sender, rx) = start(
+        &local,
+        MockDelivery::new(),
+        not_ready_options(Duration::from_secs(60)),
+        not_ready(),
+    );
+
+    rx.recv_timeout(REPORT_TIMEOUT).expect("queued report");
+    assert!(rx.recv_timeout(Duration::from_millis(300)).is_err());
+    assert_eq!(local.get_pending_messages().expect("pending").len(), 1);
+}
+
+#[test]
+fn with_the_send_gate_off_a_message_waiting_while_not_ready_stays_queued() {
+    let local = local_store(LocalApiConfig::default());
+    queue(&local, 1, &["bob"], "hi");
+    let delivery = MockDelivery::new();
+    let (_sender, rx) = start(
+        &local,
+        delivery.clone(),
+        not_ready_options(Duration::from_millis(50)),
+        not_ready(),
+    );
+
+    let queued = rx.recv_timeout(REPORT_TIMEOUT).expect("queued report");
+    assert!(
+        matches!(queued.outcome, SendOutcome::Queued(_)),
+        "{queued:?}"
+    );
+    assert!(rx.recv_timeout(Duration::from_millis(300)).is_err());
+    assert!(delivery.calls().is_empty());
+    assert_eq!(local.get_pending_messages().expect("pending").len(), 1);
+}
+
+#[test]
+fn a_failed_hand_off_while_not_ready_stays_pending_and_says_why() {
+    // Send gate on but no Mailbox configured: the post cannot complete.
+    let local = gated_store(None);
+    queue(&local, 1, &["bob"], "hi");
+    let (_sender, rx) = start(
+        &local,
+        MockDelivery::new(),
+        not_ready_options(Duration::from_millis(50)),
+        not_ready(),
+    );
+
+    rx.recv_timeout(REPORT_TIMEOUT).expect("queued report");
+    let report = rx.recv_timeout(REPORT_TIMEOUT).expect("hand-off report");
+    assert!(
+        matches!(report.outcome, SendOutcome::Retrying(_)),
+        "{report:?}"
+    );
+    assert_eq!(local.get_pending_messages().expect("pending").len(), 1);
+}
+
+#[test]
+fn becoming_ready_before_the_timeout_sends_direct() {
+    let local = gated_store(Some(MailboxConfig::discovered(1)));
+    queue(&local, 1, &["bob"], "hi");
+    let delivery = MockDelivery::new();
+    let is_ready = not_ready();
+    let (sender, rx) = start(
+        &local,
+        delivery.clone(),
+        not_ready_options(Duration::from_secs(60)),
+        is_ready.clone(),
+    );
+    rx.recv_timeout(REPORT_TIMEOUT).expect("queued report");
+
+    is_ready.store(true, Ordering::SeqCst);
+    sender.wake();
+    let report = rx.recv_timeout(REPORT_TIMEOUT).expect("delivered report");
+    assert_eq!(report.outcome, SendOutcome::Delivered);
+    assert_eq!(delivery.calls(), vec!["bob".to_string()]);
 }
