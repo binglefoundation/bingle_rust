@@ -14,6 +14,8 @@ pub mod account_check;
 #[doc(hidden)]
 pub mod chat;
 #[doc(hidden)]
+pub mod chat_console;
+#[doc(hidden)]
 pub mod chat_poll;
 #[doc(hidden)]
 pub mod chat_receive;

@@ -764,32 +764,18 @@ const RETRY_POLL_INTERVAL: Duration = Duration::from_secs(1);
 /// still queued and retried by the background worker.
 const LISTENING_WAIT_TIMEOUT: Duration = Duration::from_secs(45);
 
-/// On exit, let an in-flight send finish and hand whatever is still queued to the recipients'
-/// Mailboxes, printing what happened to each message (issue #282).
-fn finish_pending(sender: &PendingSender, store: &LocalOutboundStore) {
-    let queued = store.pending_messages().map(|p| p.len()).unwrap_or(0);
-    if queued > 0 {
-        println!("finishing {queued} queued message(s)… (Ctrl-C again to quit now)");
-        let _ = std::io::stdout().flush();
-    }
-    let report = sender.shutdown(EXIT_FLUSH_DEADLINE);
-    for line in shutdown_lines(&report) {
-        println!("{line}");
-    }
-    let _ = std::io::stdout().flush();
-}
-
-/// Print `prompt` with no trailing newline and flush, so the cursor sits after it.
-fn reprint_prompt(prompt: &str) {
-    print!("{prompt}");
+/// Print one line of exit output and flush, so it shows before the process exits.
+fn print_flushed(line: &str) {
+    println!("{line}");
     let _ = std::io::stdout().flush();
 }
 
 /// Start the P2P engine for a ready (registered, funded) account and run the interactive REPL:
 /// receive/print/persist incoming messages, and prompt for outgoing ones. Plain input sends to the
 /// current recipient (persisted + retried via the pending-message model); `/prefix` switches the
-/// recipient (resolved to its canonical handle via `handle_lookup_partial`); `!exit` or Ctrl-D exits
-/// cleanly (Ctrl-C likewise, via the signal handler). Mirrors `cmd_run`'s start loop.
+/// recipient (resolved to its canonical handle via `handle_lookup_partial`); `!exit`, Ctrl-D and
+/// Ctrl-C exit cleanly through the shared [`SessionShutdown`]. In a terminal, input is line-edited
+/// with in-memory session history (issue #336). Mirrors `cmd_run`'s start loop.
 ///
 /// When the store-and-forward receive gate is on, a background poller drains this account's Sidewinder
 /// Mailbox on connect and then every `poll_interval`, surfacing messages held while offline (#274).
@@ -804,8 +790,10 @@ fn run_chat_session(
     // Shared with the engine callback and the retry worker: all mutate the one ChatState.
     let shared = Arc::new(std::sync::Mutex::new(state));
     let api = BingleApiImpl::new(&opts);
-    // The prompt currently shown, so async prints (received messages, retry results) can redraw it.
-    let prompt_line = Arc::new(std::sync::Mutex::new(CurrentRecipient::None.prompt()));
+    // Line source and output (issue #336): output from other threads (received messages, send
+    // results, connection changes) prints above the prompt and keeps a half-typed line intact.
+    let mut console = ChatConsole::new();
+    let out = console.out();
     // Readiness gate: flipped true by the `on_listening(true, …)` callback once the node is actually
     // listening on the network. The REPL waits on this before showing the prompt so the user cannot
     // send (and lose) a message before there is a return path (issue #91).
@@ -830,10 +818,8 @@ fn run_chat_session(
     };
     // Kept for the exit flush's "finishing N queued messages" line (issue #282).
     let exit_store = outbound.clone();
-    // Set once shutdown starts, so a second Ctrl-C during the exit flush quits at once (issue #282).
-    let shutting_down = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let pending_sender = Arc::new({
-        let report_prompt = prompt_line.clone();
+        let report_out = out.clone();
         let ready_listening = listening_now.clone();
         PendingSender::start(
             Arc::new(outbound),
@@ -846,9 +832,7 @@ fn run_chat_session(
             Arc::new(move || ready_listening.load(std::sync::atomic::Ordering::SeqCst)),
             Arc::new(move |report| {
                 if let Some(line) = report_line(&report) {
-                    println!("\n{line}");
-                    let prompt = report_prompt.lock().map(|g| g.clone()).unwrap_or_default();
-                    reprint_prompt(&prompt);
+                    report_out.print_line(&line);
                 }
             }),
         )
@@ -856,11 +840,11 @@ fn run_chat_session(
 
     {
         let shared_for_msg = shared.clone();
-        let prompt_for_msg = prompt_line.clone();
+        let out_for_msg = out.clone();
         let sender_for_msg = pending_sender.clone();
         let listening_gate_cb = listening_gate.clone();
         let listening_now_cb = listening_now.clone();
-        let prompt_for_listening = prompt_line.clone();
+        let out_for_listening = out.clone();
         api.access(|api_mut| {
             let on_message: Arc<OnMessageHandler> =
                 Arc::new(move |sender, sender_handle, message| {
@@ -886,11 +870,9 @@ fn run_chat_session(
                         )
                     };
                     if let Some(received) = received {
-                        // Print above the current prompt, then redraw it so a half-typed line stays
-                        // readable.
-                        println!("\n{}: {}", received.sender_handle, received.text);
-                        let prompt = prompt_for_msg.lock().map(|g| g.clone()).unwrap_or_default();
-                        reprint_prompt(&prompt);
+                        // Print above the prompt, keeping a half-typed line intact.
+                        out_for_msg
+                            .print_line(&format!("{}: {}", received.sender_handle, received.text));
                     }
                 });
             api_mut.set_on_message(Some(on_message));
@@ -912,12 +894,7 @@ fn run_chat_session(
                 if let Some(line) =
                     bingle_cli::chat_send::listening_line(was, listening, connected_before)
                 {
-                    println!("\n{line}");
-                    let prompt = prompt_for_listening
-                        .lock()
-                        .map(|g| g.clone())
-                        .unwrap_or_default();
-                    reprint_prompt(&prompt);
+                    out_for_listening.print_line(line);
                 }
                 // Signal the readiness gate once (and only once) the node is listening, so the REPL
                 // can stop waiting and show the prompt (issue #91).
@@ -955,44 +932,45 @@ fn run_chat_session(
         }
     }
 
-    // Ctrl-C / SIGTERM: the main thread blocks on stdin, so the signal handler itself performs the
-    // clean shutdown (stop + final save) and exits.
+    // The clean shutdown every way of leaving shares (issue #336): flush what is still queued to the
+    // recipients' Mailboxes (issue #282), stop the engine, save.
     //
     // The final save runs on the shared local store handle, NOT the session lock. A background poll can
-    // hold the session state for the length of its network wait (up to 120s, issue #274); the handler
-    // used to block on that lock, so Ctrl-C/SIGTERM could not exit until the poll finished — leaving
-    // `kill -9` as the only way out (issue #276). `save` (`&self`) touches only the store's own
-    // short-lived internal locks and never waits on the network, so the handler now always exits
-    // promptly.
-    //
-    // Before stopping the engine, the handler flushes what is still queued to the recipients'
-    // Mailboxes (issue #282). The flush runs on its own thread so the handler returns at once: a
-    // second Ctrl-C then finds shutdown under way and exits immediately.
-    {
-        let api_sig = api.clone();
-        let sender_sig = pending_sender.clone();
-        let store_sig = exit_store.clone();
-        let shutting_down_sig = shutting_down.clone();
-        let (handler_local, handler_state_file) = match shared.lock() {
-            Ok(guard) => (Some(guard.local_handle()), guard.state_file_path()),
-            Err(_) => (None, None),
+    // hold the session state for the length of its network wait (up to 120s, issue #274); a shutdown
+    // that blocked on that lock could not exit until the poll finished — leaving `kill -9` as the
+    // only way out (issue #276). `save` (`&self`) touches only the store's own short-lived internal
+    // locks and never waits on the network, so shutdown always exits promptly.
+    let shutdown = {
+        let api_stop = api.clone();
+        let (local, state_file) = match shared.lock() {
+            Ok(guard) => (guard.local_handle(), guard.state_file_path()),
+            Err(_) => {
+                warn!("chat: state lock poisoned");
+                return;
+            }
         };
+        Arc::new(SessionShutdown::new(
+            pending_sender.clone(),
+            exit_store,
+            Box::new(move || api_stop.access(|api_mut| api_mut.stop())),
+            local,
+            state_file,
+        ))
+    };
+
+    // Ctrl-C (when the prompt is not reading) and SIGTERM. The handler runs the shutdown on its own
+    // thread so it returns at once: a second Ctrl-C then finds shutdown under way and exits
+    // immediately. At the line editor's prompt Ctrl-C arrives as a key instead (see the loop below).
+    {
+        let shutdown_sig = shutdown.clone();
         if let Err(e) = ctrlc::set_handler(move || {
-            if shutting_down_sig.swap(true, std::sync::atomic::Ordering::SeqCst) {
+            if !shutdown_sig.claim() {
                 std::process::exit(130);
             }
             tracing::info!("chat: received signal; shutting down");
-            let api_sig = api_sig.clone();
-            let sender_sig = sender_sig.clone();
-            let store_sig = store_sig.clone();
-            let handler_local = handler_local.clone();
-            let handler_state_file = handler_state_file.clone();
+            let shutdown_sig = shutdown_sig.clone();
             std::thread::spawn(move || {
-                finish_pending(&sender_sig, &store_sig);
-                api_sig.access(|api_mut| api_mut.stop());
-                if let Some(local) = &handler_local {
-                    bingle_cli::chat_poll::save_shared(local, handler_state_file.as_deref());
-                }
+                shutdown_sig.run(&print_flushed);
                 std::process::exit(0);
             });
         }) {
@@ -1017,23 +995,19 @@ fn run_chat_session(
         Err(_) => (false, None, None),
     };
     if let (true, Some(poll_local)) = (receive_enabled, poll_local) {
-        let poll_prompt = prompt_line.clone();
+        let poll_out = out.clone();
         let poll_sender = pending_sender.clone();
         std::thread::spawn(move || {
             tracing::info!("chat: mailbox poller started (every {:?})", poll_interval);
             loop {
                 let read =
                     bingle_cli::chat_poll::poll_shared(&poll_local, poll_state_file.as_deref());
-                if !read.is_empty() {
-                    // Print each held message above the current prompt, then redraw it — the same
-                    // presentation as a real-time message.
-                    for msg in &read {
-                        // A Mailbox message shows the sender is back online (issue #278).
-                        poll_sender.peer_seen(&msg.sender_handle);
-                        println!("\n{}: {}", msg.sender_handle, msg.text);
-                    }
-                    let prompt = poll_prompt.lock().map(|g| g.clone()).unwrap_or_default();
-                    reprint_prompt(&prompt);
+                // Print each held message above the prompt — the same presentation as a
+                // real-time message.
+                for msg in &read {
+                    // A Mailbox message shows the sender is back online (issue #278).
+                    poll_sender.peer_seen(&msg.sender_handle);
+                    poll_out.print_line(&format!("{}: {}", msg.sender_handle, msg.text));
                 }
                 std::thread::sleep(poll_interval);
             }
@@ -1079,27 +1053,9 @@ fn run_chat_session(
 
     // Interactive loop on the main thread (engine, sender and poller run on their own threads).
     let mut recipient = CurrentRecipient::from_args(to.as_deref(), to_id.as_deref());
-    let stdin = std::io::stdin();
-    loop {
-        let prompt = recipient.prompt();
-        if let Ok(mut g) = prompt_line.lock() {
-            *g = prompt.clone();
-        }
-        reprint_prompt(&prompt);
-
-        let mut line = String::new();
-        match stdin.read_line(&mut line) {
-            Ok(0) => {
-                println!();
-                break;
-            } // Ctrl-D / EOF
-            Ok(_) => {}
-            Err(e) => {
-                warn!("chat: input error: {}", e);
-                break;
-            }
-        }
-
+    // Ctrl-D / EOF, or Ctrl-C read as a key by the line editor, ends the loop: leave through the
+    // shared shutdown, as the signal handler does.
+    while let ReadLine::Line(line) = console.read_line(&recipient.prompt()) {
         match parse_input(&line) {
             ChatInput::Empty => continue,
             ChatInput::Exit => break,
@@ -1144,16 +1100,16 @@ fn run_chat_session(
 
     tracing::info!("chat: shutting down...");
     // Flush what is still queued before the engine stops (issue #282); a Ctrl-C meanwhile quits.
-    if !shutting_down.swap(true, std::sync::atomic::Ordering::SeqCst) {
-        finish_pending(&pending_sender, &exit_store);
+    if shutdown.claim() {
+        shutdown.run(&print_flushed);
+        tracing::info!("chat: stopped.");
+    } else {
+        // The signal handler is already running the shutdown and exits the process when it is
+        // done; returning now would cut its flush short.
+        loop {
+            std::thread::park();
+        }
     }
-    api.access(|api_mut| api_mut.stop());
-    if let Ok(guard) = shared.lock()
-        && let Err(e) = guard.save_state()
-    {
-        warn!("chat: final save failed: {}", e);
-    }
-    tracing::info!("chat: stopped.");
 }
 
 /// Drive the first-run registration state machine to a ready account, or exit non-zero with a clear
@@ -1256,16 +1212,15 @@ fn resolve_status_or_exit(state: &ChatState) -> chat_register::AccountStatus {
 
 use bingle_cli::account_check::{self, AccountReadiness};
 use bingle_cli::chat::parse_chat_args;
+use bingle_cli::chat_console::{ChatConsole, ReadLine, SessionShutdown};
 use bingle_cli::chat_register::{self, CredentialGap, StartupDecision, decide_startup};
 use bingle_cli::chat_repl::{ChatInput, CurrentRecipient, parse_input};
-use bingle_cli::chat_send::{ChatDelivery, EXIT_FLUSH_DEADLINE, report_line, shutdown_lines};
+use bingle_cli::chat_send::{ChatDelivery, report_line};
 use bingle_cli::chat_state::ChatState;
 use bingle_cli::chat_state::RegisterError;
 use bingle_cli::checkrelays;
 use bingle_core::api::network_endpoint::NetworkEndpoint;
-use bingle_local::api::pending_sender::{
-    LocalOutboundStore, OutboundStore, PendingSender, PendingSenderOptions,
-};
+use bingle_local::api::pending_sender::{PendingSender, PendingSenderOptions};
 use serde_json::json;
 use std::net::SocketAddr;
 use std::time::Duration;

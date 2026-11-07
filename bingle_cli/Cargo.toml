@@ -29,6 +29,9 @@ serde_json = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 ctrlc = { version = "3", features = ["termination"] }
+# Line editing and in-memory session history for the chat REPL (issue #336). Default features off:
+# no history file support is needed or wanted.
+rustyline = { version = "19", default-features = false }
 
 [dev-dependencies]
 # `localnet` feature brings in the reusable algokit-localnet harness (and enables bingle_core's
