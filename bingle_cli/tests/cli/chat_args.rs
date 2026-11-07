@@ -264,11 +264,10 @@ pub fn poll_interval_without_value_is_error() {
     );
 }
 
-// The "gate on but no Mailbox configured -> fail loudly" check now lives on `LocalApiConfig`
-// (`validate_store_and_forward`, story #244), which also counts the app-id discovery path as
-// configured — not just the SIDEWINDER_NODE_URL/TOKEN bearer override. It is unit-tested in
-// bingle_local (`store_and_forward_toggles`), so the earlier CLI-level `validate_store_forward`
-// helper and its tests were removed here.
+// The "gate on but no Mailbox configured -> fail loudly" check lives on `LocalApiConfig`
+// (`validate_store_and_forward`, story #244): a Mailbox is configured only from the Bingle app id.
+// It is unit-tested in bingle_local (`store_and_forward_toggles`), so the earlier CLI-level
+// `validate_store_forward` helper and its tests were removed here.
 
 #[test]
 #[cfg(not(target_os = "ios"))]

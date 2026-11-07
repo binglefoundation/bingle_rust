@@ -1,8 +1,9 @@
 //! Store-and-forward end-to-end against a deployed Sidewinder cluster on **TestNet** (epic #200,
 //! story #226). The same path as the LocalNet e2e — two `bingle_local` instances: offline send →
 //! give-up post → reconnect poll → read/decrypt — asserting the epic invariants (no double-post, no
-//! re-read, sorted by sent time), but pointed at an out-of-band cluster via configuration rather than
-//! standing a node up.
+//! re-read, sorted by sent time), but pointed at an out-of-band cluster rather than standing a node
+//! up. The cluster is discovered on-chain from the node file's Bingle app id and reached over mutual
+//! TLS, as in production (#246).
 //!
 //! Gated behind the `sidewinder_testnet` cargo feature (off by default, never in the per-PR gate).
 //! When the feature is enabled it **fails, not skips** if the configuration is incomplete.
@@ -11,16 +12,14 @@
 //!
 //! | Variable | Meaning | Fallback |
 //! |---|---|---|
-//! | `SIDEWINDER_TESTNET_URL` | cluster client REST base URL, e.g. `http://[<ipv6>]:1080` | — (required) |
-//! | `SIDEWINDER_TESTNET_TOKEN` | bearer token | file at `SIDEWINDER_TESTNET_TOKEN_FILE` (default `tmp/testnet_token.txt`) |
 //! | `SIDEWINDER_TESTNET_NODE_FILE` | Bingle node file (TestNet algod + app/asset ids) | — (required) |
 //! | `SIDEWINDER_TESTNET_SENDER_MNEMONIC` | the sender account's 25-word mnemonic | file `tmp/tn_sender.mnemonic` |
 //! | `SIDEWINDER_TESTNET_RECEIVER_MNEMONIC` | the receiver account's 25-word mnemonic | file `tmp/tn_receiver.mnemonic` |
 //!
 //! ## Precondition (one-time provisioning, see #226)
-//! The sender and receiver accounts must be **enrolled as Mailbox callers** in the deployed cluster's
-//! allowlist and **funded** on TestNet. Their handles are registered on the TestNet BingleDapp by this
-//! test at runtime (idempotent — skipped if already registered).
+//! The sender and receiver accounts must be **funded** on TestNet. Their handles are registered on the
+//! TestNet BingleDapp by this test at runtime (idempotent — skipped if already registered), and
+//! registering grants the `allow_sw_client` bit the cluster authorizes them by.
 //!
 //! ## Run
 //!   `cargo test -p bingle_cli --features sidewinder_testnet --test integration -- --test-threads 1 --nocapture`
@@ -44,7 +43,7 @@ const TESTNET_FINALITY: Duration = Duration::from_secs(300);
 /// The cluster Mailbox connection for this run, with the TestNet finality timeout applied.
 /// `SIDEWINDER_TESTNET_FINALITY_SECS` overrides the wait (handy for a quick stage probe).
 fn mailbox_config(cfg: &TestnetConfig) -> MailboxConfig {
-    let mut mc = MailboxConfig::new(cfg.api_url.clone(), cfg.token.clone());
+    let mut mc = MailboxConfig::discovered(cfg.app_id);
     mc.finality_timeout = std::env::var("SIDEWINDER_TESTNET_FINALITY_SECS")
         .ok()
         .and_then(|s| s.parse().ok())
@@ -74,8 +73,6 @@ fn resolve_repo_path(p: &str) -> String {
 
 /// The resolved TestNet configuration.
 struct TestnetConfig {
-    api_url: String,
-    token: String,
     /// TestNet algod config with the BingleDapp app/asset ids applied.
     algo_config: AlgoChainConfig,
     app_id: u64,
@@ -107,18 +104,6 @@ fn env_required(key: &str) -> String {
 }
 
 fn load_config() -> TestnetConfig {
-    let api_url = env_required("SIDEWINDER_TESTNET_URL");
-    let token_file = std::env::var("SIDEWINDER_TESTNET_TOKEN_FILE")
-        .map(|p| resolve_repo_path(&p))
-        .unwrap_or_else(|_| {
-            repo_root()
-                .join("tmp/testnet_token.txt")
-                .to_string_lossy()
-                .into_owned()
-        });
-    let token = env_or_file("SIDEWINDER_TESTNET_TOKEN", &token_file)
-        .unwrap_or_else(|| panic!("set SIDEWINDER_TESTNET_TOKEN or provide {token_file}"));
-
     let node_file = resolve_repo_path(&env_required("SIDEWINDER_TESTNET_NODE_FILE"));
     let (_network, mut algo_config, app_id, asset_id) = parse_node_file_with_ids(&node_file)
         .unwrap_or_else(|e| panic!("bad SIDEWINDER_TESTNET_NODE_FILE '{node_file}': {e}"));
@@ -141,8 +126,6 @@ fn load_config() -> TestnetConfig {
     .expect("set SIDEWINDER_TESTNET_RECEIVER_MNEMONIC or provide tmp/tn_receiver.mnemonic");
 
     TestnetConfig {
-        api_url,
-        token,
         algo_config,
         app_id,
         asset_id,

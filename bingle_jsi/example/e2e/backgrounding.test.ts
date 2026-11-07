@@ -17,7 +17,7 @@
  *   BINGLE_E2E_HANDLE                        as for messaging.test.ts
  *   BINGLE_E2E_OFFLINE_HANDLE / _PASSPHRASE  the registered-but-offline fixture (the provisioner
  *                                            writes both)
- *   BINGLE_E2E_STORE_FORWARD=1, BINGLE_E2E_SIDEWINDER_URL / _TOKEN   see harness.storeForwardConfig
+ *   BINGLE_E2E_STORE_FORWARD=1   see harness.storeForwardConfig
  *   BINGLE_E2E_SEND_PENDING_MESSAGES=1       (optional) run on the shared pending-message sender
  */
 import {describe, it} from '@jest/globals';
@@ -48,7 +48,7 @@ const haveFixtures =
   nodeFile &&
   offlineHandle &&
   offlinePassphrase &&
-  storeForwardInit?.sidewinder_node_url;
+  storeForwardInit != null;
 const describeOrSkip = haveFixtures ? describe : describe.skip;
 
 // How long the app stays in the background before it is killed: longer than iOS lets a suspended

@@ -17,11 +17,10 @@
  *   BINGLE_E2E_STORE_FORWARD=1              (optional) also turn on store-and-forward, so a
  *                                           failed send is posted to the recipient's Mailbox (the
  *                                           case where holding the store's lock would block the
- *                                           app), and run the offline-window case (#278). Uses
- *                                           BINGLE_E2E_SIDEWINDER_URL / _TOKEN when set (bearer
- *                                           override), else on-chain discovery from the node file's
- *                                           app id. On localnet the provisioner sets all three when
- *                                           it starts its Sidewinder node (#284); see
+ *                                           app), and run the offline-window case (#278). The
+ *                                           node is discovered on-chain from the node file's app
+ *                                           id. On localnet the provisioner sets this when it
+ *                                           starts its Sidewinder node (#284); see
  *                                           harness.storeForwardConfig.
  */
 import {describe, it, beforeAll, afterAll} from '@jest/globals';

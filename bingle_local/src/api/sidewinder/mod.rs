@@ -8,8 +8,8 @@
 pub mod mailbox;
 pub use mailbox::{
     IDENTITY_REFUSED_BACKOFF, MAILBOX_POP_TYPE, MAILBOX_POST_TYPE, Mailbox, MailboxConfig,
-    MailboxConnection, PostOutcome, WatchProgress, classify_watch, identity_refusal_holds,
-    identity_refusal_message, pending_forward_recipients, should_forward_send,
+    PostOutcome, WatchProgress, classify_watch, identity_refusal_holds, identity_refusal_message,
+    pending_forward_recipients, should_forward_send,
 };
 #[doc(hidden)]
 pub use mailbox::{build_pop_request, build_post_request, map_error, next_node_index};

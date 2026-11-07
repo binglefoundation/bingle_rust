@@ -111,8 +111,8 @@ pub struct Contact {
 
 /// The runtime-adjustable messaging settings — store-and-forward gates + give-up notify — returned by
 /// `messagingSettings()` so a Settings screen can render live state (epic #200, story #242). Mirrors
-/// `bingle_local::api::MessagingSettings`. The Sidewinder endpoint stays init-only (build/deploy
-/// config, discovered on-chain or set via the bearer override), so it is not represented here.
+/// `bingle_local::api::MessagingSettings`. The Sidewinder endpoint is discovered on-chain from the
+/// init-time app id, so it is not represented here.
 #[derive(uniffi::Record, Debug, Clone)]
 pub struct MessagingSettings {
     /// Send-side gate: post a sealed message to the recipient's Mailbox on give-up.
@@ -339,21 +339,11 @@ pub struct BingleJsiConfig {
     /// `"production"` (TestFlight/App Store). Used as the `env` when the app registers its device
     /// token via `/register`. `null` defaults to `"sandbox"`.
     pub notify_env: Option<String>,
-    /// Base URL of the Sidewinder node for store-and-forward (epic #200), for example
-    /// `http://host:9101`. Optional **bearer-transport override**: when set together with
-    /// `sidewinder_token` it forces the v0.0.2 plaintext transport (backwards-compat / local dev). When
-    /// left `null`, the Mailbox is discovered on-chain from the Bingle DApp `app_id` and reached over
-    /// identity-pinned mutual Transport Layer Security (mTLS) — the default (story #244).
-    pub sidewinder_node_url: Option<String>,
-    /// Bearer token for the Sidewinder node's client endpoints (the v0.0.2 fixed shared token,
-    /// Sidewinder #164). Required alongside `sidewinder_node_url` to select the bearer override; `null`
-    /// (the default) uses on-chain discovery + mutual TLS instead, which needs no token.
-    pub sidewinder_token: Option<String>,
     /// Send-side store-and-forward gate (epic #200): when `true`, a give-up on direct delivery posts
     /// the sealed message to the recipient's Sidewinder Mailbox (#214). `null` defaults to `false`
-    /// (off). Independent of `store_and_forward_receive`; also needs a Mailbox configured — either the
-    /// Bingle `app_id` (discovery + mTLS) or `sidewinder_node_url` / `sidewinder_token` (bearer) — to
-    /// have somewhere to post.
+    /// (off). Independent of `store_and_forward_receive`; also needs the Bingle `app_id`, from which
+    /// the Mailbox node is discovered on-chain and reached over identity-pinned mutual Transport Layer
+    /// Security (mTLS, story #244), to have somewhere to post.
     pub store_and_forward_send: Option<bool>,
     /// Receive-side store-and-forward gate (epic #200): when `true`, the client polls its own
     /// Sidewinder Mailbox on reconnect and on a cadence, reading messages forwarded to it (#215).

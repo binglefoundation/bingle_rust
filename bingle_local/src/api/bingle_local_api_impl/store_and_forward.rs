@@ -31,9 +31,8 @@ impl BingleApiLocalImpl {
     /// enrolled account as [`get_algo_ops`](BingleLocalApi::get_algo_ops).
     ///
     /// Returns `Err` when no Sidewinder node is configured (`config.sidewinder` is `None`), when no
-    /// keypair is available, or when the connection cannot be established (an invalid bearer
-    /// endpoint/token, or — on the discovered transport — no reachable node could be resolved and
-    /// connected over mutual TLS) — a surfaced error, never a panic. The post-on-fail (#214) and
+    /// keypair is available, or when the connection cannot be established (no reachable node could
+    /// be resolved and connected over mutual TLS) — a surfaced error, never a panic. The post-on-fail (#214) and
     /// read-on-reconnect (#215) stories call this to reach the Mailbox.
     pub fn get_mailbox(&self) -> Result<sidewinder::Mailbox, BingleError> {
         let Some(config) = self.config().sidewinder.clone() else {
@@ -169,10 +168,8 @@ impl BingleApiLocalImpl {
     }
 
     /// Test seam: the resolved Sidewinder Mailbox connection config, so a caller (e.g. the JSI `init`
-    /// wiring, story #252) can assert which transport was selected — discovery + mutual TLS
-    /// ([`MailboxConnection::Discovered`](crate::api::sidewinder::MailboxConnection::Discovered)) vs
-    /// the legacy bearer override ([`Bearer`](crate::api::sidewinder::MailboxConnection::Bearer)) vs
-    /// unconfigured (`None`) — without a live node.
+    /// wiring, story #252) can assert whether the Mailbox was configured, and from which app id,
+    /// without a live node.
     #[doc(hidden)]
     pub fn sidewinder_config_for_tests(&self) -> Option<sidewinder::MailboxConfig> {
         self.config().sidewinder.clone()

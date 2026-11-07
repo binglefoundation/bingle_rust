@@ -1,27 +1,20 @@
 //! Unit tests for the Sidewinder Mailbox wrapper (store-and-forward epic #200, story #213).
 //!
-//! These exercise the parts that need no live node: the config defaults and `from_parts` mapping,
-//! the clean-error behaviour when the endpoint or token is missing, and the transaction the two
-//! Mailbox operations build. The append-then-remove-head round-trip against a running node lives in
-//! the separate, skip-clean `sidewinder_mailbox_e2e` target.
+//! These exercise the parts that need no live node: the config defaults and the app-id rule, and
+//! the transaction the two Mailbox operations build. The append-then-remove-head round-trip against a
+//! running node lives in the separate, skip-clean `sidewinder_mailbox_e2e` target.
 
 use algo_ops::AlgoOps;
 use bingle_core::api::bingle_api::BingleError;
 use bingle_local::api::sidewinder::{
-    IDENTITY_REFUSED_BACKOFF, MAILBOX_POP_TYPE, MAILBOX_POST_TYPE, Mailbox, MailboxConfig,
-    MailboxConnection, WatchProgress, build_pop_request, build_post_request, classify_watch,
-    identity_refusal_holds, identity_refusal_message, map_error, next_node_index,
+    IDENTITY_REFUSED_BACKOFF, MAILBOX_POP_TYPE, MAILBOX_POST_TYPE, MailboxConfig, WatchProgress,
+    build_pop_request, build_post_request, classify_watch, identity_refusal_holds,
+    identity_refusal_message, map_error, next_node_index,
 };
 use sidewinder_ops::{
     Disposition, PendingTransaction, SidewinderError, Stage, SuggestedParams, TxnError,
 };
 use std::time::{Duration, Instant};
-
-/// A keyless handle: `Mailbox::new` validates the config before it ever signs, so no key is needed
-/// to test the validation and construction path.
-fn keyless_algo() -> AlgoOps {
-    AlgoOps::new_for_algorand(None, None, None)
-}
 
 /// Suggested params with recognisable values, so a built request can be asserted against them.
 fn sample_params() -> SuggestedParams {
@@ -34,110 +27,60 @@ fn sample_params() -> SuggestedParams {
 }
 
 #[test]
-fn mailbox_config_new_uses_default_operation_types() {
-    let config = MailboxConfig::new("http://localhost:9101", "tok");
+fn mailbox_config_discovered_carries_app_id_and_defaults() {
+    let config = MailboxConfig::discovered(1234);
+    assert_eq!(config.app_id, 1234);
     assert_eq!(config.post_type, MAILBOX_POST_TYPE);
     assert_eq!(config.pop_type, MAILBOX_POP_TYPE);
     assert_eq!(config.post_type, 1, "tier-1 Mailbox binds post to type 1");
     assert_eq!(config.pop_type, 2, "tier-1 Mailbox binds pop to type 2");
-    assert!(
-        matches!(config.connection, MailboxConnection::Bearer { .. }),
-        "new() builds a bearer connection"
-    );
 }
 
-#[test]
-fn mailbox_config_discovered_carries_app_id_and_defaults() {
-    let config = MailboxConfig::discovered(1234);
-    assert_eq!(config.post_type, MAILBOX_POST_TYPE);
-    assert_eq!(config.pop_type, MAILBOX_POP_TYPE);
-    assert_eq!(
-        config.connection,
-        MailboxConnection::Discovered { app_id: 1234 }
-    );
-}
-
-// --- Connection selection (story #244, deliverable 2): url+token override vs app-id discovery ---
+// --- Configuration from the Bingle app id only (#246) ---
 
 #[test]
-fn select_prefers_bearer_override_even_when_app_id_present() {
-    // The Bingle app id is always present in normal operation, so an explicit URL+token must win.
-    let conn = MailboxConnection::new(Some("http://n:9101".into()), Some("tok".into()), Some(555));
+fn from_app_id_configures_the_mailbox_only_from_a_non_zero_app_id() {
     assert_eq!(
-        conn,
-        Some(MailboxConnection::Bearer {
-            base_url: "http://n:9101".into(),
-            token: "tok".into(),
-        }),
-        "url + token override discovery"
-    );
-}
-
-#[test]
-fn select_uses_discovery_when_only_app_id_available() {
-    assert_eq!(
-        MailboxConnection::new(None, None, Some(555)),
-        Some(MailboxConnection::Discovered { app_id: 555 }),
-        "no override + app id -> discovery + mTLS"
-    );
-    // A half-set bearer (url or token alone) is not an override, so it falls back to discovery.
-    assert_eq!(
-        MailboxConnection::new(Some("http://n:9101".into()), None, Some(555)),
-        Some(MailboxConnection::Discovered { app_id: 555 }),
-        "url alone is not a bearer override; discovery is used"
+        MailboxConfig::from_app_id(Some(555)),
+        Some(MailboxConfig::discovered(555)),
+        "an app id -> discovery + mTLS from that app"
     );
     assert_eq!(
-        MailboxConnection::new(None, Some("tok".into()), Some(555)),
-        Some(MailboxConnection::Discovered { app_id: 555 }),
-        "token alone is not a bearer override; discovery is used"
-    );
-}
-
-#[test]
-fn select_is_none_when_neither_override_nor_app_id() {
-    assert_eq!(
-        MailboxConnection::new(None, None, None),
+        MailboxConfig::from_app_id(None),
         None,
-        "no override and no app id leaves store-and-forward unconfigured"
+        "no app id leaves store-and-forward unconfigured"
     );
     assert_eq!(
-        MailboxConnection::new(None, None, Some(0)),
+        MailboxConfig::from_app_id(Some(0)),
         None,
         "a 0 app id is treated as unset"
     );
 }
 
 #[test]
-fn select_treats_blank_override_values_as_absent() {
-    // A blank URL/token must not half-configure the bearer path; with an app id, discovery is used.
+fn the_removed_bearer_env_vars_have_no_effect() {
+    // A stale environment from the removed bearer path (#246) must not change the transport or
+    // configure a Mailbox on its own. Nothing else in this test binary reads these variables.
+    // SAFETY: the variables are set and removed only here, and no other thread reads them.
+    unsafe {
+        std::env::set_var("SIDEWINDER_NODE_URL", "http://localhost:9101");
+        std::env::set_var("SIDEWINDER_TOKEN", "stale-token");
+    }
+    let with_app_id = MailboxConfig::from_app_id(Some(77));
+    let without_app_id = MailboxConfig::from_app_id(None);
+    unsafe {
+        std::env::remove_var("SIDEWINDER_NODE_URL");
+        std::env::remove_var("SIDEWINDER_TOKEN");
+    }
     assert_eq!(
-        MailboxConnection::new(Some("   ".into()), Some("tok".into()), Some(9)),
-        Some(MailboxConnection::Discovered { app_id: 9 }),
+        with_app_id,
+        Some(MailboxConfig::discovered(77)),
+        "the app id alone decides the connection"
     );
     assert_eq!(
-        MailboxConnection::new(Some("http://n:9101".into()), Some("".into()), Some(9)),
-        Some(MailboxConnection::Discovered { app_id: 9 }),
+        without_app_id, None,
+        "the old env vars do not configure a Mailbox without an app id"
     );
-    // Blank override and no app id -> unconfigured.
-    assert_eq!(
-        MailboxConnection::new(Some("   ".into()), Some("   ".into()), None),
-        None,
-    );
-}
-
-#[test]
-fn mailbox_config_select_wraps_the_selected_connection() {
-    let bearer = MailboxConfig::select(Some("http://n:9101".into()), Some("tok".into()), Some(1));
-    assert!(matches!(
-        bearer.map(|c| c.connection),
-        Some(MailboxConnection::Bearer { .. })
-    ));
-    let discovered = MailboxConfig::select(None, None, Some(77));
-    assert_eq!(
-        discovered.map(|c| c.connection),
-        Some(MailboxConnection::Discovered { app_id: 77 })
-    );
-    assert!(MailboxConfig::select(None, None, None).is_none());
 }
 
 // --- Failover cursor (story #244, deliverable 3) ---
@@ -181,64 +124,6 @@ fn mtls_identity_is_the_same_account_as_the_transaction_signer() {
         identity_address, signer_address,
         "the mutual-TLS identity (seed-derived) and the transaction signer are the same account"
     );
-}
-
-#[test]
-fn from_parts_requires_both_url_and_token() {
-    assert!(
-        MailboxConfig::from_parts(Some("http://n:9101".into()), Some("tok".into())).is_some(),
-        "both present configures the mailbox"
-    );
-    assert!(
-        MailboxConfig::from_parts(Some("http://n:9101".into()), None).is_none(),
-        "url without token is unconfigured"
-    );
-    assert!(
-        MailboxConfig::from_parts(None, Some("tok".into())).is_none(),
-        "token without url is unconfigured"
-    );
-    assert!(
-        MailboxConfig::from_parts(None, None).is_none(),
-        "neither is unconfigured"
-    );
-}
-
-#[test]
-fn from_parts_treats_blank_values_as_absent() {
-    assert!(
-        MailboxConfig::from_parts(Some("   ".into()), Some("tok".into())).is_none(),
-        "a blank url does not half-configure the mailbox"
-    );
-    assert!(
-        MailboxConfig::from_parts(Some("http://n:9101".into()), Some("".into())).is_none(),
-        "a blank token does not half-configure the mailbox"
-    );
-}
-
-#[test]
-fn mailbox_new_rejects_empty_endpoint() {
-    // Mailbox is not Debug (it holds a client), so match rather than unwrap the Result.
-    match Mailbox::new(keyless_algo(), MailboxConfig::new("", "tok")) {
-        Ok(_) => panic!("empty endpoint must be rejected"),
-        Err(err) => assert!(
-            err.to_string().to_lowercase().contains("url"),
-            "error names the missing endpoint: {err}"
-        ),
-    }
-}
-
-#[test]
-fn mailbox_new_rejects_empty_token() {
-    match Mailbox::new(
-        keyless_algo(),
-        MailboxConfig::new("http://localhost:9101", ""),
-    ) {
-        Ok(_) => panic!("empty token must be rejected"),
-        Err(err) => assert!(
-            err.to_string().to_lowercase().contains("token"),
-            "error names the missing token: {err}"
-        ),
-    }
 }
 
 #[test]

@@ -8,114 +8,25 @@
 //! evolving upstream, so this is the shape the real round-trip runs in until a node is routinely
 //! available in continuous integration.
 //!
-//! Configure it from the environment:
-//!
-//! The bearer round-trip (`post_then_pop_round_trips_a_message`):
-//!
-//! | Variable | Required | Meaning |
-//! |---|---|---|
-//! | `SIDEWINDER_NODE_URL` | yes | Base URL of a Sidewinder node, e.g. `http://localhost:9101`. |
-//! | `SIDEWINDER_TOKEN` | yes | Bearer token the node's client endpoints accept. |
-//! | `SIDEWINDER_ACCOUNT_MNEMONIC` | yes | 25-word Algorand mnemonic for an enrolled caller; its key signs the transactions. |
-//! | `SIDEWINDER_POST_TYPE` | no | Transaction type bound to Mailbox `post`. Defaults to the tier-1 binding (1). |
-//! | `SIDEWINDER_POP_TYPE` | no | Transaction type bound to Mailbox `pop`. Defaults to the tier-1 binding (2). |
-//!
-//! The discovery + mutual-TLS round-trip (`discovery_mtls_post_then_pop_round_trips_a_message`, story
-//! #244) needs no node URL or token — it resolves the endpoint on-chain and pins the node identity:
+//! The round-trip resolves the node endpoint on-chain from the Bingle DApp app id and pins the node
+//! identity over mutual TLS (story #244) — the only way to reach a node (#246). Configure it from the
+//! environment:
 //!
 //! | Variable | Required | Meaning |
 //! |---|---|---|
 //! | `SIDEWINDER_DISCOVERY_APP_ID` | yes | Bingle DApp application id whose opted-in cluster nodes publish endpoints. |
-//! | `SIDEWINDER_ACCOUNT_MNEMONIC` | yes | 25-word Algorand mnemonic for an enrolled caller; its key signs and is the mutual-TLS identity. |
+//! | `SIDEWINDER_ACCOUNT_MNEMONIC` | yes | 25-word Algorand mnemonic for a permitted client; its key signs and is the mutual-TLS identity. |
 //!
 //! Run it with, for example:
 //!
-//! `SIDEWINDER_NODE_URL=http://localhost:9101 SIDEWINDER_TOKEN=dev-token SIDEWINDER_ACCOUNT_MNEMONIC="word1 ... word25" cargo test -p bingle_local --test sidewinder_mailbox_e2e -- --nocapture`
+//! `SIDEWINDER_DISCOVERY_APP_ID=1234 SIDEWINDER_ACCOUNT_MNEMONIC="word1 ... word25" cargo test -p bingle_local --test sidewinder_mailbox_e2e -- --nocapture`
 
 use algo_ops::AlgoOps;
 use bingle_core::api::bingle_api::BingleError;
 use bingle_local::api::sidewinder::{Mailbox, MailboxConfig};
 
-/// The environment inputs for a configured run, or `None` when the required ones are unset.
-struct NodeEnv {
-    node_url: String,
-    token: String,
-    mnemonic: String,
-    post_type: Option<u32>,
-    pop_type: Option<u32>,
-}
-
-fn env_from_process() -> Option<NodeEnv> {
-    let node_url = non_empty("SIDEWINDER_NODE_URL")?;
-    let token = non_empty("SIDEWINDER_TOKEN")?;
-    let mnemonic = non_empty("SIDEWINDER_ACCOUNT_MNEMONIC")?;
-    Some(NodeEnv {
-        node_url,
-        token,
-        mnemonic,
-        post_type: parse_type("SIDEWINDER_POST_TYPE"),
-        pop_type: parse_type("SIDEWINDER_POP_TYPE"),
-    })
-}
-
 fn non_empty(key: &str) -> Option<String> {
     std::env::var(key).ok().filter(|s| !s.trim().is_empty())
-}
-
-fn parse_type(key: &str) -> Option<u32> {
-    non_empty(key).and_then(|s| s.parse().ok())
-}
-
-#[test]
-fn post_then_pop_round_trips_a_message() {
-    let Some(env) = env_from_process() else {
-        eprintln!(
-            "skipping post_then_pop_round_trips_a_message: set SIDEWINDER_NODE_URL, \
-             SIDEWINDER_TOKEN and SIDEWINDER_ACCOUNT_MNEMONIC to run (see the module docs)"
-        );
-        return;
-    };
-
-    let algo = AlgoOps::new_for_algorand(Some(env.mnemonic.clone()), None, None);
-    let own_address =
-        AlgoOps::address_from_passphrase(&env.mnemonic).expect("derive address from mnemonic");
-
-    let mut config = MailboxConfig::new(env.node_url, env.token);
-    if let Some(t) = env.post_type {
-        config.post_type = t;
-    }
-    if let Some(t) = env.pop_type {
-        config.pop_type = t;
-    }
-    let mut mailbox = Mailbox::new(algo, config).expect("configured mailbox");
-
-    // Post to our own mailbox (a caller pops its own queue), then read it back. A distinctive
-    // payload so a pop of some other queued message would be caught.
-    let message = b"bingle store-and-forward round-trip #213".to_vec();
-    match mailbox.post(&own_address, &message) {
-        Ok(()) => {}
-        Err(BingleError::Retryable(reason)) => {
-            eprintln!("skipping: sidewinder node not reachable/ready: {reason}");
-            return;
-        }
-        Err(other) => panic!("post failed: {other}"),
-    }
-
-    let popped = mailbox
-        .pop()
-        .expect("pop succeeds")
-        .expect("a message is queued");
-    assert!(
-        payload_matches(&popped, &message),
-        "pop returns the posted message (raw or ARC-4 wrapped): got {popped:?}"
-    );
-
-    // The queue is now drained: a second pop returns nothing.
-    let drained = mailbox.pop().expect("second pop succeeds");
-    assert!(
-        drained.is_none(),
-        "the mailbox is empty after the message is read"
-    );
 }
 
 /// Discovery + identity-pinned mutual TLS round-trip (story #244): resolve the node endpoint on-chain
@@ -125,7 +36,7 @@ fn post_then_pop_round_trips_a_message() {
 /// Skips cleanly unless `SIDEWINDER_DISCOVERY_APP_ID` and `SIDEWINDER_ACCOUNT_MNEMONIC` are set (and
 /// the account is enrolled/opted-in, with the process able to reach the app's chain — an algod/indexer
 /// the default `AlgoOps` config points at). A discovery scan or mutual-TLS connect that cannot reach a
-/// node surfaces as [`BingleError::Retryable`] and is treated as a clean skip, matching the bearer test.
+/// node surfaces as [`BingleError::Retryable`] and is treated as a clean skip.
 #[test]
 fn discovery_mtls_post_then_pop_round_trips_a_message() {
     let (Some(app_id), Some(mnemonic)) = (

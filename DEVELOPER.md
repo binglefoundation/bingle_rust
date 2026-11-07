@@ -69,9 +69,9 @@ bingle_cli chat [--handle <handle>|<handle>] [--passphrase <text>] \
 - `--store-forward <both|send|receive|none>` — enable store-and-forward via the Sidewinder Mailbox
   (default `none`). `send` posts a message to the recipient's Mailbox when direct delivery gives up;
   `receive` polls your own Mailbox for messages left while you were offline; `both` does both. See
-  [Store-and-forward](#store-and-forward-offline-delivery) below. Requires a reachable Mailbox — an
-  app id (on-chain discovery) or `SIDEWINDER_NODE_URL` + `SIDEWINDER_TOKEN` — or chat exits with an
-  error.
+  [Store-and-forward](#store-and-forward-offline-delivery) below. Requires a Bingle app id, or chat exits
+  with an error: the Mailbox node is discovered on-chain from the app id and reached over mutual
+  Transport Layer Security (mTLS), the only way to reach a node.
 - `--notify <url>` — bingle_notify gateway URL to nudge an offline recipient (a content-free push so
   their client wakes and picks up the message). Off when omitted.
 - `--poll-interval <secs>` — period of the receive-side backstop Mailbox poll. Only has effect with

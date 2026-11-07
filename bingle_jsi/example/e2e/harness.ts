@@ -184,16 +184,13 @@ export function withSenderSelection<T extends object>(config: T): T & {send_pend
 export interface StoreForwardConfig {
   store_and_forward_send: boolean;
   store_and_forward_receive: boolean;
-  sidewinder_node_url: string | null;
-  sidewinder_token: string | null;
 }
 
 /**
  * Store-and-forward `init` fields from the environment (issue #284), or `null` when no Mailbox is
- * available. `BINGLE_E2E_STORE_FORWARD=1` turns both gates on; `BINGLE_E2E_SIDEWINDER_URL` /
- * `BINGLE_E2E_SIDEWINDER_TOKEN` select the bearer transport — the localnet provisioner writes all
- * three when it starts its Sidewinder node. On testnet, leave the URL/token unset to use on-chain
- * discovery from the node file's app id.
+ * available. `BINGLE_E2E_STORE_FORWARD=1` turns both gates on; the localnet provisioner writes it
+ * once its Sidewinder node is up. The app reaches the node by app id only: it is discovered on-chain
+ * from the node file's app id and reached over mutual TLS, on localnet as on testnet (#246).
  */
 export function storeForwardConfig(): StoreForwardConfig | null {
   if (process.env.BINGLE_E2E_STORE_FORWARD !== '1') {
@@ -202,8 +199,6 @@ export function storeForwardConfig(): StoreForwardConfig | null {
   return {
     store_and_forward_send: true,
     store_and_forward_receive: true,
-    sidewinder_node_url: process.env.BINGLE_E2E_SIDEWINDER_URL || null,
-    sidewinder_token: process.env.BINGLE_E2E_SIDEWINDER_TOKEN || null,
   };
 }
 

@@ -14,7 +14,7 @@ const UNREACHABLE: &str = "Recipient unreachable — will keep retrying";
 /// `recipients`. Returns the store and the message id.
 fn store_with_message(send_gate: bool, recipients: &[&str]) -> (BingleApiLocalImpl, String) {
     let config = LocalApiConfig {
-        sidewinder: Some(MailboxConfig::new("http://localhost:9", "tok")),
+        sidewinder: Some(MailboxConfig::discovered(1)),
         store_and_forward_send: send_gate,
         ..LocalApiConfig::default()
     };

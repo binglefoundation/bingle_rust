@@ -10,7 +10,6 @@ use bingle_jsi::api::types::{
 use bingle_local::api::bingle_local_api::BingleLocalApi;
 use bingle_local::api::bingle_local_api_impl::BingleApiLocalImpl;
 use bingle_local::api::notify::{AlertPoster, AlertRequest};
-use bingle_local::api::sidewinder::MailboxConnection;
 use bingle_test::temp_file_helpers::project_tmp_file_path;
 
 /// Throwaway test account (the committed cross-impl vector's key) used to give the give-up nudge a
@@ -57,8 +56,6 @@ fn config_with_handle(handle: &str) -> BingleJsiConfig {
         notify_gateway_url: None,
         notify_on_giveup: None,
         notify_env: None,
-        sidewinder_node_url: None,
-        sidewinder_token: None,
         store_and_forward_send: None,
         store_and_forward_receive: None,
         store_and_forward_poll_interval_secs: None,
@@ -85,8 +82,6 @@ fn config_with_local(path: &str) -> BingleJsiConfig {
         notify_gateway_url: None,
         notify_on_giveup: None,
         notify_env: None,
-        sidewinder_node_url: None,
-        sidewinder_token: None,
         store_and_forward_send: None,
         store_and_forward_receive: None,
         store_and_forward_poll_interval_secs: None,
@@ -113,8 +108,6 @@ fn empty_config() -> BingleJsiConfig {
         notify_gateway_url: None,
         notify_on_giveup: None,
         notify_env: None,
-        sidewinder_node_url: None,
-        sidewinder_token: None,
         store_and_forward_send: None,
         store_and_forward_receive: None,
         store_and_forward_poll_interval_secs: None,
@@ -904,8 +897,6 @@ fn init_with_optional_fields() {
         notify_gateway_url: None,
         notify_on_giveup: None,
         notify_env: None,
-        sidewinder_node_url: None,
-        sidewinder_token: None,
         store_and_forward_send: None,
         store_and_forward_receive: None,
         store_and_forward_poll_interval_secs: None,
@@ -1275,29 +1266,26 @@ fn foregrounding_starts_and_backgrounding_stops_the_backstop_poller() {
 
 // ── Sidewinder discovery/mTLS selection at init (story #252) ──────────────────
 //
-// `init` threads the config's existing Bingle `app_id` into `MailboxConfig::select`, so a JSI caller
-// gets discovery + mutual TLS by app id (no url/token), the bearer keys still override, and neither
-// leaves store-and-forward unconfigured — mirroring the desktop precedence (#244). There is no
-// separate `sidewinder_app_id` field. The selection logic itself is unit-tested in bingle_local;
+// `init` threads the config's existing Bingle `app_id` into `MailboxConfig::from_app_id`, so a JSI
+// caller gets discovery + mutual TLS by app id, and no app id leaves store-and-forward unconfigured.
+// There is no other way to reach a node (#246). The rule itself is unit-tested in bingle_local;
 // these lock in the JSI `init` wiring end to end.
 
-/// The Sidewinder Mailbox connection `init` resolved into the live local store, or `None` when
+/// The Bingle app id `init` configured the Sidewinder Mailbox from, or `None` when
 /// store-and-forward was left unconfigured.
-fn resolved_sidewinder(api: &Arc<BingleJsiApiImpl>) -> Option<MailboxConnection> {
+fn resolved_sidewinder(api: &Arc<BingleJsiApiImpl>) -> Option<u64> {
     let local = api.local_api_for_tests().expect("local api present");
     let mut guard = local.lock().expect("local api lock");
     let concrete = guard
         .as_any_mut()
         .downcast_mut::<BingleApiLocalImpl>()
         .expect("local api is BingleApiLocalImpl");
-    concrete
-        .sidewinder_config_for_tests()
-        .map(|cfg| cfg.connection)
+    concrete.sidewinder_config_for_tests().map(|cfg| cfg.app_id)
 }
 
 #[test]
-fn init_selects_discovery_from_app_id_without_bearer() {
-    // Bingle app id present (needs asset id too for resolution), no bearer keys -> discovery + mTLS.
+fn init_selects_discovery_from_app_id() {
+    // Bingle app id present (needs asset id too for resolution) -> discovery + mTLS.
     let tmp = project_tmp_file_path("bingle-jsi-sf-discovery", ".json");
     let mut config = config_with_local(&tmp.to_string_lossy());
     config.app_id = Some(555);
@@ -1305,43 +1293,22 @@ fn init_selects_discovery_from_app_id_without_bearer() {
     let api = BingleJsiApiImpl::init(config).expect("init with local should succeed");
     assert_eq!(
         resolved_sidewinder(&api),
-        Some(MailboxConnection::Discovered { app_id: 555 }),
-        "app id + no bearer -> on-chain discovery + mutual TLS"
+        Some(555),
+        "app id -> on-chain discovery + mutual TLS"
     );
     let _ = std::fs::remove_file(&tmp);
 }
 
 #[test]
-fn init_bearer_keys_override_discovery() {
-    // Both bearer keys set -> legacy bearer transport, even when the app id is present.
-    let tmp = project_tmp_file_path("bingle-jsi-sf-bearer", ".json");
-    let mut config = config_with_local(&tmp.to_string_lossy());
-    config.app_id = Some(555);
-    config.asset_id = Some(999);
-    config.sidewinder_node_url = Some("http://node:9101".to_string());
-    config.sidewinder_token = Some("tok".to_string());
-    let api = BingleJsiApiImpl::init(config).expect("init with local should succeed");
-    assert_eq!(
-        resolved_sidewinder(&api),
-        Some(MailboxConnection::Bearer {
-            base_url: "http://node:9101".to_string(),
-            token: "tok".to_string(),
-        }),
-        "url + token override discovery even when the app id is set"
-    );
-    let _ = std::fs::remove_file(&tmp);
-}
-
-#[test]
-fn init_leaves_store_and_forward_unconfigured_without_app_id_or_bearer() {
-    // No app id (config_with_local leaves app/asset unset) and no bearer keys -> unconfigured.
+fn init_leaves_store_and_forward_unconfigured_without_app_id() {
+    // No app id (config_with_local leaves app/asset unset) -> unconfigured.
     let tmp = project_tmp_file_path("bingle-jsi-sf-none", ".json");
     let config = config_with_local(&tmp.to_string_lossy());
     let api = BingleJsiApiImpl::init(config).expect("init with local should succeed");
     assert_eq!(
         resolved_sidewinder(&api),
         None,
-        "neither app id nor bearer keys -> store-and-forward unconfigured"
+        "no app id -> store-and-forward unconfigured"
     );
     let _ = std::fs::remove_file(&tmp);
 }

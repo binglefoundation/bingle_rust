@@ -83,10 +83,9 @@ impl ChatState {
         // "unset" for BingleLocal, matching how the webserver builds its config.
         let algo_config = opts.algo_provider_config.clone().unwrap_or_default();
 
-        // Store-and-forward (epic #200, issues #241/#244): configure the Sidewinder Mailbox.
-        // `SIDEWINDER_NODE_URL` + `SIDEWINDER_TOKEN` select the bearer (plaintext) override; otherwise
-        // the Bingle DApp app id drives on-chain discovery + identity-pinned mutual TLS (story #244).
-        // Neither available leaves store-and-forward unconfigured.
+        // Store-and-forward (epic #200, issues #241/#244): configure the Sidewinder Mailbox. The
+        // Bingle DApp app id drives on-chain discovery + identity-pinned mutual TLS (story #244); no
+        // app id leaves store-and-forward unconfigured.
         //
         // `--store-forward` (issue #241) selects which gates to enable; `--notify <url>` enables the
         // give-up nudge to the bingle_notify gateway.
@@ -103,15 +102,10 @@ impl ChatState {
             notify_on_giveup,
             notify_gateway_url,
         )
-        .with_sidewinder(MailboxConfig::select(
-            std::env::var("SIDEWINDER_NODE_URL").ok(),
-            std::env::var("SIDEWINDER_TOKEN").ok(),
-            opts.app_id,
-        ))
+        .with_sidewinder(MailboxConfig::from_app_id(opts.app_id))
         .with_store_and_forward(Some(send_gate), Some(receive_gate));
-        // Fail loudly if store-and-forward is gated on with no reachable Mailbox (issues #241/#244):
-        // a Mailbox is configured via either the app id (discovery + mTLS) or SIDEWINDER_NODE_URL +
-        // SIDEWINDER_TOKEN (bearer). Supersedes #241's env-var-only `validate_store_forward`.
+        // Fail loudly if store-and-forward is gated on with no Mailbox, that is, no app id (issues
+        // #241/#244).
         cfg.validate_store_and_forward()?;
         let mut local = BingleApiLocalImpl::new(cfg);
 
