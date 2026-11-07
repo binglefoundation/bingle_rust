@@ -376,8 +376,14 @@ impl Mailbox {
             .current_client()
             .submit_transaction(&request)
             .map_err(|e| map_error(operation, e))?;
-        // Log the transaction id at submit so it can be tracked on the node while it finalises.
-        tracing::info!("[mailbox {operation}] submitted tx {txid}");
+        // Log the transaction id at submit so it can be tracked on the node while it finalises. A
+        // pop runs on every receive poll cycle, so it is logged at trace to keep the routine poll
+        // out of the debug log (issue #402); a post is a message being sent, so it stays at info.
+        if operation == "pop" {
+            tracing::trace!("[mailbox {operation}] submitted tx {txid}");
+        } else {
+            tracing::info!("[mailbox {operation}] submitted tx {txid}");
+        }
         self.poll_to_final(operation, &txid)
     }
 
@@ -395,7 +401,7 @@ impl Mailbox {
             match self.current_client().watch(txid, false, WATCH_WAIT_SECS) {
                 Ok(pending) => {
                     last_stage = Some(format!("{:?}", pending.stage));
-                    tracing::debug!("[mailbox {operation}] {txid} stage={:?}", pending.stage);
+                    tracing::trace!("[mailbox {operation}] {txid} stage={:?}", pending.stage);
                     match classify_watch(&pending) {
                         WatchProgress::InFlight => {}
                         WatchProgress::Final => return Ok(Finality::Final(pending)),

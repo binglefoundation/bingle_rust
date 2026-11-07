@@ -137,8 +137,12 @@ fn init_logger_from_args(args: &mut Vec<String>) {
     let mode = chosen_mode.unwrap_or(LogMode::Plain);
     let fmt_layer = tracing_subscriber::fmt::layer().event_format(BingleFormatter { mode });
 
+    // HTTP client stack detail is capped at WARN; RUST_LOG, when set, overrides (issue #402).
+    let rust_log = std::env::var("RUST_LOG").ok();
+    let filter = bingle_cli::logging::log_filter(level, rust_log.as_deref());
+
     let subscriber = tracing_subscriber::registry()
-        .with(level)
+        .with(filter)
         .with(HandleLayer)
         .with(fmt_layer);
 
@@ -198,6 +202,7 @@ fn print_usage_and_exit(code: i32) -> ! {
         "Usage: bingle_cli <run|chat|register|migrate|buybingle|sellbingle|checkrelays> [options]\n",
         "  Common options (for all commands): -h|--help | -V|--version | --log-warn|--warn|-q | --log-info|--info | --log-debug|--debug|-v | --log-trace|--vv|-vv | --log-mode <Plain|ANSI|AWS|JS> | --stun-servers <list> | --stun-servers-file <file>\n",
         "  Note: chat and checkrelays default to WARN-level logs so their output isn't buried under engine tracing; use --info or --debug to see more (or --log-level error for just the result).\n",
+        "  Note: HTTP client detail (h2, hyper, hyper_util, reqwest) is capped at WARN at every level; set RUST_LOG (which overrides the level flags) to see it.\n",
         "  bingle_cli run [--handle <handle>|<handle>] [--passphrase <text>] [--relay] [--static-ip <ip:port>] [--stun-servers <list>] [--stun-servers-file <file>] [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--sentinel-file <path>] [--echo] [--auto-migrate] [--log-mode <Plain|ANSI|AWS|JS>]\n",
         "  bingle_cli chat [--handle <handle>|<handle>] [--passphrase <text>] [--to <handle> | --to-id <id>] [--state_file <file>] [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--stun-servers <list>] [--stun-servers-file <file>] [--no-retries] [--store-forward <both|send|receive|none>] [--notify <url>] [--auto-migrate] [--info|--debug]\n",
         "  bingle_cli register --handle <handle> --passphrase <text> --app-id <id> --asset-id <id> --price-units <n> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>] [--log-mode <Plain|ANSI|AWS|JS>]\n",
