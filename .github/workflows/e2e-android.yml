@@ -171,9 +171,11 @@ jobs:
           path: ~/.cargo/bin/sw-node
           key: sw-node-${{ runner.os }}-${{ env.SW_NODE_VERSION }}
 
+      # --force: the rust cache also restores ~/.cargo/bin, which can hold a previous pin's sw-node
+      # that a plain install refuses to replace.
       - name: Install sw-node
         if: steps.sw-node-cache.outputs.cache-hit != 'true'
-        run: cargo install sidewinder-node --version "$SW_NODE_VERSION" --locked
+        run: cargo install sidewinder-node --version "$SW_NODE_VERSION" --locked --force
 
       - name: Start localnet provisioner (emulator mode)
         run: |
