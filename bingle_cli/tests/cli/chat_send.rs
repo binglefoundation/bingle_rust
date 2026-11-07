@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use bingle_cli::chat::parse_chat_args;
 use bingle_cli::chat_send::{
-    SendTarget, is_account_id, listening_line, report_line, shutdown_lines,
+    NOTHING_QUEUED_LINE, SendTarget, is_account_id, listening_line, report_line, shutdown_lines,
 };
 use bingle_cli::chat_state::ChatState;
 use bingle_core::api::bingle_api::{BingleError, ProgressCallback, SendFailureKind, StartOptions};
@@ -411,8 +411,12 @@ pub fn shutdown_lines_report_each_message_left_at_exit() {
 }
 
 #[test]
-pub fn shutdown_lines_are_empty_when_nothing_was_queued() {
-    assert!(shutdown_lines(&ShutdownReport::default()).is_empty());
+pub fn shutdown_lines_say_so_when_nothing_was_queued() {
+    // Issue #401: the exit flush always prints something.
+    assert_eq!(
+        shutdown_lines(&ShutdownReport::default()),
+        vec![NOTHING_QUEUED_LINE.to_string()]
+    );
 }
 
 #[test]

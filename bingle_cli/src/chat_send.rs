@@ -80,9 +80,16 @@ impl<A: BingleApi> MessageDelivery for ChatDelivery<A> {
 /// queued (issue #282): enough for a direct attempt to time out (about 10s) and a post to complete.
 pub const EXIT_FLUSH_DEADLINE: Duration = Duration::from_secs(15);
 
+/// The line printed at exit when nothing was queued (issue #401).
+pub const NOTHING_QUEUED_LINE: &str = "no queued messages to send";
+
 /// The transcript lines for the exit flush (issue #282): one per message still queued at exit,
-/// saying whether it went to the recipient's Mailbox or stays queued for the next session.
+/// saying whether it went to the recipient's Mailbox or stays queued for the next session. When
+/// nothing was queued it says so, so a quiet exit is never mistaken for a lost message (issue #401).
 pub fn shutdown_lines(report: &ShutdownReport) -> Vec<String> {
+    if report.forwarded.is_empty() && report.not_sent.is_empty() {
+        return vec![NOTHING_QUEUED_LINE.to_string()];
+    }
     let retry = "it will be retried next time you start chat";
     let forwarded = report.forwarded.iter().map(|entry| {
         format!(
