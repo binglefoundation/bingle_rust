@@ -119,11 +119,20 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      # build_android.sh uses associative arrays, which need bash 4 or later (macOS ships 3.2).
+      # build_android.sh uses associative arrays, which need bash 4 or later, and the runner's own
+      # bash is macOS's 3.2. Install GNU bash, put it first on PATH for the later steps (so scripts
+      # the build scripts start get it too), and run the build scripts with it explicitly.
+      - name: Install GNU bash
+        run: |
+          brew install bash
+          echo "$(brew --prefix)/bin" >> "$GITHUB_PATH"
+          echo "BASH5=$(brew --prefix)/bin/bash" >> "$GITHUB_ENV"
+
       - name: Check bash
         run: |
-          echo "bash $BASH_VERSION at $(command -v bash)"
-          [ "${BASH_VERSINFO[0]}" -ge 4 ] || { echo "::error::the native build scripts need bash 4 or later"; exit 1; }
+          # shellcheck disable=SC2016 # the inner bash expands these, not this one
+          "$BASH5" -c 'echo "bash $BASH_VERSION at $BASH"; [ "${BASH_VERSINFO[0]}" -ge 4 ]' \
+            || { echo "::error::the native build scripts need bash 4 or later"; exit 1; }
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -133,10 +142,10 @@ jobs:
       # the scripts end with scan_native_leaks.sh, which fails the build if a build-machine path
       # (the runner's /Users/runner home among them) is baked into a shipped library.
       - name: Build the iOS XCFramework
-        run: bash bingle_jsi/scripts/build_ios.sh
+        run: '"$BASH5" bingle_jsi/scripts/build_ios.sh'
 
       - name: Build the Android libraries
-        run: bash bingle_jsi/scripts/build_android.sh
+        run: '"$BASH5" bingle_jsi/scripts/build_android.sh'
 
       - name: Upload the native libraries
         uses: actions/upload-artifact@v7
