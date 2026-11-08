@@ -5,6 +5,8 @@ pub mod account_check;
 pub mod app_support;
 #[path = "chat_args.rs"]
 pub mod chat_args;
+#[path = "chat_console.rs"]
+pub mod chat_console;
 #[path = "chat_poll.rs"]
 pub mod chat_poll;
 #[path = "chat_receive.rs"]
