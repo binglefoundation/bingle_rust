@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex};
 use algo_ops::AlgoOps;
 use bingle_cli::chat::parse_chat_args;
 use bingle_cli::chat_state::ChatState;
+use bingle_core::api::bingle_api::StartOptions;
 use bingle_local::api::bingle_local_api::{BingleLocalApi, ContactSource};
 use bingle_local::api::bingle_local_api_impl::{BingleApiLocalImpl, LocalApiConfig};
 use tempfile::TempDir;
@@ -326,4 +327,34 @@ pub fn bridge_never_logs_the_passphrase() {
         !logs.contains(&passphrase),
         "passphrase must never appear in logs"
     );
+}
+
+/// A store with a keypair and no handle, as after importing from `--passphrase` alone (issue #397).
+fn imported_state_without_handle() -> ChatState {
+    let mut local = BingleApiLocalImpl::new(LocalApiConfig::default());
+    local.generate_keypair().expect("keypair");
+    ChatState::from_parts_for_tests(local, StartOptions::new(String::new()))
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn adopted_handle_is_the_sender_of_queued_messages() {
+    // Issue #397: without the adopted handle, queueing failed with "sender_handle cannot be empty".
+    let mut state = imported_state_without_handle();
+    assert!(state.queue_outbound("bob", "hi").is_err());
+
+    state.adopt_handle("alice");
+    assert_eq!(state.opts.handle, "alice");
+    assert!(state.queue_outbound("bob", "hi").is_ok());
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn adopt_handle_keeps_a_handle_already_set() {
+    let mut local = BingleApiLocalImpl::new(LocalApiConfig::default());
+    local.generate_keypair().expect("keypair");
+    let mut state = ChatState::from_parts_for_tests(local, StartOptions::new("alice".to_string()));
+
+    state.adopt_handle("other");
+    assert_eq!(state.opts.handle, "alice");
 }

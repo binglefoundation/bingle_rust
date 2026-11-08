@@ -1125,6 +1125,7 @@ fn run_chat_startup(state: &mut ChatState, cli_handle: Option<&str>, cli_passphr
     for _ in 0..6 {
         match decide_startup(&status, cli_handle, have_passphrase) {
             StartupDecision::Proceed { handle } => {
+                state.adopt_handle(&handle);
                 tracing::info!(
                     "chat: account '{}' is registered and funded ({} known contact(s)); ready to chat",
                     handle,
