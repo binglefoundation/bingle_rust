@@ -9,6 +9,8 @@ on:
     types: [opened, synchronize, reopened, ready_for_review]
   push:
     branches: [staging]
+  # deploy.yml re-runs this gate on the release commit (#399).
+  workflow_call:
 
 # Cancel an in-flight run when the same PR/branch gets new commits, so an
 # amended PR is always graded on its latest state.

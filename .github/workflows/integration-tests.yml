@@ -12,6 +12,8 @@ on:
   push:
     branches: [staging]
   workflow_dispatch:
+  # deploy.yml re-runs this gate on the release commit (#399).
+  workflow_call:
 
 # Latest-push-wins ("heap not queue"): a newer push to staging cancels the older in-flight run
 # rather than queueing behind it (issue #136).

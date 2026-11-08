@@ -22,6 +22,7 @@ needs a live localnet, so it runs **post-merge on `staging`**, not on every pull
 | --- | --- |
 | Push to `staging` | `push` (post-merge run) |
 | Manual | `workflow_dispatch` |
+| Release (`deploy.yml`, on a push to `deployed`) | `workflow_call`: the same gate re-run on the release commit (`RELEASING.md`) |
 
 A `concurrency` group with `cancel-in-progress` means a newer push to `staging` cancels the older
 in-flight run rather than queueing behind it ("heap not queue", issue #136).

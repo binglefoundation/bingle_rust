@@ -262,48 +262,14 @@ External contributions are welcome via pull request:
 3. Ensure `cargo test --test unit` passes with no warnings and `scripts/run_quality_checks.sh --strict` is clean.
 4. Open a PR against `staging` describing the change.
 
-Publishing releases (bumping versions and pushing to crates.io / npm) is performed by the
-maintainers with `scripts/deploy_code.sh` — see below.
+Releases (crates.io and npm) are cut by the maintainers with `scripts/release.sh`, which hands the
+publishing to the `deploy.yml` workflow — see `RELEASING.md`.
 
 ## Publishing a release
 
-`scripts/deploy_code.sh <version>` bumps every crate and the npm module to the given version,
-builds the native libraries, dry-runs every publish, then (past a commit "point of no return")
-publishes the crates to crates.io and the module to npm and pushes the branch + tag. It only runs
-on the `deployed` branch and is resumable: re-running the same command skips versions that were
-already published.
-
-```bash
-git checkout deployed
-scripts/deploy_code.sh --dry-run 0.2.4     # validate + package everything, publish nothing
-scripts/deploy_code.sh 0.2.4               # the real release
-```
-
-### Unattended publishing (npm automation token)
-
-The npmjs account has 2FA set to *authorization and writes*, so a plain `npm publish` opens a
-short-lived browser auth window — and it appears only **after** the ~10-minute native build, so the
-release fails if the window isn't clicked promptly.
-
-To run the release unattended, publish with an npm **automation token**, which bypasses 2FA:
-
-1. At [npmjs.com](https://www.npmjs.com/) → your avatar → **Access Tokens** → **Generate New Token**
-   → **Classic Token** → **Automation** (or a Granular Access Token scoped to the
-   `react-native-bingle-jsi` package with read/write). Automation tokens are exempt from 2FA.
-2. Run the deploy with the token in the environment:
-
-   ```bash
-   NPM_TOKEN=npm_xxxxxxxxxxxxxxxxxxxx scripts/deploy_code.sh 0.2.4
-   ```
-
-The script validates the token during preflight (a bad token fails in seconds, not after the
-build), publishes npm non-interactively via a throwaway npmrc, and removes that file on exit. The
-token is never written to the repo tree or the release commit. Without `NPM_TOKEN` the script still
-works but warns up front that the final `npm publish` will need an interactive browser click.
-
-> crates.io publishing is already non-interactive: the script reads the token from
-> `CARGO_REGISTRY_TOKEN` or `~/.cargo/credentials.toml` (run `cargo login` once). Only npm needed the
-> automation-token path.
+See `RELEASING.md`: TestNet relays are rolled from `staging` with `scripts/roll_relays.sh`, a release
+fast-forwards `deployed` to the commit TestNet ran (`scripts/release.sh`), and `deploy.yml` publishes
+the crates and the npm module through Trusted Publishing, with no stored registry token.
 
 ## Release hygiene: scanning for leaked build paths
 
@@ -452,9 +418,28 @@ If you have made changes to the code and want to redeploy the relay:
 
 2. **Image-only redeploy** (updates only the stack's image, keeping the template and every other parameter):
    ```bash
-   bash aws/deploy_relay.sh --handle "my-relay" --passphrase "my-secret-passphrase" --redeploy-only
+   bash aws/deploy_relay.sh --handle "my-relay" --redeploy-only
    ```
-   Use this when only the code changed.
+   Use this when only the code changed. The passphrase is not needed: it stays in the stack's Secrets Manager secret.
+
+### Rolling every relay of a network (`scripts/roll_relays.sh`)
+
+Once more than one relay runs, `scripts/roll_relays.sh` redeploys all of a network's relays onto one commit, checks each one started, and records the roll (issue #399). Which relays you run is your own deployment, so they are listed in an inventory file outside this repository; `aws/relays.example.env` documents the format (one `RELAY=<handle> <stack> <region> <ec2|express> <node file>` line per relay). Point `BINGLE_RELAYS_FILE` at it, set `BINGLE_NETWORK` to `testnet` or `mainnet`, sign in to the network's AWS account, and run from a clean checkout:
+
+```bash
+scripts/roll_relays.sh --dry-run
+```
+
+```bash
+scripts/roll_relays.sh
+```
+
+- **TestNet** rolls the commit checked out, which must be on `origin/staging` (normally its head). **MainNet** rolls only `origin/deployed`, and only when its `vX.Y.Z` tag names it. The image is tagged `X.Y.Z-<commit>` on TestNet and `X.Y.Z` on MainNet.
+- Before changing anything it refuses an AWS account other than the inventory's `ACCOUNT_ID`, an inventory for another network, and a stack whose `Handle` or `NodeFile` differs from the inventory.
+- Relays roll one at a time, in inventory order, with `deploy_relay.sh --redeploy-only`. Each must then log a start of this commit's build (`Bingle CLI starting ... (git <sha>`) within `START_TIMEOUT` seconds (300), and no `RELAY STARTUP ABORTED`. The first failure stops the roll and the remaining relays keep their old image.
+- `--check-relays <ACCOUNT>` also runs `bingle_cli checkrelays` afterwards, as the account file `<ACCOUNT>.json` in `BINGLE_ACCOUNTS_DIR`.
+- The roll is recorded as a GitHub deployment in the `testnet` or `mainnet` environment (commit, version, image tag, relay count and outcome; no AWS account, stack or handle, as the repository is public). The release checks the `testnet` record. `BINGLE_NO_RECORD=1` skips it.
+- `scripts/roll_relays.sh --check-inventory <file>` checks an inventory file without AWS.
 
 ### Shutting Down and Deleting Resources
 

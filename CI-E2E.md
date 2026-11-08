@@ -22,6 +22,7 @@ Linux runners (`ubuntu-latest`) have **KVM** (accelerated Android emulator) and 
 | --- | --- |
 | Push to `staging` | `push` (post-merge smoke run) |
 | Manual | `workflow_dispatch` |
+| Release (`deploy.yml`, on a push to `deployed`) | `workflow_call`: the same gate re-run on the release commit (`RELEASING.md`) |
 
 Not on pull requests: emulator runs are heavy, so this is a post-merge check on `staging`. A
 `concurrency` group with `cancel-in-progress` means a newer push cancels the older in-flight run
