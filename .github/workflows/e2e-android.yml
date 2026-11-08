@@ -54,8 +54,23 @@ jobs:
         with:
           targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
 
+      # build_android.sh builds into /var/tmp/bingle_native_target, outside the checkout so build paths
+      # don't leak into the C objects. Cache it alongside ./target, or every run recompiles every
+      # Android dependency, OpenSSL included (#151: ~500 s cold, ~70 s warm). rust-cache joins a
+      # target to its workspace even when absolute, so pass the path relative to the checkout.
+      - name: Locate the native target directory
+        id: native-target
+        run: echo "relative=$(realpath -m --relative-to="$GITHUB_WORKSPACE" /var/tmp/bingle_native_target)" >> "$GITHUB_OUTPUT"
+
       - name: Cache cargo build
         uses: Swatinem/rust-cache@v2
+        with:
+          # the workspaces are not part of the key: bump the prefix when they change, or an exact
+          # hit on the old entry is restored and never re-saved.
+          prefix-key: v1-rust
+          workspaces: |
+            . -> target
+            . -> ${{ steps.native-target.outputs.relative }}
 
       - name: Install Node
         uses: actions/setup-node@v7
