@@ -84,7 +84,7 @@ Move the app's version and its `react-native-bingle-jsi` dependency to the relea
 
 ## Versioning
 
-Every crate and `bingle_jsi/package.json` carry one version. `scripts/bump_version.sh` sets it everywhere: each crate's `[package] version`, the version pins on the workspace's path dependencies, the npm module, and the lockfile. `scripts/bump_version.sh --check` fails unless they all agree.
+Every crate and `bingle_jsi/package.json` carry one version. `scripts/bump_version.sh` sets it everywhere: each crate's `[package] version`, the version pins on the workspace's path dependencies, the npm module, the `bingle_core = "X.Y.Z"` and `bingle_local = "X.Y.Z"` install examples in those crates' READMEs (which crates.io shows), and the lockfile. `scripts/bump_version.sh --check` fails unless they all agree.
 
 `staging` always carries the next, unreleased version. A release does not bump anything: it releases the version the commit already carries, and then `scripts/release.sh` commits `chore: open X.Y.(Z+1)` straight onto `staging`. That is the one commit that reaches `staging` without a pull request, because it is mechanical; the push skips `staging`'s required checks, which only a repository admin may do (one-time setup, below). `--next-minor` or `--next-major` open a different version; one can also be set by an ordinary PR before the next roll.
 

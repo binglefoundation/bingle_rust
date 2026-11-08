@@ -30,7 +30,7 @@ or add it to your `Cargo.toml` directly:
 
 ```toml
 [dependencies]
-bingle_local = "0.2.8"
+bingle_local = "0.3.32"
 ```
 
 Building the crate requires the Rust stable toolchain (2024 edition, Rust 1.85 or newer) via
