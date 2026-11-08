@@ -18,8 +18,8 @@
 #   2. checks the commit's staging CI passed: quality, unit, integration and android-e2e;
 #   3. fast-forwards `deployed` to it (no merge, no commit of its own; a push that is not a
 #      fast-forward is refused), which starts deploy.yml, and waits for that run;
-#   4. opens the next version: commits `chore: open X.Y.Z` (scripts/bump_version.sh) onto staging and
-#      pushes it — the one commit that reaches staging without a pull request, as it is mechanical;
+#   4. opens the next version: commits `chore: open X.Y.Z` (scripts/bump_version.sh) on branch
+#      chore/open-X.Y.Z and opens its pull request against staging, which is protected like any other;
 #   5. prints the follow-ups: roll MainNet, and the bingle_ux_rn pickup.
 # Each step is skipped when already done, so re-running the same command resumes a release that
 # stopped part way. See RELEASING.md.
@@ -164,14 +164,24 @@ print(m.group(1) if m else "")')
 if [[ "$staging_version" != "$VERSION" ]]; then
   ok "staging already carries $staging_version"
 else
-  work="tmp/release-next-$VERSION"
-  rm -rf "$work"; git worktree prune
-  git worktree add --quiet --detach "$work" origin/staging
-  next=$( (cd "$work" && scripts/bump_version.sh "$NEXT") | sed -n 's/.* -> //p')
-  (cd "$work" && git commit --quiet -am "chore: open $next" && git push --quiet origin HEAD:refs/heads/staging) \
-    || die "could not push the $next bump to staging (did staging move? re-run to bump the new head)"
-  git worktree remove --force "$work"
-  ok "staging carries $next"
+  open_pr=$(gh pr list --repo "$GH_REPO" --base staging --state open --json headRefName,url \
+    --jq '.[] | select(.headRefName | startswith("chore/open-")) | .url' | head -n 1)
+  if [[ -n "$open_pr" ]]; then
+    ok "the next version is already open for review: $open_pr"
+  else
+    work="tmp/release-next-$VERSION"
+    rm -rf "$work"; git worktree prune
+    git worktree add --quiet --detach "$work" origin/staging
+    next=$( (cd "$work" && scripts/bump_version.sh "$NEXT") | sed -n 's/.* -> //p')
+    branch="chore/open-$next"
+    (cd "$work" && git commit --quiet -am "chore: open $next" && git push --quiet origin "HEAD:refs/heads/$branch") \
+      || die "could not push the $next bump to $branch"
+    git worktree remove --force "$work"
+    pr=$(gh pr create --repo "$GH_REPO" --base staging --head "$branch" --title "chore: open $next" \
+      --body "Opens $next on \`staging\` after releasing $VERSION ($SHORT), from \`scripts/release.sh\` (\`scripts/bump_version.sh $NEXT\`).") \
+      || die "pushed $branch but could not open its pull request; open it by hand against staging"
+    ok "opened $next for review: $pr (merge it once its checks pass)"
+  fi
 fi
 
 info "released $VERSION ($SHORT). Next:"
