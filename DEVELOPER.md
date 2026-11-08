@@ -452,9 +452,28 @@ If you have made changes to the code and want to redeploy the relay:
 
 2. **Image-only redeploy** (updates only the stack's image, keeping the template and every other parameter):
    ```bash
-   bash aws/deploy_relay.sh --handle "my-relay" --passphrase "my-secret-passphrase" --redeploy-only
+   bash aws/deploy_relay.sh --handle "my-relay" --redeploy-only
    ```
-   Use this when only the code changed.
+   Use this when only the code changed. The passphrase is not needed: it stays in the stack's Secrets Manager secret.
+
+### Rolling every relay of a network (`scripts/roll_relays.sh`)
+
+Once more than one relay runs, `scripts/roll_relays.sh` redeploys all of a network's relays onto one commit, checks each one started, and records the roll (issue #399). Which relays you run is your own deployment, so they are listed in an inventory file outside this repository; `aws/relays.example.env` documents the format (one `RELAY=<handle> <stack> <region> <ec2|express> <node file>` line per relay). Point `BINGLE_RELAYS_FILE` at it, set `BINGLE_NETWORK` to `testnet` or `mainnet`, sign in to the network's AWS account, and run from a clean checkout:
+
+```bash
+scripts/roll_relays.sh --dry-run
+```
+
+```bash
+scripts/roll_relays.sh
+```
+
+- **TestNet** rolls the commit checked out, which must be on `origin/staging` (normally its head). **MainNet** rolls only `origin/deployed`, and only when its `vX.Y.Z` tag names it. The image is tagged `X.Y.Z-<commit>` on TestNet and `X.Y.Z` on MainNet.
+- Before changing anything it refuses an AWS account other than the inventory's `ACCOUNT_ID`, an inventory for another network, and a stack whose `Handle` or `NodeFile` differs from the inventory.
+- Relays roll one at a time, in inventory order, with `deploy_relay.sh --redeploy-only`. Each must then log a start of this commit's build (`Bingle CLI starting ... (git <sha>`) within `START_TIMEOUT` seconds (300), and no `RELAY STARTUP ABORTED`. The first failure stops the roll and the remaining relays keep their old image.
+- `--check-relays <ACCOUNT>` also runs `bingle_cli checkrelays` afterwards, as the account file `<ACCOUNT>.json` in `BINGLE_ACCOUNTS_DIR`.
+- The roll is recorded as a GitHub deployment in the `testnet` or `mainnet` environment (commit, version, image tag, relay count and outcome; no AWS account, stack or handle, as the repository is public). The release checks the `testnet` record. `BINGLE_NO_RECORD=1` skips it.
+- `scripts/roll_relays.sh --check-inventory <file>` checks an inventory file without AWS.
 
 ### Shutting Down and Deleting Resources
 
