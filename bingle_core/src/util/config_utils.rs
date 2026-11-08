@@ -103,7 +103,7 @@ pub fn parse_stun_list(s: &str) -> Result<Vec<SocketAddr>, String> {
             .or_else(|| {
                 p.to_socket_addrs()
                     .ok()
-                    .and_then(|it| it.filter(|addr| addr.is_ipv4()).next())
+                    .and_then(|mut it| it.find(|addr| addr.is_ipv4()))
             });
 
         if let Some(addr) = parsed {

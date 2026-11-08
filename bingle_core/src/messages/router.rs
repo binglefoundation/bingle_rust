@@ -13,12 +13,11 @@ use crate::api::bingle_api::{
 #[cfg(feature = "test-hooks")]
 pub fn only_from_relay(msg: &Message) -> bool {
     match msg {
-        Message::Relay(rm) => match rm {
+        Message::Relay(
             RelayMessage::TriangleTest2(_)
             | RelayMessage::TriangleTest3(_)
-            | RelayMessage::RelayCalled(_) => true,
-            _ => false,
-        },
+            | RelayMessage::RelayCalled(_),
+        ) => true,
         Message::Ddb(dm) => match dm {
             DdbMessage::Signon(_) => true,
             DdbMessage::UpsertResolve(m) => m.rippled,
@@ -34,12 +33,11 @@ pub fn only_from_relay(msg: &Message) -> bool {
             _ => false,
         },
         Message::Mutex(_) => true,
-        Message::ReportFail(rf) => match rf {
+        Message::ReportFail(
             ReportFailMessage::ReportFailedRipple(_)
             | ReportFailMessage::ReportFailedRippleResponse(_)
-            | ReportFailMessage::ReportFailedComplete(_) => true,
-            _ => false,
-        },
+            | ReportFailMessage::ReportFailedComplete(_),
+        ) => true,
         _ => false,
     }
 }

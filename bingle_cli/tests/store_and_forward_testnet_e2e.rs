@@ -139,10 +139,10 @@ fn load_config() -> TestnetConfig {
 fn ensure_registered(cfg: &TestnetConfig, address: &str, mnemonic: &str, handle: &str) {
     let ops = test_util::ops_from_mnemonic(address, mnemonic, cfg.algo_config.clone());
     let ab = AlgoBingle::new(ops.clone(), cfg.app_id, cfg.asset_id);
-    if let Ok(Some(existing)) = ab.handle_for_address(cfg.app_id, address) {
-        if existing == handle {
-            return; // already registered with this handle
-        }
+    if let Ok(Some(existing)) = ab.handle_for_address(cfg.app_id, address)
+        && existing == handle
+    {
+        return; // already registered with this handle
     }
     test_util::register_client_on_blockchain(
         address,

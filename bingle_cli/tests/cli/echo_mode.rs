@@ -4,8 +4,8 @@ use serde_json::json;
 /// Returns Some(echo_message) if the incoming message is a PlainTextMessage, None otherwise.
 fn build_echo_response(message: &serde_json::Value) -> Option<serde_json::Value> {
     if let Some(text) = message.get("text").and_then(|v| v.as_str()) {
-        let is_plain = message.get("app").map_or(true, |v| v.is_null())
-            && message.get("type").map_or(true, |v| v.is_null());
+        let is_plain = message.get("app").is_none_or(|v| v.is_null())
+            && message.get("type").is_none_or(|v| v.is_null());
         if is_plain {
             let echo_text = format!("Echo: {}", text);
             return Some(json!({ "text": echo_text }));

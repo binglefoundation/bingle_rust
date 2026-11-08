@@ -179,10 +179,9 @@ pub fn testnet_user_reaches_endpoint_available() {
     let final_state = loop {
         if let Some(st) =
             api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.engine_state_for_tests())
+            && (st == EngineState::Registered || st == EngineState::NATRestricted)
         {
-            if st == EngineState::Registered || st == EngineState::NATRestricted {
-                break st;
-            }
+            break st;
         }
         if start.elapsed() > timeout {
             panic!(

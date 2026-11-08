@@ -88,13 +88,10 @@ fn inspect_offline_is_an_error_not_a_cached_status() {
 
     let mut source = BingleApiLocalImpl::new(LocalApiConfig::default());
     let other = source.generate_keypair().expect("keypair");
-    match api.inspect_passphrase(other.passphrase) {
-        Ok(status) => {
-            // Only possible with a reachable node; then it must describe the inspected account.
-            assert_eq!(status.id.as_deref(), Some(other.id.as_str()));
-            assert_ne!(status.status, "ACTIVE");
-        }
-        Err(_) => {}
+    if let Ok(status) = api.inspect_passphrase(other.passphrase) {
+        // Only possible with a reachable node; then it must describe the inspected account.
+        assert_eq!(status.id.as_deref(), Some(other.id.as_str()));
+        assert_ne!(status.status, "ACTIVE");
     }
 
     let _ = std::fs::remove_file(&path);

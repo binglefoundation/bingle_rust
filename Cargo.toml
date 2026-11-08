@@ -14,18 +14,6 @@ members = [
 # remove its lints here (set back to "warn"/"deny"). Members opt in with
 # `[lints] workspace = true`. See scripts/run_quality_checks.sh.
 [workspace.lints.clippy]
-# #13 simplifiable control flow
-collapsible_if = "allow"
-collapsible_match = "allow"
-match_like_matches_macro = "allow"
-single_match = "allow"
-if_same_then_else = "allow"
-manual_range_contains = "allow"
-manual_contains = "allow"
-unnecessary_map_or = "allow"
-manual_unwrap_or_default = "allow"
-manual_unwrap_or = "allow"
-filter_next = "allow"
 # #14 redundant clones/conversions/allocations & misc style
 useless_vec = "allow"
 useless_conversion = "allow"

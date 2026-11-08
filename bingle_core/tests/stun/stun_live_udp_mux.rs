@@ -10,10 +10,10 @@ use bingle_core::stun::{StunEndpointFinder, StunEndpointFinderImpl, StunState};
 static FINDER: OnceLock<Arc<Mutex<StunEndpointFinderImpl>>> = OnceLock::new();
 
 fn stun_handler(_src: &dyn NetworkMux, from: &SocketAddr, data: &[u8]) {
-    if let Some(f_arc) = FINDER.get() {
-        if let Ok(mut f) = f_arc.lock() {
-            f.process_packet(*from, data);
-        }
+    if let Some(f_arc) = FINDER.get()
+        && let Ok(mut f) = f_arc.lock()
+    {
+        f.process_packet(*from, data);
     }
 }
 

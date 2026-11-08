@@ -164,10 +164,7 @@ fn dh_1024_rejected() {
     );
 
     // 4) Assert failure
-    let ok_val = match ok {
-        Ok(v) => v,
-        Err(_) => false,
-    };
+    let ok_val = ok.unwrap_or_default();
     assert!(
         !ok_val,
         "Handshake should have failed for 1024-bit DH parameters"
@@ -241,10 +238,7 @@ fn rsa_1024_server_cert_rejected() {
     );
 
     // 4) Assert failure
-    let ok_val = match ok {
-        Ok(v) => v,
-        Err(_) => false,
-    };
+    let ok_val = ok.unwrap_or_default();
     assert!(
         !ok_val,
         "Handshake should have failed for 1024-bit RSA server certificate"

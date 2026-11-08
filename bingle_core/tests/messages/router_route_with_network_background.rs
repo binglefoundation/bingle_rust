@@ -63,10 +63,10 @@ pub fn route_with_network_runs_handler_on_background_thread() {
         .expect("background handler should start");
 
     for _ in 0..20 {
-        if let Ok(guard) = finished.lock() {
-            if *guard {
-                return;
-            }
+        if let Ok(guard) = finished.lock()
+            && *guard
+        {
+            return;
         }
         std::thread::sleep(Duration::from_millis(20));
     }

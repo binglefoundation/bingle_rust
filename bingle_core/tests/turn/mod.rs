@@ -31,7 +31,7 @@ pub fn unit_turn_handle_call_allocates_in_range_and_reuses() {
     assert!(ch1 >= 0, "channel should be non-negative");
     let ch1u = ch1 as u16;
     assert!(
-        ch1u >= 0x4000 && ch1u <= 0x7FFE,
+        (0x4000..=0x7FFE).contains(&ch1u),
         "channel in TURN range: {:#X}",
         ch1u
     );

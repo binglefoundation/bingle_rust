@@ -577,13 +577,13 @@ pub fn identity_refusal_holds(refused_at: Option<Instant>, now: Instant) -> bool
 /// refusal (#309) is not retryable.
 #[doc(hidden)]
 pub fn map_error(operation: &str, error: anyhow::Error) -> BingleError {
-    if let Some(se) = error.downcast_ref::<SidewinderError>() {
-        if matches!(
+    if let Some(se) = error.downcast_ref::<SidewinderError>()
+        && matches!(
             se.kind,
             SidewinderErrorKind::HostUnreachable | SidewinderErrorKind::TransientFailure
-        ) {
-            return BingleError::Retryable(format!("sidewinder {operation}: {se}"));
-        }
+        )
+    {
+        return BingleError::Retryable(format!("sidewinder {operation}: {se}"));
     }
     BingleError::Other(format!("sidewinder {operation} failed: {error}"))
 }

@@ -123,19 +123,18 @@ pub fn bingle_api_send_via_relay() {
         let a_addr_capture_inner = a_addr_capture.clone();
         let th: bingle_core::dtls::network_mux_trait::HandleTurn = Arc::new(
             move |source: &dyn NetworkMux, from: &SocketAddr, packet: &[u8]| {
-                if let Ok(mut g) = a_addr_capture_inner.lock() {
-                    if g.is_none() {
-                        *g = Some(*from);
-                    }
+                if let Ok(mut g) = a_addr_capture_inner.lock()
+                    && g.is_none()
+                {
+                    *g = Some(*from);
                 }
                 if let Some(wrapped) =
                     turn_clone.handle_turn_incoming(Some(from), Some(relay_addr), packet)
+                    && let Some(udp) = source.as_any().downcast_ref::<UdpNetworkMux>()
                 {
-                    if let Some(udp) = source.as_any().downcast_ref::<UdpNetworkMux>() {
-                        let nsk = NetworkEndpoint::new_direct(wrapped.ip_address);
-                        tracing::info!("Relay forwarding (TURN->RAW) from {} to {}", from, nsk);
-                        let _ = udp.write(&nsk, &wrapped.message);
-                    }
+                    let nsk = NetworkEndpoint::new_direct(wrapped.ip_address);
+                    tracing::info!("Relay forwarding (TURN->RAW) from {} to {}", from, nsk);
+                    let _ = udp.write(&nsk, &wrapped.message);
                 }
             },
         );
@@ -153,12 +152,12 @@ pub fn bingle_api_send_via_relay() {
                         None => return,
                     }
                 };
-                if let Some(wrapped) = turn_clone2.send_turn_outgoing(&from_addr, &a_addr, packet) {
-                    if let Some(udp) = source.as_any().downcast_ref::<UdpNetworkMux>() {
-                        let nsk = NetworkEndpoint::new_direct(wrapped.ip_address);
-                        tracing::info!("Relay forwarding (RAW->TURN) from {} to {}", from, nsk);
-                        let _ = udp.write(&nsk, &wrapped.message);
-                    }
+                if let Some(wrapped) = turn_clone2.send_turn_outgoing(&from_addr, &a_addr, packet)
+                    && let Some(udp) = source.as_any().downcast_ref::<UdpNetworkMux>()
+                {
+                    let nsk = NetworkEndpoint::new_direct(wrapped.ip_address);
+                    tracing::info!("Relay forwarding (RAW->TURN) from {} to {}", from, nsk);
+                    let _ = udp.write(&nsk, &wrapped.message);
                 }
             },
         );

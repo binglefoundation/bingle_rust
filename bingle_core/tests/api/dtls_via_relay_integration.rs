@@ -230,13 +230,12 @@ pub fn dtls_send_via_relay_end_to_end() {
             tracing::info!("dtls_client received: {:?} on ${issuer}", unwrapped);
             if let Ok(message) = serde_json::from_slice::<Message>(unwrapped) {
                 tracing::info!("Parsed message: {:?}", message);
-                if let Message::Relay(RelayMessage::RelayResponse(relay_response)) = message {
-                    if let Some(channel) = relay_response.channel {
-                        if let Ok(mut guard) = captured_channel_clone.lock() {
-                            *guard = Some(channel);
-                            tracing::info!("Captured channel: {}", channel);
-                        }
-                    }
+                if let Message::Relay(RelayMessage::RelayResponse(relay_response)) = message
+                    && let Some(channel) = relay_response.channel
+                    && let Ok(mut guard) = captured_channel_clone.lock()
+                {
+                    *guard = Some(channel);
+                    tracing::info!("Captured channel: {}", channel);
                 }
             } else {
                 tracing::warn!("Failed to parse message from JSON bytes");
@@ -264,11 +263,11 @@ pub fn dtls_send_via_relay_end_to_end() {
     let start = Instant::now();
     let mut channel_received = false;
     while start.elapsed() < Duration::from_secs(60) {
-        if let Ok(guard) = captured_channel.lock() {
-            if guard.is_some() {
-                channel_received = true;
-                break;
-            }
+        if let Ok(guard) = captured_channel.lock()
+            && guard.is_some()
+        {
+            channel_received = true;
+            break;
         }
         std::thread::sleep(Duration::from_millis(20));
     }

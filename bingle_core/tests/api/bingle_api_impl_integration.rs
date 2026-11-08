@@ -100,32 +100,32 @@ pub fn relay_check_end_to_end_on_message_receives_response() {
             let _ = server.send(from, &ack);
         }
         let unwrapped = test_util::maybe_unwrap_data_single(data);
-        if let Ok(text) = std::str::from_utf8(unwrapped) {
-            if let Ok(v) = serde_json::from_str::<serde_json::Value>(text) {
-                let is_check = v.get("type").and_then(|x| x.as_str()) == Some("Check")
-                    && v.get("app").map(|a| a.is_null()).unwrap_or(true);
-                if is_check {
-                    let mut obj = serde_json::Map::new();
-                    obj.insert("app".to_string(), serde_json::Value::Null);
+        if let Ok(text) = std::str::from_utf8(unwrapped)
+            && let Ok(v) = serde_json::from_str::<serde_json::Value>(text)
+        {
+            let is_check = v.get("type").and_then(|x| x.as_str()) == Some("Check")
+                && v.get("app").map(|a| a.is_null()).unwrap_or(true);
+            if is_check {
+                let mut obj = serde_json::Map::new();
+                obj.insert("app".to_string(), serde_json::Value::Null);
+                obj.insert(
+                    "type".to_string(),
+                    serde_json::Value::String("CheckResponse".to_string()),
+                );
+                obj.insert(
+                    "state".to_string(),
+                    serde_json::Value::String("available".to_string()),
+                );
+                if let Some(tag) = v.get("tag").and_then(|t| t.as_str()) {
                     obj.insert(
-                        "type".to_string(),
-                        serde_json::Value::String("CheckResponse".to_string()),
+                        "responseTag".to_string(),
+                        serde_json::Value::String(tag.to_string()),
                     );
-                    obj.insert(
-                        "state".to_string(),
-                        serde_json::Value::String("available".to_string()),
-                    );
-                    if let Some(tag) = v.get("tag").and_then(|t| t.as_str()) {
-                        obj.insert(
-                            "responseTag".to_string(),
-                            serde_json::Value::String(tag.to_string()),
-                        );
-                    }
-                    if let Ok(bytes) = serde_json::to_vec(&serde_json::Value::Object(obj)) {
-                        let _ = server.send(from, &bytes);
-                    }
-                    return;
                 }
+                if let Ok(bytes) = serde_json::to_vec(&serde_json::Value::Object(obj)) {
+                    let _ = server.send(from, &bytes);
+                }
+                return;
             }
         }
     }

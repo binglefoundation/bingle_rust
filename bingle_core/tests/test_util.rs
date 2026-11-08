@@ -463,11 +463,11 @@ pub fn register_client_on_blockchain(
     let timeout = Duration::from_secs(30);
     let mut ok = false;
     while start.elapsed() < timeout {
-        if let Ok(Some(entries)) = ops.local_state_for_account(app_id, address) {
-            if entries.iter().any(|(k, v)| k == "Handle" && v == handle) {
-                ok = true;
-                break;
-            }
+        if let Ok(Some(entries)) = ops.local_state_for_account(app_id, address)
+            && entries.iter().any(|(k, v)| k == "Handle" && v == handle)
+        {
+            ok = true;
+            break;
         }
         std::thread::sleep(Duration::from_millis(500));
     }
@@ -484,10 +484,9 @@ pub fn wait_for_registered(api: &Arc<BingleApiImpl>, timeout: Duration) -> bool 
     while start.elapsed() < timeout {
         if let Some(st) =
             api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.engine_state_for_tests())
+            && st == EngineState::Registered
         {
-            if st == EngineState::Registered {
-                return true;
-            }
+            return true;
         }
         std::thread::sleep(Duration::from_millis(25));
     }

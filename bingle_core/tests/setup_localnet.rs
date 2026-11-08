@@ -43,17 +43,17 @@ fn parse_funded_account(list_output: &str) -> Option<String> {
             if addr.is_none() && is_addr_token(t) {
                 addr = Some(t);
             }
-            if let Ok(v) = t.parse::<u128>() {
-                if v > score {
-                    score = v;
-                }
+            if let Ok(v) = t.parse::<u128>()
+                && v > score
+            {
+                score = v;
             }
         }
-        if let Some(a) = addr {
-            if score >= best_score {
-                best_score = score;
-                best_addr = Some(a.to_string());
-            }
+        if let Some(a) = addr
+            && score >= best_score
+        {
+            best_score = score;
+            best_addr = Some(a.to_string());
         }
     }
     best_addr
@@ -127,13 +127,11 @@ pub fn ensure_localnet_accounts_funded(
                 if let Ok(b) =
                     AlgoOps::new_for_algorand(None, Some(addr.to_string()), Some(cfg.clone()))
                         .account_balance()
+                    && let Some(v) = b
+                    && v >= 900.0
                 {
-                    if let Some(v) = b {
-                        if v >= 900.0 {
-                            needs_fund = false;
-                            break;
-                        }
-                    }
+                    needs_fund = false;
+                    break;
                 }
             }
         }

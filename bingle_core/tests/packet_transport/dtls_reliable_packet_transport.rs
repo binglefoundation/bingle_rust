@@ -101,11 +101,11 @@ impl Dtls for MockDtls {
 
         if self.auto_ack_on_send && data.len() >= 4 {
             let packet_type = data[0] & 0x0F;
-            if packet_type == 0x01 {
-                if let Some(handler) = self.handle_message.lock().unwrap().clone() {
-                    let ack_complete_packet = vec![0x14, 0x00, data[2], data[3]];
-                    handler(self, to, "mock-auto-ack", &ack_complete_packet);
-                }
+            if packet_type == 0x01
+                && let Some(handler) = self.handle_message.lock().unwrap().clone()
+            {
+                let ack_complete_packet = vec![0x14, 0x00, data[2], data[3]];
+                handler(self, to, "mock-auto-ack", &ack_complete_packet);
             }
         }
 

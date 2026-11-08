@@ -57,13 +57,12 @@ pub fn end_to_end_turn_relay_forwards_payload() {
                 move |source: &dyn NetworkMux, from: &SocketAddr, packet: &[u8]| {
                     if let Some(wrapped) =
                         turn_clone.handle_turn_incoming(Some(from), Some(relay_addr), packet)
+                        && let Some(udp) = source.as_any().downcast_ref::<UdpNetworkMux>()
                     {
-                        if let Some(udp) = source.as_any().downcast_ref::<UdpNetworkMux>() {
-                            let nsk = bingle_core::api::bingle_api::NetworkEndpoint::new_direct(
-                                wrapped.ip_address,
-                            );
-                            let _ = udp.write(&nsk, &wrapped.message);
-                        }
+                        let nsk = bingle_core::api::bingle_api::NetworkEndpoint::new_direct(
+                            wrapped.ip_address,
+                        );
+                        let _ = udp.write(&nsk, &wrapped.message);
                     }
                 },
             );

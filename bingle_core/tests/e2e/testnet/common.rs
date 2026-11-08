@@ -94,10 +94,9 @@ pub fn start_api_and_wait(options: &StartOptions) -> (Arc<BingleApiImpl>, Engine
     let final_state = loop {
         if let Some(st) =
             api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.engine_state_for_tests())
+            && (st == EngineState::Registered || st == EngineState::NATRestricted)
         {
-            if st == EngineState::Registered || st == EngineState::NATRestricted {
-                break st;
-            }
+            break st;
         }
         if start.elapsed() > timeout {
             panic!(
