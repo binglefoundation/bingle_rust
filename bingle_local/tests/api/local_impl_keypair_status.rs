@@ -221,9 +221,8 @@ fn test_generate_keypair_clears_memoized_active() {
     api.generate_keypair().expect("generate");
     // No memo now: with default config and no node, status must not be ACTIVE (either a non-ACTIVE
     // status or a blockchain error — both acceptable, but never a false ACTIVE).
-    match api.keypair_status() {
-        Ok(s) => assert_ne!(s.status, "ACTIVE", "memo should be cleared on regenerate"),
-        Err(_) => {}
+    if let Ok(s) = api.keypair_status() {
+        assert_ne!(s.status, "ACTIVE", "memo should be cleared on regenerate")
     }
 
     let _ = std::fs::remove_file(&path);
@@ -252,12 +251,11 @@ fn test_memoized_handle_not_trusted_for_different_app() {
 
     // The stale cross-app memo must not short-circuit to ACTIVE. With no live registration on app
     // 222 the status resolves to non-ACTIVE (or a blockchain error) — never a false ACTIVE.
-    match api.keypair_status() {
-        Ok(s) => assert_ne!(
+    if let Ok(s) = api.keypair_status() {
+        assert_ne!(
             s.status, "ACTIVE",
             "stale cross-app memo must not read as ACTIVE"
-        ),
-        Err(_) => {}
+        )
     }
     let _ = std::fs::remove_file(&path);
 }

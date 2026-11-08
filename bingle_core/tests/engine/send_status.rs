@@ -94,10 +94,11 @@ impl Dtls for SucceedingDtls {
             return Err("simulated send failure".to_string());
         }
         // Auto-ack FRPT DATA_SINGLE so that packet_transport::send completes immediately
-        if data.len() >= 4 && (data[0] & 0x0F) == 0x01 {
-            if let Some(h) = self.handler.lock().ok().and_then(|g| g.clone()) {
-                h(self, to, "mock-auto-ack", &[0x14, 0x00, data[2], data[3]]);
-            }
+        if data.len() >= 4
+            && (data[0] & 0x0F) == 0x01
+            && let Some(h) = self.handler.lock().ok().and_then(|g| g.clone())
+        {
+            h(self, to, "mock-auto-ack", &[0x14, 0x00, data[2], data[3]]);
         }
         Ok(())
     }

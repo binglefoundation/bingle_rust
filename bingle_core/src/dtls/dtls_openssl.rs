@@ -2194,11 +2194,10 @@ pub mod openssl_impl {
                 data.len()
             );
             // Validate destination key: allow either direct inet address or relay channel+address
-            let endpoint: &NetworkEndpoint = if to.inet_socket_address().is_some() {
-                to
-            } else if to.relay_channel().is_some()
-                && to.relay_address().is_some()
-                && to.relay_id().is_some()
+            let endpoint: &NetworkEndpoint = if to.inet_socket_address().is_some()
+                || (to.relay_channel().is_some()
+                    && to.relay_address().is_some()
+                    && to.relay_id().is_some())
             {
                 to
             } else {

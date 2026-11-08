@@ -83,9 +83,12 @@ if [[ "${MODE}" == "fix" ]]; then
 
   section "clippy --fix (all targets)"
   cargo clippy "${FIX_TARGETS[@]}" --fix
+  # the feature-gated integration target the gate lints below; --allow-dirty because the pass above
+  # has just edited the tree.
+  cargo clippy "${GATED_CLIPPY_TARGETS[@]}" --fix --allow-dirty
 
   section "verify the tree still compiles"
-  if ! cargo check "${CLIPPY_TARGETS[@]}"; then
+  if ! cargo check "${CLIPPY_TARGETS[@]}" || ! cargo check "${GATED_CLIPPY_TARGETS[@]}"; then
     echo -e "${RED}clippy --fix produced code that does not compile — reverting its changes.${NC}"
     git restore .
     echo "Reverted. Apply clippy suggestions manually instead (see '$0 --detail')."

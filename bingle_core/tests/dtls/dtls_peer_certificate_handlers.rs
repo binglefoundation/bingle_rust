@@ -84,10 +84,10 @@ fn echo_handler(
     data: &[u8],
 ) {
     // Ignore DTLS record-layer types if any (not expected for application handler)
-    if let Some(first) = data.first() {
-        if *first == 22 || *first == 23 {
-            return;
-        }
+    if let Some(first) = data.first()
+        && (*first == 22 || *first == 23)
+    {
+        return;
     }
     let mut echoed = b"ECHOED: ".to_vec();
     echoed.extend_from_slice(data);

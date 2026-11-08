@@ -199,15 +199,15 @@ pub fn dtls_openssl_multi_client_loopback_echo() {
     );
 
     // Optionally, validate server observed both original payloads.
-    if let Some(mtx) = SERVER_SEEN.get() {
-        if let Ok(list) = mtx.lock() {
-            // The order is not guaranteed; check set membership.
-            let have1 = list.iter().any(|v| v.as_slice() == payload1);
-            let have2 = list.iter().any(|v| v.as_slice() == payload2);
-            assert!(
-                have1 && have2,
-                "server did not observe both client payloads"
-            );
-        }
+    if let Some(mtx) = SERVER_SEEN.get()
+        && let Ok(list) = mtx.lock()
+    {
+        // The order is not guaranteed; check set membership.
+        let have1 = list.iter().any(|v| v.as_slice() == payload1);
+        let have2 = list.iter().any(|v| v.as_slice() == payload2);
+        assert!(
+            have1 && have2,
+            "server did not observe both client payloads"
+        );
     }
 }

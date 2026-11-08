@@ -1336,15 +1336,16 @@ impl BingleJsiApiImpl {
             // Watchdog: note (but tolerate) a send taking a long time. We never start a concurrent
             // send, so a stuck send just defers delivery until it returns (bounded by the send
             // path's own timeouts). The scheduler itself keeps running.
-            if let Some((id, since)) = &in_flight {
-                if !warned_stuck && since.elapsed() > SEND_WATCHDOG {
-                    tracing::warn!(
-                        "[BingleJsiApiImpl] pending message {} send exceeded {:?}; deferring further drains until it completes",
-                        id,
-                        SEND_WATCHDOG
-                    );
-                    warned_stuck = true;
-                }
+            if let Some((id, since)) = &in_flight
+                && !warned_stuck
+                && since.elapsed() > SEND_WATCHDOG
+            {
+                tracing::warn!(
+                    "[BingleJsiApiImpl] pending message {} send exceeded {:?}; deferring further drains until it completes",
+                    id,
+                    SEND_WATCHDOG
+                );
+                warned_stuck = true;
             }
 
             // Hand off the oldest eligible pending message when the worker is free and the

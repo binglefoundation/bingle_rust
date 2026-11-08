@@ -59,10 +59,10 @@ pub fn dtls_openssl_end_to_end_loopback_echo() {
     ) {
         // Ignore DTLS record-layer datagrams (Handshake=22, Application=23) that may arrive
         // when the server is in plaintext fallback mode; we only want to record real app payload.
-        if let Some(first) = data.first() {
-            if *first == 22 || *first == 23 {
-                return;
-            }
+        if let Some(first) = data.first()
+            && (*first == 22 || *first == 23)
+        {
+            return;
         }
         let _ = SERVER_ECHOED.lock().unwrap().replace(data.to_vec());
         let mut echoed = b"ECHOED: ".to_vec();

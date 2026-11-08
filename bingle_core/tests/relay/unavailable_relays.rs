@@ -50,10 +50,10 @@ impl InnerBingleApi for MockApi {
             let mut count = self.get_relays_status_calls.lock().unwrap();
             *count += 1;
             let addr = nsk.inet_socket_address().expect("direct endpoint required");
-            if let Some(fail_addr) = *self.get_relays_status_fail_for.lock().unwrap() {
-                if addr == fail_addr {
-                    return Err(BingleError::Other("DDB query failed".into()));
-                }
+            if let Some(fail_addr) = *self.get_relays_status_fail_for.lock().unwrap()
+                && addr == fail_addr
+            {
+                return Err(BingleError::Other("DDB query failed".into()));
             }
             let host = self.relay_addr.ip().to_string();
             let port = self.relay_addr.port();

@@ -141,9 +141,7 @@ pub fn reset_state_after_blocked_recovers_to_consistent() {
         .iter()
         .rposition(|s| *s == StunState::Consistent)
         .expect("Consistent must appear");
-    let blocked_after_consistent = state_seq[consistent_pos + 1..]
-        .iter()
-        .any(|s| *s == StunState::Blocked);
+    let blocked_after_consistent = state_seq[consistent_pos + 1..].contains(&StunState::Blocked);
     assert!(
         !blocked_after_consistent,
         "Blocked appeared after Consistent — unexpected state regression"

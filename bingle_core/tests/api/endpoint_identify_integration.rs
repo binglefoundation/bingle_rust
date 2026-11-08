@@ -270,9 +270,10 @@ pub fn bingle_api_register_via_forced_stun() {
     // (allow indexer/DTLS timing variability).
     let wait_start = Instant::now();
     while wait_start.elapsed() < Duration::from_secs(60) {
-        match client1.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.engine_state_for_tests()) {
-            Some(EngineState::Registered) => break,
-            _ => {}
+        if let Some(EngineState::Registered) =
+            client1.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.engine_state_for_tests())
+        {
+            break;
         }
         std::thread::sleep(Duration::from_millis(25));
     }
@@ -297,23 +298,21 @@ pub fn bingle_api_register_via_forced_stun() {
     let mut r1_ok = false;
     let mut r2_ok = false;
     while wait_ddb_start.elapsed() < Duration::from_secs(60) {
-        if !r1_ok {
-            if relay1
+        if !r1_ok
+            && relay1
                 .with_engine_mut(|e| e.ddb_backend_lookup_for_tests(&client1_id))
                 .is_some()
-            {
-                tracing::info!("[Test] Relay 1 has DDB entry for client 1");
-                r1_ok = true;
-            }
+        {
+            tracing::info!("[Test] Relay 1 has DDB entry for client 1");
+            r1_ok = true;
         }
-        if !r2_ok {
-            if relay2
+        if !r2_ok
+            && relay2
                 .with_engine_mut(|e| e.ddb_backend_lookup_for_tests(&client1_id))
                 .is_some()
-            {
-                tracing::info!("[Test] Relay 2 has DDB entry for client 1");
-                r2_ok = true;
-            }
+        {
+            tracing::info!("[Test] Relay 2 has DDB entry for client 1");
+            r2_ok = true;
         }
         if r1_ok && r2_ok {
             break;

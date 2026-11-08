@@ -196,7 +196,7 @@ impl BingleLocalApi for DummyLocal {
         Ok(self
             .messages
             .iter()
-            .filter(|m| m.progress.map_or(false, |p| p < 1.0))
+            .filter(|m| m.progress.is_some_and(|p| p < 1.0))
             .cloned()
             .collect())
     }

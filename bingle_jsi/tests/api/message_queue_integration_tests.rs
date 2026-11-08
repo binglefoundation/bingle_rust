@@ -28,10 +28,10 @@ impl BingleApiInternal for MockBingleApi {
         "off".to_string()
     }
     fn notify_listening(&self, listening: bool, nat_type: bingle_core::engine::NatType) {
-        if let Ok(guard) = self.on_listening.lock() {
-            if let Some(handler) = guard.as_ref() {
-                handler(listening, nat_type);
-            }
+        if let Ok(guard) = self.on_listening.lock()
+            && let Some(handler) = guard.as_ref()
+        {
+            handler(listening, nat_type);
         }
     }
 }
@@ -232,7 +232,7 @@ fn test_message_queue_with_mock_progress() {
         std::thread::sleep(Duration::from_millis(1000));
         let msgs = jsi.get_messages().unwrap();
         if let Some(msg) = msgs.iter().find(|m| m.timestamp == timestamp) {
-            if msg.progress.map_or(false, |p| p >= 0.5) {
+            if msg.progress.is_some_and(|p| p >= 0.5) {
                 reached_0_5 = true;
             }
             if msg.progress == Some(1.0) {
@@ -310,7 +310,7 @@ fn queued_message_gains_failure_reason_then_clears_on_success() {
             && let Some(reason) = &m.failure_reason
         {
             assert!(
-                m.progress.map_or(true, |p| p < 1.0),
+                m.progress.is_none_or(|p| p < 1.0),
                 "message must stay pending while it is still being retried"
             );
             assert_eq!(reason, "Recipient unreachable — will keep retrying");

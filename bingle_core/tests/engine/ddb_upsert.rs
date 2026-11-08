@@ -135,19 +135,16 @@ pub fn ddb_upsert_success_when_server_is_relay() {
     let got_update_flag = got_update.clone();
     client.access_unsafe_for_tests(|c: &mut BingleApiImpl| {
         c.set_on_message(Some(Arc::new(move |_sender, _handle, msg| {
-            if let Some(t) = msg.get("type").and_then(|v: &serde_json::Value| v.as_str()) {
-                if t == "updateResponse"
-                    && msg.get("app").and_then(|v: &serde_json::Value| v.as_str()) == Some("ddb")
-                {
-                    if msg
-                        .get("responseTag")
-                        .and_then(|v: &serde_json::Value| v.as_str())
-                        .is_some()
-                        && msg.get("tag").is_none()
-                    {
-                        got_update_flag.store(true, Ordering::SeqCst);
-                    }
-                }
+            if let Some(t) = msg.get("type").and_then(|v: &serde_json::Value| v.as_str())
+                && t == "updateResponse"
+                && msg.get("app").and_then(|v: &serde_json::Value| v.as_str()) == Some("ddb")
+                && msg
+                    .get("responseTag")
+                    .and_then(|v: &serde_json::Value| v.as_str())
+                    .is_some()
+                && msg.get("tag").is_none()
+            {
+                got_update_flag.store(true, Ordering::SeqCst);
             }
         })))
     });

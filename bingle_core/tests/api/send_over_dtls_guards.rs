@@ -38,15 +38,16 @@ impl Dtls for MockDtls {
             .inet_socket_address()
             .expect("MockDtls::send requires inet_socket_address");
         self.sends.lock().unwrap().push((addr, data.to_vec()));
-        if data.len() >= 4 && (data[0] & 0x0F) == 0x01 {
-            if let Some(h) = self.handle_message.lock().unwrap().clone() {
-                h(
-                    self,
-                    to,
-                    "mock-auto-ack",
-                    &vec![0x14, 0x00, data[2], data[3]],
-                );
-            }
+        if data.len() >= 4
+            && (data[0] & 0x0F) == 0x01
+            && let Some(h) = self.handle_message.lock().unwrap().clone()
+        {
+            h(
+                self,
+                to,
+                "mock-auto-ack",
+                &vec![0x14, 0x00, data[2], data[3]],
+            );
         }
         Ok(())
     }
