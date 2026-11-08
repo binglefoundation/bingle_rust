@@ -1,0 +1,34 @@
+name: pr-base-guard
+
+# Enforce the CLAUDE.md rule that a pull request which is NOT a draft must target `staging`, the
+# default branch (#399). Stacked work stays in draft with its feature-branch base until that base
+# merges, then retargets to staging and is marked ready: a ready PR based on a feature branch merges
+# into that branch and silently never reaches staging. `deployed` is never a PR base; it only
+# fast-forwards to a staging commit (RELEASING.md). Require the "base-is-staging" check in branch
+# protection to block merge.
+on:
+  pull_request:
+    # `edited` catches a base-branch change and `ready_for_review` a draft being promoted;
+    # `synchronize` re-runs it on every push, because branch protection wants the required check on
+    # the head commit.
+    types: [opened, reopened, ready_for_review, edited, synchronize]
+
+permissions:
+  contents: read
+
+jobs:
+  base-is-staging:
+    name: base-is-staging
+    runs-on: ubuntu-latest
+    # only ready PRs are constrained; a draft may target any base.
+    if: github.event.pull_request.draft == false
+    steps:
+      - name: Require base branch staging
+        env:
+          BASE: ${{ github.event.pull_request.base.ref }}
+        run: |
+          if [ "$BASE" != "staging" ]; then
+            echo "::error::A ready-for-review PR must target 'staging', but this one targets '$BASE'. Keep stacked work in draft until its base merges, then retarget to staging and mark it ready."
+            exit 1
+          fi
+          echo "base branch is staging"
