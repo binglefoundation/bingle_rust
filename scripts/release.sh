@@ -19,7 +19,8 @@
 #   3. fast-forwards `deployed` to it (no merge, no commit of its own; a push that is not a
 #      fast-forward is refused), which starts deploy.yml, and waits for that run;
 #   4. opens the next version: commits `chore: open X.Y.Z` (scripts/bump_version.sh) onto staging and
-#      pushes it — the one commit that reaches staging without a pull request, as it is mechanical;
+#      pushes it — the one commit that reaches staging without a pull request, as it is mechanical
+#      (the push skips staging's required checks, so it needs a repository admin);
 #   5. prints the follow-ups: roll MainNet, and the bingle_ux_rn pickup.
 # Each step is skipped when already done, so re-running the same command resumes a release that
 # stopped part way. See RELEASING.md.
@@ -169,7 +170,7 @@ else
   git worktree add --quiet --detach "$work" origin/staging
   next=$( (cd "$work" && scripts/bump_version.sh "$NEXT") | sed -n 's/.* -> //p')
   (cd "$work" && git commit --quiet -am "chore: open $next" && git push --quiet origin HEAD:refs/heads/staging) \
-    || die "could not push the $next bump to staging (did staging move? re-run to bump the new head)"
+    || die "could not push the $next bump to staging: staging moved (re-run to bump the new head), or your login is not a repository admin, which the staging protection requires"
   git worktree remove --force "$work"
   ok "staging carries $next"
 fi
