@@ -86,7 +86,7 @@ Move the app's version and its `react-native-bingle-jsi` dependency to the relea
 
 Every crate and `bingle_jsi/package.json` carry one version. `scripts/bump_version.sh` sets it everywhere: each crate's `[package] version`, the version pins on the workspace's path dependencies, the npm module, and the lockfile. `scripts/bump_version.sh --check` fails unless they all agree.
 
-`staging` always carries the next, unreleased version. A release does not bump anything: it releases the version the commit already carries, and then `scripts/release.sh` commits `chore: open X.Y.(Z+1)` on branch `chore/open-X.Y.(Z+1)` and opens its pull request against `staging`, which is protected like any other branch. Merge it once its checks pass. `--next-minor` or `--next-major` open a different version; one can also be set by an ordinary PR before the next roll.
+`staging` always carries the next, unreleased version. A release does not bump anything: it releases the version the commit already carries, and then `scripts/release.sh` commits `chore: open X.Y.(Z+1)` straight onto `staging`. That is the one commit that reaches `staging` without a pull request, because it is mechanical; the push skips `staging`'s required checks, which only a repository admin may do (one-time setup, below). `--next-minor` or `--next-major` open a different version; one can also be set by an ordinary PR before the next roll.
 
 ## `scripts/release.sh`
 
@@ -97,7 +97,7 @@ What one run does:
 3. **Checks its staging CI:** `quality`, `unit`, `integration` and `android-e2e` must each have succeeded on the commit. A newer push to `staging` cancels an older commit's `integration` and `android-e2e` runs, so releasing the head of `staging` avoids a commit with no result.
 4. **Promotes:** after a confirmation (`--yes` skips it), pushes the commit to `deployed`. The push is refused unless it is a fast-forward, so nothing is merged and `deployed` gains no commit of its own.
 5. **Publishes:** the push starts `deploy.yml`, and the script waits for it.
-6. **Opens the next version** as a pull request against `staging`, unless `staging` has already moved past the released version or a `chore/open-*` pull request is already open.
+6. **Opens the next version** on `staging`, unless `staging` has already moved past the released version.
 7. **Prints the follow-ups:** roll MainNet, and the bingle_ux_rn pickup.
 
 Every step is skipped when already done, so re-running the same command resumes. If `deploy.yml` failed, fix the cause, run `gh run rerun <run id> --failed`, then re-run the command.
@@ -145,7 +145,7 @@ Done once, by a repository, crates.io and npm owner:
 3. **npm Trusted Publishing** for `react-native-bingle-jsi`: npmjs.com, the package, Settings, Trusted Publisher, GitHub Actions: organization `binglefoundation`, repository `bingle_rust`, workflow `deploy.yml`, no environment, and tick **Allow npm publish** (without it only `npm stage publish` is allowed, and the publish fails with `403 ... OIDC permission denied for this action`).
 4. **GitHub Environments** `testnet` and `mainnet` (Settings, Environments). `roll_relays.sh` records deployments in them; no protection rules are needed.
 5. **Protect `deployed`:** no force pushes, no deletion, and require the `quality`, `unit`, `integration` and `android-e2e` checks, which ran on the commit when it reached `staging`: `gh api -X PUT repos/binglefoundation/bingle_rust/branches/deployed/protection --input - <<<'{"required_status_checks":{"strict":false,"contexts":["quality","unit","integration","android-e2e"]},"enforce_admins":false,"required_pull_request_reviews":null,"restrictions":null,"allow_force_pushes":false,"allow_deletions":false}'`
-6. **Require `base-is-staging`** on `staging`, alongside `quality` and `unit`.
+6. **Require `base-is-staging`** on `staging`, alongside `quality` and `unit`, leaving **Do not allow bypassing the above settings** off. Whoever runs `scripts/release.sh` must be a repository **admin**: the checks are enforced for everyone else, so a maintainer's push of `chore: open X.Y.Z` is refused with `protected branch hook declined`.
 7. **Rehearse** `deploy.yml` on `staging` (above) before the first real release.
 8. **After the first release through the pipeline:** revoke the local crates.io token (crates.io, Account Settings, API Tokens; then `cargo logout`), revoke any npm automation token, and set the npm package's publishing access to require two-factor authentication and disallow tokens.
 
@@ -168,4 +168,4 @@ Only if the pipeline cannot run (Trusted Publishing down, say). It needs a crate
 3. Run the checks and dry runs: `scripts/check_fresh_resolution.sh && scripts/check_no_test_hooks_in_release.sh && DRY_RUN=1 scripts/publish_crates.sh && DRY_RUN=1 scripts/publish_npm.sh`.
 4. Publish: `scripts/publish_crates.sh`, then `(cd bingle_jsi && npm publish --access public)` (a hand publish has no provenance, so `publish_npm.sh` is not used).
 5. Fast-forward `deployed` and tag: `git push origin <sha>:refs/heads/deployed` (this starts `deploy.yml`, which finds everything published and only tags), or tag by hand with `git tag -a vX.Y.Z <sha> -m "release vX.Y.Z" && git push origin vX.Y.Z`.
-6. Open the next version on `staging`: `scripts/bump_version.sh --next-patch`, commit `chore: open X.Y.(Z+1)` on a branch, and open its pull request against `staging`.
+6. Open the next version on `staging`: `scripts/bump_version.sh --next-patch`, commit `chore: open X.Y.(Z+1)`, push to `staging` (as a repository admin).
