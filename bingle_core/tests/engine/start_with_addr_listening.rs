@@ -5,7 +5,7 @@ use std::sync::{
 };
 use std::time::{Duration, Instant};
 
-use crate::engine::ddb_upsert::test_util::init_test_logging;
+use crate::util::test_util::init_test_logging;
 use bingle_core::api::bingle_api::{BingleApi, Handle, NetworkEndpoint, StartOptions, UserId};
 use bingle_core::dtls::{Dtls, HandleMessage, HandlePeerCertificate, Result as DtlsResult};
 use bingle_core::engine::Engine;

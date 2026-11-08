@@ -2,12 +2,11 @@ use bingle_core::engine::BingleAccessUnsafeForTests;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 
+use crate::util::test_util;
 use algo_ops::byte_key_to_address;
 use bingle_core::api::bingle_api::{BingleApi, NetworkEndpoint};
 use bingle_core::api::bingle_api_impl::BingleApiImpl;
 use bingle_core::dtls::{Dtls, HandleMessage, HandlePeerCertificate, Result};
-#[path = "../test_util.rs"]
-pub mod test_util;
 
 #[derive(Clone)]
 struct MockDtls {

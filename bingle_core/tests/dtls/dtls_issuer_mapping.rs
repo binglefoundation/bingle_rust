@@ -3,11 +3,10 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use crate::relay::lookup_root_id::test_util::init_test_logging;
+use crate::util::test_util::init_test_logging;
 use bingle_core::dtls::{Dtls, DtlsOpenSsl, Result as DtlsResult};
 
-#[path = "pki.rs"]
-pub mod pki;
+use crate::util::pki;
 
 // Helpers to parse CN from a PEM cert
 fn extract_subject_cn(pem: &[u8]) -> String {

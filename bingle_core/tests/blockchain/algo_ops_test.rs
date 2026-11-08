@@ -1,6 +1,5 @@
+use crate::util::test_util;
 use bingle_test::tests_common::{self, backends::real::RealBackend};
-#[path = "../test_util.rs"]
-pub mod test_util;
 
 #[test]
 #[cfg(not(target_os = "ios"))]

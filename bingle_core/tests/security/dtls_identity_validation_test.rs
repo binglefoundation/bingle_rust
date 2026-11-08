@@ -7,8 +7,7 @@ use bingle_core::api::bingle_api::{BingleApi, Handle, NetworkEndpoint, StartOpti
 use bingle_core::api::bingle_api_impl::BingleApiImpl;
 use bingle_core::engine::BingleAccessUnsafeForTests;
 
-#[path = "../test_util.rs"]
-pub mod test_util;
+use crate::util::test_util;
 
 fn addr(port: u16) -> SocketAddr {
     SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port)

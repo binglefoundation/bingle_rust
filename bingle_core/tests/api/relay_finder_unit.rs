@@ -12,8 +12,7 @@ use bingle_core::messages::types::{DdbMessage, DdbRelaysStatusResponse, Message}
 use bingle_core::relay::relay_finder::{RelayFinder, RelayFinderTestTrait};
 use serde_json::Value as JsonValue;
 
-#[path = "../test_util.rs"]
-pub mod test_util;
+use crate::util::test_util;
 
 #[derive(Clone)]
 struct MockApi {

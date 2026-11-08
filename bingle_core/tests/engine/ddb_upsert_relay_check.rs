@@ -5,9 +5,6 @@ use bingle_core::ddb::AdvertRecord;
 use bingle_core::engine::Engine;
 use std::sync::Arc;
 
-#[path = "../test_util.rs"]
-pub mod test_util;
-
 struct DummyApi {
     pub app_id: Option<u64>,
     pub config: Option<algo_ops::AlgoChainConfig>,

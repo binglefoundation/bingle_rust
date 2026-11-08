@@ -5,8 +5,7 @@ use bingle_core::protocol::cert_verify::{dump_ca_public_key_info, dump_cert_info
 use bingle_core::protocol::{ISSUER_SUFFIX, VIRTUAL_CA};
 
 // Import predefined test passphrases and addresses
-#[path = "../test_util.rs"]
-pub mod test_util;
+use crate::util::test_util;
 
 #[test]
 #[cfg(not(target_os = "ios"))]

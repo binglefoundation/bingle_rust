@@ -12,10 +12,8 @@ use serial_test::serial;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::time::{Duration, Instant};
 
-#[path = "../setup_localnet.rs"]
-pub mod setup_localnet;
-#[path = "../test_util.rs"]
-pub mod test_util;
+use crate::setup_localnet;
+use crate::util::test_util;
 
 // Integration test: use BingleApiImpl as the entry point, but mock out
 // the discovery by forcing STUN consistent on the underlying Engine. We avoid

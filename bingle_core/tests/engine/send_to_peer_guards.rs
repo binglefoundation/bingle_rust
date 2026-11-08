@@ -1,5 +1,5 @@
-use crate::relay::lookup_root_id::test_util::init_test_logging;
 use crate::util::reusable_mock_api::MockApiBoth;
+use crate::util::test_util::init_test_logging;
 use bingle_core::api::bingle_api::{NetworkEndpoint, StartOptions};
 use bingle_core::dtls::network_mux_udp::UdpNetworkMux;
 use bingle_core::dtls::{Dtls, HandleMessage};

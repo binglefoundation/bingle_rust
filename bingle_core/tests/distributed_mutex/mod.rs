@@ -1,4 +1,6 @@
 // Grouped tests for distributed_mutex module
+// Shared helpers, declared once (issue #11).
+pub mod common;
 
 #[path = "basic.rs"]
 pub mod basic;

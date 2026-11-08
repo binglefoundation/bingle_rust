@@ -7,8 +7,7 @@ use bingle_core::api::bingle_api::{BingleError, NetworkEndpoint, SendFailureKind
 use bingle_core::ddb::{AdvertRecord, DdbClient, DdbClientImpl, InetSocketAddress};
 use bingle_core::relay::relay_finder::RelayInfo;
 
-#[path = "../../test_util.rs"]
-pub mod test_util;
+use crate::util::test_util;
 
 struct MockLookupApi {
     pub response: JsonValue,

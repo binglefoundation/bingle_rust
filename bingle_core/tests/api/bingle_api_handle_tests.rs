@@ -6,8 +6,7 @@ use serde_json::json;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 
-#[path = "../test_util.rs"]
-pub mod test_util;
+use crate::util::test_util;
 
 #[derive(Clone)]
 struct MockDtls {

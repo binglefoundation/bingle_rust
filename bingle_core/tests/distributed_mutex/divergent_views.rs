@@ -5,9 +5,9 @@ use std::sync::{
 use std::thread;
 use std::time::Duration;
 
-use bingle_core::distributed_mutex::DistributedMutex;
-pub mod common;
+use crate::distributed_mutex::common;
 use crate::util::test_util::init_test_logging;
+use bingle_core::distributed_mutex::DistributedMutex;
 use common::TestNetwork;
 
 /// Two late joiners that start with different membership views, C with A, B, C and D with

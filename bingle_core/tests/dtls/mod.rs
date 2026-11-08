@@ -50,8 +50,7 @@ pub mod dtls_debug_sequence;
 
 #[path = "dtls_client_reconnect.rs"]
 pub mod dtls_client_reconnect;
-#[path = "pki.rs"]
-pub mod pki;
+use crate::util::pki;
 #[path = "test_handlers.rs"]
 pub mod test_handlers;
 

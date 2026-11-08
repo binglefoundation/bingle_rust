@@ -1,11 +1,10 @@
+use crate::dtls::test_handlers;
+use crate::util::pki;
+use crate::util::test_util;
+use bingle_core::dtls::{Dtls, DtlsOpenSsl};
 use std::net::SocketAddr;
 use std::thread;
 use std::time::Duration;
-pub mod pki;
-pub mod test_handlers;
-#[path = "../test_util.rs"]
-pub mod test_util;
-use bingle_core::dtls::{Dtls, DtlsOpenSsl};
 use test_handlers::*;
 use test_util::init_test_logging;
 

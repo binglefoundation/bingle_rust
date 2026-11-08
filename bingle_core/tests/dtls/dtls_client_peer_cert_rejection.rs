@@ -3,8 +3,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::Duration;
 
+use crate::util::pki;
 use bingle_core::dtls::{Dtls, DtlsOpenSsl, Result as DtlsResult};
-pub mod pki;
 
 fn reject_handler(_cert_pem: &[u8], _ca_pem: &[u8]) -> DtlsResult<String> {
     Err("rejected".to_string())

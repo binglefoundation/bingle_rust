@@ -1,12 +1,11 @@
-use crate::api::bingle_api_impl_integration::test_util::ADDRESS_SPEND;
-use crate::relay::relay_states::test_util::init_test_logging;
+use crate::util::test_util::ADDRESS_SPEND;
+use crate::util::test_util::init_test_logging;
 use bingle_core::api::bingle_api::{BingleApi, Handle, NetworkEndpoint, StartOptions};
 use bingle_core::api::bingle_api_impl::BingleApiImpl;
 use bingle_core::engine::BingleAccessUnsafeForTests;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
-#[path = "../test_util.rs"]
-pub mod test_util;
+use crate::util::test_util;
 
 #[test]
 #[cfg(not(target_os = "ios"))]
@@ -66,8 +65,7 @@ pub fn relay_check_end_to_end_on_message_receives_response() {
 
     use bingle_core::dtls::{Dtls, DtlsOpenSsl};
 
-    #[path = "../dtls/pki.rs"]
-    pub mod pki;
+    use crate::util::pki;
 
     fn mock_peer_cert_handler(_cert: &[u8], _ca: &[u8]) -> bingle_core::dtls::Result<String> {
         Ok(test_util::ADDRESS_SPEND.to_string())

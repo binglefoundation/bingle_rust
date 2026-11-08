@@ -6,8 +6,7 @@ use bingle_core::api::bingle_api::{NetworkEndpoint, ProgressCallback, UserId};
 use bingle_core::engine::RelayState;
 use bingle_core::relay::relay_finder::{RelayFinder, RelayFinderTestTrait, RelayFinderTrait};
 
-#[path = "../test_util.rs"]
-pub mod test_util;
+use crate::util::test_util;
 
 #[derive(Clone)]
 struct MockApi {

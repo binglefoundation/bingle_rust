@@ -5,8 +5,7 @@ use crate::util::reusable_mock_api::{InnerBingleApi, MockApiBoth, to_weak_api_bo
 use bingle_core::api::bingle_api::{NetworkEndpoint, ProgressCallback, UserId};
 use bingle_core::relay::relay_finder::{RelayFinder, RelayFinderTrait};
 
-#[path = "../test_util.rs"]
-pub mod test_util;
+use crate::util::test_util;
 
 #[derive(Clone)]
 struct MockApi;

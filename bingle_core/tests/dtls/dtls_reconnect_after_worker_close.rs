@@ -3,10 +3,9 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
-pub mod pki;
-pub mod test_handlers;
-#[path = "../test_util.rs"]
-pub mod test_util;
+use crate::dtls::test_handlers;
+use crate::util::pki;
+use crate::util::test_util;
 
 use bingle_core::api::bingle_api::NetworkEndpoint;
 use bingle_core::dtls::{Dtls, DtlsOpenSsl, UdpNetworkMux};

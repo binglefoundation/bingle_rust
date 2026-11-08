@@ -64,8 +64,7 @@ impl InnerBingleApi for MockApi {
 use crate::util::reusable_mock_api::{InnerBingleApi, MockApiBoth, to_weak_api_both};
 use bingle_core::relay::relay_finder::{RelayFinder, RelayFinderTestTrait, RelayInfo};
 
-#[path = "../test_util.rs"]
-pub mod test_util;
+use crate::util::test_util;
 
 #[test]
 #[cfg(not(target_os = "ios"))]

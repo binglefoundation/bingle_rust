@@ -4,9 +4,8 @@ use std::sync::Arc;
 use bingle_core::api::bingle_api::{NetworkEndpoint, ProgressCallback, UserId};
 use bingle_core::relay::relay_finder::{RelayFinder, RelayFinderTestTrait, RelayFinderTrait};
 
-#[path = "../test_util.rs"]
-pub mod test_util;
 use crate::util::reusable_mock_api::{InnerBingleApi, MockApiBoth};
+use crate::util::test_util;
 use bingle_core::engine::RelayState;
 
 #[derive(Clone)]

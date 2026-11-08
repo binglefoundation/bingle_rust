@@ -3,10 +3,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
 
-#[path = "pki.rs"]
-pub mod pki;
-#[path = "../test_util.rs"]
-pub mod test_util;
+use crate::util::pki;
+use crate::util::test_util;
 
 use bingle_core::api::bingle_api::NetworkEndpoint;
 use bingle_core::dtls::{Dtls, DtlsOpenSsl, UdpNetworkMux};

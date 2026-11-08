@@ -12,8 +12,7 @@ use bingle_core::api::bingle_api_impl::BingleApiImpl;
 use bingle_core::messages::marshal;
 use bingle_core::messages::types::*;
 
-#[path = "../test_util.rs"]
-pub mod test_util;
+use crate::util::test_util;
 
 fn start_pair(
     server_am_relay: bool,

@@ -5,9 +5,9 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use crate::util::pki;
 use crate::util::test_util::project_tmp_dir_path;
 use bingle_core::dtls::{Dtls, DtlsOpenSsl};
-pub mod pki;
 
 fn mock_peer_cert_handler(_cert: &[u8], _ca: &[u8]) -> bingle_core::dtls::Result<String> {
     Ok("MOCK-ISSUER".to_string())

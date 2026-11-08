@@ -3,12 +3,11 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use crate::engine::ddb_upsert::test_util::init_test_logging;
+use crate::util::test_util::init_test_logging;
 use bingle_core::dtls::{Dtls, DtlsOpenSsl};
 
-pub mod pki;
-#[path = "../test_util.rs"]
-pub mod test_util;
+use crate::util::pki;
+use crate::util::test_util;
 
 fn mock_peer_cert_handler(_cert: &[u8], _ca: &[u8]) -> bingle_core::dtls::Result<String> {
     Ok(test_util::ADDRESS_SPEND.to_string())
