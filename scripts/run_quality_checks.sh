@@ -57,14 +57,12 @@ CLIPPY_TARGETS=(--workspace --all-targets)
 # unnoticed (issue #225) — this only compiles them, it does not run them.
 GATED_CLIPPY_TARGETS=(-p bingle_cli --features sidewinder_localnet,sidewinder_testnet --test integration)
 
-# Target set for `clippy --fix`: lib + bins only, NOT test targets. The test tree
-# includes shared helpers (e.g. tests/test_util.rs) via `#[path = "../test_util.rs"]`
-# from dozens of files, so a single `clippy --fix --all-targets` pass sees those
-# files many times and applies each suggestion repeatedly, corrupting them ("prefix
-# `ok` is unknown", mismatched delimiters). lib/bins are single-membership units, so
-# fixing only those is safe. Test-code lints are still *reported* (via CLIPPY_TARGETS)
-# but not auto-fixed; apply those manually or restructure the duplicate #[path] mods.
-FIX_TARGETS=(--workspace --lib --bins)
+# Target set for `clippy --fix`: every target, tests included. `clippy --fix` applies a suggestion
+# once per time a compilation sees the file, so a file `#[path]`-included into several modules of
+# one test target gets each edit applied repeatedly and is corrupted ("prefix `ok` is unknown",
+# mismatched delimiters). Shared test helpers are therefore declared once per target and imported
+# elsewhere (issue #11), e.g. `use crate::util::test_util;`; keep it that way.
+FIX_TARGETS=(--workspace --all-targets)
 
 # rustfmt package set: the whole workspace.
 FMT_ARGS=(--all)
@@ -73,11 +71,9 @@ section() { echo -e "\n${BOLD}${YELLOW}== $1 ==${NC}"; }
 
 # ------------------------------------------------------------------ fix mode
 if [[ "${MODE}" == "fix" ]]; then
-  # `cargo clippy --fix` rewrites source and corrupts files that are #[path]-included
-  # into multiple compilation units (see FIX_TARGETS above), so we fix lib + bins only.
-  # To stay safe we also (1) refuse to run on a dirty tree — so its edits are the only
-  # uncommitted changes and are trivially reviewable/revertible — (2) verify the result
-  # still compiles across all targets, and (3) auto-revert clippy's edits if it broke
+  # To stay safe, fix mode (1) refuses to run on a dirty tree — so its edits are the only
+  # uncommitted changes and are trivially reviewable/revertible — (2) verifies the result
+  # still compiles across all targets, and (3) auto-reverts clippy's edits if it broke
   # the build. Only then do we run rustfmt (which is deterministic and safe).
   if [[ -n "$(git status --porcelain 2>/dev/null)" ]]; then
     echo -e "${RED}fix mode needs a clean git tree${NC} (so clippy's edits stay reviewable/revertible)."
@@ -85,7 +81,7 @@ if [[ "${MODE}" == "fix" ]]; then
     exit 1
   fi
 
-  section "clippy --fix (lib + bins only)"
+  section "clippy --fix (all targets)"
   cargo clippy "${FIX_TARGETS[@]}" --fix
 
   section "verify the tree still compiles"

@@ -2,9 +2,6 @@ use crate::util::reusable_mock_api::MockApiBoth;
 use bingle_core::api::bingle_api::StartOptions;
 use bingle_core::engine::Engine;
 
-#[path = "../test_util.rs"]
-pub mod test_util;
-
 #[test]
 #[cfg(not(target_os = "ios"))]
 pub fn engine_turn_handler_fails_when_no_public_addr() {

@@ -3,8 +3,7 @@ use bingle_core::api::bingle_api_impl::BingleApiImpl;
 use bingle_core::ddb::{AdvertRecord, InetSocketAddress};
 use bingle_core::engine::BingleAccessUnsafeForTests;
 
-#[path = "../test_util.rs"]
-pub mod test_util;
+use crate::util::test_util;
 
 #[test]
 pub fn test_ddb_upsert_record_mandatory_verification() {

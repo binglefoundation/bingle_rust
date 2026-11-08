@@ -6,11 +6,7 @@ use bingle_core::api::bingle_api::{BingleApi, Handle, StartOptions};
 use bingle_core::api::bingle_api_impl::BingleApiImpl;
 use bingle_core::engine::BingleAccessUnsafeForTests;
 
-#[path = "../test_util.rs"]
-pub mod test_util;
-
-#[path = "../dtls/pki.rs"]
-pub mod pki;
+use crate::util::test_util;
 
 #[derive(Debug)]
 struct UdpStream(UdpSocket);

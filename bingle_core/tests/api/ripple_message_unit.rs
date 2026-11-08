@@ -5,8 +5,7 @@ use bingle_core::dtls::{Dtls, HandleMessage, HandlePeerCertificate, Result};
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 
-#[path = "../test_util.rs"]
-pub mod test_util;
+use crate::util::test_util;
 
 #[derive(Clone)]
 struct MockDtls {

@@ -15,11 +15,9 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-#[path = "../test_util.rs"]
-pub mod test_util;
+use crate::util::test_util;
 
-#[path = "../dtls/pki.rs"]
-pub mod pki;
+use crate::util::pki;
 
 fn addr(port: u16) -> SocketAddr {
     SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port)

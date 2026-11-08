@@ -3,8 +3,8 @@ use std::sync::Mutex;
 use std::thread;
 use std::time::{Duration, Instant};
 
+use crate::util::pki;
 use bingle_core::dtls::{Dtls, DtlsOpenSsl, Result as DtlsResult};
-pub mod pki;
 
 // Storage for captured peer certificates and CA bytes
 static SERVER_CERTS_SEEN: Mutex<Option<Vec<Vec<u8>>>> = Mutex::new(None);

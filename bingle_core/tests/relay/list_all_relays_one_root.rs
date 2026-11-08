@@ -3,8 +3,7 @@ use bingle_core::api::bingle_api::{NetworkEndpoint, ProgressCallback, UserId};
 use bingle_core::relay::relay_finder::{RelayFinder, RelayFinderTrait, RelayInfo};
 use std::sync::Arc;
 
-#[path = "../test_util.rs"]
-pub mod test_util;
+use crate::util::test_util;
 
 struct GetRelaysMockApi {
     pub call_count: Arc<std::sync::atomic::AtomicUsize>,

@@ -4,8 +4,7 @@ use bingle_core::engine::BingleAccessUnsafeForTests;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-#[path = "../test_util.rs"]
-pub mod test_util;
+use crate::util::test_util;
 
 #[test]
 #[cfg(not(target_os = "ios"))]

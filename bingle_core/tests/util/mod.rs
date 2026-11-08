@@ -1,8 +1,13 @@
 // This util mod groups utilities and tests under util/ namespace for the integration test crate.
 // Expose common test utilities as a submodule so imports like crate::util::test_util::X work.
+// test_util and pki are declared here only, once per test target, and used elsewhere as
+// `crate::util::test_util` / `crate::util::pki` (issue #11): tooling that rewrites source, such as
+// `clippy --fix`, corrupts a file that is `#[path]`-included more than once.
 #[macro_use]
 #[path = "../test_util.rs"]
 pub mod test_util;
+#[path = "../dtls/pki.rs"]
+pub mod pki;
 
 #[path = "arc_retry.rs"]
 pub mod arc_retry;

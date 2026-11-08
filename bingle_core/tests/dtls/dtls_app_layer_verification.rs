@@ -9,7 +9,7 @@ use std::time::Duration;
 use crate::util::test_util::init_test_logging;
 use bingle_core::dtls::{Dtls, DtlsOpenSsl, Result as DtlsResult};
 
-pub mod pki;
+use crate::util::pki;
 
 fn reject_handler(_cert_pem: &[u8], _ca_pem: &[u8]) -> DtlsResult<String> {
     Err("rejected".to_string())

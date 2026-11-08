@@ -1,10 +1,8 @@
 // tests/blockchain/algo_bingle/register_uniqueness.rs
 use bingle_core::blockchain::algo_bingle::AlgoBingle;
 
-#[path = "../../setup_localnet.rs"]
-pub mod setup_localnet;
-#[path = "../../test_util.rs"]
-pub mod test_util;
+use crate::setup_localnet;
+use crate::util::test_util;
 
 #[test]
 #[cfg(not(target_os = "ios"))]

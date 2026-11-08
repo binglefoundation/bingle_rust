@@ -10,8 +10,7 @@ use bingle_core::api::bingle_api_impl::BingleApiImpl;
 use bingle_core::ddb::{DdbClient, DdbClientImpl};
 use bingle_core::engine::BingleAccessUnsafeForTests;
 
-#[path = "../../test_util.rs"]
-pub mod test_util;
+use crate::util::test_util;
 
 fn start_pair() -> (
     Arc<BingleApiImpl>,

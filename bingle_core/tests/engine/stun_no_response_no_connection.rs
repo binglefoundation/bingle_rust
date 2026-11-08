@@ -19,7 +19,7 @@ use std::sync::{
 };
 use std::time::{Duration, Instant};
 
-use crate::engine::ddb_upsert::test_util::init_test_logging;
+use crate::util::test_util::init_test_logging;
 use bingle_core::api::bingle_api::{
     BingleApi, Handle, NetworkEndpoint, OnListeningHandler, StartOptions, UserId,
 };

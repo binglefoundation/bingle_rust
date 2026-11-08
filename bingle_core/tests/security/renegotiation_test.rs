@@ -1,7 +1,6 @@
 use openssl::ssl::SslOptions;
 
-#[path = "../test_util.rs"]
-pub mod test_util;
+use crate::util::test_util;
 
 // Note: the live-handshake companion test (dtls_handshake_succeeds_with_renegotiation_disabled)
 // was flaky and has been moved to tests/flaky/renegotiation_handshake.rs. This config-only

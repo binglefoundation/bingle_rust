@@ -16,11 +16,11 @@ use std::sync::{
 };
 use std::time::{Duration, Instant};
 // Re-use helpers from send_message_to_id_integration
-use super::relay_updater_localnet::test_util::start_root_relay;
 use crate::setup_localnet;
 use crate::util::relay_test_util::wait_for_relays_visible;
 use crate::util::test_util;
 use crate::util::test_util::register_client_on_blockchain;
+use crate::util::test_util::start_root_relay;
 
 // Re-use helpers from send_message_to_id_integration
 use super::send_message_to_id_integration::register_relays;

@@ -22,8 +22,7 @@ impl InnerBingleApi for MockApi {
     }
 }
 
-#[path = "../test_util.rs"]
-pub mod test_util;
+use crate::util::test_util;
 
 #[test]
 #[cfg(not(target_os = "ios"))]

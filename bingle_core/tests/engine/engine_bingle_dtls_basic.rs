@@ -9,8 +9,7 @@ use std::time::{Duration, Instant};
 use bingle_core::api::bingle_api::{BingleApi, NetworkEndpoint, StartOptions};
 use bingle_core::api::bingle_api_impl::BingleApiImpl;
 
-#[path = "../test_util.rs"]
-pub mod test_util;
+use crate::util::test_util;
 
 #[ntest::timeout(30_000)]
 #[test]

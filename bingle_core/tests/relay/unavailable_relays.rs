@@ -1,13 +1,12 @@
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::{Arc, Mutex};
 
-use crate::ddb::ddb_client_lookup::test_util::init_test_logging;
+use crate::util::test_util::init_test_logging;
 use bingle_core::api::bingle_api::{BingleError, NetworkEndpoint, ProgressCallback, UserId};
 use bingle_core::relay::relay_finder::{RelayFinder, RelayFinderTrait};
 
-#[path = "../test_util.rs"]
-pub mod test_util;
 use crate::util::reusable_mock_api::{InnerBingleApi, MockApiBoth};
+use crate::util::test_util;
 
 struct MockApi {
     check_calls: Arc<Mutex<usize>>,

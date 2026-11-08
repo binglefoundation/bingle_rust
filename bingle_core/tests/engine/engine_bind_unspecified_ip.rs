@@ -4,8 +4,7 @@ use bingle_core::api::bingle_api::{BingleApi, StartOptions};
 use bingle_core::api::bingle_api_impl::BingleApiImpl;
 use bingle_core::engine::BingleAccessUnsafeForTests;
 
-#[path = "../test_util.rs"]
-pub mod test_util;
+use crate::util::test_util;
 
 #[ntest::timeout(15_000)]
 #[test]

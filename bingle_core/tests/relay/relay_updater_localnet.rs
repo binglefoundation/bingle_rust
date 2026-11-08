@@ -14,10 +14,8 @@ use bingle_core::relay::discovery::indexer_discover_closure;
 use bingle_core::relay::relay_finder::{RelayFinderTrait, RelayInfo};
 use bingle_core::relay::relay_updater::RelayUpdater;
 
-#[path = "../setup_localnet.rs"]
-mod setup_localnet;
-#[path = "../test_util.rs"]
-pub mod test_util;
+use crate::setup_localnet;
+use crate::util::test_util;
 
 #[test]
 #[cfg(not(target_os = "ios"))]

@@ -2,8 +2,7 @@ use bingle_core::api::pki::generate_pki_from_ops;
 use openssl::pkey::Id;
 use openssl::x509::X509;
 
-#[path = "../test_util.rs"]
-pub mod test_util;
+use crate::util::test_util;
 
 #[test]
 fn pki_generation_uses_expected_algorithms() {

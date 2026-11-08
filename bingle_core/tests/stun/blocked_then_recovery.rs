@@ -10,7 +10,7 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use crate::api::ripple_message_unit::test_util::init_test_logging;
+use crate::util::test_util::init_test_logging;
 use bingle_core::dtls::{NetworkMux, UdpNetworkMux};
 use bingle_core::stun::{
     SimpleStunServer, SimpleStunStartOptions, StunEndpointFinder, StunEndpointFinderImpl, StunState,

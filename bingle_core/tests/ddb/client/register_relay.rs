@@ -1,8 +1,8 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use crate::relay::relay_states::test_util::init_test_logging;
 use crate::util::reusable_mock_api::{InnerBingleApi, MockApiBoth, to_weak_api_both};
+use crate::util::test_util::init_test_logging;
 use bingle_core::api::bingle_api::{
     BingleApi, BingleApiInternal, NetworkEndpoint, ProgressCallback, StartOptions, UserId,
 };
@@ -10,8 +10,7 @@ use bingle_core::api::bingle_api_impl::BingleApiImpl;
 use bingle_core::ddb::{DdbClient, DdbClientImpl};
 use bingle_core::engine::BingleAccessUnsafeForTests;
 
-#[path = "../../test_util.rs"]
-pub mod test_util;
+use crate::util::test_util;
 
 fn start_pair() -> (
     Arc<BingleApiImpl>,

@@ -13,9 +13,6 @@ use bingle_core::turn::turn_handler::TurnHandler;
 
 use crate::util::reusable_mock_api::{InnerBingleApiInternal, MockApiBoth};
 
-#[path = "../test_util.rs"]
-pub mod test_util;
-
 fn addr(port: u16) -> SocketAddr {
     SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port)
 }
