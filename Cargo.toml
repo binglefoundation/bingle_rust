@@ -14,23 +14,6 @@ members = [
 # remove its lints here (set back to "warn"/"deny"). Members opt in with
 # `[lints] workspace = true`. See scripts/run_quality_checks.sh.
 [workspace.lints.clippy]
-# #14 redundant clones/conversions/allocations & misc style
-useless_vec = "allow"
-useless_conversion = "allow"
-clone_on_copy = "allow"
-needless_borrow = "allow"
-unnecessary_to_owned = "allow"
-explicit_auto_deref = "allow"
-to_string_in_format_args = "allow"
-unnecessary_get_then_check = "allow"
-needless_return = "allow"
-let_unit_value = "allow"
-default_constructed_unit_structs = "allow"
-manual_repeat_n = "allow"
-same_item_push = "allow"
-expect_fun_call = "allow"
-needless_range_loop = "allow"
-len_zero = "allow"
 # #15 type complexity (needs `type` aliases)
 type_complexity = "allow"
 # #16 API-signature / design lints
