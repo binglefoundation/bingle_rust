@@ -25,7 +25,7 @@ fn setup_node(name: &str, port: u16, passphrase: &str) -> Arc<BingleApiImpl> {
     let api = BingleApiImpl::new(&opts);
 
     api.access_unsafe_for_tests(|a| a.start(&opts))
-        .expect(&format!("start api for {}", name));
+        .unwrap_or_else(|_| panic!("start api for {}", name));
     api
 }
 
@@ -117,7 +117,7 @@ fn dtls_unregistered_identity_is_rejected_in_engine() {
     {
         let msgs = received_messages.lock().unwrap();
         assert!(
-            msgs.len() > 0,
+            !msgs.is_empty(),
             "Message SHOULD have been received because identity was accepted by mock"
         );
     }

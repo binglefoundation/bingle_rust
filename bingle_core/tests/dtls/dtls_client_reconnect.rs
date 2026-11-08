@@ -190,7 +190,7 @@ fn do_roundtrip(client: &dyn Dtls, server_addr: SocketAddr, label: &str) {
     let echoed = SERVER_CLIENT_ECHOED_2.lock().unwrap();
     let echoed_vec = echoed
         .as_ref()
-        .expect(&format!("{} server did not receive client's echo", label));
+        .unwrap_or_else(|| panic!("{} server did not receive client's echo", label));
     assert_eq!(
         echoed_vec.as_slice(),
         b"CLIENT ECHOED: Ping",

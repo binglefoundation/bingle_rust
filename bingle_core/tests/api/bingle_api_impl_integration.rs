@@ -125,7 +125,6 @@ pub fn relay_check_end_to_end_on_message_receives_response() {
                 if let Ok(bytes) = serde_json::to_vec(&serde_json::Value::Object(obj)) {
                     let _ = server.send(from, &bytes);
                 }
-                return;
             }
         }
     }

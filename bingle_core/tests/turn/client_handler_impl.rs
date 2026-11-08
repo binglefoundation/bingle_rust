@@ -14,7 +14,7 @@ fn build_channel_data(channel: u16, data: &[u8]) -> Vec<u8> {
     out.extend_from_slice(&(data.len() as u16).to_be_bytes());
     out.extend_from_slice(data);
     if pad > 0 {
-        out.extend(std::iter::repeat(0u8).take(pad));
+        out.extend(std::iter::repeat_n(0u8, pad));
     }
     out
 }

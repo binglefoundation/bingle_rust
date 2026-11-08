@@ -58,6 +58,6 @@ pub fn route_invokes_on_ping_ping() {
     let msg = Message::Ping(PingMessage::Ping(ping));
     router.route(&handler, &msg, "SOMEISSUER.");
 
-    let got = flag.lock().unwrap().clone();
+    let got = *flag.lock().unwrap();
     assert!(got, "on_ping_ping was not called");
 }

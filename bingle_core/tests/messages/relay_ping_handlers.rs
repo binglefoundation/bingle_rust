@@ -267,7 +267,7 @@ pub fn on_triangle_test1_sends_triangle_test2_to_peer() {
     let (to, data) = &records[0];
     assert_eq!(*to, peer);
 
-    let text = std::str::from_utf8(&data).expect("utf8");
+    let text = std::str::from_utf8(data).expect("utf8");
     let msg = from_json_str(text).expect("decode");
     match msg {
         Message::Relay(RelayMessage::TriangleTest2(m)) => {
@@ -422,7 +422,7 @@ pub fn on_triangle_test2_sends_triangle_test3_to_endpoint() {
     let (to, data) = &records[0];
     assert_eq!(*to, endpoint);
 
-    let text = std::str::from_utf8(&data).expect("utf8");
+    let text = std::str::from_utf8(data).expect("utf8");
     let msg = from_json_str(text).expect("decode");
     match msg {
         Message::Relay(RelayMessage::TriangleTest3(_)) => {}

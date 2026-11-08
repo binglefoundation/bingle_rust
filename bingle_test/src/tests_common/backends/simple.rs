@@ -71,10 +71,7 @@ impl TestAlgo for SimpleBackend {
 
     fn create_address(&mut self, _save: bool, _always_new_address: bool) -> Result<String, String> {
         // Deterministic secret key (no OsRng used, iOS-safe)
-        let mut sk: [u8; 32] = [0u8; 32];
-        for i in 0..32 {
-            sk[i] = i as u8;
-        }
+        let sk: [u8; 32] = std::array::from_fn(|i| i as u8);
         let signing_key = SigningKey::from_bytes(&sk);
         let verifying_key = signing_key.verifying_key();
         let pk: [u8; 32] = verifying_key.to_bytes();

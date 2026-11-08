@@ -26,7 +26,7 @@ fn setup_node(name: &str, port: u16, passphrase: &str) -> Arc<BingleApiImpl> {
     let api = BingleApiImpl::new(&opts);
 
     api.access_unsafe_for_tests(|a| a.start(&opts))
-        .expect(&format!("start api for {}", name));
+        .unwrap_or_else(|_| panic!("start api for {}", name));
     api
 }
 
@@ -120,10 +120,12 @@ fn dtls_session_randomness_test() {
         let app_data = packets
             .iter()
             .find(|p| !p.is_empty() && p[0] == 23)
-            .expect(&format!(
-                "Should have captured Application Data packet in session {}",
-                s
-            ));
+            .unwrap_or_else(|| {
+                panic!(
+                    "Should have captured Application Data packet in session {}",
+                    s
+                )
+            });
 
         // Skip DTLS header (13 bytes)
         session_ciphertexts.push(app_data[13..].to_vec());

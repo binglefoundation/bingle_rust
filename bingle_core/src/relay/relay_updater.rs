@@ -469,21 +469,27 @@ impl RelayUpdater {
         }
 
         let mut updated = Vec::with_capacity(status.relay_ids.len());
-        for index in 0..status.relay_ids.len() {
-            let id = status.relay_ids[index].clone();
-            let Ok(_address) = std::net::SocketAddr::try_from(endpoints[index].clone()) else {
+        // the three vecs are the same length (checked above).
+        let rows = status
+            .relay_ids
+            .iter()
+            .zip(endpoints.iter())
+            .zip(&status.relay_states);
+        for ((id, endpoint), relay_state) in rows {
+            let id = id.clone();
+            let Ok(_address) = std::net::SocketAddr::try_from(endpoint.clone()) else {
                 return false;
             };
 
             let state = if id == my_id_norm {
                 RelayState::Own
             } else {
-                status.relay_states[index]
+                *relay_state
             };
 
             let record = AdvertRecord::new_unsigned(
                 id,
-                Some(endpoints[index].clone()),
+                Some(endpoint.clone()),
                 Some(true),
                 None,
                 None,

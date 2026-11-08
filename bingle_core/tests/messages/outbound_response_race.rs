@@ -206,7 +206,7 @@ pub fn concurrent_dispatch_responses_should_not_cross_contaminate() {
         .recv_timeout(Duration::from_secs(3))
         .expect("expected second concurrent response");
 
-    let mut responses = vec![r1, r2];
+    let mut responses = [r1, r2];
     responses.sort_by_key(|(_, user_id, _)| user_id.clone());
 
     let (nsk_got_a, uid_a, json_a) = &responses[0];

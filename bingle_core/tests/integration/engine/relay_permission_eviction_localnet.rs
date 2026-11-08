@@ -23,7 +23,7 @@ use crate::util::test_util;
 
 fn signed_relay_record(id: &str, passphrase: &str) -> AdvertRecord {
     let seed = algonaut::crypto::mnemonic::to_key(passphrase).expect("valid mnemonic");
-    let signing_key = ed25519_dalek::SigningKey::from_bytes(&seed.try_into().expect("32 bytes"));
+    let signing_key = ed25519_dalek::SigningKey::from_bytes(&seed);
     AdvertRecord::new(
         id.to_string(),
         Some(InetSocketAddress {

@@ -40,7 +40,7 @@ pub fn wait_for_relays_visible(
                             advert_record_csv
                         );
                     }
-                    return None;
+                    None
                 })
                 .collect();
             if parsed.len() == expected.len() {

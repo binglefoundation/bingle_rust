@@ -44,12 +44,7 @@ impl Dtls for MockDtls {
                     .push((addr, "unknown".to_string(), json));
             }
             if let Some(h) = self.handle_message.lock().unwrap().clone() {
-                h(
-                    self,
-                    to,
-                    "mock-auto-ack",
-                    &vec![0x14, 0x00, data[2], data[3]],
-                );
+                h(self, to, "mock-auto-ack", &[0x14, 0x00, data[2], data[3]]);
             }
         }
         Ok(())

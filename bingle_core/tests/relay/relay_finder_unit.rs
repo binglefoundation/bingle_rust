@@ -72,11 +72,11 @@ pub fn find_root_relay_rejects_self() {
     let discover = Arc::new(|| -> Vec<RelayInfo> {
         vec![
             test_util::signed_root_relay(
-                &test_util::ADDRESS_SPEND.to_string(),
+                test_util::ADDRESS_SPEND,
                 SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 12345),
             ),
             test_util::signed_root_relay(
-                &test_util::ADDRESS_RECEIVE.to_string(),
+                test_util::ADDRESS_RECEIVE,
                 SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 12346),
             ),
         ]

@@ -67,7 +67,7 @@ fn setup_node(
         }
         a.start(&opts)
     })
-    .expect(&format!("start api for {}", name));
+    .unwrap_or_else(|_| panic!("start api for {}", name));
     api
 }
 

@@ -129,7 +129,7 @@ impl Dtls for DummyDtls {
 #[test]
 #[cfg(not(target_os = "ios"))]
 pub fn dtls_send_takes_no_issuer() {
-    let d = DummyDtls::default();
+    let d = DummyDtls;
     let to: SocketAddr = "127.0.0.1:9000".parse().unwrap();
     let data = b"hello";
     // Should compile and run via NetworkEndpoint helper
