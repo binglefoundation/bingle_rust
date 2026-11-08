@@ -29,6 +29,11 @@
     "messaging"
   ],
   "license": "MIT OR Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/binglefoundation/bingle_rust.git",
+    "directory": "bingle_jsi"
+  },
   "peerDependencies": {
     "react": ">=18.0.0",
     "react-native": ">=0.71.0"

@@ -11,6 +11,8 @@ on:
     types: [opened, synchronize, reopened, ready_for_review]
   push:
     branches: [staging]
+  # deploy.yml re-runs this gate on the release commit (#399).
+  workflow_call:
 
 concurrency:
   group: quality-checks-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
