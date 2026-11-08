@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # Set the workspace version: every crate's [package] version, the version pins on the workspace's
-# path dependencies, bingle_jsi/package.json, and the lockfile (issue #399).
+# path dependencies, bingle_jsi/package.json, the published crates' README install examples (#197),
+# and the lockfile (issue #399).
 #
 #   scripts/bump_version.sh 0.3.31        # set an exact version
 #   scripts/bump_version.sh --next-patch  # 0.3.30 -> 0.3.31 (also --next-minor, --next-major)
 #   scripts/bump_version.sh --current     # print the current version and exit
-#   scripts/bump_version.sh --check       # fail unless every crate and the npm module agree
+#   scripts/bump_version.sh --check       # fail unless every crate, the npm module and the READMEs agree
 #
 # `staging` always carries the next, unreleased version; scripts/release.sh calls this with
 # --next-patch straight after a release. Run from anywhere in the repository.
@@ -24,6 +25,10 @@ MEMBERS = ["bingle_core", "bingle_local", "bingle_jsi", "bingle_webserver", "bin
 PACKAGE_VERSION = re.compile(r'(\[package\][^\[]*?\nversion\s*=\s*")([^"]*)(")', re.S)
 PATH_PIN = re.compile(r'(path\s*=\s*"\.\./bingle_[a-z_]+"\s*,\s*version\s*=\s*")([^"]*)(")')
 NPM_VERSION = re.compile(r'("version"\s*:\s*")([^"]*)(")')
+# the `<crate> = "X.Y.Z"` line of each published library crate's README, which crates.io shows.
+READMES = ["bingle_core", "bingle_local"]
+def readme_pin(crate):
+    return re.compile(r'(^' + crate + r'\s*=\s*")([^"]*)(")', re.M)
 SEMVER = re.compile(r'^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.]+)?$')
 
 def versions():
@@ -42,6 +47,11 @@ def versions():
     if not mo:
         sys.exit("error: no version in bingle_jsi/package.json")
     found["bingle_jsi/package.json"] = mo.group(2)
+    for c in READMES:
+        mo = readme_pin(c).search((pathlib.Path(c) / "README.md").read_text())
+        if not mo:
+            sys.exit(f"error: no {c} = \"X.Y.Z\" line in {c}/README.md")
+        found[f"{c}/README.md"] = mo.group(2)
     return found
 
 arg = sys.argv[1]
@@ -79,6 +89,12 @@ text, n = NPM_VERSION.subn(lambda mo: mo.group(1) + version + mo.group(3), pj.re
 if n != 1:
     sys.exit("error: failed to set the version in bingle_jsi/package.json")
 pj.write_text(text)
+for c in READMES:
+    p = pathlib.Path(c) / "README.md"
+    text, n = readme_pin(c).subn(lambda mo: mo.group(1) + version + mo.group(3), p.read_text(), count=1)
+    if n != 1:
+        sys.exit(f"error: failed to set the version in {p}")
+    p.write_text(text)
 print(f"{current} -> {version}")
 PY
 
