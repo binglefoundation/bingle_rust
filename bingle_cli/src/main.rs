@@ -1135,7 +1135,7 @@ fn run_chat_startup(state: &mut ChatState, cli_handle: Option<&str>, cli_passphr
             StartupDecision::NeedCredentials { gap } => {
                 let msg = match gap {
                     CredentialGap::NoAccount => {
-                        "no registered account: pass a funded --passphrase and --handle to register on first run, or run `bingle_cli register` first"
+                        "no registered account: pass --passphrase with the account's recovery phrase (and --handle as well to register a new account), or run `bingle_cli register` first"
                     }
                     CredentialGap::FundedNeedsHandle => {
                         "account is funded but has no handle: pass --handle to register it"
@@ -1156,24 +1156,23 @@ fn run_chat_startup(state: &mut ChatState, cli_handle: Option<&str>, cli_passphr
                 );
                 std::process::exit(1);
             }
-            StartupDecision::Register { handle } => {
-                // Ensure a keypair exists, importing from the CLI passphrase on genuine first run,
-                // then re-decide against the freshly resolved status (the account may turn out to be
-                // already registered, funded, or still unfunded).
-                if !state.has_keypair() {
-                    let Some(passphrase) = cli_passphrase else {
-                        // decide_startup only returns Register for NoKeypair when a passphrase is
-                        // present, so this is unreachable in practice; guard defensively.
-                        eprintln!("Error: --passphrase is required to register a new account");
-                        std::process::exit(2);
-                    };
-                    if let Err(e) = state.import_keypair(passphrase) {
-                        eprintln!("Error: could not import account from passphrase: {e}");
-                        std::process::exit(2);
-                    }
-                    status = resolve_status_or_exit(state);
-                    continue;
+            StartupDecision::Import => {
+                // Import from the CLI passphrase on a first run, then re-decide against the freshly
+                // resolved status (the account may turn out to be already registered, funded, or
+                // still unfunded).
+                let Some(passphrase) = cli_passphrase else {
+                    // decide_startup only returns Import when a passphrase is present, so this is
+                    // unreachable in practice; guard defensively.
+                    eprintln!("Error: --passphrase is required to import an account");
+                    std::process::exit(2);
+                };
+                if let Err(e) = state.import_keypair(passphrase) {
+                    eprintln!("Error: could not import account from passphrase: {e}");
+                    std::process::exit(2);
                 }
+                status = resolve_status_or_exit(state);
+            }
+            StartupDecision::Register { handle } => {
                 // Keypair present and funded but unregistered: register now, then re-resolve.
                 match state.register(&handle) {
                     Ok(()) => {
