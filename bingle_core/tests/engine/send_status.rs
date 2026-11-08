@@ -628,7 +628,7 @@ pub fn no_packet_means_no_endpoint_status_entry() {
 
     let status_map = engine.endpoint_status_for_tests();
     assert!(
-        status_map.get(&key).is_none(),
+        !status_map.contains_key(&key),
         "endpoint_status should have no entry when no packet has arrived"
     );
 }
@@ -664,7 +664,7 @@ pub fn unauthenticated_packet_does_not_set_endpoint_status() {
 
     let status_map = engine.endpoint_status_for_tests();
     assert!(
-        status_map.get(&key).is_none(),
+        !status_map.contains_key(&key),
         "endpoint_status should not be updated for unauthenticated sender"
     );
 }

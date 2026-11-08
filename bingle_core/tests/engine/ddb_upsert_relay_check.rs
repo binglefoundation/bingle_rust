@@ -158,7 +158,7 @@ pub fn test_ddb_upsert_relay_requires_blockchain_info() {
     let passphrase = crate::util::test_util::PASSPHRASE_SPEND;
 
     let seed = algonaut::crypto::mnemonic::to_key(passphrase).expect("valid mnemonic");
-    let signing_key = ed25519_dalek::SigningKey::from_bytes(&seed.try_into().expect("32 bytes"));
+    let signing_key = ed25519_dalek::SigningKey::from_bytes(&seed);
 
     let record = AdvertRecord::new(
         id.clone(),
@@ -208,7 +208,7 @@ pub fn test_ddb_upsert_relay_fails_on_blockchain_error() {
     let passphrase = crate::util::test_util::PASSPHRASE_SPEND;
 
     let seed = algonaut::crypto::mnemonic::to_key(passphrase).expect("valid mnemonic");
-    let signing_key = ed25519_dalek::SigningKey::from_bytes(&seed.try_into().expect("32 bytes"));
+    let signing_key = ed25519_dalek::SigningKey::from_bytes(&seed);
 
     let record = AdvertRecord::new(
         id.clone(),
@@ -245,7 +245,7 @@ pub fn test_ddb_upsert_non_relay_always_accepted() {
     let passphrase = crate::util::test_util::PASSPHRASE_SPEND;
 
     let seed = algonaut::crypto::mnemonic::to_key(passphrase).expect("valid mnemonic");
-    let signing_key = ed25519_dalek::SigningKey::from_bytes(&seed.try_into().expect("32 bytes"));
+    let signing_key = ed25519_dalek::SigningKey::from_bytes(&seed);
 
     // am_relay = false
     let record = AdvertRecord::new(

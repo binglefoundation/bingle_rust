@@ -43,12 +43,7 @@ impl Dtls for MockDtls {
             && (data[0] & 0x0F) == 0x01
             && let Some(h) = self.handle_message.lock().unwrap().clone()
         {
-            h(
-                self,
-                to,
-                "mock-auto-ack",
-                &vec![0x14, 0x00, data[2], data[3]],
-            );
+            h(self, to, "mock-auto-ack", &[0x14, 0x00, data[2], data[3]]);
         }
         Ok(())
     }
@@ -244,12 +239,7 @@ pub fn start_sets_issuer_and_passes_to_dtls_send() {
                 && (data[0] & 0x0F) == 0x01
                 && let Some(h) = self.handle_message.lock().unwrap().clone()
             {
-                h(
-                    self,
-                    to,
-                    "mock-auto-ack",
-                    &vec![0x14, 0x00, data[2], data[3]],
-                );
+                h(self, to, "mock-auto-ack", &[0x14, 0x00, data[2], data[3]]);
             }
             Ok(())
         }

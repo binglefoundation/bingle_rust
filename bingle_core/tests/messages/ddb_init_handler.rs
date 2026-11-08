@@ -186,7 +186,7 @@ pub fn ddb_init_resolve_triggers_snapshot_and_dump() {
 
     // Verify captured messages
     let sent = captured.lock().unwrap().clone();
-    assert!(sent.len() >= 1, "no messages were sent by handler");
+    assert!(!sent.is_empty(), "no messages were sent by handler");
 
     // First should be initResponse
     let (uid0, j0) = &sent[0];

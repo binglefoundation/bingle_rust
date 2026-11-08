@@ -167,10 +167,7 @@ pub fn stun_tests() -> bool {
 
 pub fn algo_ops_basic<T: TestAlgo>(passphrase: &str) -> bool {
     // Roundtrip pk <-> address
-    let mut pk = [0u8; 32];
-    for i in 0..32 {
-        pk[i] = i as u8;
-    }
+    let pk: [u8; 32] = std::array::from_fn(|i| i as u8);
     let addr = match T::addr_from_pk(&pk) {
         Ok(a) => a,
         Err(_) => return false,
@@ -287,10 +284,7 @@ pub fn algo_ops_more<T: TestAlgo>(passphrase: &str) -> bool {
     }
 
     // local/global: valid address + unreachable -> None (with dummy config)
-    let mut pk3 = [0u8; 32];
-    for i in 0..32 {
-        pk3[i] = i as u8;
-    }
+    let pk3: [u8; 32] = std::array::from_fn(|i| i as u8);
     let addr3 = match T::addr_from_pk(&pk3) {
         Ok(a) => a,
         Err(_) => return false,
@@ -383,10 +377,7 @@ pub fn asset_ops<T: TestAlgo>(passphrase: &str) -> bool {
     }
 
     // Provide address but no key => account access error
-    let mut pk = [0u8; 32];
-    for i in 0..32 {
-        pk[i] = i as u8;
-    }
+    let pk: [u8; 32] = std::array::from_fn(|i| i as u8);
     let addr = match T::addr_from_pk(&pk) {
         Ok(a) => a,
         Err(_) => return false,
@@ -401,10 +392,7 @@ pub fn asset_ops<T: TestAlgo>(passphrase: &str) -> bool {
         return false;
     }
 
-    let mut pk2 = [1u8; 32];
-    for i in 0..32 {
-        pk2[i] = 255 - i as u8;
-    }
+    let pk2: [u8; 32] = std::array::from_fn(|i| 255 - i as u8);
     let addr2 = match T::addr_from_pk(&pk2) {
         Ok(a) => a,
         Err(_) => return false,

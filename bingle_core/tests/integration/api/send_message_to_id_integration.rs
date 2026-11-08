@@ -1202,7 +1202,7 @@ pub fn bingle_api_send_message_after_client_restart_localnet() {
         cfg.clone(),
     );
     register_client_on_blockchain(
-        &*client_b.get_my_id().expect("Client B must have id"),
+        &client_b.get_my_id().expect("Client B must have id"),
         PASSPHRASE_B,
         "client_b",
         app_id,

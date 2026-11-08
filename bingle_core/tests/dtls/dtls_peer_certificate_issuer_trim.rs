@@ -175,7 +175,7 @@ pub fn dtls_peer_certificate_handler_issuer_is_trimmed_to_id() {
 
     // Send a small JSON payload to trigger delivery
     let payload = br#"{\"hello\":\"world\"}"#;
-    let _ = client
+    client
         .send(
             &bingle_core::api::bingle_api::NetworkEndpoint::new_direct(addr),
             payload,

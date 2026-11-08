@@ -43,7 +43,7 @@ fn server_assert_and_reply(
     data: &[u8],
 ) {
     // Record issuer and data we saw
-    let _ = SERVER_SEEN_ISSUER.set(format!("{}.", issuer.to_string()));
+    let _ = SERVER_SEEN_ISSUER.set(format!("{}.", issuer));
     let _ = SERVER_SEEN_DATA.set(data.to_vec());
     // Reply
     let _ = server.send(from, b"hi-from-server");
@@ -55,7 +55,7 @@ fn client_capture(
     issuer: &str,
     data: &[u8],
 ) {
-    let _ = CLIENT_SEEN_ISSUER.set(format!("{}.", issuer.to_string()));
+    let _ = CLIENT_SEEN_ISSUER.set(format!("{}.", issuer));
     let _ = CLIENT_SEEN_DATA.set(data.to_vec());
 }
 

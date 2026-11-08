@@ -23,9 +23,7 @@ fn build_channel_data(channel: u16, payload: &[u8]) -> Vec<u8> {
     out.extend_from_slice(&(payload.len() as u16).to_be_bytes());
     out.extend_from_slice(payload);
     let pad = (4 - (payload.len() % 4)) % 4;
-    for _ in 0..pad {
-        out.push(0);
-    }
+    out.resize(out.len() + pad, 0);
     out
 }
 

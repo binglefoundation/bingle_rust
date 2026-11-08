@@ -53,7 +53,7 @@ pub fn bingle_api_relay_check_two_nodes() {
     let relay_for_cb = relay_arc.clone();
     let client_id = test_util::ADDRESS_SPEND.to_string();
     relay.access_unsafe_for_tests(|guard: &mut BingleApiImpl| {
-        let client_addr_for_cb = client_addr.clone();
+        let client_addr_for_cb = client_addr;
         guard.set_on_message(Some(Arc::new(move |sender_id, sender_handle, msg| {
             tracing::info!(
                 "[test][relay on_message] sender={} handle={} msg={}",
