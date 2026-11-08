@@ -1,3 +1,4 @@
+use crate::util::test_util::CapturedPackets;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
@@ -14,7 +15,7 @@ use bingle_core::messages::*;
 
 #[derive(Default, Clone)]
 struct MockDtls {
-    pub sent: Arc<std::sync::Mutex<Vec<(SocketAddr, Vec<u8>)>>>,
+    pub sent: CapturedPackets,
 }
 
 impl Dtls for MockDtls {

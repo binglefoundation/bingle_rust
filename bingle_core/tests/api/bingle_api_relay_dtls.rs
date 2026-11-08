@@ -1,5 +1,6 @@
 use bingle_core::api::bingle_api::{BingleApi, Handle, NetworkEndpoint, StartOptions, UserId};
 use bingle_core::api::bingle_api_impl::BingleApiImpl;
+use bingle_core::dtls::HandleTurn;
 use bingle_core::dtls::network_mux_trait::NetworkMux;
 use bingle_core::dtls::network_mux_udp::UdpNetworkMux;
 use bingle_core::dtls::{Dtls, DtlsOpenSsl};
@@ -39,9 +40,7 @@ pub fn bingle_api_send_via_relay() {
 
     let turn_client = std::sync::Arc::new(TurnClientImpl::new());
     let turn_client_clone = turn_client.clone();
-    let client_turn_handler: std::sync::Arc<
-        dyn Fn(&dyn NetworkMux, &SocketAddr, &[u8]) + Send + Sync,
-    > = Arc::new(
+    let client_turn_handler: HandleTurn = Arc::new(
         move |source: &dyn NetworkMux, from: &SocketAddr, packet: &[u8]| {
             tracing::info!("client_turn_handler Got packet from {}:", from);
             // Parse/unwrap the TURN ChannelData using our handler

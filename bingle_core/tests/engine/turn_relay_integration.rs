@@ -1,3 +1,4 @@
+use bingle_core::dtls::HandleTurn;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -50,20 +51,19 @@ pub fn end_to_end_turn_relay_forwards_payload() {
     // Configure TURN ChannelData handler to forward payloads to destination
     {
         let turn_clone = turn.clone();
-        let th: std::sync::Arc<dyn Fn(&dyn NetworkMux, &SocketAddr, &[u8]) + Send + Sync> =
-            std::sync::Arc::new(
-                move |source: &dyn NetworkMux, from: &SocketAddr, packet: &[u8]| {
-                    if let Some(wrapped) =
-                        turn_clone.handle_turn_incoming(Some(from), Some(relay_addr), packet)
-                        && let Some(udp) = source.as_any().downcast_ref::<UdpNetworkMux>()
-                    {
-                        let nsk = bingle_core::api::bingle_api::NetworkEndpoint::new_direct(
-                            wrapped.ip_address,
-                        );
-                        let _ = udp.write(&nsk, &wrapped.message);
-                    }
-                },
-            );
+        let th: HandleTurn = std::sync::Arc::new(
+            move |source: &dyn NetworkMux, from: &SocketAddr, packet: &[u8]| {
+                if let Some(wrapped) =
+                    turn_clone.handle_turn_incoming(Some(from), Some(relay_addr), packet)
+                    && let Some(udp) = source.as_any().downcast_ref::<UdpNetworkMux>()
+                {
+                    let nsk = bingle_core::api::bingle_api::NetworkEndpoint::new_direct(
+                        wrapped.ip_address,
+                    );
+                    let _ = udp.write(&nsk, &wrapped.message);
+                }
+            },
+        );
         mux.set_handle_turn(Some(&th));
     }
 

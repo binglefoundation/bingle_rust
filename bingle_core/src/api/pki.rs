@@ -1,13 +1,15 @@
 use crate::protocol::ISSUER_SUFFIX;
 use algo_ops::AlgoOps;
 
+/// A generated PKI set, all PEM: (CA certificate, server certificate, server key, client
+/// certificate, client key).
+pub type PkiPems = (Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>);
+
 /// Generate a PKI set from AlgoOps secret:
 /// - CA certificate (PEM) signed by Ed25519 key derived from AlgoOps private key
 /// - Server certificate + private key (PEM), RSA 2048 signed by CA
 /// - Client certificate + private key (PEM), RSA 2048 signed by CA
-pub fn generate_pki_from_ops(
-    ops: &AlgoOps,
-) -> Result<(Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>), String> {
+pub fn generate_pki_from_ops(ops: &AlgoOps) -> Result<PkiPems, String> {
     use openssl::asn1::Asn1Time;
     use openssl::bn::BigNum;
     use openssl::hash::MessageDigest;

@@ -6,6 +6,9 @@ use std::sync::{
 };
 use std::thread::{self, JoinHandle};
 
+/// Per-requestor obfuscated (port, address) pairs, shared with the server thread.
+type ObfuscationMap = Arc<Mutex<HashMap<SocketAddr, (u16, [u8; 4])>>>;
+
 /// A very small STUN server used for integration tests.
 ///
 /// Features:
@@ -52,8 +55,7 @@ impl SimpleStunServer {
         let running_thread = running.clone();
 
         // Per-requestor obfuscation map (stable within process lifetime)
-        let map: Arc<Mutex<HashMap<SocketAddr, (u16, [u8; 4])>>> =
-            Arc::new(Mutex::new(HashMap::new()));
+        let map: ObfuscationMap = Arc::new(Mutex::new(HashMap::new()));
         let map_thread = map.clone();
 
         let handle = thread::spawn(move || {

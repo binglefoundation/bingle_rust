@@ -1,3 +1,4 @@
+use bingle_core::dtls::HandleTurn;
 use bingle_core::engine::BingleAccessUnsafeForTests;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::{Arc, Mutex};
@@ -66,7 +67,7 @@ pub fn dtls_send_via_relay_end_to_end() {
     {
         let turn_client_clone = turn_client.clone();
         let local_address = Some(mux_target.local_addr().unwrap());
-        let th: Arc<dyn Fn(&dyn NetworkMux, &SocketAddr, &[u8]) + Send + Sync> = Arc::new(
+        let th: HandleTurn = Arc::new(
             move |source: &dyn NetworkMux, from: &SocketAddr, packet: &[u8]| {
                 // Handle TURN ChannelData for client (non-relay) mode
                 if let Some(wrapped) =
@@ -178,7 +179,7 @@ pub fn dtls_send_via_relay_end_to_end() {
     // Install TURN handler on the mutable mux_client before wrapping in Arc
     {
         let local_address = Some(mux_client.local_addr().unwrap());
-        let th: Arc<dyn Fn(&dyn NetworkMux, &SocketAddr, &[u8]) + Send + Sync> = Arc::new(
+        let th: HandleTurn = Arc::new(
             move |source: &dyn NetworkMux, from: &SocketAddr, packet: &[u8]| {
                 // Handle TURN ChannelData for client (non-relay) mode
                 if let Some(wrapped) =

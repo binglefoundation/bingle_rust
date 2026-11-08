@@ -6,7 +6,8 @@ use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 
 use crate::api::bingle_api::{
-    BingleApi, BingleApiBoth, BingleApiInternal, BingleError, Handle, NetworkEndpoint, UserId,
+    BingleApi, BingleApiBoth, BingleApiInternal, BingleError, Handle, NetworkEndpoint,
+    SendViaBingle, UserId,
 };
 
 /// Check if a message type may only originate from a relay.
@@ -44,16 +45,7 @@ pub fn only_from_relay(msg: &Message) -> bool {
 
 #[derive(Default)]
 pub struct Router {
-    sender: Mutex<
-        Option<
-            Arc<
-                dyn Fn(&NetworkEndpoint, &UserId, serde_json::Value) -> bool
-                    + Send
-                    + Sync
-                    + 'static,
-            >,
-        >,
-    >,
+    sender: Mutex<Option<SendViaBingle>>,
     api: Mutex<Option<crate::api::bingle_api::BingleApiBothType>>,
     last_from: Mutex<Option<SocketAddr>>,
     last_response_tag: Mutex<Option<String>>,
@@ -515,26 +507,12 @@ impl Router {
         }
     }
 
-    pub fn set_sender(
-        &self,
-        cb: Option<
-            Arc<
-                dyn Fn(&NetworkEndpoint, &UserId, serde_json::Value) -> bool
-                    + Send
-                    + Sync
-                    + 'static,
-            >,
-        >,
-    ) {
+    pub fn set_sender(&self, cb: Option<SendViaBingle>) {
         if let Ok(mut g) = self.sender.lock() {
             *g = cb;
         }
     }
-    pub fn get_sender(
-        &self,
-    ) -> Option<
-        Arc<dyn Fn(&NetworkEndpoint, &UserId, serde_json::Value) -> bool + Send + Sync + 'static>,
-    > {
+    pub fn get_sender(&self) -> Option<SendViaBingle> {
         match self.sender.lock() {
             Ok(g) => g.clone(),
             Err(_) => None,

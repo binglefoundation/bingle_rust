@@ -8,10 +8,13 @@ use tracing_subscriber::registry::LookupSpan;
 
 use crate::api::callback::LogCallback;
 
-/// Global storage for the user-provided log callback.
-static GLOBAL_LOG_CALLBACK: OnceLock<Arc<Mutex<Option<Box<dyn LogCallback>>>>> = OnceLock::new();
+/// The user-provided log callback, shared with the logging layer.
+type SharedLogCallback = Arc<Mutex<Option<Box<dyn LogCallback>>>>;
 
-fn global_callback() -> &'static Arc<Mutex<Option<Box<dyn LogCallback>>>> {
+/// Global storage for the user-provided log callback.
+static GLOBAL_LOG_CALLBACK: OnceLock<SharedLogCallback> = OnceLock::new();
+
+fn global_callback() -> &'static SharedLogCallback {
     GLOBAL_LOG_CALLBACK.get_or_init(|| Arc::new(Mutex::new(None)))
 }
 

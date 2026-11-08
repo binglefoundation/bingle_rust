@@ -1,3 +1,4 @@
+use crate::util::test_util::CapturedPackets;
 use bingle_core::engine::BingleAccessUnsafeForTests;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
@@ -10,12 +11,12 @@ use bingle_core::dtls::{Dtls, HandleMessage, HandlePeerCertificate, Result};
 
 #[derive(Clone)]
 struct MockDtls {
-    pub sends: Arc<Mutex<Vec<(SocketAddr, Vec<u8>)>>>,
+    pub sends: CapturedPackets,
     pub handle_message: Arc<Mutex<Option<HandleMessage>>>,
 }
 
 impl MockDtls {
-    fn new() -> (Self, Arc<Mutex<Vec<(SocketAddr, Vec<u8>)>>>) {
+    fn new() -> (Self, CapturedPackets) {
         let v = Arc::new(Mutex::new(vec![]));
         (
             Self {
@@ -204,11 +205,11 @@ pub fn start_sets_issuer_and_passes_to_dtls_send() {
     // Mock DTLS that captures the issuer parameter
     #[derive(Clone)]
     struct MockDtlsCapture {
-        pub captured: Arc<Mutex<Vec<(SocketAddr, Vec<u8>)>>>,
+        pub captured: CapturedPackets,
         pub handle_message: Arc<Mutex<Option<HandleMessage>>>,
     }
     impl MockDtlsCapture {
-        fn new() -> (Self, Arc<Mutex<Vec<(SocketAddr, Vec<u8>)>>>) {
+        fn new() -> (Self, CapturedPackets) {
             let v = Arc::new(Mutex::new(vec![]));
             (
                 Self {

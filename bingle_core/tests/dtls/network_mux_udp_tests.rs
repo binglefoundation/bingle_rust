@@ -1,3 +1,4 @@
+use crate::util::test_util::PacketLog;
 use std::net::{SocketAddr, UdpSocket};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
@@ -9,9 +10,9 @@ use bingle_core::dtls::{NetworkMux, UdpNetworkMux};
 static TEST_GUARD: OnceLock<Mutex<()>> = OnceLock::new();
 
 // Global recorders for handler invocations
-static DTLS_RECORDS: OnceLock<Mutex<Vec<(SocketAddr, Vec<u8>)>>> = OnceLock::new();
-static STUN_RECORDS: OnceLock<Mutex<Vec<(SocketAddr, Vec<u8>)>>> = OnceLock::new();
-static TURN_RECORDS: OnceLock<Mutex<Vec<(SocketAddr, Vec<u8>)>>> = OnceLock::new();
+static DTLS_RECORDS: OnceLock<PacketLog> = OnceLock::new();
+static STUN_RECORDS: OnceLock<PacketLog> = OnceLock::new();
+static TURN_RECORDS: OnceLock<PacketLog> = OnceLock::new();
 
 fn dtls_handler(
     _src: &dyn NetworkMux,

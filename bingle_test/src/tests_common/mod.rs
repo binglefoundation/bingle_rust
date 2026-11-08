@@ -6,6 +6,9 @@ pub mod backends;
 
 /// Trait implemented by backends used in test implementations.
 /// It abstracts the operations needed by the test suites.
+/// An application's global state: its id and its (key, value) pairs.
+pub type AppGlobalState = (u64, Vec<(String, String)>);
+
 pub trait TestAlgo: Sized {
     /// Construct a new instance. If `use_dummy_config` is true, the backend should be
     /// configured with an unreachable network configuration to simulate network behavior
@@ -22,7 +25,7 @@ pub trait TestAlgo: Sized {
     fn global_state(
         &self,
         maybe_app_id: Option<u64>,
-    ) -> Result<Option<Vec<(u64, Vec<(String, String)>)>>, String>;
+    ) -> Result<Option<Vec<AppGlobalState>>, String>;
 
     fn local_state_for_account(
         &self,

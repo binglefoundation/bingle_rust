@@ -17,6 +17,20 @@ use std::time::{Duration, Instant};
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::prelude::*;
 
+/// Datagrams a test handler captured, with the address each came from (issue #15).
+pub type CapturedPackets = Arc<std::sync::Mutex<Vec<(SocketAddr, Vec<u8>)>>>;
+
+/// A static log of captured datagrams, with the address each came from.
+pub type PacketLog = std::sync::Mutex<Vec<(SocketAddr, Vec<u8>)>>;
+
+/// A static log of captured datagrams, with the endpoint each came from.
+pub type EndpointPacketLog =
+    std::sync::Mutex<Vec<(bingle_core::api::bingle_api::NetworkEndpoint, Vec<u8>)>>;
+
+/// The STUN states a test observed, with the endpoint reported at each.
+pub type StunStateLog =
+    Arc<std::sync::Mutex<Vec<(bingle_core::stun::StunState, Option<SocketAddr>)>>>;
+
 pub use bingle_test::temp_file_helpers::{project_tmp_dir_path, write_project_tmp_file};
 
 // Localnet token from Algorand docs / Algokit localnet

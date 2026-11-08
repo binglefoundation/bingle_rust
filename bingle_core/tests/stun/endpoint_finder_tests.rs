@@ -1,3 +1,4 @@
+use crate::util::test_util::StunStateLog;
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::atomic::{AtomicUsize, Ordering as AOrdering};
@@ -50,7 +51,7 @@ pub fn single_response_triggers_single_and_callback_without_ip() {
     let s2: SocketAddr = "8.8.8.8:3478".parse().unwrap();
     finder.init(vec![s1, s2], 100, 200);
 
-    let seen: Arc<Mutex<Vec<(StunState, Option<SocketAddr>)>>> = Arc::new(Mutex::new(Vec::new()));
+    let seen: StunStateLog = Arc::new(Mutex::new(Vec::new()));
     let seen_clone = Arc::clone(&seen);
     finder.set_state_change_handler(Some(Arc::new(move |st, ep| {
         seen_clone.lock().unwrap().push((st, ep));
@@ -80,7 +81,7 @@ pub fn two_inconsistent_responses_trigger_inconsistent_callback_without_ip() {
     let s2: SocketAddr = "8.8.8.8:3478".parse().unwrap();
     finder.init(vec![s1, s2], 50, 50);
 
-    let seen: Arc<Mutex<Vec<(StunState, Option<SocketAddr>)>>> = Arc::new(Mutex::new(Vec::new()));
+    let seen: StunStateLog = Arc::new(Mutex::new(Vec::new()));
     let seen_clone = Arc::clone(&seen);
     finder.set_state_change_handler(Some(Arc::new(move |st, ep| {
         seen_clone.lock().unwrap().push((st, ep));
@@ -110,7 +111,7 @@ pub fn two_consistent_then_one_inconsistent_switches_to_inconsistent_and_callbac
     let s3: SocketAddr = "9.9.9.9:3478".parse().unwrap();
     finder.init(vec![s1, s2, s3], 500, 1000);
 
-    let seen: Arc<Mutex<Vec<(StunState, Option<SocketAddr>)>>> = Arc::new(Mutex::new(Vec::new()));
+    let seen: StunStateLog = Arc::new(Mutex::new(Vec::new()));
     let seen_clone = Arc::clone(&seen);
     finder.set_state_change_handler(Some(Arc::new(move |st, ep| {
         seen_clone.lock().unwrap().push((st, ep));
@@ -238,8 +239,7 @@ pub fn blocked_when_no_servers_respond_within_timeout() {
         },
     )));
 
-    let changes: Arc<Mutex<Vec<(StunState, Option<SocketAddr>)>>> =
-        Arc::new(Mutex::new(Vec::new()));
+    let changes: StunStateLog = Arc::new(Mutex::new(Vec::new()));
     let changes_clone = Arc::clone(&changes);
     finder.set_state_change_handler(Some(Arc::new(move |st, ep| {
         changes_clone.lock().unwrap().push((st, ep));
@@ -354,8 +354,7 @@ pub fn consistent_reverts_to_none_after_no_response_timeout() {
     let s1: SocketAddr = "1.1.1.1:3478".parse().unwrap();
     let s2: SocketAddr = "8.8.8.8:3478".parse().unwrap();
 
-    let changes: Arc<Mutex<Vec<(StunState, Option<SocketAddr>)>>> =
-        Arc::new(Mutex::new(Vec::new()));
+    let changes: StunStateLog = Arc::new(Mutex::new(Vec::new()));
     let changes_clone = Arc::clone(&changes);
     finder.set_state_change_handler(Some(Arc::new(move |st, ep| {
         changes_clone.lock().unwrap().push((st, ep));
@@ -494,7 +493,7 @@ pub fn two_consistent_responses_trigger_consistent_with_ip_in_callback() {
     let s2: SocketAddr = "8.8.8.8:3478".parse().unwrap();
     finder.init(vec![s1, s2], 50, 50);
 
-    let seen: Arc<Mutex<Vec<(StunState, Option<SocketAddr>)>>> = Arc::new(Mutex::new(Vec::new()));
+    let seen: StunStateLog = Arc::new(Mutex::new(Vec::new()));
     let seen_clone = Arc::clone(&seen);
     finder.set_state_change_handler(Some(Arc::new(move |st, ep| {
         seen_clone.lock().unwrap().push((st, ep));
@@ -539,8 +538,7 @@ pub fn consistent_endpoint_change_fires_callback() {
     // Short repeat so we can tick to a second round within the test
     finder.init(vec![s1, s2], 100, 100);
 
-    let changes: Arc<Mutex<Vec<(StunState, Option<SocketAddr>)>>> =
-        Arc::new(Mutex::new(Vec::new()));
+    let changes: StunStateLog = Arc::new(Mutex::new(Vec::new()));
     let changes_clone = Arc::clone(&changes);
     finder.set_state_change_handler(Some(Arc::new(move |st, ep| {
         changes_clone.lock().unwrap().push((st, ep));

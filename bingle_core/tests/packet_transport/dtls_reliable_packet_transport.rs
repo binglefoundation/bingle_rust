@@ -1,3 +1,4 @@
+use crate::util::test_util::CapturedPackets;
 use bingle_core::api::bingle_api::NetworkEndpoint;
 use bingle_core::dtls::UdpNetworkMux;
 use bingle_core::dtls::dtls_trait::{
@@ -12,7 +13,7 @@ use std::time::{Duration, Instant};
 
 struct MockDtls {
     handle_message: Mutex<Option<HandleMessage>>,
-    sent_packets: Arc<Mutex<Vec<(SocketAddr, Vec<u8>)>>>,
+    sent_packets: CapturedPackets,
     forgotten_peers: Arc<Mutex<Vec<SocketAddr>>>,
     auto_ack_on_send: bool,
     // Captures the forwarder the transport installs for outbound-session events, so a test can
@@ -36,22 +37,14 @@ impl MockDtls {
     }
 }
 
-fn new_transport_with_sent_packets(
-    mtu: usize,
-) -> (
-    DtlsReliablePacketTransport,
-    Arc<Mutex<Vec<(SocketAddr, Vec<u8>)>>>,
-) {
+fn new_transport_with_sent_packets(mtu: usize) -> (DtlsReliablePacketTransport, CapturedPackets) {
     new_transport_with_sent_packets_and_ack(mtu, true)
 }
 
 fn new_transport_with_sent_packets_and_ack(
     mtu: usize,
     auto_ack_on_send: bool,
-) -> (
-    DtlsReliablePacketTransport,
-    Arc<Mutex<Vec<(SocketAddr, Vec<u8>)>>>,
-) {
+) -> (DtlsReliablePacketTransport, CapturedPackets) {
     let (transport, sent_packets, _forgotten_peers) =
         new_transport_with_sent_and_forgotten(mtu, auto_ack_on_send);
     (transport, sent_packets)
@@ -62,10 +55,10 @@ fn new_transport_with_sent_and_forgotten(
     auto_ack_on_send: bool,
 ) -> (
     DtlsReliablePacketTransport,
-    Arc<Mutex<Vec<(SocketAddr, Vec<u8>)>>>,
+    CapturedPackets,
     Arc<Mutex<Vec<SocketAddr>>>,
 ) {
-    let sent_packets: Arc<Mutex<Vec<(SocketAddr, Vec<u8>)>>> = Arc::new(Mutex::new(vec![]));
+    let sent_packets: CapturedPackets = Arc::new(Mutex::new(vec![]));
     let forgotten_peers: Arc<Mutex<Vec<SocketAddr>>> = Arc::new(Mutex::new(vec![]));
     let dtls = MockDtls {
         handle_message: Mutex::new(None),
@@ -262,7 +255,9 @@ impl Dtls for MockDtls {
 pub fn new_installs_dtls_handler_that_uses_transport_handler() {
     let transport = DtlsReliablePacketTransport::new(Box::new(MockDtls::new()), 1492);
 
-    let calls: Arc<Mutex<Vec<(String, Vec<u8>)>>> = Arc::new(Mutex::new(vec![]));
+    /// (issuer, packet) for each call the transport handler received.
+    type HandlerCalls = Arc<Mutex<Vec<(String, Vec<u8>)>>>;
+    let calls: HandlerCalls = Arc::new(Mutex::new(vec![]));
     let calls_clone = calls.clone();
     let transport_handler: PacketTransportHandleMessage =
         Arc::new(move |_server, _from, issuer, packet| {
