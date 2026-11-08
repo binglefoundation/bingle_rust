@@ -20,6 +20,7 @@ workflow is covered under [Quality checks](#quality-checks). Branch protection
 | PR amended (new commits pushed) | `pull_request: synchronize` |
 | PR reopened | `pull_request: reopened` |
 | Draft PR marked ready | `pull_request: ready_for_review` |
+| Release (`deploy.yml`, on a push to `deployed`) | `workflow_call`: the same gate re-run on the release commit (`RELEASING.md`) |
 | Push to `master` | `push` (post-merge sanity run) |
 
 Draft PRs are skipped and run automatically once marked ready. A

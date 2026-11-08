@@ -60,7 +60,7 @@ usage() {
   echo "Usage: $0 --handle <handle> --passphrase <passphrase> [options]"
   echo "Options:"
   echo "  --handle <handle>      (Required) Relay handle"
-  echo "  --passphrase <pass>    (Required) Relay passphrase"
+  echo "  --passphrase <pass>    Relay passphrase (required, except with --redeploy-only)"
   echo "  --stack-name <name>    CloudFormation stack name (default: derived from handle, 'bingle-relay-<handle>')"
   echo "  --instance-type <type> EC2 instance type (default: $INSTANCE_TYPE)"
   echo "  --port <port>          UDP port (default: $PORT)"
@@ -96,8 +96,11 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [[ -z "$HANDLE" || -z "$PASSPHRASE" ]]; then
-  echo "Error: --handle and --passphrase are required."
+# --redeploy-only keeps every stack parameter but the image, and the passphrase already lives in the
+# stack's Secrets Manager secret, so only a full deploy needs it (scripts/roll_relays.sh rolls
+# without one).
+if [[ -z "$HANDLE" ]] || [[ -z "$PASSPHRASE" && $REDEPLOY_ONLY -eq 0 ]]; then
+  echo "Error: --handle is required, and --passphrase unless --redeploy-only."
   usage
 fi
 

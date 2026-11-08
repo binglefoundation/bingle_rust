@@ -10,11 +10,13 @@ name: e2e-android
 # reach the same address. Everything is IP-based, so no internet/DNS/secrets are needed — which is
 # essential because the CI emulator has no outbound internet (so testnet is impossible in CI).
 #
-# Runs on pushes to staging and manual dispatch only. See CI-E2E.md.
+# Runs on pushes to staging, on manual dispatch, and as a release gate from deploy.yml. See CI-E2E.md.
 on:
   push:
     branches: [staging]
   workflow_dispatch:
+  # deploy.yml re-runs this gate on the release commit (#399).
+  workflow_call:
 
 # Latest-push-wins ("heap not queue").
 concurrency:

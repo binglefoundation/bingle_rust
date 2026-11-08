@@ -1,0 +1,252 @@
+name: deploy
+
+# Publish a release when `deployed` moves (#399): the crates to crates.io and react-native-bingle-jsi
+# to npm, with no registry token stored anywhere.
+#
+# `deployed` only fast-forwards to a `staging` commit that ran on TestNet (scripts/release.sh, see
+# RELEASING.md), so there is no pull request to gate. Instead this run:
+#   1. guard: scripts/release_guard.sh refuses the commit unless it is on staging, carries one
+#      version whose tag (if any) names this same commit, and had a successful `testnet` deployment
+#      (scripts/roll_relays.sh), or an Allow-untested release tag says why not;
+#   2. re-runs the gates on the commit by calling the same workflows that run on staging, so the
+#      release gates cannot drift from them: quality, unit, integration (localnet) and android-e2e;
+#   3. native: builds the iOS XCFramework and the Android libraries on macOS, as a Mac does by
+#      hand. The iOS slices compile C dependencies (vendored OpenSSL, ring) against Apple's iOS SDK,
+#      which ships only with Xcode, and are packaged with lipo and xcodebuild -create-xcframework, so
+#      they cannot be built on Linux. The runner image carries the Android SDK and NDK too;
+#   4. publish: every dry run first (a from-scratch dependency resolution, no test hooks in release
+#      builds, the crates packaged and verified, the npm module packed), then the crates through
+#      crates.io Trusted Publishing and the npm module through npm Trusted Publishing — both swap
+#      this job's GitHub OpenID Connect (OIDC) identity for a short-lived credential. A crate or
+#      module already published at this version is skipped, so a re-run is safe;
+#   5. tag: tags the commit vX.Y.Z, unless the release already pushed that tag.
+#
+# "Run workflow" with rehearsal set runs steps 2-4 on any branch with only the dry runs, so the
+# native build and the packages can be proven before a release; nothing is published or tagged.
+#
+# Opening the next version on staging belongs to scripts/release.sh, not here.
+on:
+  push:
+    branches: [deployed]
+  # a re-run after a partial failure, started on `deployed` (the guard checks); or, with rehearsal,
+  # every gate, the native build and every dry run on any branch, publishing nothing.
+  workflow_dispatch:
+    inputs:
+      rehearsal:
+        description: "Rehearse on this branch: run every gate, build and dry run, publish nothing"
+        type: boolean
+        default: false
+
+# never cancel a publish part way; a second push waits for this run instead. Rehearsals queue apart.
+concurrency:
+  group: ${{ inputs.rehearsal && format('deploy-rehearsal-{0}', github.ref) || 'deploy' }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    name: guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      deployments: read
+    outputs:
+      sha: ${{ steps.guard.outputs.sha }}
+      version: ${{ steps.guard.outputs.version }}
+      tag: ${{ steps.guard.outputs.tag }}
+    steps:
+      - name: Only deployed is released
+        if: github.ref != 'refs/heads/deployed' && !inputs.rehearsal
+        run: |
+          echo "::error::deploy runs on deployed only, not $GITHUB_REF"
+          exit 1
+
+      # full history and the tags: the guard checks ancestry against staging and reads the release tag.
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Check the commit may be released
+        id: guard
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REHEARSAL: ${{ inputs.rehearsal && '1' || '0' }}
+        run: |
+          if [ "$REHEARSAL" = 1 ]; then
+            version=$(scripts/bump_version.sh --check)
+            echo "::notice::rehearsal of $version on $GITHUB_REF: the release guard is skipped and nothing is published"
+            { echo "sha=$GITHUB_SHA"; echo "version=$version"; echo "tag=v$version"; } >> "$GITHUB_OUTPUT"
+          else
+            scripts/release_guard.sh "$GITHUB_SHA"
+          fi
+
+  quality:
+    needs: guard
+    uses: ./.github/workflows/quality-checks.yml
+
+  unit:
+    needs: guard
+    permissions:
+      contents: read
+      checks: write        # the unit workflow publishes its JUnit summary
+    uses: ./.github/workflows/unit-tests.yml
+
+  integration:
+    needs: guard
+    permissions:
+      contents: read
+      checks: write
+    uses: ./.github/workflows/integration-tests.yml
+
+  android-e2e:
+    needs: guard
+    uses: ./.github/workflows/e2e-android.yml
+
+  native:
+    name: native
+    needs: guard
+    runs-on: macos-latest
+    # three iOS slices and three Android ABIs, each a release build of bingle_jsi.
+    timeout-minutes: 90
+    env:
+      CARGO_TERM_COLOR: always
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      # build_android.sh uses associative arrays, which need bash 4 or later (macOS ships 3.2).
+      - name: Check bash
+        run: |
+          echo "bash $BASH_VERSION at $(command -v bash)"
+          [ "${BASH_VERSINFO[0]}" -ge 4 ] || { echo "::error::the native build scripts need bash 4 or later"; exit 1; }
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios, aarch64-apple-ios-sim, x86_64-apple-ios, aarch64-linux-android, armv7-linux-androideabi, x86_64-linux-android
+
+      # the scripts end with scan_native_leaks.sh, which fails the build if a build-machine path
+      # (the runner's /Users/runner home among them) is baked into a shipped library.
+      - name: Build the iOS XCFramework
+        run: bash bingle_jsi/scripts/build_ios.sh
+
+      - name: Build the Android libraries
+        run: bash bingle_jsi/scripts/build_android.sh
+
+      - name: Upload the native libraries
+        uses: actions/upload-artifact@v7
+        with:
+          name: bingle-jsi-native
+          path: |
+            bingle_jsi/ios/BingleJsi.xcframework
+            bingle_jsi/ios/generated
+            bingle_jsi/android/generated
+            bingle_jsi/android/src/main/jniLibs
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    name: publish
+    needs: [guard, quality, unit, integration, android-e2e, native]
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      id-token: write      # crates.io and npm Trusted Publishing
+    env:
+      CARGO_TERM_COLOR: always
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@v2
+
+      # Trusted Publishing needs npm 11.5.1 or later.
+      - name: Install Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Update npm
+        run: npm install -g npm@latest && npm --version
+
+      # the upload's paths are relative to their common ancestor, bingle_jsi/.
+      - name: Download the native libraries
+        uses: actions/download-artifact@v8
+        with:
+          name: bingle-jsi-native
+          path: bingle_jsi
+
+      # the checks and dry runs, before any credential exists.
+      - name: Check a from-scratch dependency resolution
+        run: scripts/check_fresh_resolution.sh
+
+      - name: Check no test hooks in release builds
+        run: scripts/check_no_test_hooks_in_release.sh
+
+      - name: Package and verify the crates (dry run)
+        run: DRY_RUN=1 scripts/publish_crates.sh
+
+      - name: Pack the npm module (dry run)
+        run: DRY_RUN=1 scripts/publish_npm.sh
+
+      # a token valid for about 30 minutes, minted from this job's OIDC identity; the action revokes
+      # it when the job ends.
+      - name: Authenticate to crates.io (Trusted Publishing)
+        if: ${{ !inputs.rehearsal }}
+        id: crates-auth
+        uses: rust-lang/crates-io-auth-action@v1
+
+      - name: Publish the crates ${{ needs.guard.outputs.version }}
+        if: ${{ !inputs.rehearsal }}
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.crates-auth.outputs.token }}
+        run: scripts/publish_crates.sh
+
+      - name: Publish react-native-bingle-jsi ${{ needs.guard.outputs.version }}
+        if: ${{ !inputs.rehearsal }}
+        run: scripts/publish_npm.sh
+
+  tag:
+    name: tag
+    needs: [guard, publish]
+    if: ${{ !inputs.rehearsal }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write      # push the tag
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      # the guard already refused a tag on another commit; a tag the release pushed (with an
+      # Allow-untested line, say) is left as it is.
+      - name: Tag ${{ needs.guard.outputs.tag }}
+        env:
+          SHA: ${{ needs.guard.outputs.sha }}
+          TAG: ${{ needs.guard.outputs.tag }}
+          VERSION: ${{ needs.guard.outputs.version }}
+        run: |
+          set -euo pipefail
+          if git rev-parse --verify --quiet "refs/tags/$TAG" >/dev/null; then
+            echo "$TAG already names $(git rev-parse --short "$TAG^{commit}"); leaving it"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG" "$SHA" -m "release $TAG"
+          git push origin "refs/tags/$TAG"
+          echo "pushed $TAG on $(git rev-parse --short "$SHA")"
