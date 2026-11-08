@@ -44,9 +44,25 @@ Not on pull requests: emulator runs are heavy, so this is a post-merge check on 
    (issue #284).
 4. Builds the Android native library (`build_android.sh`) and the Detox app + `androidTest` APKs.
 5. Boots a KVM-accelerated x86_64 emulator (`reactivecircus/android-emulator-runner`) and runs
-   `bingle_jsi/example/scripts/ci_run_android_e2e.sh`: harden the emulator, stage the testnet
-   backend, Metro headless + pre-warm, then `detox test --headless`.
+   `bingle_jsi/example/scripts/ci_run_android_e2e.sh`: harden the emulator, prepare the screen
+   (below), stage the localnet backend, Metro headless + pre-warm, then `detox test --headless`.
 6. Uploads Detox artifacts, and the provisioner and Sidewinder node logs, on failure.
+
+### Preparing the emulator screen (issue #414)
+
+The emulator boots from the cached snapshot, which can restore a dialog or the lock screen over the
+launcher. Until it goes, the app's window cannot get focus, and the first suite (or every suite)
+fails with `has-window-focus=false` or `No views in hierarchy found`, then passes on a re-run. So
+before the tests, `ci_run_android_e2e.sh`:
+
+1. logs the focused window (`dumpsys window`, `mCurrentFocus`);
+2. dismisses the keyguard, closes system dialogs (`CLOSE_SYSTEM_DIALOGS`) and presses Home;
+3. waits up to a minute for the launcher to hold focus, and logs it again;
+4. records every change of focus during the run in `artifacts/window_focus.log`, printed when the
+   run fails.
+
+A failing test also keeps a screenshot and the device log (`--take-screenshots failing
+--record-logs failing`). All of these are in the `detox-artifacts` upload.
 
 A 60-minute `timeout-minutes` bounds the run.
 
