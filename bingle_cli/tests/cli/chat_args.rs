@@ -137,6 +137,18 @@ pub fn no_retries_flag_defaults_off_and_parses() {
 
 #[test]
 #[cfg(not(target_os = "ios"))]
+pub fn plain_flag_defaults_off_and_parses() {
+    // Issue #81: --plain turns off the line editor and keeps logs on stdout.
+    assert!(!parse_chat_args(args(&["alice"])).expect("parse").plain);
+    assert!(
+        parse_chat_args(args(&["alice", "--plain"]))
+            .expect("parse")
+            .plain
+    );
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn state_file_allows_missing_handle() {
     // With a state file the handle can come from the stored keypair, so it need not be on the CLI.
     // parse leaves the handle empty; the bridge fills it in from the file.

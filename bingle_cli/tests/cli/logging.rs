@@ -1,7 +1,10 @@
 // Unit tests for the CLI log-level defaults and filter directives (bingle_cli::logging).
-use bingle_cli::logging::{HTTP_STACK_TARGETS, default_log_level, filter_directives, log_filter};
-use std::sync::Arc;
+use bingle_cli::chat_console::ConsoleOut;
+use bingle_cli::logging::{
+    ConsoleLogSink, HTTP_STACK_TARGETS, default_log_level, filter_directives, log_filter,
+};
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 use tracing_subscriber::filter::LevelFilter;
 use tracing_subscriber::layer::{Context, Layer, SubscriberExt};
 
@@ -127,4 +130,52 @@ pub fn rust_log_brings_back_http_detail() {
 #[cfg(not(target_os = "ios"))]
 pub fn an_unparseable_rust_log_falls_back_to_the_level() {
     assert_eq!(counts_through(LevelFilter::DEBUG, Some("=[bad")), (1, 1));
+}
+
+/// A console that records the lines printed above the prompt.
+#[derive(Default)]
+struct RecordingConsole {
+    lines: Mutex<Vec<String>>,
+}
+
+impl ConsoleOut for RecordingConsole {
+    fn print_line(&self, text: &str) {
+        self.lines.lock().expect("lines").push(text.to_string());
+    }
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn an_attached_console_gets_each_log_line_above_the_prompt() {
+    // Issue #81: with the chat line editor on, log lines print above the prompt, one per event,
+    // without the trailing newline the formatter adds.
+    let sink = ConsoleLogSink::default();
+    let console = Arc::new(RecordingConsole::default());
+    sink.attach(console.clone());
+    let subscriber = tracing_subscriber::registry().with(
+        tracing_subscriber::fmt::layer()
+            .without_time()
+            .with_ansi(false)
+            .with_target(false)
+            .with_writer(sink.clone()),
+    );
+    tracing::subscriber::with_default(subscriber, || {
+        tracing::warn!("first");
+        tracing::warn!("second");
+    });
+    let lines = console.lines.lock().expect("lines").clone();
+    assert_eq!(lines.len(), 2, "{lines:?}");
+    assert!(lines[0].ends_with("first"), "{lines:?}");
+    assert!(lines[1].ends_with("second"), "{lines:?}");
+    assert!(lines.iter().all(|l| !l.ends_with('\n')), "{lines:?}");
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn an_unattached_sink_does_not_need_a_console() {
+    // Before a chat session attaches (and for every other subcommand), lines go to stdout.
+    let sink = ConsoleLogSink::default();
+    let subscriber =
+        tracing_subscriber::registry().with(tracing_subscriber::fmt::layer().with_writer(sink));
+    tracing::subscriber::with_default(subscriber, || tracing::warn!("to stdout"));
 }

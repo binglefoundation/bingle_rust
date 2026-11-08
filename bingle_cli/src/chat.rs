@@ -82,6 +82,9 @@ pub struct ChatArgs {
     /// `--auto-migrate`: before starting, migrate the account from a blessed ancestor app when it is
     /// registered there but not yet on the configured app (issue #314), as `run --auto-migrate` does.
     pub auto_migrate: bool,
+    /// `--plain`: no line editing, and log lines print straight to the terminal rather than above
+    /// the prompt (issue #81). Piped input is always plain.
+    pub plain: bool,
 }
 
 /// Parse the arguments following `chat` into a [`ChatArgs`].
@@ -98,6 +101,7 @@ pub fn parse_chat_args(args: Vec<String>) -> Result<ChatArgs, String> {
     let mut notify_url: Option<String> = None;
     let mut poll_interval_secs: Option<u64> = None;
     let mut auto_migrate = false;
+    let mut plain = false;
     // Everything not consumed here is forwarded to the shared start-options parser.
     let mut rest: Vec<String> = Vec::with_capacity(args.len());
 
@@ -117,6 +121,10 @@ pub fn parse_chat_args(args: Vec<String>) -> Result<ChatArgs, String> {
             // `--no-retry` too).
             "--no-retries" | "--no-retry" => {
                 no_retries = true;
+            }
+            // Raw terminal output: no line editor, logs not kept above the prompt (issue #81).
+            "--plain" => {
+                plain = true;
             }
             "--store-forward" => {
                 let value = it
@@ -177,5 +185,6 @@ pub fn parse_chat_args(args: Vec<String>) -> Result<ChatArgs, String> {
         notify_url,
         poll_interval_secs,
         auto_migrate,
+        plain,
     })
 }

@@ -27,7 +27,10 @@ use tracing::warn;
 use tracing_subscriber::filter::LevelFilter;
 use tracing_subscriber::prelude::*;
 
-fn init_logger_from_args(args: &mut Vec<String>) {
+/// Install the global tracing subscriber from the logging flags in `args` (stripping them), and
+/// return the sink its log lines are written through, so a chat session can keep them above its
+/// prompt (issue #81).
+fn init_logger_from_args(args: &mut Vec<String>) -> bingle_cli::logging::ConsoleLogSink {
     // Parse and strip global logging flags from args, choose the last-specified level if multiple are present
     let mut chosen: Option<LevelFilter> = None;
     let mut chosen_mode: Option<LogMode> = None;
@@ -135,7 +138,10 @@ fn init_logger_from_args(args: &mut Vec<String>) {
     let default_level = bingle_cli::logging::default_log_level(args.first().map(String::as_str));
     let level = chosen.unwrap_or(default_level);
     let mode = chosen_mode.unwrap_or(LogMode::Plain);
-    let fmt_layer = tracing_subscriber::fmt::layer().event_format(BingleFormatter { mode });
+    let sink = bingle_cli::logging::ConsoleLogSink::default();
+    let fmt_layer = tracing_subscriber::fmt::layer()
+        .event_format(BingleFormatter { mode })
+        .with_writer(sink.clone());
 
     // HTTP client stack detail is capped at WARN; RUST_LOG, when set, overrides (issue #402).
     let rust_log = std::env::var("RUST_LOG").ok();
@@ -147,6 +153,7 @@ fn init_logger_from_args(args: &mut Vec<String>) {
         .with(fmt_layer);
 
     let _ = tracing::subscriber::set_global_default(subscriber);
+    sink
 }
 
 fn main() {
@@ -165,7 +172,7 @@ fn main() {
     }
 
     // Initialize logger from global flags and strip them from args (default Info)
-    init_logger_from_args(&mut args);
+    let log_sink = init_logger_from_args(&mut args);
 
     tracing::info!("Bingle CLI starting. Version: {}", version_string());
 
@@ -181,7 +188,7 @@ fn main() {
     let sub = args.remove(0);
     match sub.as_str() {
         "run" => cmd_run(args),
-        "chat" => cmd_chat(args),
+        "chat" => cmd_chat(args, log_sink),
         "register" => cmd_register(args),
         "migrate" => cmd_migrate(args),
         "buybingle" => cmd_buybingle(args),
@@ -204,7 +211,7 @@ fn print_usage_and_exit(code: i32) -> ! {
         "  Note: chat and checkrelays default to WARN-level logs so their output isn't buried under engine tracing; use --info or --debug to see more (or --log-level error for just the result).\n",
         "  Note: HTTP client detail (h2, hyper, hyper_util, reqwest) is capped at WARN at every level; set RUST_LOG (which overrides the level flags) to see it.\n",
         "  bingle_cli run [--handle <handle>|<handle>] [--passphrase <text>] [--relay] [--static-ip <ip:port>] [--stun-servers <list>] [--stun-servers-file <file>] [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--sentinel-file <path>] [--echo] [--auto-migrate] [--log-mode <Plain|ANSI|AWS|JS>]\n",
-        "  bingle_cli chat [--handle <handle>|<handle>] [--passphrase <text>] [--to <handle> | --to-id <id>] [--state_file <file>] [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--stun-servers <list>] [--stun-servers-file <file>] [--no-retries] [--store-forward <both|send|receive|none>] [--notify <url>] [--auto-migrate] [--info|--debug]\n",
+        "  bingle_cli chat [--handle <handle>|<handle>] [--passphrase <text>] [--to <handle> | --to-id <id>] [--state_file <file>] [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--stun-servers <list>] [--stun-servers-file <file>] [--no-retries] [--store-forward <both|send|receive|none>] [--notify <url>] [--auto-migrate] [--plain] [--info|--debug]\n",
         "  bingle_cli register --handle <handle> --passphrase <text> --app-id <id> --asset-id <id> --price-units <n> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>] [--log-mode <Plain|ANSI|AWS|JS>]\n",
         "  bingle_cli migrate --passphrase <text> [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--log-mode <Plain|ANSI|AWS|JS>]  (opt-in + migrate local state to the app from a blessed ancestor; handle is copied on-chain)\n",
         "  bingle_cli buybingle [<price_algos>] --passphrase <text> --app-id <id> --asset-id <id> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>] [--log-mode <Plain|ANSI|AWS|JS>]  (omit <price_algos> to pay the on-chain price)\n",
@@ -676,11 +683,12 @@ fn cmd_run(mut args: Vec<String>) {
 /// on later runs the saved state file suffices with no credentials. The interactive session loop is
 /// a later subtask of the chat epic (#56); this command takes the account to the point of being
 /// registered and ready. The pure startup decision lives in `bingle_cli::chat_register` for testing.
-fn cmd_chat(args: Vec<String>) {
+fn cmd_chat(args: Vec<String>, log_sink: bingle_cli::logging::ConsoleLogSink) {
     // One string literal per output line (adjacent literals concatenate at compile time) for
     // readability in source; each keeps its trailing `\n` except the last.
     const USAGE: &str = concat!(
-        "Usage: bingle_cli chat [--handle <handle>|<handle>] [--passphrase <text>] [--to <handle> | --to-id <id>] [--state_file <file>] [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--stun-servers <list>] [--stun-servers-file <file>] [--no-retries] [--store-forward <both|send|receive|none>] [--notify <url>] [--auto-migrate] [--info|--debug]\n",
+        "Usage: bingle_cli chat [--handle <handle>|<handle>] [--passphrase <text>] [--to <handle> | --to-id <id>] [--state_file <file>] [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--stun-servers <list>] [--stun-servers-file <file>] [--no-retries] [--store-forward <both|send|receive|none>] [--notify <url>] [--auto-migrate] [--plain] [--info|--debug]\n",
+        "  --plain: no line editing; log lines print straight to the terminal instead of above the prompt.\n",
         "  --store-forward: enable Sidewinder Mailbox store-and-forward. The node is discovered on-chain from the Bingle app id and reached over mutual TLS. both=send+receive, send=post on give-up, receive=poll inbox, none=off (default).\n",
         "  --notify <url>: nudge the bingle_notify gateway at <url> when a direct send gives up.",
     );
@@ -751,7 +759,19 @@ fn cmd_chat(args: Vec<String>) {
         chat_args.to_id.clone(),
         !chat_args.no_retries,
         poll_interval,
+        ChatOutput {
+            plain: chat_args.plain,
+            log_sink,
+        },
     );
+}
+
+/// How the chat session presents its output (issue #81).
+struct ChatOutput {
+    /// `--plain`: no line editor, and log lines go straight to the terminal.
+    plain: bool,
+    /// The log sink, attached to the console when line editing is on.
+    log_sink: bingle_cli::logging::ConsoleLogSink,
 }
 
 /// How often the shared pending-message sender looks for a message to retry when nothing wakes it.
@@ -785,6 +805,7 @@ fn run_chat_session(
     to_id: Option<String>,
     retries_enabled: bool,
     poll_interval: Duration,
+    output: ChatOutput,
 ) {
     let opts = state.opts.clone();
     // Shared with the engine callback and the retry worker: all mutate the one ChatState.
@@ -792,8 +813,17 @@ fn run_chat_session(
     let api = BingleApiImpl::new(&opts);
     // Line source and output (issue #336): output from other threads (received messages, send
     // results, connection changes) prints above the prompt and keeps a half-typed line intact.
-    let mut console = ChatConsole::new();
+    let mut console = if output.plain {
+        ChatConsole::plain()
+    } else {
+        ChatConsole::new()
+    };
     let out = console.out();
+    // With the line editor, log lines print above the prompt too, rather than breaking into the
+    // half-typed line (issue #81). Plain output keeps them on stdout as before.
+    if console.is_editing() {
+        output.log_sink.attach(out.clone());
+    }
     // Readiness gate: flipped true by the `on_listening(true, …)` callback once the node is actually
     // listening on the network. The REPL waits on this before showing the prompt so the user cannot
     // send (and lose) a message before there is a return path (issue #91).
