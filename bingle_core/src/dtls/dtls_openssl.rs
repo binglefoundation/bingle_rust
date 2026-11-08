@@ -1358,8 +1358,6 @@ pub mod openssl_impl {
         }
     }
 
-    /// OpenSSL-backed DTLS implementation (non-iOS).
-
     /// Track a per-peer reader thread handle so Dtls::stop can join it. Prunes handles that have
     /// already finished so the tracking vec stays bounded on a long-lived connection.
     fn register_reader_thread(

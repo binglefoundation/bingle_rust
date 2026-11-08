@@ -14,14 +14,7 @@ members = [
 # remove its lints here (set back to "warn"/"deny"). Members opt in with
 # `[lints] workspace = true`. See scripts/run_quality_checks.sh.
 [workspace.lints.clippy]
-# #33 doc-comment & literal formatting
-doc_overindented_list_items = "allow"
-doc_lazy_continuation = "allow"
-empty_line_after_doc_comments = "allow"
-empty_line_after_outer_attr = "allow"
-unusual_byte_groupings = "allow"
-legacy_numeric_constants = "allow"
-# #34 simplifiable control flow
+# #13 simplifiable control flow
 collapsible_if = "allow"
 collapsible_match = "allow"
 match_like_matches_macro = "allow"
@@ -33,7 +26,7 @@ unnecessary_map_or = "allow"
 manual_unwrap_or_default = "allow"
 manual_unwrap_or = "allow"
 filter_next = "allow"
-# #35 redundant clones/conversions/allocations & misc style
+# #14 redundant clones/conversions/allocations & misc style
 useless_vec = "allow"
 useless_conversion = "allow"
 clone_on_copy = "allow"
@@ -50,15 +43,10 @@ same_item_push = "allow"
 expect_fun_call = "allow"
 needless_range_loop = "allow"
 len_zero = "allow"
-# #36 type complexity (needs `type` aliases)
+# #15 type complexity (needs `type` aliases)
 type_complexity = "allow"
-# #37 API-signature / design lints
+# #16 API-signature / design lints
 too_many_arguments = "allow"
 new_without_default = "allow"
 len_without_is_empty = "allow"
 result_large_err = "allow"
-# #38 test-code lints
-bool_assert_comparison = "allow"
-assertions_on_constants = "allow"
-field_reassign_with_default = "allow"
-items_after_test_module = "allow"

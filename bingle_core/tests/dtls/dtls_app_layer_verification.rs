@@ -83,9 +83,8 @@ pub fn dtls_app_layer_verification_reject_blocks_delivery_but_handshake_succeeds
 
     // Give server some time; because the handler rejects the cert at app layer, delivery should be blocked.
     thread::sleep(Duration::from_millis(300));
-    assert_eq!(
-        delivered.load(Ordering::SeqCst),
-        false,
+    assert!(
+        !delivered.load(Ordering::SeqCst),
         "application data should be blocked when app-layer verification rejects"
     );
 }

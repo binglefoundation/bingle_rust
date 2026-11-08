@@ -1,4 +1,4 @@
-/// Bingle protocol-wide constants
+//! Bingle protocol-wide constants
 
 // For now set to empty as no room for base 32 and suffix
 
