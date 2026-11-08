@@ -2,7 +2,8 @@
 //!
 //! A user can chat only from a **registered** account. There are two supported paths (either
 //! works): register beforehand with `bingle_cli register`, or register on the first `chat` run by
-//! supplying a funded `--passphrase` and a `--handle`. This module holds the pure decision — given
+//! supplying a funded `--passphrase` and a `--handle`. An account that is already registered needs
+//! only its `--passphrase` on the first run (issue #397). This module holds the pure decision — given
 //! the account's resolved status and the credentials on the command line, what should `chat` do:
 //! proceed, register, block-and-fund, reject, or ask for credentials?
 //!
@@ -37,7 +38,7 @@ pub enum AccountStatus {
 /// Why `chat` cannot proceed and what the user must supply.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CredentialGap {
-    /// No registered account and no credentials to make one.
+    /// No saved account and no `--passphrase` to import one from.
     NoAccount,
     /// The account is funded but unregistered; a `--handle` is needed to register it.
     FundedNeedsHandle,
@@ -48,7 +49,11 @@ pub enum CredentialGap {
 pub enum StartupDecision {
     /// The account is registered and adequately funded — go to the chat loop as `handle`.
     Proceed { handle: String },
-    /// Register this account under `handle` (importing from the passphrase first if needed).
+    /// Import the keypair from the `--passphrase`, then decide again on the account's resolved
+    /// status: an already-registered account proceeds under its on-chain handle, and a funded one
+    /// registers if a `--handle` was given.
+    Import,
+    /// Register this (funded, unregistered) account under `handle`.
     Register { handle: String },
     /// Blocked: the account needs funding. `needed_algos` is the top-up to add to `id`.
     Fund { id: String, needed_algos: f64 },
@@ -70,14 +75,11 @@ pub fn decide_startup(
     have_passphrase: bool,
 ) -> StartupDecision {
     match status {
-        AccountStatus::NoKeypair => match (have_passphrase, cli_handle) {
-            // Both credentials present: import from the passphrase and register the handle.
-            (true, Some(handle)) => StartupDecision::Register {
-                handle: handle.to_string(),
-            },
-            _ => StartupDecision::NeedCredentials {
-                gap: CredentialGap::NoAccount,
-            },
+        // A passphrase is enough to import: whether a handle is needed depends on the imported
+        // account's status, which is only known after the import.
+        AccountStatus::NoKeypair if have_passphrase => StartupDecision::Import,
+        AccountStatus::NoKeypair => StartupDecision::NeedCredentials {
+            gap: CredentialGap::NoAccount,
         },
         AccountStatus::Unfunded {
             id,

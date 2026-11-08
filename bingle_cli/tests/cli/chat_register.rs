@@ -12,20 +12,24 @@ fn active(handle: &str, balance: f64, min: f64) -> AccountStatus {
 
 #[test]
 #[cfg(not(target_os = "ios"))]
-pub fn no_keypair_with_passphrase_and_handle_registers() {
+pub fn no_keypair_with_passphrase_and_handle_imports() {
     let d = decide_startup(&AccountStatus::NoKeypair, Some("alice"), true);
-    assert_eq!(
-        d,
-        StartupDecision::Register {
-            handle: "alice".to_string()
-        }
-    );
+    assert_eq!(d, StartupDecision::Import);
 }
 
 #[test]
 #[cfg(not(target_os = "ios"))]
-pub fn no_keypair_missing_handle_needs_credentials() {
+pub fn no_keypair_with_passphrase_alone_imports() {
+    // Issue #397: the passphrase of an already-registered account is enough on a first run; a
+    // handle is only needed if the imported account turns out to be unregistered.
     let d = decide_startup(&AccountStatus::NoKeypair, None, true);
+    assert_eq!(d, StartupDecision::Import);
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn no_keypair_without_credentials_needs_credentials() {
+    let d = decide_startup(&AccountStatus::NoKeypair, None, false);
     assert_eq!(
         d,
         StartupDecision::NeedCredentials {
@@ -168,6 +172,58 @@ pub fn second_run_active_needs_no_passphrase_or_handle() {
         d,
         StartupDecision::Proceed {
             handle: "alice".to_string()
+        }
+    );
+}
+
+// Issue #397: the statuses `chat` re-decides on after importing from `--passphrase` alone.
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn imported_active_account_proceeds_under_its_on_chain_handle() {
+    let d = decide_startup(&active("alice", 2.0, 1.5), None, true);
+    assert_eq!(
+        d,
+        StartupDecision::Proceed {
+            handle: "alice".to_string()
+        }
+    );
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn imported_funded_account_without_handle_needs_handle() {
+    let d = decide_startup(
+        &AccountStatus::Funded {
+            id: "ACCT_ID".to_string(),
+        },
+        None,
+        true,
+    );
+    assert_eq!(
+        d,
+        StartupDecision::NeedCredentials {
+            gap: CredentialGap::FundedNeedsHandle
+        }
+    );
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn imported_unfunded_account_blocks_for_funding() {
+    let d = decide_startup(
+        &AccountStatus::Unfunded {
+            id: "ACCT_ID".to_string(),
+            shortfall_algos: 0.5,
+        },
+        None,
+        true,
+    );
+    assert_eq!(
+        d,
+        StartupDecision::Fund {
+            id: "ACCT_ID".to_string(),
+            needed_algos: 0.5
         }
     );
 }

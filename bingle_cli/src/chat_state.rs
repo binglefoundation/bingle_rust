@@ -278,6 +278,16 @@ impl ChatState {
         self.local.get_messages().map_err(|e| e.to_string())
     }
 
+    /// Take the account's registered `handle` as this session's own handle when none is set yet: the
+    /// first-run flow learns it from the chain after importing from `--passphrase` alone (issue
+    /// #397), and outbound messages need it as their sender. A handle already set (from `--handle`
+    /// or the state file) is kept; the startup flow has already checked that it matches.
+    pub fn adopt_handle(&mut self, handle: &str) {
+        if self.opts.handle.is_empty() {
+            self.opts.handle = handle.to_string();
+        }
+    }
+
     /// Persist an outbound message as **pending** (`progress = 0.0`) and return its id, which keys
     /// later [`mark_delivered`](ChatState::mark_delivered) /
     /// [`mark_send_failed`](ChatState::mark_send_failed) updates. Persisting before the send attempt
