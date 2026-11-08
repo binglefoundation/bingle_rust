@@ -24,7 +24,7 @@ fn build_dtls_record(ct: u8, epoch: u16, seq: u64, version: [u8; 2], payload: &[
 #[cfg(not(target_os = "ios"))]
 pub fn dtls_trace_json_includes_sequence_and_epoch() {
     let epoch = 3u16;
-    let seq: u64 = 0x0000_0000_00AB_CDu64; // fits in 48 bits
+    let seq: u64 = 0x0000_0000_ABCDu64; // fits in 48 bits
     let datagram = build_dtls_record(22, epoch, seq, [0xFE, 0xFD], &[0u8; 12]); // minimal handshake header length
 
     let json_txt = dtls_udp_to_json_with_level(&datagram, tracing::Level::TRACE).expect("ok");

@@ -1937,13 +1937,13 @@ impl AlgoBingle {
     /// `accounts` (keys are the `ACCOUNT_*` constants defined in this module):
     ///
     /// - `APP_ADMIN`      — address set as `app_admin` global state; calls `set_bingle_price`.
-    ///                      Defaults to APP_CREATOR if absent.
+    ///   Defaults to APP_CREATOR if absent.
     /// - `APP_WITHDRAWER` — address set as `app_withdrawer` global state; opted into the ASA.
-    ///                      Defaults to APP_CREATOR if absent.
+    ///   Defaults to APP_CREATOR if absent.
     /// - `ASSET_CREATOR`  — account that creates the ASA (becomes ASA manager).
-    ///                      Defaults to APP_CREATOR if absent.
+    ///   Defaults to APP_CREATOR if absent.
     /// - `ASSET_RESERVE`  — address used as the ASA reserve field; opted into the ASA if it
-    ///                      differs from the app account. Defaults to the app address if absent.
+    ///   differs from the app account. Defaults to the app address if absent.
     /// - `ASSET_MANAGER`  — address set as the ASA manager field, allowing future reconfiguration.
     /// - `ASSET_FREEZE`   — address set as the ASA freeze field.
     pub fn deploy_app_and_asset(

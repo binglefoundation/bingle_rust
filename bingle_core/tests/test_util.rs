@@ -297,7 +297,8 @@ pub fn init_test_logging_with_filter(filter_str: &str) {
 ///    Declares the following state schema:
 ///    - Global: 2 ints (`BinglePrice`, `LastHandleTime`)
 ///    - Local:  3 ints (`handle_time`, `allow_static`, `allow_relay`),
-///              3 byteslices (`Handle`, `static_endpoint`, `static_endpoint_x`)
+///      3 byteslices (`Handle`, `static_endpoint`, `static_endpoint_x`)
+///
 ///    Returns the assigned `app_id`.
 ///
 /// 3. **`set_bingle_price(uint64)void`** — ApplicationCall (NoOp) by the **creator**.

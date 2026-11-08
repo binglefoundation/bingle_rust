@@ -48,5 +48,5 @@ pub fn router_dispatches_triangle_test1_response() {
         router.route(&handler, &msg, "SENDERID");
     });
 
-    assert_eq!(*hit.lock().unwrap(), true);
+    assert!(*hit.lock().unwrap());
 }

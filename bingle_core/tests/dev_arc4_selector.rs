@@ -15,5 +15,4 @@ pub fn print_set_allow_static_selector() {
         digest[2],
         digest[3]
     );
-    assert!(true);
 }

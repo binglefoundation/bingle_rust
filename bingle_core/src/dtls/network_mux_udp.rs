@@ -447,101 +447,6 @@ impl NetworkMux for UdpNetworkMux {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::{MuxType, UdpNetworkMux, mux_type_for};
-    use std::net::UdpSocket;
-    use std::time::Duration;
-
-    #[test]
-    fn mux_type_empty_is_unknown() {
-        assert_eq!(mux_type_for(&[]), MuxType::Unknown);
-    }
-
-    #[test]
-    fn rebind_recovers_socket_on_same_port() {
-        // Regression: a transient network error must not tear the transport down
-        // permanently. The receive loop drops the dead socket (freeing the port)
-        // and rebinds; this exercises that rebind directly.
-        let mux = UdpNetworkMux::bind("127.0.0.1:0").expect("bind");
-        let port = mux.local_addr().expect("local_addr").port();
-
-        // Simulate the receive loop's teardown after a recv error: drop the live
-        // socket so the port is free to rebind.
-        {
-            let mut guard = mux.socket.lock().unwrap();
-            let taken = guard.take();
-            drop(taken);
-        }
-        assert!(mux.is_closed(), "socket should be closed after take");
-
-        // Rebind succeeds on the same port and installs a live socket again.
-        let loop_sock = mux.rebind().expect("rebind should succeed");
-        loop_sock
-            .set_read_timeout(Some(Duration::from_millis(500)))
-            .unwrap();
-        assert!(!mux.is_closed(), "socket should be live after rebind");
-        assert_eq!(
-            mux.local_addr().unwrap().port(),
-            port,
-            "rebind should reuse the same port"
-        );
-
-        // The rebound socket actually receives traffic on that port.
-        let sender = UdpSocket::bind("127.0.0.1:0").unwrap();
-        sender
-            .send_to(b"ping", ("127.0.0.1", port))
-            .expect("send_to");
-        let mut buf = [0u8; 16];
-        let (n, _from) = loop_sock.recv_from(&mut buf).expect("recv after rebind");
-        assert_eq!(
-            &buf[..n],
-            b"ping",
-            "rebound socket should receive datagrams"
-        );
-    }
-
-    #[test]
-    fn mux_type_stun_bounds() {
-        assert_eq!(mux_type_for(&[0]), MuxType::Stun);
-        assert_eq!(mux_type_for(&[3]), MuxType::Stun);
-        assert_eq!(mux_type_for(&[4]), MuxType::Unknown);
-    }
-
-    #[test]
-    fn mux_type_zrtp_bounds() {
-        assert_eq!(mux_type_for(&[16]), MuxType::Zrtp);
-        assert_eq!(mux_type_for(&[19]), MuxType::Zrtp);
-        assert_eq!(mux_type_for(&[15]), MuxType::Unknown);
-    }
-
-    #[test]
-    fn mux_type_dtls_bounds() {
-        assert_eq!(mux_type_for(&[20]), MuxType::Dtls);
-        assert_eq!(mux_type_for(&[63]), MuxType::Dtls);
-        assert_eq!(mux_type_for(&[64]), MuxType::TurnChannelData);
-    }
-
-    #[test]
-    fn mux_type_turn_bounds() {
-        assert_eq!(mux_type_for(&[0x40]), MuxType::TurnChannelData);
-        assert_eq!(mux_type_for(&[0x7f]), MuxType::TurnChannelData);
-        assert_eq!(mux_type_for(&[0x80]), MuxType::Rtp);
-    }
-
-    #[test]
-    fn mux_type_rtp_bounds() {
-        assert_eq!(mux_type_for(&[128]), MuxType::Rtp);
-        assert_eq!(mux_type_for(&[191]), MuxType::Rtp);
-        assert_eq!(mux_type_for(&[192]), MuxType::Unknown);
-    }
-
-    #[test]
-    fn mux_type_unknown_outside_ranges() {
-        assert_eq!(mux_type_for(&[255]), MuxType::Unknown);
-    }
-}
-
 impl UdpNetworkMux {
     /// Arc-friendly setter for DTLS handler to allow installing from Arc<UdpNetworkMux>.
     pub fn set_handle_dtls_arc(self: &Arc<Self>, handler: Option<HandleDtls>) {
@@ -677,5 +582,100 @@ impl UdpNetworkMux {
         }
 
         self.process_packet(from, buf);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{MuxType, UdpNetworkMux, mux_type_for};
+    use std::net::UdpSocket;
+    use std::time::Duration;
+
+    #[test]
+    fn mux_type_empty_is_unknown() {
+        assert_eq!(mux_type_for(&[]), MuxType::Unknown);
+    }
+
+    #[test]
+    fn rebind_recovers_socket_on_same_port() {
+        // Regression: a transient network error must not tear the transport down
+        // permanently. The receive loop drops the dead socket (freeing the port)
+        // and rebinds; this exercises that rebind directly.
+        let mux = UdpNetworkMux::bind("127.0.0.1:0").expect("bind");
+        let port = mux.local_addr().expect("local_addr").port();
+
+        // Simulate the receive loop's teardown after a recv error: drop the live
+        // socket so the port is free to rebind.
+        {
+            let mut guard = mux.socket.lock().unwrap();
+            let taken = guard.take();
+            drop(taken);
+        }
+        assert!(mux.is_closed(), "socket should be closed after take");
+
+        // Rebind succeeds on the same port and installs a live socket again.
+        let loop_sock = mux.rebind().expect("rebind should succeed");
+        loop_sock
+            .set_read_timeout(Some(Duration::from_millis(500)))
+            .unwrap();
+        assert!(!mux.is_closed(), "socket should be live after rebind");
+        assert_eq!(
+            mux.local_addr().unwrap().port(),
+            port,
+            "rebind should reuse the same port"
+        );
+
+        // The rebound socket actually receives traffic on that port.
+        let sender = UdpSocket::bind("127.0.0.1:0").unwrap();
+        sender
+            .send_to(b"ping", ("127.0.0.1", port))
+            .expect("send_to");
+        let mut buf = [0u8; 16];
+        let (n, _from) = loop_sock.recv_from(&mut buf).expect("recv after rebind");
+        assert_eq!(
+            &buf[..n],
+            b"ping",
+            "rebound socket should receive datagrams"
+        );
+    }
+
+    #[test]
+    fn mux_type_stun_bounds() {
+        assert_eq!(mux_type_for(&[0]), MuxType::Stun);
+        assert_eq!(mux_type_for(&[3]), MuxType::Stun);
+        assert_eq!(mux_type_for(&[4]), MuxType::Unknown);
+    }
+
+    #[test]
+    fn mux_type_zrtp_bounds() {
+        assert_eq!(mux_type_for(&[16]), MuxType::Zrtp);
+        assert_eq!(mux_type_for(&[19]), MuxType::Zrtp);
+        assert_eq!(mux_type_for(&[15]), MuxType::Unknown);
+    }
+
+    #[test]
+    fn mux_type_dtls_bounds() {
+        assert_eq!(mux_type_for(&[20]), MuxType::Dtls);
+        assert_eq!(mux_type_for(&[63]), MuxType::Dtls);
+        assert_eq!(mux_type_for(&[64]), MuxType::TurnChannelData);
+    }
+
+    #[test]
+    fn mux_type_turn_bounds() {
+        assert_eq!(mux_type_for(&[0x40]), MuxType::TurnChannelData);
+        assert_eq!(mux_type_for(&[0x7f]), MuxType::TurnChannelData);
+        assert_eq!(mux_type_for(&[0x80]), MuxType::Rtp);
+    }
+
+    #[test]
+    fn mux_type_rtp_bounds() {
+        assert_eq!(mux_type_for(&[128]), MuxType::Rtp);
+        assert_eq!(mux_type_for(&[191]), MuxType::Rtp);
+        assert_eq!(mux_type_for(&[192]), MuxType::Unknown);
+    }
+
+    #[test]
+    fn mux_type_unknown_outside_ranges() {
+        assert_eq!(mux_type_for(&[255]), MuxType::Unknown);
     }
 }
