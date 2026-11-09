@@ -602,11 +602,19 @@ pub mod openssl_impl {
             dtls_async_runtime,
             &from,
             peers,
-            handle_message,
-            peer_cert_handler,
+            ReadLoopHandlers {
+                handle_message,
+                peer_cert_handler,
+            },
             owner_generation,
             "::accept",
         );
+    }
+
+    /// The callbacks a post-handshake read loop delivers to.
+    struct ReadLoopHandlers {
+        handle_message: Option<HandleMessage>,
+        peer_cert_handler: Option<HandlePeerCertificate>,
     }
 
     /// Post-handshake reader loop for the client (outbound) path.
@@ -620,11 +628,14 @@ pub mod openssl_impl {
         dtls_async_runtime: Arc<tokio::runtime::Runtime>,
         from: &NetworkEndpoint,
         peers: PeerStates,
-        handle_message: Option<HandleMessage>,
-        peer_cert_handler: Option<HandlePeerCertificate>,
+        handlers: ReadLoopHandlers,
         owner_generation: u64,
         log_tag: &str,
     ) {
+        let ReadLoopHandlers {
+            handle_message,
+            peer_cert_handler,
+        } = handlers;
         tracing::info!(
             "[DTLS][DtlsOpenSsl:{}] run_read_loop_split starting for {} (generation={})",
             log_tag,
@@ -1447,6 +1458,22 @@ pub mod openssl_impl {
         public_endpoint: Arc<Mutex<Option<SocketAddr>>>,
     }
 
+    /// What the server-side DTLS handler needs for each inbound packet: the listener's shared
+    /// state and callbacks, captured once when the handler is installed.
+    #[derive(Clone)]
+    struct AcceptContext {
+        mux: Arc<crate::dtls::UdpNetworkMux>,
+        acceptor: Arc<SslAcceptor>,
+        peers: PeerStates,
+        dtls_async_runtime: Arc<tokio::runtime::Runtime>,
+        handle_message: Option<HandleMessage>,
+        handle_new_session: Option<HandleNewSession>,
+        peer_cert_handler: Option<HandlePeerCertificate>,
+        reader_threads: Arc<Mutex<Vec<std::thread::JoinHandle<()>>>>,
+        public_endpoint: Arc<Mutex<Option<SocketAddr>>>,
+        handle: String,
+    }
+
     impl DtlsOpenSsl {
         pub fn new(handle: String) -> Self {
             // Ensure test logs print immediately without buffering
@@ -1823,20 +1850,20 @@ pub mod openssl_impl {
         /// 5. **Inbound Stream Lifecycle**: If a new stream is needed, it creates an `SslStream` in
         ///    `accept_state` and spawns a background `run_read_loop` to handle the handshake and
         ///    subsequent application data.
-        fn handle_dtls_accept_packet(
-            mux: Arc<crate::dtls::UdpNetworkMux>,
-            acceptor: Arc<SslAcceptor>,
-            peers: PeerStates,
-            dtls_async_runtime: Arc<tokio::runtime::Runtime>,
-            handle_message: Option<HandleMessage>,
-            handle_new_session: Option<HandleNewSession>,
-            peer_cert_handler: Option<HandlePeerCertificate>,
-            reader_threads: Arc<Mutex<Vec<std::thread::JoinHandle<()>>>>,
-            public_endpoint: &Mutex<Option<SocketAddr>>,
-            from: &NetworkEndpoint,
-            data: &[u8],
-            handle: String,
-        ) {
+        fn handle_dtls_accept_packet(ctx: &AcceptContext, from: &NetworkEndpoint, data: &[u8]) {
+            let AcceptContext {
+                mux,
+                acceptor,
+                peers,
+                dtls_async_runtime,
+                handle_message,
+                handle_new_session,
+                peer_cert_handler,
+                reader_threads,
+                public_endpoint,
+                handle,
+            } = ctx.clone();
+            let public_endpoint: &Mutex<Option<SocketAddr>> = &public_endpoint;
             let tracing_span = tracing::info_span!("BingleApi", handle = %handle);
             let _tracing_span_guard = tracing_span.enter();
             // Check for looping back, verboten here
@@ -2088,33 +2115,23 @@ pub mod openssl_impl {
             *self.client_mux.lock().unwrap() = Some(mux.clone());
 
             // Shared state maps
-            let peers: PeerStates = self.peer_states.clone();
-            let dtls_async_runtime = self.dtls_async_runtime.clone();
-            let handle_message = self.handle_message.lock().unwrap().clone();
-            let handle_new_session = self.handle_new_session.lock().unwrap().clone();
-            let peer_cert_handler = *self.handle_peer_certificate.lock().unwrap();
-            let handle = self.handle.clone();
-            let reader_threads = self.reader_threads.clone();
-            let public_endpoint = self.public_endpoint.clone();
+            let ctx = AcceptContext {
+                mux: mux.clone(),
+                acceptor,
+                peers: self.peer_states.clone(),
+                dtls_async_runtime: self.dtls_async_runtime.clone(),
+                handle_message: self.handle_message.lock().unwrap().clone(),
+                handle_new_session: self.handle_new_session.lock().unwrap().clone(),
+                peer_cert_handler: *self.handle_peer_certificate.lock().unwrap(),
+                reader_threads: self.reader_threads.clone(),
+                public_endpoint: self.public_endpoint.clone(),
+                handle: self.handle.clone(),
+            };
 
             // Install a DTLS packet handler that queues datagrams and sets up per-peer SslStreams on first packet.
-            mux.clone()
-                .set_handle_dtls_arc(Some(Arc::new(move |_source, from, data| {
-                    Self::handle_dtls_accept_packet(
-                        mux.clone(),
-                        acceptor.clone(),
-                        peers.clone(),
-                        dtls_async_runtime.clone(),
-                        handle_message.clone(),
-                        handle_new_session.clone(),
-                        peer_cert_handler,
-                        reader_threads.clone(),
-                        &public_endpoint,
-                        from,
-                        data,
-                        handle.clone(),
-                    );
-                })));
+            mux.set_handle_dtls_arc(Some(Arc::new(move |_source, from, data| {
+                Self::handle_dtls_accept_packet(&ctx, from, data);
+            })));
 
             Ok(())
         }
@@ -2705,8 +2722,10 @@ pub mod openssl_impl {
                         runtime,
                         &from2,
                         peers2.clone(),
-                        handle_message2.clone(),
-                        peer_cert_handler2,
+                        ReadLoopHandlers {
+                            handle_message: handle_message2.clone(),
+                            peer_cert_handler: peer_cert_handler2,
+                        },
                         owner_generation,
                         "::send",
                     );

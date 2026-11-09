@@ -178,6 +178,12 @@ pub struct MockApiBoth {
     inner_bingle_api_internal: Arc<dyn InnerBingleApiInternal + Send + Sync>,
 }
 
+impl Default for MockApiBoth {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MockApiBoth {
     pub fn new() -> Self {
         struct DefaultApi;

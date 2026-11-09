@@ -10,6 +10,12 @@ pub struct TestNetwork {
     pub down: Arc<Mutex<Vec<String>>>,
 }
 
+impl Default for TestNetwork {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TestNetwork {
     pub fn new() -> Self {
         Self {
