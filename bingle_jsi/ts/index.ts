@@ -16,6 +16,7 @@ import type {
   NotifyRegisterRequest,
   FailureKind,
   MessagingSettings,
+  VersionInfo,
 } from "./NativeBingleJsi";
 
 export type {
@@ -143,6 +144,9 @@ export const BingleJsi = BingleJsiNative as {
     build_timestamp: string;
     build_number: string;
   }>;
+  /** The version of every library module, keyed by module name (issue #144). Needs init, unlike
+   *  version(). */
+  getVersions(): Promise<Record<string, VersionInfo>>;
   queued(): Promise<Record<string, unknown>[]>;
   getNatType(): Promise<{ nat_type: string }>;
   generateKeypair(): Promise<{ id: string; passphrase: string }>;

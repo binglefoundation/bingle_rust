@@ -572,6 +572,7 @@ The full API is defined in `src/api/bingle_jsi_api.rs`. Key methods:
 | `sendMessageTo*WithResponse(...)` | Send and wait for response |
 | `queued()` | Get all queued received messages |
 | `version()` | Get version info |
+| `getVersions()` | Get the version of every library module, keyed by module name (needs init) |
 | `getNatType()` | Get detected NAT type |
 | `generateKeypair()` | Generate a new Algorand keypair |
 | `registerKeypair(handle)` | Register keypair on-chain |

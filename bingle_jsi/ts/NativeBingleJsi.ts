@@ -301,6 +301,7 @@ export interface BingleJsiApi {
   ): BingleMessage;
   queued(): BingleMessage[];
   version(): VersionInfo;
+  getVersions(): Record<string, VersionInfo>;
   getNatType(): NatTypeResponse;
 
   // Local storage and contacts
