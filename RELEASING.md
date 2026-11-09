@@ -53,6 +53,18 @@ scripts/release.sh
 
 It checks the commit, fast-forwards `deployed` to it, waits for `deploy.yml` to publish the crates and the npm module and tag `vX.Y.Z`, then pushes the next patch version onto `staging`. Re-running it resumes a release that stopped part way. It holds no registry or AWS credential.
 
+#### Release notes
+
+Every release gets notes and a GitHub Release (issue #432):
+
+1. **Written.** `release.sh` starts by running `scripts/release_notes.sh`. That script gathers the pull requests (PRs) merged since the previous `v*` tag and has Claude summarise them for a semi-technical reader. It runs `claude -p` locally, with no tools, using the prompt in `scripts/release_notes_prompt.md`. GitHub's list of those PRs follows the summary. Without the `claude` command, or if it fails, the notes are that list alone. It takes about a minute.
+2. **Accepted.** `release.sh` prints the notes and asks you to accept, edit (in `$VISUAL` or `$EDITOR`), regenerate or quit. `--yes` accepts them as written. They are kept in `tmp/release_notes_vX.Y.Z.md`, so the notes from a `--dry-run` carry over to the real run on the same commit; edit that file to change them.
+3. **Handed over.** After you confirm the promotion, `release.sh` pushes the notes as a git note on the release commit (`refs/notes/release`), then moves `deployed`. A note doesn't tie the version to the commit the way a tag does, so a release that fails to publish leaves no tag behind. An `--allow-untested` reason goes in the same note, as its last line, and the release guard reads it there.
+4. **Tagged and released.** Only once `deploy.yml` has published the crates and the npm module does its `tag` job tag `vX.Y.Z`, with the notes as the tag's message. It then makes the tag a GitHub Release with the same notes. A release with no note gets GitHub's generated list instead.
+5. **Kept.** The `chore: open X.Y.Z` commit also adds `release_notes/vX.Y.Z.md` on `staging`.
+
+To try the notes on their own: `scripts/release_notes.sh origin/staging vX.Y.Z tmp/notes.md`.
+
 ### Roll MainNet
 
 After the release, from a checkout of `deployed`:
@@ -102,7 +114,7 @@ What one run does:
 
 Every step is skipped when already done, so re-running the same command resumes. If `deploy.yml` failed, fix the cause, run `gh run rerun <run id> --failed`, then re-run the command.
 
-**Releasing untested (an urgent fix only):** `scripts/release.sh --allow-untested "<why this cannot wait for TestNet>"` first pushes the release tag with an `Allow-untested:` line in its message, which the guard accepts in place of a `testnet` deployment and prints as a warning. Roll TestNet onto the same commit afterwards, so both networks run it.
+**Releasing untested (an urgent fix only):** `scripts/release.sh --allow-untested "<why this cannot wait for TestNet>"` first pushes the release note on the commit with an `Allow-untested:` line (an older release's tag with that line still counts), which the guard accepts in place of a `testnet` deployment and prints as a warning. Roll TestNet onto the same commit afterwards, so both networks run it.
 
 ## The publish pipeline (`deploy.yml`)
 
@@ -128,7 +140,7 @@ A push to `deployed` runs `.github/workflows/deploy.yml`. It publishes with **no
 
 1. **is on `staging`**, so it went through the pull-request gates;
 2. **carries one version everywhere, whose tag, if it exists, names this same commit**, so one version never names two commits;
-3. **had a successful deployment in the `testnet` GitHub environment** (from `scripts/roll_relays.sh`), unless the release tag carries an `Allow-untested:` line.
+3. **had a successful deployment in the `testnet` GitHub environment** (from `scripts/roll_relays.sh`), unless the release note on the commit (or an existing release tag) carries an `Allow-untested:` line.
 
 Run it locally before releasing by hand; it needs `gh` and the tags fetched.
 

@@ -19,7 +19,9 @@ name: deploy
 #      crates.io Trusted Publishing and the npm module through npm Trusted Publishing — both swap
 #      this job's GitHub OpenID Connect (OIDC) identity for a short-lived credential. A crate or
 #      module already published at this version is skipped, so a re-run is safe;
-#   5. tag: tags the commit vX.Y.Z, unless the release already pushed that tag.
+#   5. tag: only once publish has passed, tags the commit vX.Y.Z (unless an older release pushed
+#      that tag itself) with the release notes scripts/release.sh left as a git note on the commit
+#      (refs/notes/release) as the tag's message, and makes the tag a GitHub Release.
 #
 # "Run workflow" with rehearsal set runs steps 2-4 on any branch with only the dry runs, so the
 # native build and the packages can be proven before a release; nothing is published or tagged.
@@ -237,7 +239,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
-      contents: write      # push the tag
+      contents: write      # push the tag and create the GitHub Release
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -245,7 +247,7 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
 
-      # the guard already refused a tag on another commit; a tag the release pushed (with an
+      # the guard already refused a tag on another commit; a tag an older release pushed itself (with an
       # Allow-untested line, say) is left as it is.
       - name: Tag ${{ needs.guard.outputs.tag }}
         env:
@@ -260,6 +262,33 @@ jobs:
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -a "$TAG" "$SHA" -m "release $TAG"
+          # the message: a subject line, then the release notes from the note on the commit, if any
+          git fetch --quiet origin "+refs/notes/release:refs/notes/release" || true
+          { echo "release $TAG"
+            if notes=$(git notes --ref=release show "$SHA" 2>/dev/null); then printf '\n%s\n' "$notes"; fi
+          } > "$RUNNER_TEMP/tag_message.txt"
+          # verbatim: the default cleanup would strip the notes' Markdown headings as comment lines
+          git tag -a --cleanup=verbatim -F "$RUNNER_TEMP/tag_message.txt" "$TAG" "$SHA"
           git push origin "refs/tags/$TAG"
           echo "pushed $TAG on $(git rev-parse --short "$SHA")"
+
+      # The GitHub Release, once the version is published (#432), from the notes in the tag's message;
+      # a tag without them (a release with no note) gets GitHub's list of PRs.
+      - name: GitHub Release ${{ needs.guard.outputs.tag }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.guard.outputs.tag }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "the $TAG release already exists; leaving it"
+            exit 0
+          fi
+          git fetch --quiet --force origin "refs/tags/$TAG:refs/tags/$TAG"
+          git for-each-ref --format='%(contents:body)' "refs/tags/$TAG" | sed '/^Allow-untested:/d' > "$RUNNER_TEMP/notes.md"
+          if grep -q '[^[:space:]]' "$RUNNER_TEMP/notes.md"; then
+            gh release create "$TAG" --verify-tag --title "$TAG" --notes-file "$RUNNER_TEMP/notes.md"
+          else
+            gh release create "$TAG" --verify-tag --title "$TAG" --generate-notes
+          fi
+          echo "released $TAG: $(gh release view "$TAG" --json url -q .url)"

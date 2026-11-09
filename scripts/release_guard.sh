@@ -8,8 +8,9 @@
 #   2. carries one version everywhere (every crate and bingle_jsi/package.json), and that version's
 #      tag vX.Y.Z, if it exists, names this same commit — one version never names two commits;
 #   3. had a successful deployment in the `testnet` GitHub environment (scripts/roll_relays.sh), so
-#      TestNet ran it. The one override is a release tag pushed first whose message has an
-#      `Allow-untested: <reason>` line; the reason is printed as a warning.
+#      TestNet ran it. The one override is an `Allow-untested: <reason>` line in the release note on
+#      the commit (refs/notes/release, pushed by scripts/release.sh --allow-untested) or in a release
+#      tag pushed first; the reason is printed as a warning.
 #
 # Needs git with the tags fetched, and gh signed in (GH_TOKEN in CI). On success it prints the
 # version and, under GitHub Actions, writes sha, version and tag to $GITHUB_OUTPUT.
@@ -55,6 +56,9 @@ override=""
 if [[ -n "$tag_sha" ]]; then
   override=$(git for-each-ref --format='%(contents)' "refs/tags/$TAG" | sed -n 's/^Allow-untested:[[:space:]]*//p' | head -1)
 fi
+if [[ -z "$override" ]] && git fetch --quiet origin "+refs/notes/release:refs/notes/release" 2>/dev/null; then
+  override=$(git notes --ref=release show "$SHA" 2>/dev/null | sed -n 's/^Allow-untested:[[:space:]]*//p' | head -1)
+fi
 tested=0
 for id in $(gh api "repos/$GH_REPO/deployments?environment=testnet&sha=$SHA&per_page=30" -q '.[].id'); do
   state=$(gh api "repos/$GH_REPO/deployments/$id/statuses?per_page=1" -q '.[0].state // ""')
@@ -66,7 +70,7 @@ elif [[ -n "$override" ]]; then
   note "WARNING: $SHORT has no successful testnet deployment; released untested: $override"
   [[ -n "${GITHUB_ACTIONS:-}" ]] && printf '::warning::%s released without a TestNet deployment: %s\n' "$SHORT" "$override"
 else
-  fail "$SHORT has no successful testnet deployment; roll TestNet onto it first (scripts/roll_relays.sh), or release it untested with an Allow-untested tag (RELEASING.md)"
+  fail "$SHORT has no successful testnet deployment; roll TestNet onto it first (scripts/roll_relays.sh), or release it untested with scripts/release.sh --allow-untested (RELEASING.md)"
 fi
 
 if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
