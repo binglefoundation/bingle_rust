@@ -1,5 +1,6 @@
 use std::net::{SocketAddr, UdpSocket};
 use std::sync::Arc;
+use std::time::Duration;
 
 use bingle_core::dtls::UdpNetworkMux;
 
@@ -88,4 +89,46 @@ pub fn local_addr_fails_after_socket_closed() {
 pub fn is_closed_false_before_start() {
     let mux = UdpNetworkMux::bind(("127.0.0.1", 0)).expect("bind mux");
     assert!(!mux.is_closed(), "freshly bound mux should not be closed");
+}
+
+/// After a receive error drops the socket, rebind() recovers it on the same port.
+#[ntest::timeout(30_000)]
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn rebind_recovers_socket_on_same_port() {
+    // Regression: a transient network error must not tear the transport down
+    // permanently. The receive loop drops the dead socket (freeing the port)
+    // and rebinds; this exercises that rebind directly.
+    let mux = UdpNetworkMux::bind("127.0.0.1:0").expect("bind");
+    let port = mux.local_addr().expect("local_addr").port();
+
+    // Simulate the receive loop's teardown after a recv error: drop the live
+    // socket so the port is free to rebind.
+    mux.drop_socket_for_tests();
+    assert!(mux.is_closed(), "socket should be closed after take");
+
+    // Rebind succeeds on the same port and installs a live socket again.
+    let loop_sock = mux.rebind_for_tests().expect("rebind should succeed");
+    loop_sock
+        .set_read_timeout(Some(Duration::from_millis(500)))
+        .unwrap();
+    assert!(!mux.is_closed(), "socket should be live after rebind");
+    assert_eq!(
+        mux.local_addr().unwrap().port(),
+        port,
+        "rebind should reuse the same port"
+    );
+
+    // The rebound socket actually receives traffic on that port.
+    let sender = UdpSocket::bind("127.0.0.1:0").unwrap();
+    sender
+        .send_to(b"ping", ("127.0.0.1", port))
+        .expect("send_to");
+    let mut buf = [0u8; 16];
+    let (n, _from) = loop_sock.recv_from(&mut buf).expect("recv after rebind");
+    assert_eq!(
+        &buf[..n],
+        b"ping",
+        "rebound socket should receive datagrams"
+    );
 }
