@@ -50,19 +50,20 @@ Not on pull requests: emulator runs are heavy, so this is a post-merge check on 
 
 ### Preparing the emulator screen (issue #414)
 
-The emulator boots from the cached snapshot, which can restore a dialog or the lock screen over the
-launcher. Until it goes, the app's window cannot get focus, and the first suite (or every suite)
-fails with `has-window-focus=false` or `No views in hierarchy found`, then passes on a re-run. So
-before the tests, `ci_run_android_e2e.sh`:
+Without this preparation about half of runs failed: the first suite (or every suite) failed with
+`has-window-focus=false` or `No views in hierarchy found`, then passed on a re-run. With it, 18 of 20
+soak runs passed (one runner fault, one mid-suite activity recreation). The cause is not confirmed:
+in every soak run the launcher already held focus after boot, and no configuration change followed
+the snapshot restore. The diagnostics below run on every run, so the next failure records it
+(issue #431). Before the tests, `ci_run_android_e2e.sh`:
 
 1. logs the focused window (`dumpsys window`, `mCurrentFocus`);
 2. dismisses the keyguard, closes system dialogs (`CLOSE_SYSTEM_DIALOGS`) and presses Home;
 3. waits up to a minute for the launcher to hold focus, and logs it again;
 4. records every change of focus during the run in `artifacts/window_focus.log`, and the system's
    activity and configuration events in `artifacts/device_events.log` and `device_system.log`;
-   on a failure it prints the focus changes, configuration changes and the app's activity relaunches.
-   One failure was the app's activity being recreated mid-suite (a configuration change after boot),
-   which resets the harness screen.
+   every run prints the configuration changes and the app's activity relaunches (from boot), and a
+   failing run also prints the focus changes.
 
 A failing test also keeps a screenshot and the device log (`--take-screenshots failing
 --record-logs failing`). All of these are in the `detox-artifacts` upload.

@@ -66,8 +66,8 @@ FOCUS_LOG="$ARTIFACTS_DIR/window_focus.log"
 ) >"$FOCUS_LOG" 2>/dev/null &
 focus_watch=$!
 
-# Record the system's activity and configuration events too: a configuration change shortly after
-# boot recreated the app's activity mid-suite in one run, losing the harness state (issue #414).
+# Record the system's activity and configuration events too: the app's activity was recreated
+# mid-suite in one run, losing the harness state, and the cause is not yet known (issues #414, #431).
 # The events buffer (configuration_changed, wm_relaunch_*, wm_destroy_activity) is small; the system
 # tags say what triggered it. The buffers are not cleared first, so changes during boot are kept.
 adb logcat -b events -v time >"$ARTIFACTS_DIR/device_events.log" 2>/dev/null &
