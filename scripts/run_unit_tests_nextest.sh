@@ -109,7 +109,7 @@ run_crate_tests() {
 
   # --no-fail-fast: run every test and report full counts, matching the original
   # per-test runner (nextest defaults to cancelling the rest after the first failure).
-  if cargo nextest run -p "$crate" --test unit --no-fail-fast "${NEXTEST_ARGS[@]}" 2>&1 | tee "$output_file"; then
+  if cargo nextest run -p "$crate" --test unit --no-fail-fast ${NEXTEST_ARGS[@]+"${NEXTEST_ARGS[@]}"} 2>&1 | tee "$output_file"; then
     command_status=0
     status="PASS"
   else
