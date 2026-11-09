@@ -220,8 +220,11 @@ pub fn failed_send_still_marks_endpoint_seen() {
     );
 }
 
+/// The flag a blocked mock send waits on, and the condvar that wakes it.
+type Gate = Arc<(Mutex<bool>, Condvar)>;
+
 /// A gate that a blocked mock send waits on, and the channel it reports entry on.
-fn send_gate() -> (Sender<()>, Receiver<()>, Arc<(Mutex<bool>, Condvar)>) {
+fn send_gate() -> (Sender<()>, Receiver<()>, Gate) {
     let (entered_tx, entered_rx) = channel();
     (
         entered_tx,

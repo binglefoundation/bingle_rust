@@ -1,5 +1,7 @@
+use crate::util::test_util::EndpointPacketLog;
 use bingle_core::api::bingle_api::UserId;
 use bingle_core::api::network_endpoint::NetworkEndpoint;
+use bingle_core::dtls::HandleTurn;
 use bingle_core::dtls::network_mux_trait::NetworkMux;
 use bingle_core::dtls::network_mux_udp::UdpNetworkMux;
 use bingle_core::messages::handlers::DefaultPrintingHandler;
@@ -33,8 +35,7 @@ pub fn end_to_end_turn_relay_forwards_dtls() {
     // OS-assigned loopback port and read the real address back (no allocate-then-bind race).
     let mut mux_b = UdpNetworkMux::bind(addr(0)).expect("bind B mux");
     let b_addr = mux_b.local_addr().expect("B addr");
-    let dtls_records: Arc<Mutex<Vec<(NetworkEndpoint, Vec<u8>)>>> =
-        Arc::new(Mutex::new(Vec::new()));
+    let dtls_records: Arc<EndpointPacketLog> = Arc::new(Mutex::new(Vec::new()));
     let dtls_records_clone = dtls_records.clone();
     mux_b.set_handle_dtls(Some(Arc::new(
         move |_source: &dyn NetworkMux, from: &NetworkEndpoint, data: &[u8]| {
@@ -54,20 +55,19 @@ pub fn end_to_end_turn_relay_forwards_dtls() {
     // Configure TURN ChannelData handler to forward stripped payloads to destination
     {
         let turn_clone = turn.clone();
-        let th: std::sync::Arc<dyn Fn(&dyn NetworkMux, &SocketAddr, &[u8]) + Send + Sync> =
-            std::sync::Arc::new(
-                move |source: &dyn NetworkMux, from: &SocketAddr, packet: &[u8]| {
-                    if let Some(wrapped) =
-                        turn_clone.handle_turn_incoming(Some(from), Some(relay_addr), packet)
-                        && let Some(udp) = source.as_any().downcast_ref::<UdpNetworkMux>()
-                    {
-                        let _ = udp.write(
-                            &NetworkEndpoint::new_direct(wrapped.ip_address),
-                            &wrapped.message,
-                        );
-                    }
-                },
-            );
+        let th: HandleTurn = std::sync::Arc::new(
+            move |source: &dyn NetworkMux, from: &SocketAddr, packet: &[u8]| {
+                if let Some(wrapped) =
+                    turn_clone.handle_turn_incoming(Some(from), Some(relay_addr), packet)
+                    && let Some(udp) = source.as_any().downcast_ref::<UdpNetworkMux>()
+                {
+                    let _ = udp.write(
+                        &NetworkEndpoint::new_direct(wrapped.ip_address),
+                        &wrapped.message,
+                    );
+                }
+            },
+        );
         mux_relay.set_handle_turn(Some(&th));
     }
 

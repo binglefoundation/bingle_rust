@@ -3,7 +3,9 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::{Arc, Condvar, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
-use crate::api::bingle_api::{BingleApiBoth, BingleError, NetworkEndpoint, StartOptions, UserId};
+use crate::api::bingle_api::{
+    BingleApiBoth, BingleError, NetworkEndpoint, SendViaBingle, StartOptions,
+};
 use crate::themes;
 
 use crate::blockchain::algo_bingle::RelayGate;
@@ -200,6 +202,15 @@ impl<T: ?Sized> BingleAccessUnsafeForTests<T> for std::sync::Weak<T> {
     }
 }
 
+/// Responses awaited by request tag, each paired with the condvar its waiter blocks on.
+pub type PendingResponses = Arc<Mutex<HashMap<Uuid, Arc<(Mutex<ResponseWait>, Condvar)>>>>;
+
+/// The background STUN endpoint finder, shared with the threads that drive it.
+type SharedStunFinder = Arc<Mutex<Box<dyn StunEndpointFinder + Send + Sync>>>;
+
+/// A wait for TriangleTest3: the flag and condvar its waiter blocks on, and when it started.
+type TriangleWait = (Arc<(Mutex<bool>, Condvar)>, Instant);
+
 /// Minimal Engine implementation that wires UDP mux + DTLS and routes inbound JSON messages.
 pub struct Engine {
     // Distributed mutex used to coordinate relay initialization across peer relays
@@ -223,7 +234,7 @@ pub struct Engine {
     // whenever a poll matches the committed IP (flap resolved) or a port-only change arrives.
     // See stun_consistent_process / issue #40.
     pending_ip_change: Mutex<Option<(std::net::IpAddr, u32)>>,
-    stun: Mutex<Option<Arc<Mutex<Box<dyn StunEndpointFinder + Send + Sync>>>>>, // background STUN
+    stun: Mutex<Option<SharedStunFinder>>, // background STUN
     relay_finder: Mutex<Option<Arc<RelayFinder>>>, // used to locate peer relay
     // Relays that recently could not be reached, skipped by relay selection for a cooldown.
     // Shared by every relay finder this engine creates, which are often short-lived (#122).
@@ -236,14 +247,12 @@ pub struct Engine {
     // the reconnect triggers (foreground / DTLS rebuild / keep-alive failure) so overlapping
     // signals don't stack redundant re-registrations.
     last_reregister_at: Mutex<Option<Instant>>,
-    triangle_wait: Mutex<Option<(Arc<(Mutex<bool>, Condvar)>, Instant)>>, // wait for TriangleTest3
+    triangle_wait: Mutex<Option<TriangleWait>>, // wait for TriangleTest3
     // Timestamp of the most recent relay-registration attempt (entering TrianglePing). Consulted
     // by the registration watchdog to re-drive a stuck attempt. See REGISTER_WATCHDOG.
     register_attempt_at: Mutex<Option<Instant>>,
     // Callback to send messages via the Bingle protocol (API surface) instead of direct DTLS
-    send_via_bingle: Mutex<
-        Option<Arc<dyn Fn(&NetworkEndpoint, &UserId, serde_json::Value) -> bool + Send + Sync>>,
-    >,
+    send_via_bingle: Mutex<Option<SendViaBingle>>,
     // Unified BingleApi handle bound to this engine instance (non-optional). Set once in new();
     // immutable thereafter.
     bingle_api: crate::api::bingle_api::BingleApiBothType,
@@ -258,7 +267,7 @@ pub struct Engine {
     // Per-connection state tracked at the Engine level (keyed by NetworkEndpointKey)
     connections: Arc<Mutex<HashMap<crate::api::bingle_api::NetworkEndpointKey, ConnectionEntry>>>,
     // Pending responses map and issuer state moved from BingleApiImpl
-    pending_responses: Arc<Mutex<HashMap<Uuid, Arc<(Mutex<ResponseWait>, Condvar)>>>>,
+    pending_responses: PendingResponses,
     // Set once at start(); OnceLock keeps issuer() able to return a borrowed &str.
     issuer: std::sync::OnceLock<Arc<String>>,
     // In-memory DDB backend used by relay nodes (and for tests)
@@ -478,9 +487,7 @@ impl Engine {
     }
 
     /// Create a common TURN handler for both relay and client modes
-    fn create_turn_handler(
-        &self,
-    ) -> Arc<dyn Fn(&dyn NetworkMux, &SocketAddr, &[u8]) + Send + Sync> {
+    fn create_turn_handler(&self) -> crate::dtls::network_mux_trait::HandleTurn {
         let am_relay = self.opts().am_relay;
         let turn: Arc<dyn TurnHandler + Send + Sync> = self.get_approp_turn_handler();
         let last_public_addr_shared = self.last_public_addr_shared.clone();
@@ -929,9 +936,7 @@ impl Engine {
     }
 
     /// Returns a clone of the pending responses map Arc to allow waiting without holding the Engine lock.
-    pub fn pending_responses_arc(
-        &self,
-    ) -> Arc<Mutex<HashMap<Uuid, Arc<(Mutex<ResponseWait>, Condvar)>>>> {
+    pub fn pending_responses_arc(&self) -> PendingResponses {
         self.pending_responses.clone()
     }
 
@@ -942,7 +947,7 @@ impl Engine {
 
     /// Static version of wait_for_response that can be called without holding the Engine lock.
     pub fn wait_for_response_static(
-        pending: Arc<Mutex<HashMap<Uuid, Arc<(Mutex<ResponseWait>, Condvar)>>>>,
+        pending: PendingResponses,
         tag: &Uuid,
         timeout: Duration,
     ) -> Option<serde_json::Value> {
@@ -1042,10 +1047,7 @@ impl Engine {
     }
 
     /// Install a Bingle protocol sender callback for Engine-initiated messages.
-    pub fn set_send_via_bingle(
-        &self,
-        cb: Option<Arc<dyn Fn(&NetworkEndpoint, &UserId, serde_json::Value) -> bool + Send + Sync>>,
-    ) {
+    pub fn set_send_via_bingle(&self, cb: Option<SendViaBingle>) {
         *self.send_via_bingle.lock().unwrap() = cb;
     }
 

@@ -497,6 +497,14 @@ pub type OnConnectHandler = dyn Fn(UserId, Handle) + Send + Sync + 'static;
 /// - nat_type: the detected NAT type at the time of the notification.
 pub type OnListeningHandler = dyn Fn(bool, crate::engine::NatType) + Send + Sync + 'static;
 
+/// Sends a protocol message through the Bingle API, returning whether it was sent.
+/// Parameters:
+/// - endpoint: where to send it
+/// - recipient: id of the recipient
+/// - message: the message as JSON
+pub type SendViaBingle =
+    std::sync::Arc<dyn Fn(&NetworkEndpoint, &UserId, JsonValue) -> bool + Send + Sync + 'static>;
+
 /// Options used to start the Bingle node.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct StartOptions {

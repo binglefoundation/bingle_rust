@@ -14,8 +14,6 @@ members = [
 # remove its lints here (set back to "warn"/"deny"). Members opt in with
 # `[lints] workspace = true`. See scripts/run_quality_checks.sh.
 [workspace.lints.clippy]
-# #15 type complexity (needs `type` aliases)
-type_complexity = "allow"
 # #16 API-signature / design lints
 too_many_arguments = "allow"
 new_without_default = "allow"

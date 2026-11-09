@@ -1,3 +1,4 @@
+use crate::util::test_util::StunStateLog;
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
@@ -56,7 +57,7 @@ fn live_stun_endpoint_finder_with_udp_mux() {
     // publish globally for the handler
     let _ = FINDER.set(Arc::clone(&finder_arc));
 
-    let seen: Arc<Mutex<Vec<(StunState, Option<SocketAddr>)>>> = Arc::new(Mutex::new(Vec::new()));
+    let seen: StunStateLog = Arc::new(Mutex::new(Vec::new()));
     let seen_clone = Arc::clone(&seen);
 
     {

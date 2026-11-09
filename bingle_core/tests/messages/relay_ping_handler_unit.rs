@@ -1,3 +1,4 @@
+use crate::util::test_util::CapturedPackets;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::{Arc, Mutex};
 
@@ -14,10 +15,10 @@ use bingle_core::messages::types::RelayTriangleTest1;
 
 #[derive(Clone)]
 struct MockDtls {
-    pub sends: Arc<Mutex<Vec<(SocketAddr, Vec<u8>)>>>,
+    pub sends: CapturedPackets,
 }
 impl MockDtls {
-    fn new() -> (Self, Arc<Mutex<Vec<(SocketAddr, Vec<u8>)>>>) {
+    fn new() -> (Self, CapturedPackets) {
         let v = Arc::new(Mutex::new(vec![]));
         (Self { sends: v.clone() }, v)
     }

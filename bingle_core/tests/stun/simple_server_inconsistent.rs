@@ -1,3 +1,4 @@
+use crate::util::test_util::StunStateLog;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -51,7 +52,7 @@ pub fn simple_stun_mixed_servers_inconsistent() {
 
     mux.start().expect("start mux");
 
-    let seen: Arc<Mutex<Vec<(StunState, Option<SocketAddr>)>>> = Arc::new(Mutex::new(Vec::new()));
+    let seen: StunStateLog = Arc::new(Mutex::new(Vec::new()));
     let seen2 = seen.clone();
 
     // Configure finder send path via mux

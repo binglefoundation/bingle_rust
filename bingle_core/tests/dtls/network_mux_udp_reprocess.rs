@@ -1,13 +1,15 @@
+use crate::util::test_util::{EndpointPacketLog, PacketLog};
 use bingle_core::api::network_endpoint::NetworkEndpoint;
+use bingle_core::dtls::HandleTurn;
 use bingle_core::dtls::network_mux_trait::NetworkMux;
 use bingle_core::dtls::network_mux_udp::UdpNetworkMux;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex, OnceLock};
 
 // Global recorders for handler invocations
-static DTLS_REC: OnceLock<Mutex<Vec<(NetworkEndpoint, Vec<u8>)>>> = OnceLock::new();
-static STUN_REC: OnceLock<Mutex<Vec<(SocketAddr, Vec<u8>)>>> = OnceLock::new();
-static TURN_REC: OnceLock<Mutex<Vec<(SocketAddr, Vec<u8>)>>> = OnceLock::new();
+static DTLS_REC: OnceLock<EndpointPacketLog> = OnceLock::new();
+static STUN_REC: OnceLock<PacketLog> = OnceLock::new();
+static TURN_REC: OnceLock<PacketLog> = OnceLock::new();
 
 fn dtls_handler(_src: &dyn NetworkMux, from: &NetworkEndpoint, data: &[u8]) {
     let m = DTLS_REC.get_or_init(|| Mutex::new(Vec::new()));
@@ -42,7 +44,7 @@ pub fn reprocess_dispatches_and_enqueues_dtls() {
     let mut mux = UdpNetworkMux::bind(("127.0.0.1", 0)).expect("bind mux");
     mux.set_handle_dtls(Some(Arc::new(dtls_handler)));
     mux.set_handle_stun(Some(Arc::new(stun_handler)));
-    let th: Arc<dyn Fn(&dyn NetworkMux, &SocketAddr, &[u8]) + Send + Sync> = Arc::new(turn_handler);
+    let th: HandleTurn = Arc::new(turn_handler);
     mux.set_handle_turn(Some(&th));
 
     let local_from = NetworkEndpoint::new_direct(mux.local_addr().unwrap());

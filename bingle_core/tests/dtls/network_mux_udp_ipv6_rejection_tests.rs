@@ -1,11 +1,12 @@
-use std::net::{SocketAddr, UdpSocket};
+use crate::util::test_util::PacketLog;
+use std::net::UdpSocket;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 use bingle_core::dtls::{NetworkMux, UdpNetworkMux};
 
 static TEST_GUARD: OnceLock<Mutex<()>> = OnceLock::new();
-static REJECTION_RECORDS: OnceLock<Mutex<Vec<(SocketAddr, Vec<u8>)>>> = OnceLock::new();
+static REJECTION_RECORDS: OnceLock<PacketLog> = OnceLock::new();
 
 fn clear_records() {
     if let Some(m) = REJECTION_RECORDS.get() {

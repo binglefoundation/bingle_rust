@@ -87,13 +87,16 @@ pub type MutexClock = Arc<dyn Fn() -> Instant + Send + Sync>;
 //
 // The send closures return `true` when the message was delivered and `false`
 // when it was not, so the mutex can act on delivery failures.
+/// Sends a distributed-mutex message to a peer by id, returning whether it was sent.
+type SendMutexMessage<M> = Arc<dyn Fn(&str, &M) -> bool + Send + Sync>;
+
 #[derive(Clone)]
 pub struct ModifiedLamportDistributedMutex {
     self_id: String,
     lease_duration: Duration,
-    send_request: Arc<dyn Fn(&str, &crate::messages::types::MutexRequest) -> bool + Send + Sync>,
-    send_reply: Arc<dyn Fn(&str, &crate::messages::types::MutexResponse) -> bool + Send + Sync>,
-    send_release: Arc<dyn Fn(&str, &crate::messages::types::MutexRelease) -> bool + Send + Sync>,
+    send_request: SendMutexMessage<crate::messages::types::MutexRequest>,
+    send_reply: SendMutexMessage<crate::messages::types::MutexResponse>,
+    send_release: SendMutexMessage<crate::messages::types::MutexRelease>,
     clock: MutexClock,
     inner: Arc<Mutex<InnerState>>,
     cv: Arc<Condvar>,

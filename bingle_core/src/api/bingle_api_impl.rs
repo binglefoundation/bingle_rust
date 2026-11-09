@@ -164,6 +164,13 @@ impl HandleCacheBi {
     }
 }
 
+/// Test seam resolving a handle to its account id without the network.
+pub type HandleLookupMock = Box<dyn Fn(&Handle) -> Result<Option<UserId>, String> + Send + Sync>;
+
+/// Test seam resolving an account id to its handle without the network.
+pub type IdToHandleLookupMock =
+    Box<dyn Fn(&UserId) -> Result<Option<Handle>, String> + Send + Sync>;
+
 /// Concrete implementation of the BingleApi trait.
 ///
 /// Minimal functionality implemented per task requirements:
@@ -188,11 +195,9 @@ pub struct BingleApiImpl {
     router: Mutex<Option<Arc<crate::messages::router::Router>>>,
     // Weak reference to ourselves for passing to components
     this: crate::api::bingle_api::BingleApiBothType,
-    handle_lookup_mock:
-        Mutex<Option<Box<dyn Fn(&Handle) -> Result<Option<UserId>, String> + Send + Sync>>>,
+    handle_lookup_mock: Mutex<Option<HandleLookupMock>>,
     // Test seam for reverse lookup (id -> handle) without network
-    id_to_handle_lookup_mock:
-        Mutex<Option<Box<dyn Fn(&UserId) -> Result<Option<Handle>, String> + Send + Sync>>>,
+    id_to_handle_lookup_mock: Mutex<Option<IdToHandleLookupMock>>,
     handle_cache: Mutex<HandleCacheBi>,
     accounts_cache: Arc<Mutex<AccountsCache>>,
     span: Mutex<tracing::Span>,
@@ -412,19 +417,13 @@ impl BingleApiImpl {
     }
 
     #[doc(hidden)]
-    pub fn set_handle_lookup_mock_for_tests(
-        &self,
-        mock: Box<dyn Fn(&Handle) -> Result<Option<UserId>, String> + Send + Sync>,
-    ) {
+    pub fn set_handle_lookup_mock_for_tests(&self, mock: HandleLookupMock) {
         let mut m = self.handle_lookup_mock.lock().unwrap();
         *m = Some(mock);
     }
 
     #[doc(hidden)]
-    pub fn set_id_to_handle_lookup_mock_for_tests(
-        &self,
-        mock: Box<dyn Fn(&UserId) -> Result<Option<Handle>, String> + Send + Sync>,
-    ) {
+    pub fn set_id_to_handle_lookup_mock_for_tests(&self, mock: IdToHandleLookupMock) {
         let mut m = self.id_to_handle_lookup_mock.lock().unwrap();
         *m = Some(mock);
     }
@@ -831,35 +830,33 @@ impl BingleApi for BingleApiImpl {
             let router = Arc::new(crate::messages::router::Router::new(self.this.clone()));
             // Sender closure routes via the delegating API handle
             let this_weak = self.this.clone();
-            let sender_cb: Arc<
-                dyn Fn(&NetworkEndpoint, &UserId, serde_json::Value) -> bool
-                    + Send
-                    + Sync
-                    + 'static,
-            > = Arc::new(move |nsk, uid, msg| {
-                tracing::info!(
-                    "[BingleApiImpl::start][sender_cb] nsk={} uid={} msg={}",
-                    nsk,
-                    uid,
-                    msg
-                );
-                let progress_cb = Arc::new(|percent: u8, message: String| {
+            let sender_cb: crate::api::bingle_api::SendViaBingle =
+                Arc::new(move |nsk, uid, msg| {
                     tracing::info!(
-                        "[BingleApiImpl::start][router sender] Send progress: {}% - {}",
-                        percent,
-                        message
+                        "[BingleApiImpl::start][sender_cb] nsk={} uid={} msg={}",
+                        nsk,
+                        uid,
+                        msg
                     );
+                    let progress_cb = Arc::new(|percent: u8, message: String| {
+                        tracing::info!(
+                            "[BingleApiImpl::start][router sender] Send progress: {}% - {}",
+                            percent,
+                            message
+                        );
+                    });
+                    if let Some(api) = this_weak.upgrade() {
+                        api.access(|a| {
+                            a.send_message_to_network(nsk, uid, msg, Some(progress_cb))
+                                .unwrap_or(false)
+                        })
+                    } else {
+                        tracing::error!(
+                            "[BingleApiImpl::start][sender_cb] this_weak upgrade failed"
+                        );
+                        false
+                    }
                 });
-                if let Some(api) = this_weak.upgrade() {
-                    api.access(|a| {
-                        a.send_message_to_network(nsk, uid, msg, Some(progress_cb))
-                            .unwrap_or(false)
-                    })
-                } else {
-                    tracing::error!("[BingleApiImpl::start][sender_cb] this_weak upgrade failed");
-                    false
-                }
-            });
             router.set_sender(Some(sender_cb));
             router
         };

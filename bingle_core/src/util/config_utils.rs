@@ -146,15 +146,17 @@ struct NodeFile {
     asset_id: Option<u64>,
 }
 
+/// A parsed node file: its network name, Algorand chain configuration, and the application and
+/// asset ids it declares (if any), in that order.
+pub type NodeFileIds = (Option<String>, AlgoChainConfig, Option<u64>, Option<u64>);
+
 /// Parse a Bingle node file, returning its network name, Algorand chain configuration, and the
 /// application and asset ids it declares (if any).
 ///
 /// # Errors
 ///
 /// Returns an error string if the file cannot be read or its JSON cannot be parsed.
-pub fn parse_node_file_with_ids(
-    path: &str,
-) -> Result<(Option<String>, AlgoChainConfig, Option<u64>, Option<u64>), String> {
+pub fn parse_node_file_with_ids(path: &str) -> Result<NodeFileIds, String> {
     let cwd = std::env::current_dir()
         .map(|p| p.display().to_string())
         .unwrap_or_else(|_| "<unknown>".to_string());
