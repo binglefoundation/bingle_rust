@@ -29,6 +29,53 @@ adb shell settings put global hide_error_dialogs 1 || true
 adb shell settings put secure lockscreen.disabled 1 || true
 adb shell input keyevent 82 || true
 
+# The window that has input focus, e.g. "Window{... u0 com.google.android.apps.nexuslauncher/...}".
+focused_window() {
+  { timeout 10 adb shell dumpsys window 2>/dev/null | tr -d '\r' | grep -m 1 'mCurrentFocus=' | sed 's/^ *mCurrentFocus=//'; } || true
+}
+
+# Clear whatever the boot snapshot restored over the launcher (issue #414): a dialog or the lock
+# screen left on screen keeps the app's window from getting focus, which fails the first suite (or
+# every suite) with "has-window-focus=false" or "No views in hierarchy found". The hardening above
+# stops new dialogs but does not close one already showing. Then wait for the launcher to hold focus.
+echo "    focus after boot ($(date -u +%H:%M:%S)): $(focused_window)"
+adb shell wm dismiss-keyguard || true
+adb shell am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS >/dev/null || true
+adb shell input keyevent KEYCODE_HOME || true
+for _ in $(seq 1 30); do
+  focus=$(focused_window)
+  [[ "$focus" == *launcher* ]] && break
+  sleep 2
+done
+echo "    focus before tests ($(date -u +%H:%M:%S)): $focus"
+
+# Record every change of focus while the suites run, so a failure names the window that held it.
+ARTIFACTS_DIR="$EXAMPLE_DIR/artifacts"
+mkdir -p "$ARTIFACTS_DIR"
+FOCUS_LOG="$ARTIFACTS_DIR/window_focus.log"
+(
+  last=""
+  while true; do
+    now=$(focused_window)
+    if [[ -n "$now" && "$now" != "$last" ]]; then
+      echo "$(date -u +%H:%M:%S) $now"
+      last=$now
+    fi
+    sleep 2
+  done
+) >"$FOCUS_LOG" 2>/dev/null &
+focus_watch=$!
+
+# Record the system's activity and configuration events too: the app's activity was recreated
+# mid-suite in one run, losing the harness state, and the cause is not yet known (issues #414, #431).
+# The events buffer (configuration_changed, wm_relaunch_*, wm_destroy_activity) is small; the system
+# tags say what triggered it. The buffers are not cleared first, so changes during boot are kept.
+adb logcat -b events -v time >"$ARTIFACTS_DIR/device_events.log" 2>/dev/null &
+events_watch=$!
+adb logcat -b system,main -v time 'ActivityTaskManager:I' 'ActivityManager:I' 'WindowManager:W' 'OverlayManager:I' '*:S' >"$ARTIFACTS_DIR/device_system.log" 2>/dev/null &
+system_watch=$!
+trap 'kill "$focus_watch" "$events_watch" "$system_watch" 2>/dev/null || true' EXIT
+
 # localnet backend: the provisioner (started in a prior workflow step) wrote the node-file/STUN list
 # (advertising 10.0.2.2) and an env file with the derived creds. The app reaches host services via
 # the emulator's qemu gateway 10.0.2.2; the smoke suite's default localnet config is adb-reversed.
@@ -55,5 +102,17 @@ for _ in $(seq 1 120); do
 done
 curl -s -o /dev/null "http://localhost:8081/index.bundle?platform=android&dev=true&minify=false" || true
 
-# Detox reuses the already-running emulator (BINGLE_E2E_AVD matches the runner's avd-name).
-npx detox test --configuration android.emu.debug --headless --loglevel info
+# Detox reuses the already-running emulator (BINGLE_E2E_AVD matches the runner's avd-name). A failing
+# test keeps a screenshot and the device log under artifacts/, which the workflow uploads.
+status=0
+echo "    detox starts: $(date -u +%H:%M:%S)"
+npx detox test --configuration android.emu.debug --headless --loglevel info \
+  --artifacts-location "$ARTIFACTS_DIR/" --take-screenshots failing --record-logs failing || status=$?
+# Printed on every run, so a passing run shows when the configuration settles after boot.
+echo "configuration changes and activity relaunches during the run (issue #414):"
+grep -E 'configuration_changed|wm_relaunch|wm_destroy_activity' "$ARTIFACTS_DIR/device_events.log" | grep -E 'configuration_changed|binglejsiexample' || true
+if [[ $status -ne 0 ]]; then
+  echo "window focus during the run (issue #414):"
+  cat "$FOCUS_LOG"
+fi
+exit "$status"
