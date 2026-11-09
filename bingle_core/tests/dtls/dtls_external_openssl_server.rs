@@ -19,18 +19,26 @@ static CLIENT_SEEN: OnceLock<Vec<u8>> = OnceLock::new();
 #[test]
 #[cfg(not(target_os = "ios"))]
 pub fn dtls_openssl_external_s_server_client_send() {
-    // Check that openssl CLI is available; if not, skip test gracefully.
-    match Command::new("openssl")
+    // Check that the openssl CLI is available; if not, skip test gracefully.
+    let version = match Command::new("openssl")
         .arg("version")
-        .stdout(Stdio::null())
         .stderr(Stdio::null())
-        .status()
+        .output()
     {
-        Ok(status) if status.success() => {}
+        Ok(out) if out.status.success() => String::from_utf8_lossy(&out.stdout).into_owned(),
         _ => {
             eprintln!("[skipped] openssl CLI not available");
             return;
         }
+    };
+    // LibreSSL (macOS /usr/bin/openssl) lacks the s_server options this test relies on, such as
+    // eNULL ciphers at security level 0.
+    if version.starts_with("LibreSSL") {
+        eprintln!(
+            "[skipped] openssl on PATH is {}; this test needs OpenSSL",
+            version.trim()
+        );
+        return;
     }
 
     // Generate server cert and key (and CA, though we won't require mutual auth)
@@ -51,20 +59,19 @@ pub fn dtls_openssl_external_s_server_client_send() {
     let addr: SocketAddr = SocketAddr::from(([127, 0, 0, 1], port));
 
     // Spawn openssl s_server for DTLS 1.2
-    // Note: -verify 0 to not require client cert; -quiet to keep output minimal.
+    // s_server does not request a client cert unless -verify/-Verify is given. -accept takes the
+    // port alone: s_server then listens on all interfaces, which serves the 127.0.0.1 client.
     let mut child = match Command::new("openssl")
         .arg("s_server")
         .arg("-dtls1_2")
         .arg("-accept")
-        .arg(format!("{}:{}", addr.ip(), addr.port()))
+        .arg(addr.port().to_string())
         .arg("-cert")
         .arg(server_crt_path.to_string_lossy().to_string())
         .arg("-cert_chain")
         .arg(ca_crt_path.to_string_lossy().to_string())
         .arg("-key")
         .arg(server_key_path.to_string_lossy().to_string())
-        .arg("-verify")
-        .arg("0")
         .arg("-cipher")
         .arg("eNULL:@SECLEVEL=0")
         .arg("-debug")
@@ -134,6 +141,23 @@ pub fn dtls_openssl_external_s_server_client_send() {
 
     // Give the server time to start and bind.
     thread::sleep(Duration::from_millis(2000));
+
+    // If s_server has already exited, it rejected its options (an incompatible openssl build):
+    // skip rather than fail, since the client under test never got a server to talk to.
+    if let Ok(Some(status)) = child.try_wait() {
+        for h in join_handles {
+            let _ = h.join();
+        }
+        let stderr = stderr_buf
+            .lock()
+            .map(|b| String::from_utf8_lossy(&b).into_owned())
+            .unwrap_or_default();
+        eprintln!(
+            "[skipped] openssl s_server exited early ({status}): {}",
+            stderr.trim()
+        );
+        return;
+    }
 
     // Keep stdin handle to send data to the DTLS peer via s_server
     let mut child_stdin = child.stdin.take();
