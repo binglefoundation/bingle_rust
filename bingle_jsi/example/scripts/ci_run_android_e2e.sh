@@ -31,7 +31,7 @@ adb shell input keyevent 82 || true
 
 # The window that has input focus, e.g. "Window{... u0 com.google.android.apps.nexuslauncher/...}".
 focused_window() {
-  { adb shell dumpsys window 2>/dev/null | tr -d '\r' | grep -m 1 'mCurrentFocus=' | sed 's/^ *mCurrentFocus=//'; } || true
+  { timeout 10 adb shell dumpsys window 2>/dev/null | tr -d '\r' | grep -m 1 'mCurrentFocus=' | sed 's/^ *mCurrentFocus=//'; } || true
 }
 
 # Clear whatever the boot snapshot restored over the launcher (issue #414): a dialog or the lock
@@ -65,7 +65,17 @@ FOCUS_LOG="$ARTIFACTS_DIR/window_focus.log"
   done
 ) >"$FOCUS_LOG" 2>/dev/null &
 focus_watch=$!
-trap 'kill "$focus_watch" 2>/dev/null || true' EXIT
+
+# Record the system's activity and configuration events too: a configuration change shortly after
+# boot recreated the app's activity mid-suite in one run, losing the harness state (issue #414).
+# The events buffer (configuration_changed, wm_relaunch_*, wm_destroy_activity) is small; the system
+# tags say what triggered it.
+adb logcat -c || true
+adb logcat -b events -v time >"$ARTIFACTS_DIR/device_events.log" 2>/dev/null &
+events_watch=$!
+adb logcat -b system,main -v time 'ActivityTaskManager:I' 'ActivityManager:I' 'WindowManager:W' 'OverlayManager:I' '*:S' >"$ARTIFACTS_DIR/device_system.log" 2>/dev/null &
+system_watch=$!
+trap 'kill "$focus_watch" "$events_watch" "$system_watch" 2>/dev/null || true' EXIT
 
 # localnet backend: the provisioner (started in a prior workflow step) wrote the node-file/STUN list
 # (advertising 10.0.2.2) and an env file with the derived creds. The app reaches host services via
@@ -101,5 +111,7 @@ npx detox test --configuration android.emu.debug --headless --loglevel info \
 if [[ $status -ne 0 ]]; then
   echo "window focus during the run (issue #414):"
   cat "$FOCUS_LOG"
+  echo "configuration changes and activity relaunches during the run (issue #414):"
+  grep -E 'configuration_changed|wm_relaunch|wm_destroy_activity' "$ARTIFACTS_DIR/device_events.log" | grep -E 'configuration_changed|binglejsiexample' || true
 fi
 exit "$status"
