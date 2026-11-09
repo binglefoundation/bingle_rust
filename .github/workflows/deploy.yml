@@ -176,8 +176,12 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
+      # restore only: a release's cache would serve only that release's re-runs, at ~1.2 GB of the
+      # repository's 10 GB Actions cache (#151).
       - name: Cache cargo build
         uses: Swatinem/rust-cache@v2
+        with:
+          save-if: false
 
       # Trusted Publishing needs npm 11.5.1 or later.
       - name: Install Node
