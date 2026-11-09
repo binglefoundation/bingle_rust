@@ -38,7 +38,7 @@ focused_window() {
 # screen left on screen keeps the app's window from getting focus, which fails the first suite (or
 # every suite) with "has-window-focus=false" or "No views in hierarchy found". The hardening above
 # stops new dialogs but does not close one already showing. Then wait for the launcher to hold focus.
-echo "    focus after boot: $(focused_window)"
+echo "    focus after boot ($(date -u +%H:%M:%S)): $(focused_window)"
 adb shell wm dismiss-keyguard || true
 adb shell am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS >/dev/null || true
 adb shell input keyevent KEYCODE_HOME || true
@@ -47,7 +47,7 @@ for _ in $(seq 1 30); do
   [[ "$focus" == *launcher* ]] && break
   sleep 2
 done
-echo "    focus before tests: $focus"
+echo "    focus before tests ($(date -u +%H:%M:%S)): $focus"
 
 # Record every change of focus while the suites run, so a failure names the window that held it.
 ARTIFACTS_DIR="$EXAMPLE_DIR/artifacts"
@@ -69,8 +69,7 @@ focus_watch=$!
 # Record the system's activity and configuration events too: a configuration change shortly after
 # boot recreated the app's activity mid-suite in one run, losing the harness state (issue #414).
 # The events buffer (configuration_changed, wm_relaunch_*, wm_destroy_activity) is small; the system
-# tags say what triggered it.
-adb logcat -c || true
+# tags say what triggered it. The buffers are not cleared first, so changes during boot are kept.
 adb logcat -b events -v time >"$ARTIFACTS_DIR/device_events.log" 2>/dev/null &
 events_watch=$!
 adb logcat -b system,main -v time 'ActivityTaskManager:I' 'ActivityManager:I' 'WindowManager:W' 'OverlayManager:I' '*:S' >"$ARTIFACTS_DIR/device_system.log" 2>/dev/null &
@@ -106,12 +105,14 @@ curl -s -o /dev/null "http://localhost:8081/index.bundle?platform=android&dev=tr
 # Detox reuses the already-running emulator (BINGLE_E2E_AVD matches the runner's avd-name). A failing
 # test keeps a screenshot and the device log under artifacts/, which the workflow uploads.
 status=0
+echo "    detox starts: $(date -u +%H:%M:%S)"
 npx detox test --configuration android.emu.debug --headless --loglevel info \
   --artifacts-location "$ARTIFACTS_DIR/" --take-screenshots failing --record-logs failing || status=$?
+# Printed on every run, so a passing run shows when the configuration settles after boot.
+echo "configuration changes and activity relaunches during the run (issue #414):"
+grep -E 'configuration_changed|wm_relaunch|wm_destroy_activity' "$ARTIFACTS_DIR/device_events.log" | grep -E 'configuration_changed|binglejsiexample' || true
 if [[ $status -ne 0 ]]; then
   echo "window focus during the run (issue #414):"
   cat "$FOCUS_LOG"
-  echo "configuration changes and activity relaunches during the run (issue #414):"
-  grep -E 'configuration_changed|wm_relaunch|wm_destroy_activity' "$ARTIFACTS_DIR/device_events.log" | grep -E 'configuration_changed|binglejsiexample' || true
 fi
 exit "$status"
