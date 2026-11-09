@@ -169,6 +169,33 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
         }.start()
     }
 
+    // The version of every library module, keyed by module name (issue #144). Needs init, unlike
+    // version().
+    @ReactMethod
+    fun getVersions(promise: Promise) {
+        val api = apiInstance
+        if (api == null) {
+            promise.reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.")
+            return
+        }
+        Thread {
+            try {
+                val result = Arguments.createMap()
+                for ((module, info) in api.getVersions()) {
+                    val map = Arguments.createMap()
+                    map.putString("version", info.version)
+                    if (info.gitSha != null) map.putString("git_sha", info.gitSha) else map.putNull("git_sha")
+                    map.putString("build_timestamp", info.buildTimestamp)
+                    map.putString("build_number", info.buildNumber)
+                    result.putMap(module, map)
+                }
+                promise.resolve(result)
+            } catch (e: Exception) {
+                promise.reject("BINGLE_ERROR", e.message, e)
+            }
+        }.start()
+    }
+
     @ReactMethod
     fun queued(promise: Promise) {
         val api = apiInstance

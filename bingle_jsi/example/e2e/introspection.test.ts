@@ -3,12 +3,9 @@
  * Introspection + local-store e2e for the bingle_jsi Detox harness (issue #139, group A).
  *
  * Covers the read-only getters and local-store writes that need no network (only a state-file via
- * `init`): `isStarted`/`networkAvailable` before the engine is started, and an `addMessage` ->
- * `getMessages` -> `updateMessageStatusById` round-trip. Always runs.
- *
- * (`getVersions` is intentionally not covered: it exists in the uniffi trait but is not wired into
- * the native JS bridge — tracked in #144. `version()` — the single-module getter that *is*
- * bridged — is already covered by smoke.test.ts.)
+ * `init`): `getVersions` (issue #144), `isStarted`/`networkAvailable` before the engine is
+ * started, and an `addMessage` -> `getMessages` -> `updateMessageStatusById` round-trip. Always
+ * runs. (The single-module `version()` is covered by smoke.test.ts.)
  *
  * Note: Detox replaces the global `expect`, so value assertions use Node's `assert` (see harness.ts).
  */
@@ -29,6 +26,24 @@ describe(`bingle_jsi introspection + local store (${backend})`, () => {
       method: 'init',
       args: [{local: localStatePath(`bingle_e2e_introspection_${Date.now()}.json`)}],
     });
+  });
+
+  it('lists the version of every library module via getVersions', async () => {
+    const versions = await call({method: 'getVersions', args: []});
+    assert.ok(versions && typeof versions === 'object', 'getVersions should resolve to a map');
+    // The core library and the JSI binding each report their own version.
+    for (const module of ['Base', 'JSI']) {
+      const info = versions[module];
+      assert.ok(info, `getVersions should include ${module}, got ${Object.keys(versions).join(',')}`);
+      assert.strictEqual(typeof info.version, 'string');
+      assert.ok(info.version.length > 0, `${module} version should be non-empty`);
+      assert.strictEqual(typeof info.build_timestamp, 'string');
+      assert.strictEqual(typeof info.build_number, 'string');
+      assert.ok(info.git_sha === null || typeof info.git_sha === 'string', `${module} git_sha should be a string or null`);
+    }
+    // The single-module version() reports the core library, so it matches the Base entry.
+    const single = await call({method: 'version', args: []});
+    assert.strictEqual(versions.Base.version, single.version);
   });
 
   it('isStarted is false before the engine is started', async () => {

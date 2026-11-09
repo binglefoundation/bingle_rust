@@ -223,6 +223,31 @@ class BingleJsiBridge: RCTEventEmitter {
         }
     }
 
+    // The version of every library module, keyed by module name (issue #144). Needs init, unlike
+    // version().
+    @objc
+    func getVersions(_ resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {
+        guard let api = apiInstance else {
+            reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.", nil)
+            return
+        }
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                let versions = try api.getVersions()
+                resolve(versions.mapValues { info in
+                    [
+                        "version": info.version,
+                        "git_sha": info.gitSha as Any,
+                        "build_timestamp": info.buildTimestamp,
+                        "build_number": info.buildNumber,
+                    ]
+                })
+            } catch {
+                reject("BINGLE_ERROR", "\(error)", error)
+            }
+        }
+    }
+
     @objc
     func queued(_ resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {
         guard let api = apiInstance else {
