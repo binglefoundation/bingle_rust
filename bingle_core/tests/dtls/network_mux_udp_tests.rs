@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use crate::util::test_util::ADDRESS_SPEND;
-use bingle_core::dtls::{NetworkMux, UdpNetworkMux};
+use bingle_core::dtls::{MuxType, NetworkMux, UdpNetworkMux, mux_type_for};
 
 // Global test guard to serialize tests in this module (Rust tests run in parallel by default)
 static TEST_GUARD: OnceLock<Mutex<()>> = OnceLock::new();
@@ -223,4 +223,56 @@ pub fn write_relay_wraps_payload_in_turn_channel_data() {
     for i in 0..padding {
         assert_eq!(buf[4 + len_got + i], 0u8, "padding byte should be zero");
     }
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn mux_type_empty_is_unknown() {
+    assert_eq!(mux_type_for(&[]), MuxType::Unknown);
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn mux_type_stun_bounds() {
+    assert_eq!(mux_type_for(&[0]), MuxType::Stun);
+    assert_eq!(mux_type_for(&[3]), MuxType::Stun);
+    assert_eq!(mux_type_for(&[4]), MuxType::Unknown);
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn mux_type_zrtp_bounds() {
+    assert_eq!(mux_type_for(&[16]), MuxType::Zrtp);
+    assert_eq!(mux_type_for(&[19]), MuxType::Zrtp);
+    assert_eq!(mux_type_for(&[15]), MuxType::Unknown);
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn mux_type_dtls_bounds() {
+    assert_eq!(mux_type_for(&[20]), MuxType::Dtls);
+    assert_eq!(mux_type_for(&[63]), MuxType::Dtls);
+    assert_eq!(mux_type_for(&[64]), MuxType::TurnChannelData);
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn mux_type_turn_bounds() {
+    assert_eq!(mux_type_for(&[0x40]), MuxType::TurnChannelData);
+    assert_eq!(mux_type_for(&[0x7f]), MuxType::TurnChannelData);
+    assert_eq!(mux_type_for(&[0x80]), MuxType::Rtp);
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn mux_type_rtp_bounds() {
+    assert_eq!(mux_type_for(&[128]), MuxType::Rtp);
+    assert_eq!(mux_type_for(&[191]), MuxType::Rtp);
+    assert_eq!(mux_type_for(&[192]), MuxType::Unknown);
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn mux_type_unknown_outside_ranges() {
+    assert_eq!(mux_type_for(&[255]), MuxType::Unknown);
 }
