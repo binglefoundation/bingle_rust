@@ -47,7 +47,7 @@ use algonaut::{
     transaction::{
         TransferAsset,
         account::Account,
-        builder::{CallApplication, ClawbackAsset, UpdateAsset},
+        builder::{ClawbackAsset, UpdateAsset},
         transaction::Transaction,
     },
 };
@@ -463,22 +463,10 @@ impl AlgoBingle {
         if app_id == 0 {
             bail!("app_id must be > 0");
         }
-        let client = self.ops.algod_client()?;
-        let params = self.params(&client)?;
-        let (account, sender) = self.sender_account()?;
-        let tx = CallApplication::new(sender, AppId(app_id))
-            .app_arguments(vec![
-                AlgoOps::arc4_selector("enrol_sw_client()void").to_vec(),
-            ])
-            .note(AlgoOps::unique_note())
-            .build(&params)
-            .map_err(|e| anyhow!("build app call: {e}"))?;
-        let signed = account
-            .sign(tx)
-            .map_err(|e| anyhow!("sign app call: {e}"))?
-            .to_msg_pack()
-            .map_err(|e| anyhow!("encode signed app call: {e}"))?;
-        self.broadcast_group(&client, vec![signed])
+        let (txid, _logs) = self
+            .ops
+            .call_app(app_id, None, Some("enrol_sw_client()void"), &[])?;
+        Ok(txid)
     }
 
     /// Withdraw Algo from the app account to the given address.
