@@ -56,6 +56,18 @@ To cut wall-clock time the job caches build inputs across runs (issue #146). Bec
 runs only on `staging` pushes + manual dispatch, and `staging` is the repo's default branch, these
 caches are populated by staging runs and reused by the next one.
 
+- **Rust** (`Swatinem/rust-cache`, step "Cache cargo build") — caches the cargo registry and the
+  compiled dependencies of both target directories: `./target` (the localnet provisioner) and
+  `/var/tmp/bingle_native_target`, where `build_android.sh` builds the native library outside the
+  checkout so build paths don't leak into it. Only `bingle_core`, `bingle_local` and `bingle_jsi`
+  then recompile: the native library step drops from ~500 s to ~70 s, plus ~35 s to restore the
+  ~1.2 GB entry (issue #151). `rust-cache` joins a target to its workspace even when it is absolute,
+  so the step "Locate the native target directory" passes it relative to the checkout. **Busts** on a
+  `Cargo.lock`, `Cargo.toml`, `.cargo/config.toml` or Rust toolchain change (all in the key). The
+  workspace list is not in the key: after changing it, bump `prefix-key`, or the old entry keeps
+  matching exactly and is never re-saved.
+  sccache was measured and rejected: the Actions cache backend refused most of its writes, and a
+  warm run was slower than a cold one (#151).
 - **Gradle** (`gradle/actions/setup-gradle`, step "Cache Gradle") — caches the Gradle User Home
   (`~/.gradle/caches`, wrapper, configuration cache) so the "Build the app + androidTest APKs"
   step doesn't redownload dependencies or re-run configuration. `cache-read-only: false` is set so
