@@ -9,6 +9,10 @@ pub use advert_record::{AdvertRecord, InetSocketAddress};
 pub use client::{DdbClient, DdbClientImpl, NullDdbClient};
 
 /// DDB backend trait: minimal CRUD required by issue
+#[allow(
+    clippy::len_without_is_empty,
+    reason = "public trait; adding a required is_empty() would break implementors (#16)"
+)]
 pub trait DdbBackend {
     /// Insert or update an AdvertRecord, using its id as the key
     fn upsert(&mut self, record: AdvertRecord);

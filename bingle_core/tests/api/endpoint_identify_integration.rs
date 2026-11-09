@@ -27,6 +27,10 @@ use crate::util::test_util;
 pub fn bingle_api_register_via_forced_stun() {
     init_test_logging();
 
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "localnet test scaffolding; each argument is one piece of chain setup"
+    )]
     fn register_relay_static_endpoint(
         handle: &str,
         ops_relay: &algo_ops::AlgoOps,

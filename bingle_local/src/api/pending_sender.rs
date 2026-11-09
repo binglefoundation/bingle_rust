@@ -388,8 +388,10 @@ impl PendingSender {
                     options,
                     &*ready,
                     &*on_outcome,
-                    event_rx,
-                    work_tx,
+                    SchedulerChannels {
+                        events: event_rx,
+                        work: work_tx,
+                    },
                     &scheduler_running,
                 )
             });
@@ -530,16 +532,22 @@ impl Drop for PendingSender {
     }
 }
 
+/// The scheduler's channels: events in from callers and the worker, work out to the worker.
+struct SchedulerChannels {
+    events: mpsc::Receiver<Event>,
+    work: mpsc::Sender<Work>,
+}
+
 fn run_scheduler(
     store: &dyn OutboundStore,
     in_flight_shared: &InFlight,
     options: PendingSenderOptions,
     ready: &ReadyCheck,
     on_outcome: &OutcomeCallback,
-    events: mpsc::Receiver<Event>,
-    work: mpsc::Sender<Work>,
+    channels: SchedulerChannels,
     running: &AtomicBool,
 ) {
+    let SchedulerChannels { events, work } = channels;
     tracing::info!("[PendingSender] started");
     let mut in_flight: Option<(String, Instant)> = None;
     let mut warned_stuck = false;

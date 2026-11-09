@@ -265,6 +265,10 @@ fn relay_updater_localnet_e2e_matrix() {
     client1.access_unsafe_for_tests(|api| api.stop());
 }
 
+#[allow(
+    clippy::too_many_arguments,
+    reason = "localnet test scaffolding; each argument is one piece of the scenario"
+)]
 fn run_scenario(
     scenario_name: &str,
     my_id: String,

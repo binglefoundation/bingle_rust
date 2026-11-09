@@ -1946,6 +1946,10 @@ impl AlgoBingle {
     ///   differs from the app account. Defaults to the app address if absent.
     /// - `ASSET_MANAGER`  — address set as the ASA manager field, allowing future reconfiguration.
     /// - `ASSET_FREEZE`   — address set as the ASA freeze field.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "public API; kept unchanged rather than grouped into a struct (#16)"
+    )]
     pub fn deploy_app_and_asset(
         &self,
         app_path: &std::path::Path,

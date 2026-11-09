@@ -9,13 +9,8 @@ members = [
     "bingle_cli",
 ]
 
-# Clippy backlog, silenced centrally so the quality gate can pass while it is
-# burned down. Each group is tracked by a GitHub issue; when an issue is fixed,
-# remove its lints here (set back to "warn"/"deny"). Members opt in with
-# `[lints] workspace = true`. See scripts/run_quality_checks.sh.
+# Workspace-wide clippy settings. Members opt in with `[lints] workspace = true`; see
+# scripts/run_quality_checks.sh. The old backlog of allowed lints is cleared (#11-#17): every
+# lint is at its default level, and the few deliberate exceptions are per-item
+# `#[allow(..., reason = "...")]` attributes next to the code they cover.
 [workspace.lints.clippy]
-# #16 API-signature / design lints
-too_many_arguments = "allow"
-new_without_default = "allow"
-len_without_is_empty = "allow"
-result_large_err = "allow"

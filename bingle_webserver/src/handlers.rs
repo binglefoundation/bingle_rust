@@ -227,13 +227,18 @@ pub async fn handle_version() -> impl IntoResponse {
 
 fn local_api_guard(
     state: &AppState,
-) -> Result<std::sync::MutexGuard<'_, Box<dyn BingleLocalApi>>, AxumResponse> {
+) -> Result<std::sync::MutexGuard<'_, Box<dyn BingleLocalApi>>, Box<AxumResponse>> {
+    // the error response is boxed: a `Response` is large, and this keeps the `Ok` path small.
     let Some(local_arc) = &state.local_api else {
-        return Err((StatusCode::METHOD_NOT_ALLOWED, "Local API disabled").into_response());
+        return Err(Box::new(
+            (StatusCode::METHOD_NOT_ALLOWED, "Local API disabled").into_response(),
+        ));
     };
     match local_arc.lock() {
         Ok(g) => Ok(g),
-        Err(_) => Err((StatusCode::INTERNAL_SERVER_ERROR, "Local API poisoned").into_response()),
+        Err(_) => Err(Box::new(
+            (StatusCode::INTERNAL_SERVER_ERROR, "Local API poisoned").into_response(),
+        )),
     }
 }
 
@@ -259,7 +264,7 @@ pub async fn local_generate_keypair(State(state): State<AppState>) -> impl IntoR
                 Err(e) => handle_bingle_error(e),
             }
         }
-        Err(resp) => resp,
+        Err(resp) => *resp,
     }
 }
 
@@ -325,7 +330,7 @@ pub async fn local_add_contact(
                 Err(e) => handle_bingle_error(e),
             }
         }
-        Err(resp) => resp,
+        Err(resp) => *resp,
     }
 }
 
@@ -345,7 +350,7 @@ pub async fn local_block_contact(
                 Err(e) => handle_bingle_error(e),
             }
         }
-        Err(resp) => resp,
+        Err(resp) => *resp,
     }
 }
 
@@ -365,7 +370,7 @@ pub async fn local_remove_contact(
                 Err(e) => handle_bingle_error(e),
             }
         }
-        Err(resp) => resp,
+        Err(resp) => *resp,
     }
 }
 
@@ -383,7 +388,7 @@ pub async fn local_is_blocked(
             Ok(val) => AxumJson(val).into_response(),
             Err(e) => handle_bingle_error(e),
         },
-        Err(resp) => resp,
+        Err(resp) => *resp,
     }
 }
 
@@ -393,7 +398,7 @@ pub async fn local_get_contacts(State(state): State<AppState>) -> impl IntoRespo
             Ok(list) => AxumJson(list).into_response(),
             Err(e) => handle_bingle_error(e),
         },
-        Err(resp) => resp,
+        Err(resp) => *resp,
     }
 }
 
@@ -419,7 +424,7 @@ pub async fn local_add_message(
                 Err(e) => handle_bingle_error(e),
             }
         }
-        Err(resp) => resp,
+        Err(resp) => *resp,
     }
 }
 
@@ -467,7 +472,7 @@ pub async fn local_get_messages(State(state): State<AppState>) -> impl IntoRespo
             }
             Err(e) => handle_bingle_error(e),
         },
-        Err(resp) => resp,
+        Err(resp) => *resp,
     }
 }
 
@@ -484,7 +489,7 @@ pub async fn local_save(
                 Err(e) => handle_bingle_error(e),
             }
         }
-        Err(resp) => resp,
+        Err(resp) => *resp,
     }
 }
 
@@ -542,6 +547,6 @@ pub async fn local_load(
                 Err(e) => handle_bingle_error(e),
             }
         }
-        Err(resp) => resp,
+        Err(resp) => *resp,
     }
 }

@@ -60,6 +60,15 @@ pub struct DtlsReliablePacketTransport {
     on_new_outbound_session: Arc<Mutex<Option<NewOutboundSessionObserver>>>,
 }
 
+/// The transport state an inbound packet is dispatched against, shared with the DTLS handler.
+#[derive(Clone)]
+struct InboundState {
+    handle_message: Arc<Mutex<Option<PacketTransportHandleMessage>>>,
+    endpoint_sessions: Arc<Mutex<HashMap<NetworkEndpointKey, SessionGeneration>>>,
+    pending_acks: Arc<Mutex<HashMap<AckKey, AckWaiter>>>,
+    received_single_blocks: Arc<Mutex<HashSet<DeliveredKey>>>,
+}
+
 enum ParsedPacket<'a> {
     DataSingle { tx_id: u16, payload: &'a [u8] },
     AckComplete { tx_id: u16 },
@@ -80,23 +89,13 @@ impl DtlsReliablePacketTransport {
             on_new_outbound_session: Arc::new(Mutex::new(None)),
         };
 
-        let handle_message_for_dtls = transport.handle_message.clone();
-        let endpoint_sessions_for_dtls = transport.endpoint_sessions.clone();
-        let pending_acks_for_dtls = transport.pending_acks.clone();
-        let received_single_blocks_for_dtls = transport.received_single_blocks.clone();
+        let inbound_for_dtls = transport.inbound_state();
         transport
             .dtls
             .set_handle_message(Some(Arc::new(move |server, from, issuer, packet| {
-                if let Err(e) = Self::dispatch_inbound_packet(
-                    &handle_message_for_dtls,
-                    &endpoint_sessions_for_dtls,
-                    &pending_acks_for_dtls,
-                    &received_single_blocks_for_dtls,
-                    server,
-                    from,
-                    issuer,
-                    packet,
-                ) {
+                if let Err(e) =
+                    Self::dispatch_inbound_packet(&inbound_for_dtls, server, from, issuer, packet)
+                {
                     tracing::warn!(
                         "[DtlsReliablePacketTransport::new] packet transport handle_message failed: {}",
                         e
@@ -176,16 +175,16 @@ impl DtlsReliablePacketTransport {
         issuer: &str,
         packet: &[u8],
     ) -> Result<Option<Vec<u8>>, String> {
-        Self::dispatch_inbound_packet(
-            &self.handle_message,
-            &self.endpoint_sessions,
-            &self.pending_acks,
-            &self.received_single_blocks,
-            self.dtls(),
-            from,
-            issuer,
-            packet,
-        )
+        Self::dispatch_inbound_packet(&self.inbound_state(), self.dtls(), from, issuer, packet)
+    }
+
+    fn inbound_state(&self) -> InboundState {
+        InboundState {
+            handle_message: self.handle_message.clone(),
+            endpoint_sessions: self.endpoint_sessions.clone(),
+            pending_acks: self.pending_acks.clone(),
+            received_single_blocks: self.received_single_blocks.clone(),
+        }
     }
 
     #[cfg_attr(not(feature = "test-hooks"), allow(dead_code))]
@@ -449,15 +448,18 @@ impl DtlsReliablePacketTransport {
     }
 
     fn dispatch_inbound_packet(
-        handle_message: &Arc<Mutex<Option<PacketTransportHandleMessage>>>,
-        endpoint_sessions: &Arc<Mutex<HashMap<NetworkEndpointKey, SessionGeneration>>>,
-        pending_acks: &Arc<Mutex<HashMap<AckKey, AckWaiter>>>,
-        received_single_blocks: &Arc<Mutex<HashSet<DeliveredKey>>>,
+        inbound: &InboundState,
         dtls: &dyn Dtls,
         from: &NetworkEndpoint,
         issuer: &str,
         packet: &[u8],
     ) -> Result<Option<Vec<u8>>, String> {
+        let InboundState {
+            handle_message,
+            endpoint_sessions,
+            pending_acks,
+            received_single_blocks,
+        } = inbound;
         let from_key = Self::endpoint_key(from, "dispatch_inbound_packet")?;
         let from_generation = Self::current_session_generation(
             endpoint_sessions,
