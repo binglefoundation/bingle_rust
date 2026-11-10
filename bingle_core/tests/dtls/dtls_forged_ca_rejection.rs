@@ -46,7 +46,7 @@ fn genuine(passphrase: &str, address: &str) -> Creds {
 
 /// Credentials that claim `address` from a CA key unrelated to it.
 fn forged(address: &str) -> Creds {
-    let c = pki::generate_ed25519_test_certs_with_key(address);
+    let c = pki::generate_forged_test_certs(address);
     Creds {
         ca: c.ca_crt,
         server_crt: c.server_crt,
@@ -72,7 +72,6 @@ fn start_server(
     let seen: Seen = Arc::new(Mutex::new(Vec::new()));
     let seen_clone = seen.clone();
     let server = DtlsOpenSsl::new("server".to_string())
-        .with_null_encryption()
         .with_handle_peer_certificate(handler)
         .with_server_signing_cert(creds.server_crt.clone())
         .with_server_signing_private_key(creds.server_key.clone())
@@ -92,7 +91,6 @@ fn start_client(
     let mux = Arc::new(UdpNetworkMux::bind(("127.0.0.1", 0)).expect("bind client mux"));
     mux.start().expect("client mux start");
     let client = DtlsOpenSsl::new("client".to_string())
-        .with_null_encryption()
         .with_handle_peer_certificate(handler)
         .with_client_cert(creds.client_crt.clone())
         .with_client_private_key(creds.client_key.clone())
@@ -167,6 +165,30 @@ pub fn dtls_client_rejects_server_with_forged_ca() {
     let (_server, _smux, addr, seen) = start_server(&server_creds, accept_all);
     let client_creds = genuine(PASSPHRASE_SPEND, ADDRESS_SPEND);
     let (client, _cmux) = start_client(&client_creds, peer_certificate_handler());
+
+    send_and_wait(&client, addr, &seen, Duration::from_secs(3));
+    let seen = seen.lock().unwrap().clone();
+    assert!(
+        seen.is_empty(),
+        "client sent application data to a server with a forged id: {:?}",
+        seen
+    );
+}
+
+/// With handshake verification off (a debug-only mode), the client's post-connect check must still refuse a server
+/// with a forged CA and close the session before sending.
+#[ntest::timeout(30_000)]
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn dtls_client_post_connect_check_rejects_server_with_forged_ca() {
+    init_test_logging();
+    let server_creds = forged(ADDRESS_RECEIVE);
+    let (_server, _smux, addr, seen) = start_server(&server_creds, accept_all);
+    let client_creds = genuine(PASSPHRASE_SPEND, ADDRESS_SPEND);
+    let (client, _cmux) = start_client(&client_creds, peer_certificate_handler());
+    // App-layer-only verification is a debug-only mode.
+    client.set_dangerous_debug(true);
+    client.set_app_layer_only_verification(true);
 
     send_and_wait(&client, addr, &seen, Duration::from_secs(3));
     let seen = seen.lock().unwrap().clone();

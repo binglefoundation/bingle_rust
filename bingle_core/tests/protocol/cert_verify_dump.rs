@@ -1,3 +1,5 @@
+use crate::util::pki::test_account_key;
+use crate::util::test_util::ADDRESS_SPEND;
 use bingle_core::protocol::{ISSUER_SUFFIX, VIRTUAL_CA};
 
 #[test]
@@ -13,13 +15,16 @@ pub fn peer_certificate_handler_generates_dump_and_verifies() {
     };
     use openssl::x509::{X509, X509NameBuilder};
 
-    // 1) Create Ed25519 CA key and self-signed certificate with CN = VIRTUAL_CA
-    let ca_pkey: PKey<Private> = PKey::generate_ed25519().expect("generate ed25519");
+    // 1) Create a self-signed certificate with CN = VIRTUAL_CA and O = the id, from the id's key
+    let ca_pkey: PKey<Private> = test_account_key(ADDRESS_SPEND).expect("spend key");
 
     let mut ca_name_b = X509NameBuilder::new().expect("name builder");
     ca_name_b
         .append_entry_by_nid(Nid::COMMONNAME, VIRTUAL_CA)
         .expect("set CN");
+    ca_name_b
+        .append_entry_by_nid(Nid::ORGANIZATIONNAME, ADDRESS_SPEND)
+        .expect("set O");
     let ca_name = ca_name_b.build();
 
     let mut ca_builder = X509::builder().expect("x509 builder");
@@ -50,10 +55,9 @@ pub fn peer_certificate_handler_generates_dump_and_verifies() {
     let ca_cert = ca_builder.build();
     let ca_pem = ca_cert.to_pem().expect("ca pem");
 
-    // 2) Create an end-entity RSA certificate with subject CN that ends with ISSUER_SUFFIX
-    // This satisfies the handler's requirement without exposing identity in the CA.
+    // 2) Create an end-entity RSA certificate whose subject CN is the id plus ISSUER_SUFFIX
     let mut ee_name_b = X509NameBuilder::new().expect("ee name builder");
-    let ee_cn = format!("user{}", ISSUER_SUFFIX);
+    let ee_cn = format!("{}{}", ADDRESS_SPEND, ISSUER_SUFFIX);
     ee_name_b
         .append_entry_by_nid(Nid::COMMONNAME, &ee_cn)
         .expect("ee cn");

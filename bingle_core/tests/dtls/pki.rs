@@ -1,10 +1,14 @@
-use crate::util::test_util::ADDRESS_RECEIVE;
+use crate::util::test_util::{
+    ADDRESS_10MIL, ADDRESS_CLIENT_B, ADDRESS_RECEIVE, ADDRESS_SPEND, PASSPHRASE_10MIL,
+    PASSPHRASE_CLIENT_B, PASSPHRASE_RECEIVE, PASSPHRASE_SPEND,
+};
+use algo_ops::AlgoOps;
 use openssl::asn1::Asn1Time;
 use openssl::bn::BigNum;
 use openssl::ec::{EcGroup, EcKey};
 use openssl::hash::MessageDigest;
 use openssl::nid::Nid;
-use openssl::pkey::{PKey, Private};
+use openssl::pkey::{Id, PKey, Private};
 use openssl::x509::extension::{
     AuthorityKeyIdentifier, BasicConstraints, ExtendedKeyUsage, KeyUsage, SubjectKeyIdentifier,
 };
@@ -35,8 +39,41 @@ fn make_serial() -> BigNum {
     serial
 }
 
+/// The Ed25519 key behind a test account's address, as the app derives it, or `None` for an
+/// address with no known passphrase.
+pub fn test_account_key(address: &str) -> Option<PKey<Private>> {
+    let passphrase = [
+        (ADDRESS_10MIL, PASSPHRASE_10MIL),
+        (ADDRESS_SPEND, PASSPHRASE_SPEND),
+        (ADDRESS_RECEIVE, PASSPHRASE_RECEIVE),
+        (ADDRESS_CLIENT_B, PASSPHRASE_CLIENT_B),
+    ]
+    .into_iter()
+    .find(|(a, _)| *a == address)
+    .map(|(_, p)| p)?;
+    let ops = AlgoOps::new_for_algorand(
+        Some(passphrase.to_string()),
+        Some(address.to_string()),
+        None,
+    );
+    let sk = ops.private_key_bytes().expect("private key bytes");
+    Some(PKey::private_key_from_raw_bytes(&sk, Id::ED25519).expect("ed25519 key"))
+}
+
+/// A virtual CA for `key` (an address), signed by that address's own key when it is a known test
+/// account, as a genuine node's CA is; otherwise by a fresh key.
 pub fn make_ca(key: &str) -> (X509, PKey<Private>) {
-    let pkey = PKey::generate_ed25519().expect("ed25519 gen");
+    let pkey =
+        test_account_key(key).unwrap_or_else(|| PKey::generate_ed25519().expect("ed25519 gen"));
+    make_ca_with_signing_key(key, pkey)
+}
+
+/// A virtual CA naming `key` (an address) but signed by an unrelated key: a forgery.
+pub fn make_forged_ca(key: &str) -> (X509, PKey<Private>) {
+    make_ca_with_signing_key(key, PKey::generate_ed25519().expect("ed25519 gen"))
+}
+
+fn make_ca_with_signing_key(key: &str, pkey: PKey<Private>) -> (X509, PKey<Private>) {
     let mut name = X509NameBuilder::new().expect("name builder");
     name.append_entry_by_nid(Nid::COMMONNAME, "virtual.bingle.home.arpa")
         .expect("cn");
@@ -132,7 +169,16 @@ pub fn make_ee(ca_cert: &X509, ca_key: &PKey<Private>, cn: &str) -> (X509, PKey<
 
 #[allow(dead_code)]
 pub fn generate_ed25519_test_certs_with_key(key: &str) -> TestCerts {
-    let (ca_cert, ca_key) = make_ca(key);
+    certs_from_ca(key, make_ca(key))
+}
+
+/// Certificates that claim `key` (an address) from a CA key that isn't its key.
+#[allow(dead_code)]
+pub fn generate_forged_test_certs(key: &str) -> TestCerts {
+    certs_from_ca(key, make_forged_ca(key))
+}
+
+fn certs_from_ca(key: &str, (ca_cert, ca_key): (X509, PKey<Private>)) -> TestCerts {
     let cn = format!("{}.", key);
     let (server_cert, server_key) = make_ee(&ca_cert, &ca_key, &cn);
     let (client_cert, client_key) = make_ee(&ca_cert, &ca_key, &cn);
