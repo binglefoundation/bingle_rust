@@ -90,3 +90,6 @@ pub mod dtls_app_layer_verification;
 
 #[path = "dtls_forged_ca_rejection.rs"]
 pub mod dtls_forged_ca_rejection;
+
+#[path = "dtls_expected_peer_id.rs"]
+pub mod dtls_expected_peer_id;

@@ -193,6 +193,14 @@ pub trait Dtls {
     fn get_cipher_suite(&self, endpoint: &NetworkEndpoint) -> Option<String>;
 
     /**
+     * Expect `id` to be the verified identity of the peer at `endpoint`. Until it is replaced or
+     * the peer is forgotten, a send to `endpoint` fails, and closes the session, when the peer's
+     * verified id is not `id`. On a new session the check runs before any application data is
+     * written.
+     */
+    fn expect_peer_id(&self, endpoint: &NetworkEndpoint, id: &str);
+
+    /**
      * Forget all peer connections, closing their workers.
      * Used when the public address changes so that fresh DTLS handshakes are performed.
      */

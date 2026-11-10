@@ -12,6 +12,10 @@ use bingle_core::dtls::{Dtls, HandleMessage, HandlePeerCertificate, Result};
 struct MockDtls {
     pub sends: CapturedPackets,
     pub handle_message: Arc<Mutex<Option<HandleMessage>>>,
+    /// The id expected at each endpoint, from expect_peer_id.
+    pub expected: Arc<Mutex<Vec<(NetworkEndpoint, String)>>>,
+    /// For each send, the id expected at its endpoint when it was sent.
+    pub expected_at_send: Arc<Mutex<Vec<Option<String>>>>,
 }
 
 impl MockDtls {
@@ -21,6 +25,8 @@ impl MockDtls {
             Self {
                 sends: v.clone(),
                 handle_message: Arc::new(Mutex::new(None)),
+                expected: Arc::new(Mutex::new(vec![])),
+                expected_at_send: Arc::new(Mutex::new(vec![])),
             },
             v,
         )
@@ -39,6 +45,15 @@ impl Dtls for MockDtls {
             .inet_socket_address()
             .expect("MockDtls::send requires inet_socket_address");
         self.sends.lock().unwrap().push((addr, data.to_vec()));
+        let expected = self
+            .expected
+            .lock()
+            .unwrap()
+            .iter()
+            .rev()
+            .find(|(e, _)| e == to)
+            .map(|(_, id)| id.clone());
+        self.expected_at_send.lock().unwrap().push(expected);
         if data.len() >= 4
             && (data[0] & 0x0F) == 0x01
             && let Some(h) = self.handle_message.lock().unwrap().clone()
@@ -147,6 +162,12 @@ impl Dtls for MockDtls {
     {
         self
     }
+    fn expect_peer_id(&self, endpoint: &bingle_core::api::bingle_api::NetworkEndpoint, id: &str) {
+        self.expected
+            .lock()
+            .unwrap()
+            .push((endpoint.clone(), id.to_string()));
+    }
     fn get_cipher_suite(
         &self,
         _endpoint: &bingle_core::api::bingle_api::NetworkEndpoint,
@@ -244,5 +265,33 @@ pub fn send_over_dtls_allows_direct_to_different_addr() {
         sent_vec.lock().unwrap().len(),
         1,
         "MockDtls::send should have been called once"
+    );
+}
+
+/// send_message_to_network tells DTLS which id it expects at the endpoint before sending, so a
+/// session to a different id is refused.
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn send_message_to_network_expects_destination_id_before_sending() {
+    let (mock, _sent_vec) = MockDtls::new();
+    let expected_at_send = mock.expected_at_send.clone();
+    let my_addr: SocketAddr = "44.223.62.108:12121".parse().expect("valid addr");
+    let api = BingleApiImpl::new_with_dtls(Box::new(mock));
+    api.access_unsafe_for_tests(|a: &mut BingleApiImpl| {
+        a.engine_set_public_addr_for_tests(Some(my_addr));
+    });
+    let other_addr: SocketAddr = "10.0.0.1:5000".parse().expect("valid addr");
+    let nsk = NetworkEndpoint::new_direct(other_addr);
+    let uid = test_util::ADDRESS_SPEND.to_string();
+    let ok = api
+        .access_unsafe_for_tests(|a: &mut BingleApiImpl| {
+            a.send_message_to_network(&nsk, &uid, serde_json::json!({"test": true}), None)
+        })
+        .unwrap();
+    assert!(ok, "send_message_to_network should succeed");
+    assert_eq!(
+        expected_at_send.lock().unwrap().first().cloned(),
+        Some(Some(uid)),
+        "the send went out without the destination id expected at its endpoint"
     );
 }

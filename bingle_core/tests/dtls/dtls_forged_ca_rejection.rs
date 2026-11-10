@@ -18,16 +18,16 @@ use bingle_core::dtls::{Dtls, DtlsOpenSsl, Result as DtlsResult, UdpNetworkMux};
 use bingle_core::protocol::cert_verify::peer_certificate_handler;
 
 /// PEMs for one side of a handshake.
-struct Creds {
-    ca: Vec<u8>,
-    server_crt: Vec<u8>,
-    server_key: Vec<u8>,
-    client_crt: Vec<u8>,
-    client_key: Vec<u8>,
+pub struct Creds {
+    pub ca: Vec<u8>,
+    pub server_crt: Vec<u8>,
+    pub server_key: Vec<u8>,
+    pub client_crt: Vec<u8>,
+    pub client_key: Vec<u8>,
 }
 
 /// Credentials the app generates for the account behind `address`.
-fn genuine(passphrase: &str, address: &str) -> Creds {
+pub fn genuine(passphrase: &str, address: &str) -> Creds {
     let ops = AlgoOps::new_for_algorand(
         Some(passphrase.to_string()),
         Some(address.to_string()),
@@ -61,9 +61,9 @@ fn accept_all(_cert_pem: &[u8], _ca_pem: &[u8]) -> DtlsResult<String> {
 }
 
 /// Ids the server's app layer saw messages from.
-type Seen = Arc<Mutex<Vec<String>>>;
+pub type Seen = Arc<Mutex<Vec<String>>>;
 
-fn start_server(
+pub fn start_server(
     creds: &Creds,
     handler: bingle_core::dtls::HandlePeerCertificate,
 ) -> (DtlsOpenSsl, Arc<UdpNetworkMux>, SocketAddr, Seen) {
@@ -84,7 +84,7 @@ fn start_server(
     (server, mux, addr, seen)
 }
 
-fn start_client(
+pub fn start_client(
     creds: &Creds,
     handler: bingle_core::dtls::HandlePeerCertificate,
 ) -> (DtlsOpenSsl, Arc<UdpNetworkMux>) {
@@ -102,7 +102,7 @@ fn start_client(
 }
 
 /// Send a few times, then wait up to `wait` for the server to see a message.
-fn send_and_wait(client: &DtlsOpenSsl, addr: SocketAddr, seen: &Seen, wait: Duration) {
+pub fn send_and_wait(client: &DtlsOpenSsl, addr: SocketAddr, seen: &Seen, wait: Duration) {
     for _ in 0..6 {
         let _ = client.send(&NetworkEndpoint::new_direct(addr), b"hello");
         thread::sleep(Duration::from_millis(50));

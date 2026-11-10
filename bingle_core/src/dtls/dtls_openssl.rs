@@ -1398,6 +1398,9 @@ pub mod openssl_impl {
         fn with_server_signing_private_key(self, _pem: Vec<u8>) -> Self {
             self
         }
+        // Replies go back over the session the message arrived on, whose peer is the verified
+        // sender, so there is no other id to expect.
+        fn expect_peer_id(&self, _endpoint: &NetworkEndpoint, _id: &str) {}
         fn get_cipher_suite(&self, endpoint: &NetworkEndpoint) -> Option<String> {
             let key = endpoint.get_key()?;
             match self.0.lock() {
@@ -2847,6 +2850,8 @@ pub mod openssl_impl {
             self.set_null_encryption(enabled);
             self
         }
+
+        fn expect_peer_id(&self, _endpoint: &NetworkEndpoint, _id: &str) {}
 
         fn get_cipher_suite(&self, endpoint: &NetworkEndpoint) -> Option<String> {
             let key = endpoint.get_key()?;

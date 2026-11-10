@@ -140,6 +140,8 @@ impl Dtls for MockDtls {
     {
         self
     }
+    fn expect_peer_id(&self, _endpoint: &bingle_core::api::bingle_api::NetworkEndpoint, _id: &str) {
+    }
     fn get_cipher_suite(
         &self,
         _endpoint: &bingle_core::api::bingle_api::NetworkEndpoint,
@@ -335,6 +337,12 @@ pub fn start_sets_issuer_and_passes_to_dtls_send() {
             Self: Sized,
         {
             self
+        }
+        fn expect_peer_id(
+            &self,
+            _endpoint: &bingle_core::api::bingle_api::NetworkEndpoint,
+            _id: &str,
+        ) {
         }
         fn get_cipher_suite(
             &self,
