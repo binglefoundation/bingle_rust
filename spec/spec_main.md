@@ -135,6 +135,7 @@ The CA certificate has the `id` in its OrganizationName (O) and is self-signed w
 A peer MUST reject a certificate chain unless the CA has an O field, the O field equals the end-entity `id`,
 and the CA's public key is the Ed25519 key that the `id` encodes. This ensures that only the owner of the `id` can issue its certificates.
 A DTLS client MUST complete these checks before sending application data.
+A send to an `id` MUST fail, and close the session, when the peer at the endpoint verifies as a different `id`.
 
 Server and client certificates use the EC (NIST P-256) algorithm for signing, and the DTLS protocol uses ECDHE for key exchange.
 They are signed by the CA private key. Their private keys are generated for each connection and deleted afterwards.

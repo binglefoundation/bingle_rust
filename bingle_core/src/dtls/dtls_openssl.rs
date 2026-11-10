@@ -1493,6 +1493,10 @@ pub mod openssl_impl {
         pub(crate) acceptor: Mutex<Option<SslAcceptor>>,
         // Combined peer state map: writer and issuer per endpoint
         peer_states: PeerStates,
+        // The id each endpoint's peer must verify as, from `expect_peer_id`. Kept apart from
+        // `peer_states` because a peer's state is replaced on every reconnect, and a reliable
+        // transport retry reconnects without coming back through the caller that set it.
+        expected_peer_ids: Mutex<HashMap<crate::api::bingle_api::NetworkEndpointKey, String>>,
         // Per-peer reader thread handles, tracked so stop() can join them (they self-terminate
         // when their peer entry is drained/superseded — see run_read_loop_split). Shared as an Arc
         // so the accept-packet handler can register the threads it spawns.
@@ -1560,6 +1564,7 @@ pub mod openssl_impl {
                 dangerous_debug: AtomicBool::new(false),
                 acceptor: Mutex::new(None),
                 peer_states: peers,
+                expected_peer_ids: Mutex::new(HashMap::new()),
                 reader_threads: Arc::new(Mutex::new(Vec::new())),
                 stop_flag: Mutex::new(None),
                 server_thread: Mutex::new(None),
@@ -1567,6 +1572,43 @@ pub mod openssl_impl {
                 handle,
                 span,
                 public_endpoint: Arc::new(Mutex::new(None)),
+            }
+        }
+
+        /// Fail when an id is expected at `key` and `verified` (the session's verified id) isn't it.
+        fn check_expected_peer_id(
+            &self,
+            key: &crate::api::bingle_api::NetworkEndpointKey,
+            to: &NetworkEndpoint,
+            verified: &str,
+        ) -> Result<()> {
+            let expected = match self.expected_peer_ids.lock() {
+                Ok(m) => m.get(key).cloned(),
+                Err(_) => return Err("expected peer ids lock poisoned".to_string()),
+            };
+            match expected {
+                Some(id) if id != verified => {
+                    tracing::warn!(
+                        "[DtlsOpenSsl:::send] peer at {} verified as '{}', expected '{}'",
+                        to,
+                        verified,
+                        id
+                    );
+                    Err(format!(
+                        "dtls peer at {} is not the destination id {}",
+                        to, id
+                    ))
+                }
+                _ => Ok(()),
+            }
+        }
+
+        /// Close the session for `key`, whose peer failed `check_expected_peer_id`.
+        fn close_session(&self, key: &crate::api::bingle_api::NetworkEndpointKey) {
+            if let Ok(mut map) = self.peer_states.lock()
+                && let Some(ps) = map.remove(key)
+            {
+                close_peer_state(ps);
             }
         }
 
@@ -1608,12 +1650,16 @@ pub mod openssl_impl {
             deadline: std::time::Instant,
         ) -> Result<()> {
             loop {
-                let writer = self.peer_states.lock().ok().and_then(|m| {
+                let session = self.peer_states.lock().ok().and_then(|m| {
                     m.get(key)
                         .filter(|ps| ps.writer_ready)
-                        .and_then(|ps| ps.writer.clone())
+                        .and_then(|ps| ps.writer.clone().map(|w| (w, ps.issuer.clone())))
                 });
-                if let Some(writer) = writer {
+                if let Some((writer, issuer)) = session {
+                    if let Err(e) = self.check_expected_peer_id(key, to, &issuer) {
+                        self.close_session(key);
+                        return Err(e);
+                    }
                     tracing::info!(
                         "[DtlsOpenSsl:::send] sent to {} over the accepted session ({} bytes)",
                         to,
@@ -2208,6 +2254,9 @@ pub mod openssl_impl {
                 tracing::debug!("[DtlsOpenSsl:::stop] already stopped");
             }
 
+            if let Ok(mut m) = self.expected_peer_ids.lock() {
+                m.clear();
+            }
             // Clear peer states and close their async queues to signal EOF to background reader threads
             if let Ok(mut map) = self.peer_states.lock() {
                 for (_, ps) in map.drain() {
@@ -2278,7 +2327,7 @@ pub mod openssl_impl {
             // If there is an existing peer worker for `to`, enqueue directly through channel.
             // `accept_in_progress`: the peer dialled us and that handshake is still running, so its
             // worker only has a placeholder writer (issue #288).
-            let (peer_handle_to_use, accept_in_progress) = {
+            let (peer_handle_to_use, accept_in_progress, peer_issuer) = {
                 let peers = &self.peer_states;
                 tracing::info!("[DtlsOpenSsl:::send] Locking peers");
                 if let Ok(map) = peers.lock() {
@@ -2287,13 +2336,14 @@ pub mod openssl_impl {
                         (
                             ps.peer_handle.clone(),
                             ps.writer.is_some() && !ps.writer_ready && !ps.is_connecting_peer,
+                            ps.issuer.clone(),
                         )
                     } else {
-                        (None, false)
+                        (None, false, String::new())
                     }
                 } else {
                     tracing::error!("[DtlsOpenSsl:::send] peers lock poisoned");
-                    (None, false)
+                    (None, false, String::new())
                 }
             };
 
@@ -2310,6 +2360,10 @@ pub mod openssl_impl {
 
             if let Some(peer_handle) = peer_handle_to_use {
                 if peer_handle.is_healthy() {
+                    if let Err(e) = self.check_expected_peer_id(&key_to, to, &peer_issuer) {
+                        self.close_session(&key_to);
+                        return Err(e);
+                    }
                     tracing::info!(
                         "[DtlsOpenSsl:::send] enqueueing send via existing peer worker for {} ({} bytes)",
                         to,
@@ -2458,6 +2512,11 @@ pub mod openssl_impl {
                     if let Some(h) = peer_cert_handler {
                         verified_id = verify_server_peer_certificate(stream.ssl(), h, to)?;
                     }
+                    self.check_expected_peer_id(
+                        &key_to,
+                        to,
+                        verified_id.as_deref().unwrap_or_default(),
+                    )?;
                     stream.write_all(data).await.map_err(|e| e.to_string())
                 })
                 .await
@@ -2851,7 +2910,18 @@ pub mod openssl_impl {
             self
         }
 
-        fn expect_peer_id(&self, _endpoint: &NetworkEndpoint, _id: &str) {}
+        fn expect_peer_id(&self, endpoint: &NetworkEndpoint, id: &str) {
+            let Some(key) = endpoint.get_key() else {
+                tracing::warn!(
+                    "[DtlsOpenSsl:::expect_peer_id] endpoint has no key: {}",
+                    endpoint
+                );
+                return;
+            };
+            if let Ok(mut m) = self.expected_peer_ids.lock() {
+                m.insert(key, id.to_string());
+            }
+        }
 
         fn get_cipher_suite(&self, endpoint: &NetworkEndpoint) -> Option<String> {
             let key = endpoint.get_key()?;

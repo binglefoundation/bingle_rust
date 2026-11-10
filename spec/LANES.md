@@ -54,7 +54,7 @@ security:
 - ~~Test for extended master secret support~~
 - ~~ensure id is checked (must be opted in etc)~~
 - ~~fail on impersonation: the CA key must be the key of the id in its O field~~
-- fail a send when the session's verified id isn't the destination id
+- ~~fail a send when the session's verified id isn't the destination id~~
 - ~~ensure DAPP methods perform all required checks~~
 - ~~delegate admin tasks to not be creator~~
 - ~~implement permissioned relay only mode~~
