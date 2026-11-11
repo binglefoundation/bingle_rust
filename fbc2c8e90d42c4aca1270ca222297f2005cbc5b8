@@ -1,0 +1,28 @@
+v0.3.33 makes relay connections more secure and fixes two problems in the release tooling. Datagram Transport Layer Security (DTLS) sessions now check that a peer's key matches its id. Upgrade all relays together. The release breaks one Rust interface: the `Dtls` trait gains a required method, `expect_peer_id`.
+
+## What changed
+
+Users and integrators will notice three changes, all in the core library; the other two changes affect release tooling only.
+
+| Area | Change | Issue |
+| --- | --- | --- |
+| Core library | DTLS connections now check that the peer's key belongs to the id being contacted. If the server fails this check or its id is wrong, the send fails and the session closes. | [#435](https://github.com/binglefoundation/bingle_rust/issues/435) |
+| Core library | Relays now set the `TriangleTest2` checking id to the node being checked. Relays should be upgraded together. | [#435](https://github.com/binglefoundation/bingle_rust/issues/435) |
+| Core library | Sometimes two nodes connect to each other at the same moment, and one gives way. The node that gives way now ends its handshake straight away instead of waiting for the connect deadline. The `Dtls` trait gains a required `expect_peer_id` method. | [#435](https://github.com/binglefoundation/bingle_rust/issues/435) |
+| Release process | `roll_relays.sh` now builds the relay image once per roll instead of once per relay. `deploy_relay.sh --no-build` deploys an image you have already built locally. The Docker build context is now a short allowlist instead of the whole repository. | [#437](https://github.com/binglefoundation/bingle_rust/issues/437) |
+| Release process | The release guard used to exit without a message when a commit had no release note. Now a missing note means no override, and the guard goes on to the TestNet check. | [#438](https://github.com/binglefoundation/bingle_rust/issues/438) |
+
+## Upgrading
+
+You only need to change code if you implement the `Dtls` trait outside this repository.
+
+- Rust users of bingle_core: add an `expect_peer_id` method to any `Dtls` implementation of your own.
+- CLI users running relays: upgrade all relays at the same time, because the `TriangleTest2` check has changed. Before your first roll with this release, run `roll_relays.sh --dry-run`.
+
+## Pull requests
+
+* fix(dtls): verify the DTLS peer key against its id by @bingle-claude in https://github.com/binglefoundation/bingle_rust/pull/436
+* fix(release): release guard tolerates a commit with no release note by @bingle-claude in https://github.com/binglefoundation/bingle_rust/pull/439
+* chore(deploy): build the relay image once per roll, and limit the Docker build context by @bingle-claude in https://github.com/binglefoundation/bingle_rust/pull/440
+
+**Full Changelog**: https://github.com/binglefoundation/bingle_rust/compare/v0.3.32...v0.3.33
