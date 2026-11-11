@@ -1,0 +1,20 @@
+# The images copy prebuilt binaries and a few runtime files (Dockerfile, Dockerfile.tests), so the
+# build context is an allowlist: everything else, `target/` above all, stays out of it.
+*
+
+# Runtime assets (base stage)
+!stunservers.txt
+!nodely_staging_testnet_node.json
+!nodely_deployed_mainnet_node.json
+
+# Start scripts
+!scripts/docker_start.sh
+!scripts/docker_webserver_start.sh
+!scripts/docker_run_test.sh
+
+# Prebuilt binaries, for any target triple (the build scripts take --target)
+!target/*/debug/bingle_cli
+!target/*/debug/bingle_webserver
+
+# The test binary, copied here by scripts/build_tests_image.sh
+!target/docker/test_bin

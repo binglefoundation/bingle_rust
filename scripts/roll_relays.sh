@@ -18,11 +18,13 @@
 #   mainnet  the commit checked out here, which must be origin/deployed and carry its vX.Y.Z tag
 # The tree must be clean, because the image is built from this checkout.
 #
-# Each relay is rolled in inventory order with aws/deploy_relay.sh --redeploy-only (image only; the
-# passphrase stays in the stack's Secrets Manager secret), then health-gated: the relay must log a
-# start of this commit's build within START_TIMEOUT seconds, and no RELAY STARTUP ABORTED. The first
-# relay that fails stops the roll, so the rest keep their old image. A relay already on this image is
-# restarted on it, so re-running is safe.
+# The relay image is built once, as bingle-relay:<tag>; every relay runs the same image, since its
+# handle and passphrase come from its stack. Each relay is then rolled in inventory order with
+# aws/deploy_relay.sh --redeploy-only --no-build (image only; the passphrase stays in the stack's
+# Secrets Manager secret), then health-gated: the relay must log a start of this commit's build
+# within START_TIMEOUT seconds, and no RELAY STARTUP ABORTED. The first relay that fails stops the
+# roll, so the rest keep their old image. A relay already on this image is restarted on it, so
+# re-running is safe.
 #
 # The roll is recorded as a GitHub deployment in the `testnet` or `mainnet` environment, with its
 # outcome. That record says which commit each network runs, and the release reads it (#399). The
@@ -37,6 +39,8 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
 GH_REPO=${GH_REPO:-binglefoundation/bingle_rust}
+# The image repository deploy_relay.sh pushes to by default.
+IMAGE_REPO=bingle-relay
 START_TIMEOUT=${START_TIMEOUT:-300}
 
 info() { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
@@ -194,15 +198,23 @@ if [[ -n "$CHECK_ACCOUNT" ]]; then
 fi
 
 if [[ $DRY_RUN -eq 1 ]]; then
-  info "dry run: would build image $TAG from $SHORT and roll, in order:"
+  info "dry run: would build image $TAG from $SHORT once, then roll, in order:"
+  echo "    scripts/build_cli_image.sh --platform linux/arm64 --tag $IMAGE_REPO:$TAG"
   for ((i = 0; i < ${#R_HANDLE[@]}; i++)); do
-    echo "    aws/deploy_relay.sh --redeploy-only --handle ${R_HANDLE[i]} --stack-name ${R_STACK[i]} --region ${R_REGION[i]} --tag $TAG$([[ ${R_MODE[i]} == express ]] && echo ' --express')"
+    echo "    aws/deploy_relay.sh --redeploy-only --no-build --handle ${R_HANDLE[i]} --stack-name ${R_STACK[i]} --region ${R_REGION[i]} --tag $TAG$([[ ${R_MODE[i]} == express ]] && echo ' --express')"
   done
   [[ -n "$CHECK_ACCOUNT" ]] && echo "    then: bingle_cli checkrelays as $CHECK_ACCOUNT"
   [[ "${BINGLE_NO_RECORD:-0}" == 1 ]] || echo "    and record a $INV_NETWORK deployment of $SHORT in $GH_REPO"
   info "dry run: nothing changed"
   exit 0
 fi
+
+# ── the image ─────────────────────────────────────────────────────────
+# Built once here; each deploy below pushes and deploys it without rebuilding.
+info "building image $IMAGE_REPO:$TAG from $SHORT"
+bash scripts/build_cli_image.sh --platform linux/arm64 --tag "$IMAGE_REPO:$TAG" \
+  || die "could not build image $IMAGE_REPO:$TAG"
+ok "built image $IMAGE_REPO:$TAG"
 
 # ── the deployment record ─────────────────────────────────────────────
 DEPLOYMENT_ID=""
@@ -266,7 +278,7 @@ for ((i = 0; i < ${#R_HANDLE[@]}; i++)); do
   since=$(( $(date +%s) * 1000 ))
   mode_args=()
   [[ "${R_MODE[i]}" == express ]] && mode_args=(--express)
-  aws/deploy_relay.sh --redeploy-only --handle "$handle" --stack-name "$stack" --region "$region" --tag "$TAG" ${mode_args[@]+"${mode_args[@]}"} \
+  aws/deploy_relay.sh --redeploy-only --no-build --handle "$handle" --stack-name "$stack" --region "$region" --tag "$TAG" ${mode_args[@]+"${mode_args[@]}"} \
     || die "$stack failed to roll; the relays after it were not touched"
   wait_for_start "$stack" "$region" "$since" \
     || die "$stack did not start cleanly on $SHORT; the relays after it were not touched"
