@@ -16,7 +16,7 @@ use crate::messages::types::*;
 /// - On TriangleTest1: if a peer relay address is configured, send TriangleTest2 to that peer.
 /// - On TriangleTest2: send TriangleTest3 to the provided checkingEndpoint.
 ///
-/// Note: We currently do not have identity wiring; checkingId is populated with an empty string.
+/// checkingId is the id of the node being checked: the TriangleTest1 sender.
 #[cfg(feature = "test-hooks")]
 #[derive(Clone)]
 pub struct RelayPingHandler {
@@ -43,8 +43,8 @@ impl RelayPingHandler {
 impl MessageHandler for RelayPingHandler {
     fn on_triangle_test1(
         &self,
-        api: Arc<dyn crate::api::bingle_api::BingleApiBoth>,
-        _from: &crate::messages::handlers::FromStruct,
+        _api: Arc<dyn crate::api::bingle_api::BingleApiBoth>,
+        from: &crate::messages::handlers::FromStruct,
         msg: &RelayTriangleTest1,
     ) {
         if let Some(to_peer) = self.peer_relay {
@@ -64,20 +64,15 @@ impl MessageHandler for RelayPingHandler {
                 return;
             }
 
-            // Obtain our id from the BingleApi (derived from engine issuer). Validate Option success per guidelines.
-            let my_id = match api.get_my_id() {
-                Some(id) => id,
-                None => {
-                    tracing::warn!(
-                        "[RelayPingHandler::on_triangle_test1] get_my_id returned None; aborting send"
-                    );
-                    return;
-                }
-            };
-            // Compose TriangleTest2 to the peer relay, echoing the checking_endpoint and using our own id
+            // Compose TriangleTest2 to the peer relay, echoing the checking_endpoint. checking_id is
+            // the id of the node being checked (our sender), which the peer relay sends
+            // TriangleTest3 to.
             let t2 = RelayTriangleTest2 {
                 app: None,
-                checking_id: my_id,
+                checking_id: from
+                    .id
+                    .trim_end_matches(crate::protocol::ISSUER_SUFFIX)
+                    .to_string(),
                 checking_endpoint: msg.checking_endpoint.clone(),
             };
             let out = Message::Relay(RelayMessage::TriangleTest2(t2));

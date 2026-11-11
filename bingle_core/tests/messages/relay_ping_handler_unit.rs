@@ -269,7 +269,7 @@ impl BingleApi for MockApi {
 
 #[test]
 #[cfg(not(target_os = "ios"))]
-pub fn relay_ping_handler_uses_api_get_my_id_for_checking_id() {
+pub fn relay_ping_handler_uses_sender_id_for_checking_id() {
     // Arrange
     let (mock_dtls, sends) = MockDtls::new();
     let handler = RelayPingHandler::new(
@@ -295,7 +295,8 @@ pub fn relay_ping_handler_uses_api_get_my_id_for_checking_id() {
     );
     handler.on_triangle_test1(api, &from, &t1);
 
-    // Assert: one send to the configured peer, and TriangleTest2 has checkingId == "MYID"
+    // Assert: one send to the configured peer, and TriangleTest2's checkingId is the id of the
+    // node being checked (the TriangleTest1 sender), which the peer relay sends TriangleTest3 to
     let locked = sends.lock().unwrap();
     assert_eq!(locked.len(), 1, "expected exactly one DTLS send");
     let (_to, data) = &locked[0];
@@ -305,5 +306,8 @@ pub fn relay_ping_handler_uses_api_get_my_id_for_checking_id() {
         v.get("type").and_then(|vv| vv.as_str()),
         Some("TriangleTest2")
     );
-    assert_eq!(v.get("checkingId").and_then(|vv| vv.as_str()), Some("MYID"));
+    assert_eq!(
+        v.get("checkingId").and_then(|vv| vv.as_str()),
+        Some("FROM-OTHER-ID")
+    );
 }

@@ -238,8 +238,8 @@ In the latter case, we need to validate this endpoint address and port using a t
 We send a `RelayTriangleTest1` message to our selected relay server.
 The relay responds with a `RelayTriangleTest1Response`.
 If `noCornerNode` is true, it indicates that no corner node was available for the test and the receiver should assume restricted/symmetric NAT.
-Otherwise, the relay will send a `RelayTriangleTest2` message to a peer relay server (the next one in the relay graph).
-This server will then send us a `RelayTriangleTest3` message.
+Otherwise, the relay will send a `RelayTriangleTest2` message to a peer relay server (the next one in the relay graph), with our `id` as `checkingId` and our endpoint as `checkingEndpoint`.
+This server will then send us (`checkingId` at `checkingEndpoint`) a `RelayTriangleTest3` message.
 Receipt of this indicates that we have a full cone NAT.
 
 If we didn't receive this response in a reasonable interval, we can assume symmetric or restricted cone NAT.
