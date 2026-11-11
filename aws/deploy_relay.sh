@@ -17,6 +17,8 @@
 #   --redeploy-only        Update only the stack's image (all other parameters keep their
 #                          previous values) instead of a full CloudFormation deploy
 #   --tag <tag>            Image tag (default: latest, or from .build_number if exists)
+#   --no-build             Deploy the local image <repo-name>:<tag> as built, instead of building it
+#                          (scripts/roll_relays.sh builds once and deploys to every relay)
 #   --express              Use simplified Fargate-based deployment (faster, cheaper for small loads)
 #   --auto-migrate         At start, migrate the relay account from a blessed ancestor app when it
 #                          is not yet registered on the configured app (no manual `bingle_cli migrate`)
@@ -51,6 +53,7 @@ REDEPLOY_ONLY=0
 TAG="latest"
 EXPRESS=0
 AUTO_MIGRATE=0
+NO_BUILD=0
 
 if [[ -f .build_number ]]; then
   TAG=$(cat .build_number)
@@ -70,6 +73,7 @@ usage() {
   echo "  --repo-name <name>     ECR repository name (default: $REPO_NAME)"
   echo "  --redeploy-only        Update only the stack's image, keeping all other parameters (requires existing stack)"
   echo "  --tag <tag>            Image tag (default: $TAG)"
+  echo "  --no-build             Deploy the local image <repo-name>:<tag> instead of building it"
   echo "  --express              Use simplified Fargate-based deployment (faster)"
   echo "  --auto-migrate         At start, migrate the relay account from a blessed ancestor app if needed"
   echo "  --cost-tag <tag>       Cost allocation tag (default: $COST_TAG)"
@@ -89,6 +93,7 @@ while [[ $# -gt 0 ]]; do
     --repo-name) REPO_NAME="$2"; shift 2 ;;
     --redeploy-only) REDEPLOY_ONLY=1; shift ;;
     --tag) TAG="$2"; shift 2 ;;
+    --no-build) NO_BUILD=1; shift ;;
     --express) EXPRESS=1; shift ;;
     --auto-migrate) AUTO_MIGRATE=1; shift ;;
     --cost-tag) COST_TAG="$2"; shift 2 ;;
@@ -121,11 +126,19 @@ if [[ $REDEPLOY_ONLY -eq 1 && $STACK_EXISTS -eq 0 ]]; then
   exit 1
 fi
 
-# 1) Build the Docker image
-echo "[deploy] Building Docker image for linux/arm64..."
-# We use the existing build script to ensure consistency
-# It builds target/aarch64-unknown-linux-musl/debug/bingle_cli
-bash scripts/build_cli_image.sh --platform linux/arm64 --tag "$REPO_NAME:$TAG"
+# 1) Build the Docker image, unless the caller already built it
+if [[ $NO_BUILD -eq 1 ]]; then
+  if ! docker image inspect "$REPO_NAME:$TAG" >/dev/null 2>&1; then
+    echo "[deploy] ✗ --no-build needs the local image '$REPO_NAME:$TAG'; build it with scripts/build_cli_image.sh --platform linux/arm64 --tag $REPO_NAME:$TAG" >&2
+    exit 1
+  fi
+  echo "[deploy] Using the local image $REPO_NAME:$TAG (--no-build)"
+else
+  echo "[deploy] Building Docker image for linux/arm64..."
+  # We use the existing build script to ensure consistency
+  # It builds target/aarch64-unknown-linux-musl/debug/bingle_cli
+  bash scripts/build_cli_image.sh --platform linux/arm64 --tag "$REPO_NAME:$TAG"
+fi
 
 # 2) Prepare ECR
 ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)

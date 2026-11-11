@@ -11,7 +11,8 @@
 #      By default we use cargo-zigbuild for musl cross-compilation. Pass --no-zig to use plain cargo.
 #   2) Auto-detect the resulting binary path under target/<triple>/debug/deps/${TEST_NAME}-*
 # - Builds the Docker image using the tests stage:
-#     docker buildx build --platform <platform> --target tests -t <tag> --build-arg TEST_BIN_PATH=<path> -f Dockerfile.tests .
+#     docker buildx build --platform <platform> --target tests -t <tag> --build-arg TEST_BIN_PATH=target/docker/test_bin -f Dockerfile.tests .
+#   after copying the binary to target/docker/test_bin, the only test binary path .dockerignore admits.
 # - By default, tag is bingle-tests:local and platform is linux/arm64.
 # - Set NO_COLOR=1 to reduce cargo color output
 # - Use --no-build to skip the cargo build step and only (re)build the Docker image (requires --test-bin or previous build)
@@ -110,7 +111,12 @@ if command -v file >/dev/null 2>&1; then
   echo "[build-tests-image] Binary type: $(file -h "$TEST_BIN_PATH" | sed -n '1p')"
 fi
 
-echo "[build-tests-image] Using TEST_BIN_PATH=$TEST_BIN_PATH"
+# The build context admits only target/docker/test_bin (see .dockerignore), so stage the binary there.
+CONTEXT_BIN_PATH="target/docker/test_bin"
+mkdir -p "$(dirname "$CONTEXT_BIN_PATH")"
+cp "$TEST_BIN_PATH" "$CONTEXT_BIN_PATH"
+
+echo "[build-tests-image] Using TEST_BIN_PATH=$TEST_BIN_PATH (staged at $CONTEXT_BIN_PATH)"
 echo "[build-tests-image] Building Docker tests image: $TAG for platform $DOCKER_PLATFORM"
 
 # 3) Build the Docker image using the 'tests' stage
@@ -118,7 +124,7 @@ echo "[build-tests-image] Building Docker tests image: $TAG for platform $DOCKER
 DOCKER_BUILDKIT=1 docker buildx build --platform "$DOCKER_PLATFORM" \
   --target tests \
   -t "$TAG" \
-  --build-arg TEST_BIN_PATH="$TEST_BIN_PATH" \
+  --build-arg TEST_BIN_PATH="$CONTEXT_BIN_PATH" \
   -f Dockerfile.tests \
   .
 

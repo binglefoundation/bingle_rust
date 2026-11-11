@@ -44,8 +44,8 @@ VOLUME ["/out", "/sentinels"]
 # ------------------------
 FROM base AS tests
 
-# Path to the prebuilt test binary (must be provided or match your host build). Example:
-#   target/aarch64-unknown-linux-musl/debug/deps/api_testnet_endpoint_available-<hash>
+# Path to the prebuilt test binary. scripts/build_tests_image.sh stages it at the only path the
+# build context admits (.dockerignore): target/docker/test_bin
 ARG TEST_BIN_PATH
 
 # Copy test runner script and the test binary
