@@ -204,6 +204,8 @@ impl Dtls for MinimalFakeDtls {
     {
         self
     }
+    fn expect_peer_id(&self, _endpoint: &bingle_core::api::bingle_api::NetworkEndpoint, _id: &str) {
+    }
     fn get_cipher_suite(&self, _endpoint: &NetworkEndpoint) -> Option<String> {
         None
     }

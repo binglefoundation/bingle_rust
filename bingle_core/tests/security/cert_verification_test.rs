@@ -9,6 +9,7 @@ use openssl::x509::extension::{
 };
 use openssl::x509::{X509, X509NameBuilder};
 
+use crate::util::pki::test_account_key;
 use bingle_core::protocol::cert_verify::peer_certificate_handler;
 use bingle_core::protocol::{ISSUER_SUFFIX, VIRTUAL_CA};
 
@@ -27,7 +28,8 @@ fn make_ca_custom(
     na_days: i32,
     is_ca: bool,
 ) -> (X509, PKey<Private>) {
-    let pkey = PKey::generate_ed25519().expect("ed25519 gen");
+    // Sign with the address's own key, as a genuine node does.
+    let pkey = test_account_key(key).expect("known test account");
     let mut name = X509NameBuilder::new().expect("name builder");
     name.append_entry_by_nid(Nid::COMMONNAME, cn).expect("cn");
     name.append_entry_by_nid(Nid::ORGANIZATIONNAME, key)

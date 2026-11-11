@@ -74,8 +74,8 @@ pub fn bingle_api_send_via_relay() {
     let mux_b_arc = Arc::new(mux_b);
     mux_b_arc.start().expect("start B mux");
 
-    // Prepare server PKI
-    let certs = pki::generate_ed25519_test_certs();
+    // Prepare server PKI for B's id, the id A sends to
+    let certs = pki::generate_ed25519_test_certs_with_key(b_id);
     let server_cert_pem: Vec<u8> = certs.server_crt.clone();
     let server_key_pem: Vec<u8> = certs.server_key.clone();
     let ca_pem: Vec<u8> = certs.ca_crt.clone();

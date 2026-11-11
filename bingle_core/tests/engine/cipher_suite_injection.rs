@@ -137,6 +137,8 @@ impl Dtls for CipherFakeDtls {
     {
         self
     }
+    fn expect_peer_id(&self, _endpoint: &bingle_core::api::bingle_api::NetworkEndpoint, _id: &str) {
+    }
     fn get_cipher_suite(&self, _endpoint: &NetworkEndpoint) -> Option<String> {
         self.cipher_suite.clone()
     }
@@ -255,6 +257,8 @@ impl Dtls for FakeServer {
         Self: Sized,
     {
         self
+    }
+    fn expect_peer_id(&self, _endpoint: &bingle_core::api::bingle_api::NetworkEndpoint, _id: &str) {
     }
     fn get_cipher_suite(&self, _endpoint: &NetworkEndpoint) -> Option<String> {
         self.cipher_suite.clone()

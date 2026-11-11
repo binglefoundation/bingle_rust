@@ -5,7 +5,8 @@ use std::sync::{
 };
 use std::time::{Duration, Instant};
 
-use crate::util::test_util::init_test_logging;
+use crate::util::pki::test_account_key;
+use crate::util::test_util::{ADDRESS_SPEND, init_test_logging};
 use bingle_core::dtls::{Dtls, DtlsOpenSsl};
 use bingle_core::protocol::{ISSUER_SUFFIX, VIRTUAL_CA};
 
@@ -22,12 +23,15 @@ pub fn dtls_peer_certificate_handler_issuer_is_trimmed_to_id() {
     use openssl::x509::{X509, X509NameBuilder};
 
     init_test_logging();
-    // CA key + cert (Ed25519, self-signed, CN=VIRTUAL_CA)
-    let ca_pkey: PKey<Private> = PKey::generate_ed25519().expect("generate ed25519");
+    // CA key + cert (Ed25519 key of ADDRESS_SPEND, self-signed, CN=VIRTUAL_CA, O=ADDRESS_SPEND)
+    let ca_pkey: PKey<Private> = test_account_key(ADDRESS_SPEND).expect("spend key");
     let mut ca_name_b = X509NameBuilder::new().expect("name builder");
     ca_name_b
         .append_entry_by_nid(Nid::COMMONNAME, VIRTUAL_CA)
         .expect("set CN");
+    ca_name_b
+        .append_entry_by_nid(Nid::ORGANIZATIONNAME, ADDRESS_SPEND)
+        .expect("set O");
     let ca_name = ca_name_b.build();
     let mut ca_builder = X509::builder().expect("x509 builder");
     let mut serial = BigNum::new().expect("serial");
@@ -65,7 +69,10 @@ pub fn dtls_peer_certificate_handler_issuer_is_trimmed_to_id() {
     let server_key = PKey::from_ec_key(server_ec).expect("pkey from ec");
     let mut server_name_b = X509NameBuilder::new().expect("srv name builder");
     server_name_b
-        .append_entry_by_nid(Nid::COMMONNAME, "server.")
+        .append_entry_by_nid(
+            Nid::COMMONNAME,
+            &format!("{}{}", ADDRESS_SPEND, ISSUER_SUFFIX),
+        )
         .expect("srv cn");
     let server_name = server_name_b.build();
     let mut server_b = X509::builder().expect("srv x509 builder");
@@ -96,7 +103,7 @@ pub fn dtls_peer_certificate_handler_issuer_is_trimmed_to_id() {
     // Client key (EC P-256) + cert signed by CA, subject CN ends with ISSUER_SUFFIX
     let client_ec = openssl::ec::EcKey::generate(&group).expect("ec gen");
     let client_key = PKey::from_ec_key(client_ec).expect("pkey from ec");
-    let id_without_suffix = "user";
+    let id_without_suffix = ADDRESS_SPEND;
     let client_cn = format!("{}{}", id_without_suffix, ISSUER_SUFFIX);
     let mut client_name_b = X509NameBuilder::new().expect("cli name builder");
     client_name_b

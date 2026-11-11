@@ -47,7 +47,7 @@
 ## ~~Create a HandlePeerCertificate~~
 
 - ~~Extract the CA certificates id (Algo public key) from its OrganizationName or subject CN by removing the trailing "."~~
-- ~~Validate that the CA certificate is signed by the Algo public key~~
+- ~~Validate that the CA certificate's public key is the Algo public key of the id in its OrganizationName (O), and that it self-signs the CA certificate; reject a CA with no O~~
 - ~~Extract the server/client certificate id (Algo public key) from its subject CN by removing the trailing "."~~
 - ~~Validate that the server/client certificate is signed by the CA certificate~~
 - ~~Validate that the server/client certificate has a valid issuer which matches the AC cert~~

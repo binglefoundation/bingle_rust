@@ -3,6 +3,7 @@ pub mod dtls_openssl;
 pub mod dtls_trait;
 pub mod network_mux_trait;
 pub mod network_mux_udp;
+pub(crate) mod peer_identity;
 
 pub use dtls_openssl::openssl_impl::DtlsOpenSsl;
 pub use dtls_trait::Dtls;

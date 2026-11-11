@@ -131,7 +131,11 @@ The DTLS implementation MUST check that the `id` is opted in to the Bingle DAPP 
 The end-entity certificate has the `id` stored in the subject CN with a suffix of "." 
 (e.g. \<address\>.). This minimal suffix is used because the 58-character Algorand address plus a standard URI suffix would exceed the 64-character limit for X.509 Common Name fields.
 
-The CA certificate is signed using the Algorand (ed25519) private key, ensuring that only the owner of the `id` can sign.
+The CA certificate has the `id` in its OrganizationName (O) and is self-signed with the `id`'s Algorand (Ed25519) private key.
+A peer MUST reject a certificate chain unless the CA has an O field, the O field equals the end-entity `id`,
+and the CA's public key is the Ed25519 key that the `id` encodes. This ensures that only the owner of the `id` can issue its certificates.
+A DTLS client MUST complete these checks before sending application data.
+A send to an `id` MUST fail, and close the session, when the peer at the endpoint verifies as a different `id`.
 
 Server and client certificates use the EC (NIST P-256) algorithm for signing, and the DTLS protocol uses ECDHE for key exchange.
 They are signed by the CA private key. Their private keys are generated for each connection and deleted afterwards.
@@ -234,8 +238,8 @@ In the latter case, we need to validate this endpoint address and port using a t
 We send a `RelayTriangleTest1` message to our selected relay server.
 The relay responds with a `RelayTriangleTest1Response`.
 If `noCornerNode` is true, it indicates that no corner node was available for the test and the receiver should assume restricted/symmetric NAT.
-Otherwise, the relay will send a `RelayTriangleTest2` message to a peer relay server (the next one in the relay graph).
-This server will then send us a `RelayTriangleTest3` message.
+Otherwise, the relay will send a `RelayTriangleTest2` message to a peer relay server (the next one in the relay graph), with our `id` as `checkingId` and our endpoint as `checkingEndpoint`.
+This server will then send us (`checkingId` at `checkingEndpoint`) a `RelayTriangleTest3` message.
 Receipt of this indicates that we have a full cone NAT.
 
 If we didn't receive this response in a reasonable interval, we can assume symmetric or restricted cone NAT.

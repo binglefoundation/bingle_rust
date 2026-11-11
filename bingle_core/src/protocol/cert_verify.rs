@@ -256,26 +256,51 @@ pub fn peer_certificate_handler() -> HandlePeerCertificate {
             return log_fail("end-entity certificate missing subject CN".to_string());
         };
 
-        // If the CA includes an OrganizationName (O), validate it matches the end-entity subject CN with the issuer suffix removed.
+        // The CA's OrganizationName (O) is the id. It must match the end-entity subject CN with the
+        // issuer suffix removed, and be the address of the CA's own Ed25519 key, so that only the
+        // holder of the id's key can issue certificates for it.
         let expected_addr = ee_subj_cn.trim_end_matches(ISSUER_SUFFIX).to_string();
-        let ca_org_opt: Option<String> = ca
+        let ca_org = match ca
             .subject_name()
             .entries_by_nid(Nid::ORGANIZATIONNAME)
             .next()
             .and_then(|e| e.data().to_string().ok())
-            .map(|s| s.to_string());
-        if let Some(ca_org) = ca_org_opt {
-            if ca_org != expected_addr {
+            .map(|s| s.to_string())
+        {
+            Some(s) => s,
+            None => {
+                return log_fail("CA certificate missing OrganizationName (O)");
+            }
+        };
+        if ca_org != expected_addr {
+            return log_fail(format!(
+                "CA O (org) does not match EE subject CN without suffix: ca.O='{}' expected='{}'",
+                ca_org, expected_addr
+            ));
+        }
+        let ca_raw_key: [u8; 32] = match ca_pub.raw_public_key().map(<[u8; 32]>::try_from) {
+            Ok(Ok(k)) => k,
+            Ok(Err(v)) => {
                 return log_fail(format!(
-                    "CA O (org) does not match EE subject CN without suffix: ca.O='{}' expected='{}'",
-                    ca_org, expected_addr
+                    "CA raw public key has length {} (expected 32)",
+                    v.len()
                 ));
             }
-        } else {
-            // Tolerate missing O for backward compatibility; log for diagnostics
-            tracing::info!(
-                "[cert_verify][warn] CA certificate has no OrganizationName (O); skipping address match"
-            );
+            Err(e) => {
+                return log_fail(format!("extract CA raw public key failed: {}", e));
+            }
+        };
+        let ca_key_addr = match algo_ops::byte_key_to_address(&ca_raw_key) {
+            Ok(a) => a,
+            Err(e) => {
+                return log_fail(format!("derive address from CA public key failed: {}", e));
+            }
+        };
+        if ca_key_addr != ca_org {
+            return log_fail(format!(
+                "CA public key does not belong to its O address: ca.O='{}' key_address='{}'",
+                ca_org, ca_key_addr
+            ));
         }
 
         // All checks passed: return the end-entity subject CN (ee_subj_cn), not the CA's CN

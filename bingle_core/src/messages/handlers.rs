@@ -1501,10 +1501,12 @@ impl MessageHandler for DefaultPrintingHandler {
                 associated_relay
             );
 
-            // Build TriangleTest2 with checking_endpoint from TriangleTest1 and checking_id as our id (no issuer suffix)
+            // Build TriangleTest2 with checking_endpoint from TriangleTest1. checking_id is the id
+            // of the node being checked (our sender, no issuer suffix): the corner relay sends
+            // TriangleTest3 to that id at checking_endpoint.
             let t2 = RelayTriangleTest2 {
                 app: None,
-                checking_id: my_id.clone(),
+                checking_id: from_user_id.clone(),
                 checking_endpoint: checking,
             };
             let msg_out = Message::Relay(RelayMessage::TriangleTest2(t2));

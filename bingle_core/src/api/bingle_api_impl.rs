@@ -506,6 +506,7 @@ impl BingleApiImpl {
     fn send_over_dtls(
         &self,
         nsk: &NetworkEndpoint,
+        user_id: &UserId,
         message: JsonValue,
     ) -> Result<bool, BingleError> {
         tracing::info!(
@@ -535,6 +536,9 @@ impl BingleApiImpl {
         }
         let bytes =
             serde_json::to_vec(&message).expect("Failed to serialize message to JSON bytes");
+        // The peer at `nsk` must verify as `user_id`, or DTLS fails the send.
+        self.engine
+            .access(|e| e.dtls().expect_peer_id(nsk, user_id));
         match self.engine.access(|e| e.send_to_peer(nsk, &bytes)) {
             Ok(_) => Ok(true),
             Err(err) => {
@@ -1387,7 +1391,7 @@ impl BingleApi for BingleApiImpl {
                 effective_nsk,
                 message
             );
-            self.send_over_dtls(&effective_nsk, message)
+            self.send_over_dtls(&effective_nsk, user_id, message)
         } else {
             // The recipient id is not a valid account address (base32 decode / length check failed
             // above): a permanent failure, surfaced as a typed cause rather than `Ok(false)`

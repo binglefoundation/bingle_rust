@@ -76,8 +76,9 @@ pub fn relay_check_end_to_end_on_message_receives_response() {
     #[allow(dead_code)]
     static CLIENT_SEEN: OnceLock<serde_json::Value> = OnceLock::new();
 
-    // Spin up a DTLS server that responds to RelayCheck with RelayCheckResponse
-    let certs = pki::generate_ed25519_test_certs();
+    // Spin up a DTLS server that responds to RelayCheck with RelayCheckResponse. It holds
+    // certificates for ADDRESS_SPEND, the id the client sends to.
+    let certs = pki::generate_ed25519_test_certs_with_key(test_util::ADDRESS_SPEND);
     let server_cert_pem: Vec<u8> = certs.server_crt.clone();
     let server_key_pem: Vec<u8> = certs.server_key.clone();
     let ca_pem: Vec<u8> = certs.ca_crt.clone();
