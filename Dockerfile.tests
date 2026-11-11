@@ -48,12 +48,11 @@ FROM base AS tests
 # build context admits (.dockerignore): target/docker/test_bin
 ARG TEST_BIN_PATH
 
-# Copy test runner script and the test binary
-COPY scripts/docker_run_test.sh /app/run_test.sh
+# Copy test runner script and the test binary, executable. --chmod sets the mode as it copies; a
+# separate RUN chmod would store the whole binary again in a new layer.
+COPY --chmod=755 scripts/docker_run_test.sh /app/run_test.sh
 # Force TEST_BIN_PATH to be provided; if not, COPY will fail and prompt the user to pass it.
-COPY ${TEST_BIN_PATH} /app/test_bin
-
-RUN chmod +x /app/run_test.sh /app/test_bin
+COPY --chmod=755 ${TEST_BIN_PATH} /app/test_bin
 
 # Environment controlling the test run
 # - OUT_FILE: where to write combined test output (mount /out to collect on host)
