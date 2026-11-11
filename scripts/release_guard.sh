@@ -57,7 +57,9 @@ if [[ -n "$tag_sha" ]]; then
   override=$(git for-each-ref --format='%(contents)' "refs/tags/$TAG" | sed -n 's/^Allow-untested:[[:space:]]*//p' | head -1)
 fi
 if [[ -z "$override" ]] && git fetch --quiet origin "+refs/notes/release:refs/notes/release" 2>/dev/null; then
-  override=$(git notes --ref=release show "$SHA" 2>/dev/null | sed -n 's/^Allow-untested:[[:space:]]*//p' | head -1)
+  # A commit has no note until release.sh writes one, and under pipefail a failed `git notes show`
+  # would end the guard here without a message.
+  override=$({ git notes --ref=release show "$SHA" 2>/dev/null || true; } | sed -n 's/^Allow-untested:[[:space:]]*//p' | head -1)
 fi
 tested=0
 for id in $(gh api "repos/$GH_REPO/deployments?environment=testnet&sha=$SHA&per_page=30" -q '.[].id'); do
