@@ -2428,9 +2428,17 @@ pub mod openssl_impl {
             let mut verified_id: Option<String> = None;
             let io_result = runtime.block_on(async {
                 tokio::time::timeout(CONNECT_DEADLINE, async {
-                    std::future::poll_fn(|cx| Pin::new(&mut *stream).poll_do_handshake(cx))
-                        .await
-                        .map_err(|e| e.to_string())?;
+                    std::future::poll_fn(|cx| {
+                        let polled = Pin::new(&mut *stream).poll_do_handshake(cx);
+                        // Once the peer state is closed (a connect yielded to the peer's inbound
+                        // one, issue #288) writes fail with NotConnected, which OpenSSL retries,
+                        // so the handshake would wait out the deadline. End it instead.
+                        if polled.is_pending() && stream.get_ref().async_queue.is_closed() {
+                            return Poll::Ready(Err("dtls peer state closed".to_string()));
+                        }
+                        polled.map_err(|e| e.to_string())
+                    })
+                    .await?;
                     if let Some(h) = peer_cert_handler {
                         verified_id = verify_server_peer_certificate(stream.ssl(), h, to)?;
                     }
