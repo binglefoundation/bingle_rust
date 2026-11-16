@@ -205,10 +205,7 @@ pub fn algo_ops_basic<T: TestAlgo>(passphrase: &str) -> bool {
         Ok(p) => p,
         Err(_) => return false,
     };
-    if extracted != pk {
-        return false;
-    }
-    true
+    extracted == pk
 }
 
 pub fn algo_ops_more<T: TestAlgo>(passphrase: &str) -> bool {
@@ -401,14 +398,8 @@ pub fn asset_ops<T: TestAlgo>(passphrase: &str) -> bool {
         Err(_) => return false,
     };
     let ops3 = T::new(None, Some(addr2), false);
-    if !ops3
-        .opt_in_to_asset(1234)
+    ops3.opt_in_to_asset(1234)
         .err()
         .unwrap_or_default()
         .contains("account access")
-    {
-        return false;
-    }
-
-    true
 }
