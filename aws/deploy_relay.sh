@@ -50,6 +50,8 @@ COST_TAG="bingle_dev"
 HANDLE=""
 PASSPHRASE=""
 REDEPLOY_ONLY=0
+# Seconds verify_service_image waits for the ECS rollout to finish after CloudFormation does.
+ROLLOUT_TIMEOUT=600
 TAG="latest"
 EXPRESS=0
 AUTO_MIGRATE=0
@@ -254,13 +256,21 @@ force_new_deployment() {
 }
 
 # Final check before reporting success: the service has a single, completed deployment whose task
-# definition runs the image just pushed, with its desired task count running.
+# definition runs the image just pushed, with its desired task count running. CloudFormation can
+# report the stack updated while ECS still has the rollout IN_PROGRESS (about a minute more), so
+# wait for the rollout to leave IN_PROGRESS first.
 verify_service_image() {
-  local cluster service state task_def running_image n_deployments rollout running desired
+  local cluster service state task_def running_image n_deployments rollout running desired deadline
   service=$(stack_resource_id RelayService)
   cluster=$(stack_resource_id ECSCluster)
-  state=$(aws ecs describe-services --cluster "$cluster" --services "$service" --region "$REGION" --query "services[0].[length(deployments), deployments[?status=='PRIMARY'] | [0].rolloutState, runningCount, desiredCount, taskDefinition]" --output text)
-  read -r n_deployments rollout running desired task_def <<<"$state"
+  deadline=$(( $(date +%s) + ROLLOUT_TIMEOUT ))
+  while :; do
+    state=$(aws ecs describe-services --cluster "$cluster" --services "$service" --region "$REGION" --query "services[0].[length(deployments), deployments[?status=='PRIMARY'] | [0].rolloutState, runningCount, desiredCount, taskDefinition]" --output text)
+    read -r n_deployments rollout running desired task_def <<<"$state"
+    [[ "$rollout" == "IN_PROGRESS" && $(date +%s) -lt $deadline ]] || break
+    echo "[deploy] Rollout still IN_PROGRESS; checking again in 15s..."
+    sleep 15
+  done
   running_image=$(aws ecs describe-task-definition --task-definition "$task_def" --region "$REGION" --query "taskDefinition.containerDefinitions[0].image" --output text)
   if [[ "$n_deployments" != "1" || "$rollout" != "COMPLETED" || "$running" != "$desired" || "$running_image" != "$IMAGE_REF" ]]; then
     echo "[deploy] ✗ Service '$service' is not running the pushed image in a steady state:" >&2
