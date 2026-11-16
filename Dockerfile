@@ -47,12 +47,10 @@ FROM base AS cli
 # Default matches typical cross/zigbuild path; override with --build-arg BIN_PATH=...
 ARG BIN_PATH=target/aarch64-unknown-linux-musl/debug/bingle_cli
 
-# Copy the prebuilt binary and startup script
-COPY ${BIN_PATH} /app/bingle_cli
-COPY scripts/docker_start.sh /app/docker_start.sh
-
-# Ensure the start script and binary are executable
-RUN chmod +x /app/docker_start.sh /app/bingle_cli
+# Copy the prebuilt binary and startup script, executable. --chmod sets the mode as it copies; a
+# separate RUN chmod would store the whole binary again in a new layer.
+COPY --chmod=755 ${BIN_PATH} /app/bingle_cli
+COPY --chmod=755 scripts/docker_start.sh /app/docker_start.sh
 
 # Default environment variables (can be overridden at runtime)
 ENV PASSPHRASE="" \
@@ -72,12 +70,9 @@ FROM base AS webserver
 # Path to the prebuilt binary within the build context
 ARG WEB_BIN_PATH=target/aarch64-unknown-linux-musl/debug/bingle_webserver
 
-# Copy the prebuilt binary and startup script
-COPY ${WEB_BIN_PATH} /app/bingle_webserver
-COPY scripts/docker_webserver_start.sh /app/docker_webserver_start.sh
-
-# Ensure the start script and binary are executable
-RUN chmod +x /app/docker_webserver_start.sh /app/bingle_webserver
+# Copy the prebuilt binary and startup script, executable (see the cli stage)
+COPY --chmod=755 ${WEB_BIN_PATH} /app/bingle_webserver
+COPY --chmod=755 scripts/docker_webserver_start.sh /app/docker_webserver_start.sh
 
 # Default environment variables (can be overridden at runtime)
 ENV PORT=12121 \
