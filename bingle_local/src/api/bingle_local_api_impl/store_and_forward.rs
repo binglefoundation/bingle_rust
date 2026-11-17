@@ -475,11 +475,29 @@ impl BingleApiLocalImpl {
         // none are dropped.
         let mut read: BTreeMap<(i64, u64), Message> = BTreeMap::new();
         let mut sequence: u64 = 0;
+        // Read in batches with `take` while the node has it (Sidewinder #626): one transaction, and so
+        // one finality wait, per batch rather than per message. Otherwise one `pop` per message, and
+        // a last empty one.
+        let mut use_take = true;
         let status = loop {
             observer.on_poll_progress(MailboxPollProgress::Reading { read: read.len() });
-            let bytes = match mailbox.pop() {
-                Ok(Some(b)) => b,
-                Ok(None) => break MailboxPollStatus::Drained,
+            let taken = if use_take {
+                mailbox.take(sidewinder::MAILBOX_TAKE_BATCH)
+            } else {
+                Ok(None)
+            };
+            let step = match taken {
+                Ok(Some(batch)) => Ok((batch.messages, batch.more)),
+                Ok(None) => {
+                    use_take = false;
+                    mailbox
+                        .pop()
+                        .map(|popped| popped.map_or((Vec::new(), false), |b| (vec![b], true)))
+                }
+                Err(e) => Err(e),
+            };
+            let (entries, more) = match step {
+                Ok(step) => step,
                 Err(BingleError::Retryable(reason)) => {
                     tracing::warn!("[poll_mailbox] node not reachable/ready: {reason}; stopping");
                     break MailboxPollStatus::Unreachable(reason);
@@ -491,61 +509,24 @@ impl BingleApiLocalImpl {
                         break MailboxPollStatus::Skipped;
                     }
                     None => {
-                        tracing::warn!("[poll_mailbox] pop failed ({e}); stopping");
+                        tracing::warn!("[poll_mailbox] read failed ({e}); stopping");
                         break MailboxPollStatus::Unreachable(e.to_string());
                     }
                 },
             };
-            let opened = match bingle_core::crypto::sealed_envelope::unseal_with_private_key(
-                private_key,
-                &bytes,
-            ) {
-                Ok(o) => o,
-                Err(e) => {
-                    // The message is already dropped from the node; we cannot recover it. Log and
-                    // move on rather than aborting the drain.
-                    tracing::warn!(
-                        "[poll_mailbox] failed to open a mailbox message ({e}); dropping"
-                    );
+            for bytes in entries {
+                let Some(message) =
+                    self.open_mailbox_entry(private_key, &bytes, &bgl, own_handle.as_deref())
+                else {
                     continue;
-                }
-            };
-
-            // Attribute the message to the sender's handle, resolved from the authenticated sender
-            // address; fall back to the address string when the handle cannot be resolved.
-            let sender_address = algo_ops::byte_key_to_address(&opened.sender_id).ok();
-            // A message from a sender this user has blocked is dropped: not stored and not returned
-            // (bingle_ux_rn #34). The pop already removed it from the node, so it is gone.
-            if self.is_mailbox_sender_blocked(sender_address.as_deref()) {
-                tracing::info!(
-                    "[poll_mailbox] dropping a message from blocked sender {:?}",
-                    sender_address
-                );
-                continue;
+                };
+                observer.on_poll_progress(MailboxPollProgress::Read(Box::new(message.clone())));
+                read.insert((message.order_time(), sequence), message);
+                sequence += 1;
             }
-            let sender_handle = sender_address
-                .as_deref()
-                .and_then(|addr| {
-                    bgl.handle_for_address(self.config().app_id, addr)
-                        .ok()
-                        .flatten()
-                })
-                .or_else(|| sender_address.clone())
-                .unwrap_or_else(|| "unknown".to_string());
-            let recipient_handles = own_handle.clone().map(|h| vec![h]).unwrap_or_default();
-            let delivered_time = now_millis();
-            let message =
-                Message::from_opened(&opened, sender_handle, recipient_handles, delivered_time);
-
-            // Persist-before-drop (at-most-once): record it locally now; the pop already removed it
-            // from the node. A copy of a message already received directly is not returned, so the
-            // host is not told twice (issue #355).
-            if !self.record_mailbox_message(message.clone()) {
-                continue;
+            if !more {
+                break MailboxPollStatus::Drained;
             }
-            observer.on_poll_progress(MailboxPollProgress::Read(Box::new(message.clone())));
-            read.insert((message.order_time(), sequence), message);
-            sequence += 1;
         };
 
         // The batch is already ordered by sent time by the map's key.
@@ -553,6 +534,59 @@ impl BingleApiLocalImpl {
             messages: read.into_values().collect(),
             status,
         })
+    }
+
+    /// Open one message read from the Mailbox, attribute it to its sender, and store it, returning it;
+    /// `None` when it is dropped. The read already removed it from the node, so a message that cannot
+    /// be opened, comes from a blocked sender (bingle_ux_rn #34), or copies one already received
+    /// directly (issue #355) is gone.
+    fn open_mailbox_entry(
+        &self,
+        private_key: [u8; 32],
+        bytes: &[u8],
+        bgl: &AlgoBingle,
+        own_handle: Option<&str>,
+    ) -> Option<Message> {
+        let opened =
+            match bingle_core::crypto::sealed_envelope::unseal_with_private_key(private_key, bytes)
+            {
+                Ok(o) => o,
+                Err(e) => {
+                    tracing::warn!(
+                        "[poll_mailbox] failed to open a mailbox message ({e}); dropping"
+                    );
+                    return None;
+                }
+            };
+
+        // Attribute the message to the sender's handle, resolved from the authenticated sender
+        // address; fall back to the address string when the handle cannot be resolved.
+        let sender_address = algo_ops::byte_key_to_address(&opened.sender_id).ok();
+        if self.is_mailbox_sender_blocked(sender_address.as_deref()) {
+            tracing::info!(
+                "[poll_mailbox] dropping a message from blocked sender {:?}",
+                sender_address
+            );
+            return None;
+        }
+        let sender_handle = sender_address
+            .as_deref()
+            .and_then(|addr| {
+                bgl.handle_for_address(self.config().app_id, addr)
+                    .ok()
+                    .flatten()
+            })
+            .or_else(|| sender_address.clone())
+            .unwrap_or_else(|| "unknown".to_string());
+        let recipient_handles = own_handle.map(|h| vec![h.to_string()]).unwrap_or_default();
+        let message = Message::from_opened(&opened, sender_handle, recipient_handles, now_millis());
+
+        // Persist-before-drop (at-most-once): record it locally now, as the read removed it from the
+        // node.
+        if !self.record_mailbox_message(message.clone()) {
+            return None;
+        }
+        Some(message)
     }
 
     /// Store a message read from the Mailbox, and return whether it was stored. A copy of a

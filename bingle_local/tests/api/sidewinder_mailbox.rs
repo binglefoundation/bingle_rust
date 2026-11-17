@@ -7,8 +7,9 @@
 use algo_ops::AlgoOps;
 use bingle_core::api::bingle_api::BingleError;
 use bingle_local::api::sidewinder::{
-    IDENTITY_REFUSED_BACKOFF, MAILBOX_POP_TYPE, MAILBOX_POST_TYPE, MailboxConfig, WatchProgress,
-    build_pop_request, build_post_request, classify_watch, identity_refusal_holds,
+    IDENTITY_REFUSED_BACKOFF, MAILBOX_POP_TYPE, MAILBOX_POST_TYPE, MAILBOX_TAKE_BATCH,
+    MAILBOX_TAKE_TYPE, MailboxConfig, WatchProgress, build_pop_request, build_post_request,
+    build_take_request, classify_watch, decode_take_batch, identity_refusal_holds,
     identity_refusal_message, map_error, next_node_index,
 };
 use sidewinder_ops::{
@@ -34,6 +35,8 @@ fn mailbox_config_discovered_carries_app_id_and_defaults() {
     assert_eq!(config.pop_type, MAILBOX_POP_TYPE);
     assert_eq!(config.post_type, 1, "tier-1 Mailbox binds post to type 1");
     assert_eq!(config.pop_type, 2, "tier-1 Mailbox binds pop to type 2");
+    assert_eq!(config.take_type, MAILBOX_TAKE_TYPE);
+    assert_eq!(config.take_type, 4, "Sidewinder #626 binds take to type 4");
 }
 
 // --- Configuration from the Bingle app id only (#246) ---
@@ -182,6 +185,57 @@ fn build_pop_request_takes_no_args() {
     );
     assert_eq!(request.instance, params.instance_id);
     assert!(request.note.is_some());
+}
+
+// --- take: a batch per transaction (Sidewinder #626) ---
+
+#[test]
+fn build_take_request_carries_the_batch_size_as_a_uint64() {
+    let params = sample_params();
+    let request = build_take_request(MAILBOX_TAKE_TYPE, MAILBOX_TAKE_BATCH, &params);
+
+    assert_eq!(request.txn_type, MAILBOX_TAKE_TYPE);
+    assert_eq!(
+        request.args,
+        vec![algo_ops::AppArg::Uint(MAILBOX_TAKE_BATCH)],
+        "take(max_entries) keys off the sender, so its one argument is the batch size"
+    );
+    assert_eq!(request.first_valid, params.last_round);
+    assert_eq!(
+        request.last_valid,
+        params.last_round + params.max_validity_window
+    );
+    assert!(request.note.is_some());
+}
+
+#[test]
+fn decode_take_batch_reads_each_message_in_order_with_the_more_flag() {
+    // more = 1, then "hi" and an empty message, each behind a 4-byte big-endian length.
+    let result = [1, 0, 0, 0, 2, b'h', b'i', 0, 0, 0, 0];
+    assert_eq!(
+        decode_take_batch(&result),
+        Some((true, vec![b"hi".to_vec(), Vec::new()]))
+    );
+    assert_eq!(
+        decode_take_batch(&[0, 0, 0, 0, 1, b'x']),
+        Some((false, vec![b"x".to_vec()]))
+    );
+}
+
+#[test]
+fn decode_take_batch_reads_an_empty_result_as_an_empty_mailbox() {
+    assert_eq!(decode_take_batch(&[]), Some((false, Vec::new())));
+}
+
+#[test]
+fn decode_take_batch_rejects_a_malformed_result() {
+    assert_eq!(decode_take_batch(&[2]), None, "more is 0 or 1");
+    assert_eq!(decode_take_batch(&[0, 0, 0]), None, "truncated length");
+    assert_eq!(
+        decode_take_batch(&[0, 0, 0, 0, 5, b'a']),
+        None,
+        "message runs past the end"
+    );
 }
 
 #[test]

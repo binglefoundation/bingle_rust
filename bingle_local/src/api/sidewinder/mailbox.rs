@@ -28,6 +28,12 @@ use std::time::{Duration, Instant};
 pub const MAILBOX_POST_TYPE: u32 = 1;
 /// The transaction type the tier-1 Mailbox configuration binds `pop` (`FIFO.remove_head`) to.
 pub const MAILBOX_POP_TYPE: u32 = 2;
+/// The transaction type the Mailbox configuration binds `take` (`FIFO.remove_up_to`) to, on a node
+/// that has it (Sidewinder #626). A client probes it and falls back to `pop` when it is absent.
+pub const MAILBOX_TAKE_TYPE: u32 = 4;
+/// The most messages one `take` asks for. The node also caps a batch by size and says whether more
+/// remain, so this only bounds how many arrive together.
+pub const MAILBOX_TAKE_BATCH: u64 = 16;
 
 /// Default time to wait for a submitted transaction to reach the `final` stage before giving up.
 /// Anchoring to the parent chain dominates this. LocalNet finalises in a round or two; a network
@@ -58,6 +64,9 @@ pub struct MailboxConfig {
     pub post_type: u32,
     /// Transaction type bound to the Mailbox `pop` operation (`FIFO.remove_head`).
     pub pop_type: u32,
+    /// Transaction type bound to the Mailbox `take` operation (`FIFO.remove_up_to`), when the node
+    /// has it (Sidewinder #626).
+    pub take_type: u32,
     /// How long to wait for a submitted transaction to reach `final` before giving up. Defaults to
     /// [`DEFAULT_FINALITY_TIMEOUT`]; raise it for a network whose anchor batching is slower than
     /// LocalNet (e.g. TestNet).
@@ -74,6 +83,7 @@ impl MailboxConfig {
             app_id,
             post_type: MAILBOX_POST_TYPE,
             pop_type: MAILBOX_POP_TYPE,
+            take_type: MAILBOX_TAKE_TYPE,
             finality_timeout: DEFAULT_FINALITY_TIMEOUT,
         }
     }
@@ -190,6 +200,10 @@ pub struct Mailbox {
     transport: DiscoveredTransport,
     post_type: u32,
     pop_type: u32,
+    take_type: u32,
+    /// Whether the connected node has `take`, once probed: `None` until then, or after a probe that
+    /// could not reach the node.
+    take_supported: Option<bool>,
     finality_timeout: Duration,
     /// The node's message when it refused this client's identity on the last operation (#309).
     identity_refusal: Option<String>,
@@ -222,6 +236,8 @@ impl Mailbox {
             transport,
             post_type: config.post_type,
             pop_type: config.pop_type,
+            take_type: config.take_type,
+            take_supported: None,
             finality_timeout: config.finality_timeout,
             identity_refusal: None,
         })
@@ -281,6 +297,63 @@ impl Mailbox {
             Some(bytes) if !bytes.is_empty() => Some(bytes),
             _ => None,
         })
+    }
+
+    /// Take up to `max` messages from the head of the caller's own Mailbox in one transaction
+    /// (`FIFO.remove_up_to`, Sidewinder #626), waiting for it to finalise. Returns `None` when the
+    /// node has no `take`, so the caller reads with [`pop`](Self::pop) instead; otherwise the batch,
+    /// in queue order, with whether more messages remain. An empty Mailbox is an empty batch.
+    ///
+    /// The messages are removed from the node as the transaction finalises, so a result that cannot
+    /// be decoded loses them; that is an error, logged by the caller.
+    pub fn take(&mut self, max: u64) -> Result<Option<TakeBatch>, BingleError> {
+        let params = self.params_with_failover("take")?;
+        if !self.supports_take() {
+            return Ok(None);
+        }
+        let request = build_take_request(self.take_type, max, &params);
+        let finalized = match self.submit_and_finalize("take", request)? {
+            Finality::Final(pending) => pending,
+            Finality::Refused { stage, reason } => {
+                return Err(BingleError::Other(format!(
+                    "sidewinder take refused ({stage:?}): {reason}"
+                )));
+            }
+        };
+        let result = finalized.result.unwrap_or_default();
+        let Some((more, messages)) = decode_take_batch(&result) else {
+            return Err(BingleError::Other(format!(
+                "sidewinder take returned a malformed batch of {} bytes",
+                result.len()
+            )));
+        };
+        Ok(Some(TakeBatch { messages, more }))
+    }
+
+    /// Whether the connected node has `take` at [`take_type`](MailboxConfig::take_type), asking it
+    /// the first time (Sidewinder #626). The node serves no signature to match yet, so a configured
+    /// type returning `byte[]` counts; type 4 has never been bound to anything else. A probe that
+    /// fails is not remembered, so the next read asks again, and reads with `pop` meanwhile.
+    fn supports_take(&mut self) -> bool {
+        if let Some(supported) = self.take_supported {
+            return supported;
+        }
+        match self.current_client().operations(self.take_type) {
+            Ok(schema) => {
+                let supported = schema.is_some_and(|schema| schema.return_type == "byte[]");
+                tracing::info!(
+                    "[mailbox] the node {} take (type {})",
+                    if supported { "has" } else { "does not have" },
+                    self.take_type
+                );
+                self.take_supported = Some(supported);
+                supported
+            }
+            Err(e) => {
+                tracing::warn!("[mailbox] could not ask the node for take ({e}); using pop");
+                false
+            }
+        }
     }
 
     /// The node's message when the last [`post`](Self::post) / [`try_post`](Self::try_post) /
@@ -479,6 +552,60 @@ pub fn build_pop_request(
         note: Some(AlgoOps::unique_note()),
         group: None,
     }
+}
+
+/// Build the `take(max_entries)` transaction (Sidewinder #626): `arg[0]` is the most messages to
+/// take, as a `uint64`; the queue key is the authenticated sender. A unique note keeps repeated takes
+/// distinct on the content address.
+#[doc(hidden)]
+pub fn build_take_request(
+    take_type: u32,
+    max_entries: u64,
+    params: &sidewinder_ops::SuggestedParams,
+) -> TransactionRequest {
+    TransactionRequest {
+        txn_type: take_type,
+        args: vec![AppArg::Uint(max_entries)],
+        max_fee: params.min_fee,
+        first_valid: params.last_round,
+        last_valid: params.last_round + params.max_validity_window,
+        instance: params.instance_id.clone(),
+        note: Some(AlgoOps::unique_note()),
+        group: None,
+    }
+}
+
+/// Messages taken from a Mailbox in one `take` (Sidewinder #626).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TakeBatch {
+    /// The messages, in queue order, exactly as they were posted.
+    pub messages: Vec<Vec<u8>>,
+    /// Whether more messages remain in the Mailbox after this batch.
+    pub more: bool,
+}
+
+/// Decode a `take` result (Sidewinder #626) into whether more messages remain and the messages, in
+/// queue order. The node frames it as one byte `more` (0 or 1), then each message as a 4-byte
+/// big-endian length and its bytes; an empty Mailbox returns no bytes at all. `None` for a result
+/// that is not a well-formed batch.
+pub fn decode_take_batch(result: &[u8]) -> Option<(bool, Vec<Vec<u8>>)> {
+    let Some((&more, mut rest)) = result.split_first() else {
+        return Some((false, Vec::new()));
+    };
+    let more = match more {
+        0 => false,
+        1 => true,
+        _ => return None,
+    };
+    let mut messages = Vec::new();
+    while !rest.is_empty() {
+        let (len, tail) = rest.split_at_checked(4)?;
+        let len = u32::from_be_bytes(len.try_into().ok()?) as usize;
+        let (message, tail) = tail.split_at_checked(len)?;
+        messages.push(message.to_vec());
+        rest = tail;
+    }
+    Some((more, messages))
 }
 
 /// Connect the discovered transport: resolve the app's reachable cluster nodes on-chain and connect to
