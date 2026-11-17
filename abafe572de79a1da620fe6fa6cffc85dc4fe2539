@@ -1,0 +1,37 @@
+v0.3.34 adds iOS Keychain storage for the recovery phrase and makes store-and-forward Mailbox delivery faster and easier to follow. On iOS the app now keeps the phrase in the Keychain by default, and an existing phrase moves out of the state file on first load. The only breaking change is for Rust code that implements the `BingleLocalApi` trait, which gains new methods.
+
+## What changed
+
+Five changes are visible to app builders and Rust integrators, and the rest are internal.
+
+| Area | Change | Issue |
+|---|---|---|
+| App bridge (bingle_jsi) | The new `key_storage` config field sets where the recovery phrase is kept: `"keychain"` or `"file"`. The default is `"keychain"` on iOS and `"file"` elsewhere. On Android, or with `"file"`, the five new key storage methods return `KeyStorageUnavailable`. The methods are `keyStorageStatus`, `setDeviceOnly`, `markPhraseBackedUp`, `restoreStoredKey` and `removeKeyFromDevice`. | [#385](https://github.com/binglefoundation/bingle_rust/issues/385) |
+| App bridge (bingle_jsi) | Mailbox checks now send an `onMailboxProgress` event with the stage: `connecting`, `reading` or `unreachable` (with a retry delay). Each message reaches the message callback as soon as it is read. `getMessages` is no longer blocked while a check runs. | [#448](https://github.com/binglefoundation/bingle_rust/issues/448) |
+| Local library | The new `KeyStore` trait lets a platform store, such as the Keychain, hold the phrase. `BingleApiLocalImpl::with_key_store` takes that store, and `new` keeps using the file. A key is never used before the store confirms it has it. If moving the phrase out of the file fails, the phrase stays in the file. | [#450](https://github.com/binglefoundation/bingle_rust/issues/450) |
+| Local library | Senders now post to the Mailbox before sending the alert, so a recipient who taps the alert finds the message. Messages handed off when the app moves to the background now alert their recipients. The new `poll_mailbox_observed` reports progress during a check. | [#448](https://github.com/binglefoundation/bingle_rust/issues/448) |
+| Local library | Mailbox checks read up to 16 messages per `take` instead of one per `pop`, so fewer finality waits are needed. Nodes without `take` are still read with `pop`. The client starts using `take` without an app update once the Sidewinder cluster supports it. | [#449](https://github.com/binglefoundation/bingle_rust/issues/449) |
+| Tests | The TestNet store-and-forward end-to-end (e2e) test now moves its accounts to the current app and pays the on-chain price. It also reads the Mailbox on TestNet instead of LocalNet, and it now passes against the live cluster. | [#453](https://github.com/binglefoundation/bingle_rust/issues/453) |
+| CI (continuous integration) | Two clippy `needless_bool` warnings from Rust 1.100 are fixed. They had made the quality job fail on every pull request. | [#445](https://github.com/binglefoundation/bingle_rust/issues/445) |
+| Release process | `deploy_relay.sh` now waits up to 600 seconds for the Amazon Elastic Container Service (ECS) rollout before checking the image. Before, it could fail a relay that had rolled out successfully. | [#443](https://github.com/binglefoundation/bingle_rust/issues/443) |
+| Release process | Docker images now set file permissions as binaries are copied in, not in a separate layer that stored each binary twice. The relay image drops from 766 MB to 502 MB. | [#441](https://github.com/binglefoundation/bingle_rust/issues/441) |
+
+## Upgrading
+
+Apps need no code changes, but Rust code that implements the `BingleLocalApi` trait must add its new methods.
+
+- **App (React Native):** On iOS, leaving `key_storage` unset moves the recovery phrase into the Keychain on first load. Set `"file"` to keep it in the state file. Setting `"keychain"` on Android is refused at startup. After `removeKeyFromDevice`, re-initialise the module, because contacts and messages stay in memory until you do. To show progress during a check, listen for `onMailboxProgress`; `setMailboxCheckCallback` already registers it.
+- **Rust users of bingle_core and bingle_local:** Implementors of `BingleLocalApi` must add `key_storage_status`, `set_device_only`, `mark_phrase_backed_up`, `restore_stored_key`, `remove_key_from_device` and `poll_mailbox_observed`. Hosts that implement `MailboxCheckCallback` directly must add `on_mailbox_progress`.
+
+## Pull requests
+
+* chore(docker): set binary modes with COPY --chmod, not a RUN chmod layer by @bingle-claude in https://github.com/binglefoundation/bingle_rust/pull/442
+* Clear clippy::needless_bool from Rust 1.100 (#445) by @bingle-claude in https://github.com/binglefoundation/bingle_rust/pull/446
+* deploy_relay.sh waits for the ECS rollout before verifying (#443) by @bingle-claude in https://github.com/binglefoundation/bingle_rust/pull/444
+* Store-and-forward: alert after the Mailbox post, report check progress (#447) by @bingle-claude in https://github.com/binglefoundation/bingle_rust/pull/448
+* Store-and-forward: read the Mailbox in batches with take (#447) by @bingle-claude in https://github.com/binglefoundation/bingle_rust/pull/449
+* feat: iOS Keychain key storage, part 1: KeyStore and the Keychain store in bingle_local (#385) by @bingle-claude in https://github.com/binglefoundation/bingle_rust/pull/450
+* test(sidewinder): migrate TestNet e2e accounts and drain on TestNet (#447) by @bingle-claude in https://github.com/binglefoundation/bingle_rust/pull/453
+* feat: iOS Keychain key storage, part 2: bingle_jsi key_storage config, methods and bridges (#385) by @bingle-claude in https://github.com/binglefoundation/bingle_rust/pull/451
+
+**Full Changelog**: https://github.com/binglefoundation/bingle_rust/compare/v0.3.33...v0.3.34
