@@ -40,6 +40,7 @@ export type {
   LogCallback,
   ListeningCallback,
   MailboxCheckCallback,
+  MailboxCheckStage,
   PushRegistrationCallback,
   BingleJsiApi,
 } from "./NativeBingleJsi";
@@ -284,7 +285,8 @@ export const BingleJsi = BingleJsiNative as {
   setMessageCallback(): Promise<void>;
   setListeningCallback(): Promise<void>;
   /** Register for "onMailboxChecked" events, sent after each store-and-forward Mailbox check that
-   * reached the node with the number of new messages it read (issue #358). */
+   * reached the node with the number of new messages it read (issue #358), and "onMailboxProgress"
+   * events, sent as a check progresses (bingle_rust #447). */
   setMailboxCheckCallback(): Promise<void>;
   /** Register a callback invoked when requestPushRegistration asks the host to start iOS push
    * registration (bingle_notify #i). Replaces any previously registered callback. */

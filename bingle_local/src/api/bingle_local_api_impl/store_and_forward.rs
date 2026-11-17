@@ -5,7 +5,10 @@
 //! state (the keypair, config, and the persisted posted-set).
 
 use super::{BingleApiLocalImpl, holds_received_copy};
-use crate::api::bingle_local_api::{BingleLocalApi, MailboxPoll, MailboxPollStatus, Message};
+use crate::api::bingle_local_api::{
+    BingleLocalApi, MailboxPoll, MailboxPollObserver, MailboxPollProgress, MailboxPollStatus,
+    Message,
+};
 use crate::api::sidewinder;
 use algo_ops::AlgoOps;
 use bingle_core::api::bingle_api::BingleError;
@@ -150,6 +153,17 @@ impl BingleApiLocalImpl {
             .lock()
             .map(|g| g.clone())
             .unwrap_or_default()
+    }
+
+    /// Whether the message with this id has been posted to `handle`'s Mailbox (#447).
+    pub(crate) fn is_forwarded(&self, message_id: &str, handle: &str) -> bool {
+        match self.forwarded_messages.lock() {
+            Ok(guard) => guard.contains(&(message_id.to_string(), handle.to_string())),
+            Err(e) => {
+                tracing::error!("[is_forwarded] Failed to lock forwarded_messages: {}", e);
+                false
+            }
+        }
     }
 
     /// Whether the message with this id has been posted to at least one recipient's Mailbox, which
@@ -397,7 +411,10 @@ impl BingleApiLocalImpl {
     /// decrypt stops / skips without error. Returns the messages read this poll (possibly empty)
     /// and whether the poll reached the node and drained it, could not reach it, or did not run
     /// (issue #358).
-    pub(crate) fn poll_mailbox_inner(&self) -> Result<MailboxPoll, BingleError> {
+    pub(crate) fn poll_mailbox_inner(
+        &self,
+        observer: &dyn MailboxPollObserver,
+    ) -> Result<MailboxPoll, BingleError> {
         if !self.config().store_and_forward_receive || self.config().sidewinder.is_none() {
             return Ok(MailboxPoll::skipped());
         }
@@ -439,6 +456,7 @@ impl BingleApiLocalImpl {
         // node and re-resolve, which mutates the retained node set / active client.
         // A node is configured, so failing to build the client means none could be resolved or
         // connected: unreachable rather than skipped, so the caller retries soon.
+        observer.on_poll_progress(MailboxPollProgress::Connecting);
         let mut mailbox = match self.get_mailbox() {
             Ok(m) => m,
             Err(e) => {
@@ -458,6 +476,7 @@ impl BingleApiLocalImpl {
         let mut read: BTreeMap<(i64, u64), Message> = BTreeMap::new();
         let mut sequence: u64 = 0;
         let status = loop {
+            observer.on_poll_progress(MailboxPollProgress::Reading { read: read.len() });
             let bytes = match mailbox.pop() {
                 Ok(Some(b)) => b,
                 Ok(None) => break MailboxPollStatus::Drained,
@@ -524,6 +543,7 @@ impl BingleApiLocalImpl {
             if !self.record_mailbox_message(message.clone()) {
                 continue;
             }
+            observer.on_poll_progress(MailboxPollProgress::Read(Box::new(message.clone())));
             read.insert((message.order_time(), sequence), message);
             sequence += 1;
         };

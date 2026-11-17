@@ -64,7 +64,7 @@ class BingleJsiBridge: RCTEventEmitter {
     }
 
     override func supportedEvents() -> [String] {
-        return ["onMessage", "onLog", "onListening", "onMailboxChecked"]
+        return ["onMessage", "onLog", "onListening", "onMailboxChecked", "onMailboxProgress"]
     }
 
     @objc
@@ -1192,7 +1192,10 @@ class ListeningCallbackBridge: ListeningCallback {
 /// Bridges uniffi's MailboxCheckCallback to RCTEventEmitter events (issue #358).
 ///
 /// Each `onMailboxChecked` invocation sends an "onMailboxChecked" event with the
-/// number of messages the store-and-forward Mailbox check read.
+/// number of messages the store-and-forward Mailbox check read. Each
+/// `onMailboxProgress` invocation sends an "onMailboxProgress" event with the
+/// check's stage ("connecting", "reading" or "unreachable"), the messages read so
+/// far, and for "unreachable" the seconds until the retry (bingle_rust #447).
 class MailboxCheckCallbackBridge: MailboxCheckCallback {
     private weak var emitter: RCTEventEmitter?
 
@@ -1204,6 +1207,23 @@ class MailboxCheckCallbackBridge: MailboxCheckCallback {
         emitter?.sendEvent(withName: "onMailboxChecked", body: [
             "read": read,
         ])
+    }
+
+    func onMailboxProgress(stage: MailboxCheckStage, read: UInt32, retryInSecs: UInt32?) {
+        let stageName: String
+        switch stage {
+        case .connecting: stageName = "connecting"
+        case .reading: stageName = "reading"
+        case .unreachable: stageName = "unreachable"
+        }
+        var body: [String: Any] = [
+            "stage": stageName,
+            "read": read,
+        ]
+        if let retryInSecs = retryInSecs {
+            body["retry_in_secs"] = retryInSecs
+        }
+        emitter?.sendEvent(withName: "onMailboxProgress", body: body)
     }
 }
 

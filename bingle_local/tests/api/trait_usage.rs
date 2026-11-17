@@ -3,8 +3,8 @@ use std::collections::{HashMap, HashSet};
 use algo_ops::AlgoOps;
 use bingle_core::api::bingle_api::{BingleError, SendFailureKind};
 use bingle_local::api::{
-    BingleLocalApi, Contact, ContactSource, Keypair, KeypairStatus, MailboxPoll, Message,
-    MessagingSettings,
+    BingleLocalApi, Contact, ContactSource, Keypair, KeypairStatus, MailboxPoll,
+    MailboxPollObserver, Message, MessagingSettings,
 };
 
 #[derive(Default)]
@@ -211,6 +211,14 @@ impl BingleLocalApi for DummyLocal {
     }
 
     fn poll_mailbox_outcome(&self) -> Result<MailboxPoll, BingleError> {
+        Ok(MailboxPoll::skipped())
+    }
+
+    fn poll_mailbox_observed(
+        &self,
+        observer: &dyn MailboxPollObserver,
+    ) -> Result<MailboxPoll, BingleError> {
+        let _ = observer;
         Ok(MailboxPoll::skipped())
     }
 

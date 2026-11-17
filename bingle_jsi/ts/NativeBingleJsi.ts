@@ -266,10 +266,18 @@ export interface ListeningCallback {
   onListening(listening: boolean, natType: string): void;
 }
 
+/** How far a store-and-forward Mailbox check has got (bingle_rust #447). */
+export type MailboxCheckStage = 'connecting' | 'reading' | 'unreachable';
+
 export interface MailboxCheckCallback {
   /** Called after each store-and-forward Mailbox check that reached the node, with the number of
    * new messages it read (0 when there were none) (issue #358). */
   onMailboxChecked(read: number): void;
+  /** Called as a Mailbox check progresses: when it starts connecting to the node, before each
+   * read, and when the node could not be reached, with the messages read so far and, for
+   * "unreachable", the seconds until the retry (bingle_rust #447). Each message read is passed to
+   * the message callback as soon as it is read. */
+  onMailboxProgress(stage: MailboxCheckStage, read: number, retryInSecs: number | null): void;
 }
 
 export interface PushRegistrationCallback {
@@ -404,6 +412,7 @@ export interface BingleJsiApi {
   // onLog: { timestamp: number; level: string; message: string }
   // onListening: { listening: boolean; nat_type: string }
   // onMailboxChecked: { read: number }
+  // onMailboxProgress: { stage: MailboxCheckStage; read: number; retry_in_secs?: number }
 
   // Engine lifecycle
   start(): void;

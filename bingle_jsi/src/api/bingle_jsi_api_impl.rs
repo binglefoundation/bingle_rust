@@ -14,8 +14,8 @@ use crate::api::error::BingleJsiError;
 use crate::api::types::{
     BingleJsiConfig, BingleMessage, Contact, ContactSource, DeliveryRoute, FailureKind,
     HandleLookupMatch, HandleLookupPartialResult, InetSocketAddress, Keypair, KeypairStatus,
-    KeypairStatusResponse, Message, MessagingSettings, NatType, NatTypeResponse, NetworkSourceKey,
-    NotifyRegisterRequest, VersionInfo,
+    KeypairStatusResponse, MailboxCheckStage, Message, MessagingSettings, NatType, NatTypeResponse,
+    NetworkSourceKey, NotifyRegisterRequest, VersionInfo,
 };
 use algo_ops::error::AlgoErrorKind;
 use bingle_core::api::bingle_api::{
@@ -35,7 +35,9 @@ use bingle_local::api::notify::{build_fresh_register_request, sign_register_enve
 use bingle_local::api::pending_sender::{
     LocalOutboundStore, MessageDelivery, PendingSender, PendingSenderOptions,
 };
-use bingle_local::api::{MailboxConfig, MailboxPoll, MailboxPollStatus};
+use bingle_local::api::{
+    MailboxConfig, MailboxPoll, MailboxPollObserver, MailboxPollProgress, MailboxPollStatus,
+};
 // Shared outbound-send retry policy (issue #82). Re-exported so existing
 // `bingle_jsi::api::bingle_jsi_api_impl::{is_transient_send_failure, pending_failure_reason}`
 // paths (and tests) keep resolving after the move to bingle_local.
@@ -74,6 +76,11 @@ pub struct BingleJsiApiImpl {
     /// A lock-free handle on the local store for the shared pending-message sender (issue #283);
     /// `Some` when `local` is configured.
     outbound: Option<LocalOutboundStore>,
+    /// A handle on the local store that the backstop Mailbox poller reads through without taking
+    /// `local_api`'s lock (bingle_rust #447). A drain waits on sidechain finality for each read, so
+    /// holding the lock would block the host's `get_messages` until the whole drain ends, and a
+    /// message passed on as it is read could not be shown. `None` falls back to the locked handle.
+    mailbox_reader: Option<Arc<dyn BingleLocalApi>>,
     /// `BingleJsiConfig::send_pending_messages`: use the shared sender instead of the legacy loop.
     send_pending_messages: bool,
     /// The running shared sender, while started with `send_pending_messages` on. Shared with the
@@ -227,22 +234,53 @@ pub fn mailbox_message_to_bingle(m: &bingle_local::api::Message) -> BingleMessag
     }
 }
 
-/// Invoke the registered message callback, if any, once for each message a Mailbox poll read
-/// (issue #307). The sender's account id is not known from a Mailbox read, so it is passed empty.
-fn notify_mailbox_messages(
+/// Passes the steps of a backstop Mailbox poll on to the host as they happen (bingle_rust #447):
+/// each message read goes to the message callback at once (issue #307), and each stage to the
+/// Mailbox check callback, so a host can show progress rather than wait for the whole drain.
+struct PollProgressForwarder {
+    message_callback: Arc<Mutex<Option<Box<dyn MessageCallback>>>>,
+    check_callback: Arc<Mutex<Option<Box<dyn MailboxCheckCallback>>>>,
+    sender_slot: Arc<Mutex<Option<PendingSender>>>,
+}
+
+impl MailboxPollObserver for PollProgressForwarder {
+    fn on_poll_progress(&self, progress: MailboxPollProgress) {
+        match progress {
+            MailboxPollProgress::Connecting => notify_mailbox_progress(
+                &self.check_callback,
+                MailboxCheckStage::Connecting,
+                0,
+                None,
+            ),
+            MailboxPollProgress::Reading { read } => notify_mailbox_progress(
+                &self.check_callback,
+                MailboxCheckStage::Reading,
+                read,
+                None,
+            ),
+            MailboxPollProgress::Read(message) => {
+                // A Mailbox message shows its sender is back online (issue #278).
+                note_peer_seen(&self.sender_slot, "", &message.sender_handle);
+                notify_mailbox_message(&self.message_callback, &message);
+            }
+        }
+    }
+}
+
+/// Invoke the registered message callback, if any, for a message a Mailbox poll read (issue #307).
+/// The sender's account id is not known from a Mailbox read, so it is passed empty.
+fn notify_mailbox_message(
     callback: &Mutex<Option<Box<dyn MessageCallback>>>,
-    read: &[bingle_local::api::Message],
+    message: &bingle_local::api::Message,
 ) {
     match callback.lock() {
         Ok(guard) => {
             if let Some(callback) = guard.as_ref() {
-                for m in read {
-                    callback.on_message(
-                        String::new(),
-                        m.sender_handle.clone(),
-                        mailbox_message_to_bingle(m),
-                    );
-                }
+                callback.on_message(
+                    String::new(),
+                    message.sender_handle.clone(),
+                    mailbox_message_to_bingle(message),
+                );
             }
         }
         Err(e) => tracing::warn!("[mailbox poller] could not lock message callback: {e}"),
@@ -419,6 +457,27 @@ fn notify_mailbox_checked(callback: &Mutex<Option<Box<dyn MailboxCheckCallback>>
     }
 }
 
+/// Tell the host how far a Mailbox check has got (bingle_rust #447).
+fn notify_mailbox_progress(
+    callback: &Mutex<Option<Box<dyn MailboxCheckCallback>>>,
+    stage: MailboxCheckStage,
+    read: usize,
+    retry_in: Option<std::time::Duration>,
+) {
+    match callback.lock() {
+        Ok(guard) => {
+            if let Some(callback) = guard.as_ref() {
+                callback.on_mailbox_progress(
+                    stage,
+                    u32::try_from(read).unwrap_or(u32::MAX),
+                    retry_in.map(|d| u32::try_from(d.as_secs()).unwrap_or(u32::MAX)),
+                );
+            }
+        }
+        Err(e) => tracing::warn!("[mailbox poller] could not lock mailbox check callback: {e}"),
+    }
+}
+
 impl BingleJsiApiImpl {
     /// The Bingle DApp and Bingle$ asset a registration group must use: this instance's configured
     /// (or node-file) IDs (issue #344).
@@ -477,6 +536,7 @@ impl BingleJsiApiImpl {
         *guard = Some(control.clone());
         drop(guard);
 
+        let reader = self.mailbox_reader.clone();
         let interval = self.mailbox_poll_interval;
         let retry_initial = self.mailbox_retry_initial;
         let local_file = self.local_file.clone();
@@ -487,22 +547,34 @@ impl BingleJsiApiImpl {
             tracing::info!("[mailbox poller] started (every {:?})", interval);
             // Consecutive polls that could not reach a node, which set the retry delay.
             let mut failures: u32 = 0;
+            // Passes each message and stage on to the host as the poll runs (#307, #447).
+            let forwarder = PollProgressForwarder {
+                message_callback,
+                check_callback: check_callback.clone(),
+                sender_slot,
+            };
             while !control.stop.load(Ordering::Relaxed) {
-                let poll = match local.lock() {
-                    Ok(g) => g.poll_mailbox_outcome().unwrap_or_else(|e| MailboxPoll {
+                // Read through the lock-free handle when there is one, so the host can read the
+                // store while the drain waits on the sidechain (#447).
+                let polled = match &reader {
+                    Some(reader) => Some(reader.poll_mailbox_observed(&forwarder)),
+                    None => match local.lock() {
+                        Ok(g) => Some(g.poll_mailbox_observed(&forwarder)),
+                        Err(e) => {
+                            tracing::error!("[mailbox poller] local api lock poisoned: {e}");
+                            None
+                        }
+                    },
+                };
+                let poll = match polled {
+                    Some(Ok(poll)) => poll,
+                    Some(Err(e)) => MailboxPoll {
                         messages: Vec::new(),
                         status: MailboxPollStatus::Unreachable(e.to_string()),
-                    }),
-                    Err(e) => {
-                        tracing::error!("[mailbox poller] local api lock poisoned: {e}");
-                        MailboxPoll::skipped()
-                    }
+                    },
+                    None => MailboxPoll::skipped(),
                 };
                 let read = poll.messages;
-                // A Mailbox message shows its sender is back online (issue #278).
-                for msg in &read {
-                    note_peer_seen(&sender_slot, "", &msg.sender_handle);
-                }
                 if !read.is_empty() {
                     tracing::info!(
                         "[mailbox poller] read {} store-and-forward message(s)",
@@ -510,9 +582,6 @@ impl BingleJsiApiImpl {
                     );
                     // Persist the just-read (and node-dropped) messages so they survive a restart.
                     save_if_configured(&Some(local.clone()), &local_file);
-                    // Tell the host, so a UI that refreshes on onMessage shows them (issue #307).
-                    // `read` holds only messages newly read this cycle.
-                    notify_mailbox_messages(&message_callback, &read);
                 }
                 match poll.status {
                     MailboxPollStatus::Drained => {
@@ -521,9 +590,16 @@ impl BingleJsiApiImpl {
                     }
                     MailboxPollStatus::Unreachable(reason) => {
                         failures = failures.saturating_add(1);
+                        let retry_in = mailbox_retry_delay(failures, retry_initial, interval);
                         tracing::info!(
                             "[mailbox poller] node not reached ({reason}); retrying in {:?}",
-                            mailbox_retry_delay(failures, retry_initial, interval)
+                            retry_in
+                        );
+                        notify_mailbox_progress(
+                            &check_callback,
+                            MailboxCheckStage::Unreachable,
+                            read.len(),
+                            Some(retry_in),
                         );
                     }
                     MailboxPollStatus::Skipped => failures = 0,
@@ -914,6 +990,7 @@ impl BingleJsiApiImpl {
         // Initialize local API if --local was provided
         let mut local_api: Option<Arc<Mutex<Box<dyn BingleLocalApi>>>> = None;
         let mut outbound: Option<LocalOutboundStore> = None;
+        let mut mailbox_reader: Option<Arc<dyn BingleLocalApi>> = None;
         if let Some(path) = &local_file {
             // Give-up nudge (bingle_notify #11/#17): the feature stays on by default; supplying a
             // gateway URL is what activates it. An explicit `notify_on_giveup: false` disables it
@@ -954,6 +1031,8 @@ impl BingleJsiApiImpl {
                 impl_api.clone(),
                 Some(path.clone()),
             ));
+            // And one for the Mailbox poller, which then reads without the lock (#447).
+            mailbox_reader = Some(Arc::new(impl_api.clone()));
             local_api = Some(Arc::new(Mutex::new(Box::new(impl_api))));
         }
 
@@ -994,6 +1073,7 @@ impl BingleJsiApiImpl {
             mailbox_poller: Mutex::new(None),
             mailbox_check_callback: Arc::new(Mutex::new(None)),
             outbound,
+            mailbox_reader,
             send_pending_messages: config.send_pending_messages.unwrap_or(false),
             pending_sender: pending_sender.clone(),
         });
@@ -1423,16 +1503,18 @@ impl BingleJsiApiImpl {
         api: Arc<dyn BingleApiBoth>,
         local_api: Option<Arc<Mutex<Box<dyn BingleLocalApi>>>>,
     ) -> Arc<Self> {
-        Self::build_for_tests(api, local_api, None, false, MailboxTiming::default())
+        Self::build_for_tests(api, local_api, None, None, false, MailboxTiming::default())
     }
 
     /// Test seam: as [`init_for_tests`](Self::init_for_tests), with the backstop poll `interval`
     /// and first `retry_initial` delay after an unreachable poll set (issue #358), so the poller's
-    /// timing can be exercised quickly.
+    /// timing can be exercised quickly. The poller reads the Mailbox through `mailbox_reader`, a
+    /// handle sharing `local_api`'s state, without taking its lock (bingle_rust #447).
     #[doc(hidden)]
     pub fn init_for_tests_with_mailbox_timing(
         api: Arc<dyn BingleApiBoth>,
         local_api: Option<Arc<Mutex<Box<dyn BingleLocalApi>>>>,
+        mailbox_reader: Option<Arc<dyn BingleLocalApi>>,
         interval: std::time::Duration,
         retry_initial: std::time::Duration,
     ) -> Arc<Self> {
@@ -1440,7 +1522,7 @@ impl BingleJsiApiImpl {
             interval,
             retry_initial,
         };
-        Self::build_for_tests(api, local_api, None, false, timing)
+        Self::build_for_tests(api, local_api, None, mailbox_reader, false, timing)
     }
 
     /// Test seam: as [`init_for_tests`](Self::init_for_tests) over `local`, with
@@ -1451,11 +1533,13 @@ impl BingleJsiApiImpl {
         local: BingleApiLocalImpl,
     ) -> Arc<Self> {
         let outbound = LocalOutboundStore::new(local.clone(), None);
+        let mailbox_reader: Arc<dyn BingleLocalApi> = Arc::new(local.clone());
         let local_api: Arc<Mutex<Box<dyn BingleLocalApi>>> = Arc::new(Mutex::new(Box::new(local)));
         Self::build_for_tests(
             api,
             Some(local_api),
             Some(outbound),
+            Some(mailbox_reader),
             true,
             MailboxTiming::default(),
         )
@@ -1465,6 +1549,7 @@ impl BingleJsiApiImpl {
         api: Arc<dyn BingleApiBoth>,
         local_api: Option<Arc<Mutex<Box<dyn BingleLocalApi>>>>,
         outbound: Option<LocalOutboundStore>,
+        mailbox_reader: Option<Arc<dyn BingleLocalApi>>,
         send_pending_messages: bool,
         timing: MailboxTiming,
     ) -> Arc<Self> {
@@ -1501,6 +1586,7 @@ impl BingleJsiApiImpl {
             mailbox_poller: Mutex::new(None),
             mailbox_check_callback: Arc::new(Mutex::new(None)),
             outbound,
+            mailbox_reader,
             send_pending_messages,
             pending_sender: Arc::new(Mutex::new(None)),
         })

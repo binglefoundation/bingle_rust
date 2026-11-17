@@ -4,8 +4,8 @@ use crate::common::{CapturingMockBingleApi, TrackingMockBingleApi};
 use algo_ops::AlgoOps;
 use bingle_core::api::bingle_api::{BingleError, SendFailureKind, StartOptions};
 use bingle_local::api::bingle_local_api::{
-    BingleLocalApi, Contact, ContactSource, Keypair, KeypairStatus, MailboxPoll, Message,
-    MessagingSettings,
+    BingleLocalApi, Contact, ContactSource, Keypair, KeypairStatus, MailboxPoll,
+    MailboxPollObserver, Message, MessagingSettings,
 };
 use bingle_webserver::{AppState, try_start_api};
 
@@ -128,6 +128,13 @@ impl BingleLocalApi for ControllableLocalApi {
         Ok(Vec::new())
     }
     fn poll_mailbox_outcome(&self) -> Result<MailboxPoll, BingleError> {
+        Ok(MailboxPoll::skipped())
+    }
+    fn poll_mailbox_observed(
+        &self,
+        observer: &dyn MailboxPollObserver,
+    ) -> Result<MailboxPoll, BingleError> {
+        let _ = observer;
         Ok(MailboxPoll::skipped())
     }
     fn forward_pending_to_mailbox(&self) -> Result<usize, BingleError> {

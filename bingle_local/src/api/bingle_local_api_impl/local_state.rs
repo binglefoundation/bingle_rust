@@ -51,11 +51,12 @@ pub struct LocalState {
     // Synchronous sender for the `/register` envelope (bingle_notify #i). Defaults to the real HTTP
     // poster; a seam so tests can observe the registration without a live gateway.
     pub(super) register_poster: RwLock<Arc<dyn RegisterPoster>>,
-    // Ids of messages we have already nudged for, so the unreachable/give-up nudge fires at most
-    // once per message even though update_message_status is called on every retry (bingle_notify
-    // #11/#17). In-memory only: a restart may re-nudge a still-pending message, which is acceptable
-    // (it only re-wakes an offline recipient so the pending retries can land).
-    pub(super) nudged_messages: Mutex<HashSet<String>>,
+    // (message id, recipient handle) pairs we have already nudged, with whether that nudge followed
+    // the recipient's Mailbox post. A recipient is nudged at most once while unreachable and once
+    // more when its post lands, even though update_message_status is called on every retry
+    // (bingle_notify #11/#17, bingle_rust #447). In-memory only: a restart may re-nudge a
+    // still-pending message, which is acceptable (it only re-wakes an offline recipient).
+    pub(super) nudged_recipients: Mutex<HashMap<(String, String), bool>>,
     // (message id, recipient handle) pairs already posted to the recipient's Sidewinder
     // Mailbox, so store-and-forward posts each message to each recipient at most once even though
     // update_message_status fires on every retry (store-and-forward epic #200, story #214). Keyed
@@ -94,7 +95,7 @@ impl LocalState {
             last_network_check: Mutex::new(None),
             alert_poster: RwLock::new(Arc::new(HttpAlertPoster::new())),
             register_poster: RwLock::new(Arc::new(HttpRegisterPoster::new())),
-            nudged_messages: Mutex::new(HashSet::new()),
+            nudged_recipients: Mutex::new(HashMap::new()),
             forwarded_messages: Mutex::new(HashSet::new()),
             refused_forwards: Mutex::new(HashMap::new()),
             mailbox_identity_refused_at: Mutex::new(None),

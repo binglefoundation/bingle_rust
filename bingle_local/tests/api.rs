@@ -82,3 +82,6 @@ mod module_version;
 
 #[path = "api/local_impl_recovery_keypair.rs"]
 mod local_impl_recovery_keypair;
+
+#[path = "api/notify_after_forward.rs"]
+mod notify_after_forward;
