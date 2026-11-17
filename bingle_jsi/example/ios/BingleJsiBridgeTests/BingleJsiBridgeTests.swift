@@ -394,6 +394,61 @@ final class BingleJsiBridgeTests: XCTestCase {
         XCTAssertEqual(dict?["handle"] as? String, "test-handle")
     }
 
+    // MARK: - Mailbox check callback (issues #358, bingle_rust #447)
+
+    /// Register the Mailbox check callback through the bridge and return what the mock received.
+    private func registeredMailboxCheckCallback() -> MailboxCheckCallback? {
+        let registered = self.expectation(description: "setMailboxCheckCallback resolved")
+        bridge.setMailboxCheckCallback(
+            { _ in registered.fulfill() },
+            rejecter: { _, _, _ in XCTFail("unexpected rejection") }
+        )
+        waitForExpectations(timeout: 2.0)
+        return mockApi.mailboxCheckCallback
+    }
+
+    func testMailboxCheckCallback_emitsOnMailboxChecked() {
+        guard let callback = registeredMailboxCheckCallback() else {
+            XCTFail("mailboxCheckCallback was not registered")
+            return
+        }
+
+        callback.onMailboxChecked(read: 2)
+
+        XCTAssertEqual(bridge.capturedEvents.count, 1)
+        XCTAssertEqual(bridge.capturedEvents[0].name, "onMailboxChecked")
+        let body = bridge.capturedEvents[0].body as? [String: Any]
+        XCTAssertEqual(body?["read"] as? UInt32, 2)
+    }
+
+    /// Each stage is sent as a lower-case name with the messages read so far; only "unreachable"
+    /// carries the retry delay (bingle_rust #447).
+    func testMailboxCheckCallback_emitsOnMailboxProgress() {
+        guard let callback = registeredMailboxCheckCallback() else {
+            XCTFail("mailboxCheckCallback was not registered")
+            return
+        }
+
+        callback.onMailboxProgress(stage: .connecting, read: 0, retryInSecs: nil)
+        callback.onMailboxProgress(stage: .reading, read: 1, retryInSecs: nil)
+        callback.onMailboxProgress(stage: .unreachable, read: 1, retryInSecs: 10)
+
+        XCTAssertEqual(bridge.capturedEvents.map { $0.name }, Array(repeating: "onMailboxProgress", count: 3))
+        let bodies = bridge.capturedEvents.map { $0.body as? [String: Any] }
+        XCTAssertEqual(bodies[0]?["stage"] as? String, "connecting")
+        XCTAssertEqual(bodies[0]?["read"] as? UInt32, 0)
+        XCTAssertNil(bodies[0]?["retry_in_secs"])
+        XCTAssertEqual(bodies[1]?["stage"] as? String, "reading")
+        XCTAssertEqual(bodies[1]?["read"] as? UInt32, 1)
+        XCTAssertNil(bodies[1]?["retry_in_secs"])
+        XCTAssertEqual(bodies[2]?["stage"] as? String, "unreachable")
+        XCTAssertEqual(bodies[2]?["retry_in_secs"] as? UInt32, 10)
+    }
+
+    func testSupportedEvents_includesOnMailboxProgress() {
+        XCTAssertTrue(bridge.supportedEvents().contains("onMailboxProgress"))
+    }
+
     // MARK: - inspectPassphrase
 
     func testInspectPassphrase_resolvesWithStatusFields() {
