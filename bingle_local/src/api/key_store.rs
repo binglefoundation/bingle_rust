@@ -2,7 +2,8 @@
 //!
 //! The local API keeps the keypair's address in its state file. The 25-word phrase goes through a
 //! [`KeyStore`]: [`FileKeyStore`] keeps it in the state file, as before, and a platform store (the
-//! iOS Keychain, in the `bingle_local_ios` crate) keeps it out of the file altogether. The caller
+//! iOS Keychain, [`KeychainKeyStore`](crate::api::keychain::KeychainKeyStore)) keeps it out of the
+//! file altogether. The caller
 //! picks the store when it builds the API, with
 //! [`BingleApiLocalImpl::with_key_store`](crate::api::BingleApiLocalImpl::with_key_store).
 

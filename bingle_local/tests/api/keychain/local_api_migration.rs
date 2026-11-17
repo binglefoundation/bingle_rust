@@ -3,10 +3,10 @@
 
 use std::sync::Arc;
 
+use bingle_local::api::keychain::KeychainKeyStore;
+use bingle_local::api::keychain::items::Accessibility;
+use bingle_local::api::keychain::memory::MemoryItems;
 use bingle_local::api::{BingleApiLocalImpl, BingleLocalApi, LocalApiConfig};
-use bingle_local_ios::KeychainKeyStore;
-use bingle_local_ios::items::Accessibility;
-use bingle_local_ios::memory::MemoryItems;
 use bingle_test::temp_file_helpers::project_tmp_dir_path;
 
 #[test]

@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use crate::items::{Accessibility, ItemError, SecureItems};
+use super::items::{Accessibility, ItemError, SecureItems};
 
 /// The fake's items: (account, synced) to (accessibility, data).
 type ItemMap = HashMap<(String, bool), (Accessibility, Vec<u8>)>;

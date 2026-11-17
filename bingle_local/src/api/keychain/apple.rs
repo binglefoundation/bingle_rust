@@ -26,7 +26,7 @@ use security_framework_sys::keychain_item::{
     SecItemAdd, SecItemCopyMatching, SecItemDelete, SecItemUpdate,
 };
 
-use crate::items::{Accessibility, ItemError, SecureItems};
+use super::items::{Accessibility, ItemError, SecureItems};
 
 #[link(name = "Security", kind = "framework")]
 unsafe extern "C" {

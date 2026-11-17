@@ -4,11 +4,11 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use bingle_local::api::keychain::KeychainKeyStore;
+use bingle_local::api::keychain::items::{Accessibility, SecureItems};
+use bingle_local::api::keychain::memory::MemoryItems;
+use bingle_local::api::keychain::record::{KeyRecord, RECORD_VERSION, decode_key, encode};
 use bingle_local::api::{KeySlot, KeyStorageBackend, KeyStore, KeyStoreError, Keypair};
-use bingle_local_ios::KeychainKeyStore;
-use bingle_local_ios::items::{Accessibility, SecureItems};
-use bingle_local_ios::memory::MemoryItems;
-use bingle_local_ios::record::{KeyRecord, RECORD_VERSION, decode_key, encode};
 use bingle_test::temp_file_helpers::project_tmp_dir_path;
 
 const SCOPE: &str = "bingle_state_testnet";

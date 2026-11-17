@@ -36,6 +36,12 @@ mod local_impl_persistence;
 #[path = "api/local_impl_key_store.rs"]
 mod local_impl_key_store;
 
+#[path = "api/keychain/key_store.rs"]
+mod keychain_key_store;
+
+#[path = "api/keychain/local_api_migration.rs"]
+mod keychain_local_api_migration;
+
 #[path = "api/local_impl_queue.rs"]
 mod local_impl_queue;
 

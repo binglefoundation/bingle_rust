@@ -3,7 +3,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::items::ItemError;
+use super::items::ItemError;
 
 /// The record format version this crate writes.
 pub const RECORD_VERSION: u32 = 1;

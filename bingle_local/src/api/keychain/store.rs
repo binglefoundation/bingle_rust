@@ -6,12 +6,10 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use bingle_local::api::{
-    KeySlot, KeyStorageBackend, KeyStorageStatus, KeyStore, KeyStoreError, Keypair,
-};
+use crate::api::{KeySlot, KeyStorageBackend, KeyStorageStatus, KeyStore, KeyStoreError, Keypair};
 
-use crate::items::{Accessibility, ItemError, SecureItems};
-use crate::record::{InstallRecord, KeyRecord, RECORD_VERSION, decode_install, decode_key, encode};
+use super::items::{Accessibility, ItemError, SecureItems};
+use super::record::{InstallRecord, KeyRecord, RECORD_VERSION, decode_install, decode_key, encode};
 
 /// The account of the per-device install item.
 const INSTALL_ACCOUNT: &str = "install";
@@ -61,7 +59,7 @@ impl KeychainKeyStore {
             .parent()
             .map(Path::to_path_buf)
             .unwrap_or_else(|| PathBuf::from("."));
-        let items = crate::keychain::KeychainItems::for_main_bundle();
+        let items = super::apple::KeychainItems::for_main_bundle();
         Self::new(Arc::new(items), &scope, &state_dir)
     }
 

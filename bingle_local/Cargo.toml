@@ -53,7 +53,22 @@ path = "tests/sidewinder_mailbox_e2e.rs"
 name = "read_on_reconnect_e2e"
 path = "tests/read_on_reconnect_e2e.rs"
 
+# The Keychain backend for the recovery phrase (issue #385): SecItem calls through
+# security-framework-sys, because a synced item needs kSecAttrAccessible (access-control objects
+# can't be synchronised), which the safe security-framework password API doesn't expose.
+[target.'cfg(target_vendor = "apple")'.dependencies]
+core-foundation = "0.10"
+core-foundation-sys = "0.8"
+security-framework-sys = "2.17"
+
+[features]
+# `api::keychain::memory::MemoryItems`: an in-memory Keychain fake for tests. Never enable it in
+# app builds.
+test-support = []
+
 [dev-dependencies]
+# the Keychain store tests use the in-memory fake.
+bingle_local = { path = ".", features = ["test-support"] }
 tempfile = "3"
 bingle_test = { path = "../bingle_test" }
 

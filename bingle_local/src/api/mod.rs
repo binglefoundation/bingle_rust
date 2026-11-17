@@ -18,6 +18,8 @@ pub use bingle_local_api_impl::*;
 
 // Where the recovery phrase is kept: the state file or a platform store (issue #385).
 pub mod key_store;
+// The iOS Keychain key store (issue #385); the real Keychain backend is Apple-only.
+pub mod keychain;
 pub use key_store::{
     FileKeyStore, KeySlot, KeyStorageBackend, KeyStorageStatus, KeyStore, KeyStoreError,
 };
