@@ -17,9 +17,10 @@
 //! | `SIDEWINDER_TESTNET_RECEIVER_MNEMONIC` | the receiver account's 25-word mnemonic | file `tmp/tn_receiver.mnemonic` |
 //!
 //! ## Precondition (one-time provisioning, see #226)
-//! The sender and receiver accounts must be **funded** on TestNet. Their handles are registered on the
-//! TestNet BingleDapp by this test at runtime (idempotent — skipped if already registered), and
-//! registering grants the `allow_sw_client` bit the cluster authorizes them by.
+//! The sender and receiver accounts must be **funded** on TestNet. This test gives them their handles
+//! on the current TestNet BingleDapp at runtime, idempotently: an account registered on an ancestor
+//! app is migrated (`migrate_local`), and an unregistered one buys Bingle$ at the on-chain
+//! `BinglePrice` and registers. Both grant the `allow_sw_client` bit the cluster authorizes them by.
 //!
 //! ## Run
 //!   `cargo test -p bingle_cli --features sidewinder_testnet --test integration -- --test-threads 1 --nocapture`
@@ -134,25 +135,51 @@ fn load_config() -> TestnetConfig {
     }
 }
 
-/// Register `handle` for the account on the BingleDapp if it is not already registered (idempotent so
-/// the test can be re-run against the same accounts).
+/// Make sure the account holds `handle` on the current BingleDapp, idempotently so the test can be
+/// re-run against the same accounts. An account registered on an ancestor app (before a DApp
+/// migration) is migrated with `migrate_local`, which keeps its handle and grants the
+/// `allow_sw_client` bit; only an account with no registration anywhere buys Bingle$ at the app's
+/// on-chain price and registers.
 fn ensure_registered(cfg: &TestnetConfig, address: &str, mnemonic: &str, handle: &str) {
     let ops = test_util::ops_from_mnemonic(address, mnemonic, cfg.algo_config.clone());
-    let ab = AlgoBingle::new(ops.clone(), cfg.app_id, cfg.asset_id);
-    if let Ok(Some(existing)) = ab.handle_for_address(cfg.app_id, address)
-        && existing == handle
+    let ab = AlgoBingle::new(ops, cfg.app_id, cfg.asset_id);
+    if let Some(txid) = ab
+        .ensure_local_migrated(cfg.app_id)
+        .unwrap_or_else(|e| panic!("migrate {handle} to app {}: {e}", cfg.app_id))
     {
-        return; // already registered with this handle
+        tracing::info!("migrated {handle} to app {} in {txid}", cfg.app_id);
+        wait_for_handle(&ab, cfg.app_id, address, handle);
+        return;
     }
-    test_util::register_client_on_blockchain(
-        address,
-        mnemonic,
-        handle,
-        cfg.app_id,
-        cfg.asset_id,
-        &ops,
-        cfg.algo_config.clone(),
-    );
+    match ab.handle_for_address(cfg.app_id, address) {
+        Ok(Some(existing)) if existing == handle => return,
+        Ok(Some(existing)) => panic!("{address} holds handle '{existing}', expected '{handle}'"),
+        Ok(None) => {}
+        Err(e) => panic!("read handle for {address}: {e}"),
+    }
+    let price = ab
+        .get_bingle_price(cfg.app_id)
+        .unwrap_or_else(|e| panic!("read BinglePrice: {e}"));
+    ab.buy_bingle(cfg.app_id, cfg.asset_id, price)
+        .unwrap_or_else(|e| panic!("buy Bingle$ for {handle}: {e}"));
+    ab.register(cfg.app_id, cfg.asset_id, handle, 1)
+        .unwrap_or_else(|e| panic!("register {handle}: {e}"));
+    wait_for_handle(&ab, cfg.app_id, address, handle);
+}
+
+/// Wait until the account's local state on `app_id` shows `handle`, so the cluster sees the
+/// registration before the test posts.
+fn wait_for_handle(ab: &AlgoBingle, app_id: u64, address: &str, handle: &str) {
+    let deadline = std::time::Instant::now() + Duration::from_secs(30);
+    while std::time::Instant::now() < deadline {
+        if let Ok(Some(existing)) = ab.handle_for_address(app_id, address)
+            && existing == handle
+        {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(500));
+    }
+    panic!("{handle} not visible in local state on app {app_id} within 30s");
 }
 
 /// Build a bingle_local config for TestNet + this cluster with the `send`/`receive` gates as given.
@@ -186,7 +213,11 @@ fn fail_delivery_twice(sender: &mut BingleApiLocalImpl, timestamp: i64) {
 fn drain_receiver(cfg: &TestnetConfig) {
     use bingle_local::api::sidewinder::Mailbox;
     let mut mailbox = Mailbox::new(
-        AlgoOps::new_for_algorand(Some(cfg.receiver_mnemonic.clone()), None, None),
+        AlgoOps::new_for_algorand(
+            Some(cfg.receiver_mnemonic.clone()),
+            None,
+            Some(cfg.algo_config.clone()),
+        ),
         mailbox_config(cfg),
     )
     .expect("receiver mailbox");
