@@ -97,6 +97,23 @@ RCT_EXTERN_METHOD(signRecoveryGroup:(NSArray *)transactions
 RCT_EXTERN_METHOD(completeRecoveryKeypair:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
+// Key storage (bingle_rust #385)
+RCT_EXTERN_METHOD(keyStorageStatus:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+
+RCT_EXTERN_METHOD(setDeviceOnly:(BOOL)enabled
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+
+RCT_EXTERN_METHOD(markPhraseBackedUp:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+
+RCT_EXTERN_METHOD(restoreStoredKey:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+
+RCT_EXTERN_METHOD(removeKeyFromDevice:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+
 RCT_EXTERN_METHOD(addContact:(NSString *)handle
                   id:(NSString *)id
                   source:(NSString *)source

@@ -39,7 +39,8 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
                     storeAndForwardSend = config.tryGetBoolean("store_and_forward_send"),
                     storeAndForwardReceive = config.tryGetBoolean("store_and_forward_receive"),
                     storeAndForwardPollIntervalSecs = config.tryGetULong("store_and_forward_poll_interval_secs"),
-                    sendPendingMessages = config.tryGetBoolean("send_pending_messages")
+                    sendPendingMessages = config.tryGetBoolean("send_pending_messages"),
+                    keyStorage = config.tryGetString("key_storage")
                 )
                 // Initialize the platform TLS verifier before any HTTPS to an Algorand node (#135).
                 BingleJsiTls.ensureInitialized(reactApplicationContext)
@@ -447,6 +448,102 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
         Thread {
             try {
                 promise.resolve(keypairMap(api.completeRecoveryKeypair()))
+            } catch (e: Exception) {
+                promise.reject("BINGLE_ERROR", e.message, e)
+            }
+        }.start()
+    }
+
+    // Key storage (bingle_rust #385). On Android the phrase stays in the state file, so every method
+    // but keyStorageStatus rejects with KeyStorageUnavailable.
+    @ReactMethod
+    fun keyStorageStatus(promise: Promise) {
+        val api = apiInstance
+        if (api == null) {
+            promise.reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.")
+            return
+        }
+        Thread {
+            try {
+                val status = api.keyStorageStatus()
+                val map = Arguments.createMap()
+                map.putString("backend", if (status.backend == KeyStorageBackend.KEYCHAIN) "keychain" else "file")
+                map.putBoolean("device_only", status.deviceOnly)
+                map.putBoolean("sync_choice_pending", status.syncChoicePending)
+                map.putBoolean("phrase_backed_up", status.phraseBackedUp)
+                map.putBoolean("reinstall_detected", status.reinstallDetected)
+                if (status.storedAddress != null) map.putString("stored_address", status.storedAddress) else map.putNull("stored_address")
+                map.putDouble("install_count", status.installCount.toDouble())
+                val lastInstallAt = status.lastInstallAt
+                if (lastInstallAt != null) map.putDouble("last_install_at", lastInstallAt.toDouble()) else map.putNull("last_install_at")
+                promise.resolve(map)
+            } catch (e: Exception) {
+                promise.reject("BINGLE_ERROR", e.message, e)
+            }
+        }.start()
+    }
+
+    @ReactMethod
+    fun setDeviceOnly(enabled: Boolean, promise: Promise) {
+        val api = apiInstance
+        if (api == null) {
+            promise.reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.")
+            return
+        }
+        Thread {
+            try {
+                api.setDeviceOnly(enabled)
+                promise.resolve(null)
+            } catch (e: Exception) {
+                promise.reject("BINGLE_ERROR", e.message, e)
+            }
+        }.start()
+    }
+
+    @ReactMethod
+    fun markPhraseBackedUp(promise: Promise) {
+        val api = apiInstance
+        if (api == null) {
+            promise.reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.")
+            return
+        }
+        Thread {
+            try {
+                api.markPhraseBackedUp()
+                promise.resolve(null)
+            } catch (e: Exception) {
+                promise.reject("BINGLE_ERROR", e.message, e)
+            }
+        }.start()
+    }
+
+    @ReactMethod
+    fun restoreStoredKey(promise: Promise) {
+        val api = apiInstance
+        if (api == null) {
+            promise.reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.")
+            return
+        }
+        Thread {
+            try {
+                promise.resolve(keypairMap(api.restoreStoredKey()))
+            } catch (e: Exception) {
+                promise.reject("BINGLE_ERROR", e.message, e)
+            }
+        }.start()
+    }
+
+    @ReactMethod
+    fun removeKeyFromDevice(promise: Promise) {
+        val api = apiInstance
+        if (api == null) {
+            promise.reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.")
+            return
+        }
+        Thread {
+            try {
+                api.removeKeyFromDevice()
+                promise.resolve(null)
             } catch (e: Exception) {
                 promise.reject("BINGLE_ERROR", e.message, e)
             }

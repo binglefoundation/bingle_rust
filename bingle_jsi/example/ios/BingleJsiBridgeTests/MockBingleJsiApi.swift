@@ -321,4 +321,40 @@ class MockBingleJsiApi: BingleJsiApiProtocol {
     func completeRecoveryKeypair() throws -> Keypair {
         return keypairResult
     }
+
+    // MARK: - Key storage (bingle_rust #385)
+
+    var keyStorageStatusResult = KeyStorageStatus(
+        backend: .keychain,
+        deviceOnly: true,
+        syncChoicePending: true,
+        phraseBackedUp: false,
+        reinstallDetected: false,
+        storedAddress: nil,
+        installCount: 1,
+        lastInstallAt: nil
+    )
+    var setDeviceOnlyCalls: [Bool] = []
+    var markPhraseBackedUpCalled = false
+    var removeKeyFromDeviceCalled = false
+
+    func keyStorageStatus() throws -> KeyStorageStatus {
+        return keyStorageStatusResult
+    }
+
+    func setDeviceOnly(enabled: Bool) throws {
+        setDeviceOnlyCalls.append(enabled)
+    }
+
+    func markPhraseBackedUp() throws {
+        markPhraseBackedUpCalled = true
+    }
+
+    func restoreStoredKey() throws -> Keypair {
+        return keypairResult
+    }
+
+    func removeKeyFromDevice() throws {
+        removeKeyFromDeviceCalled = true
+    }
 }

@@ -74,6 +74,32 @@ export interface MessagingSettings {
   notify_gateway_url: string | null;
 }
 
+/**
+ * What the key store reports about the recovery phrase (issue #385). Read via `keyStorageStatus()`
+ * for the onboarding and settings screens.
+ */
+export interface KeyStorageStatus {
+  /** Which store holds the phrase: the iOS Keychain, or the state file. */
+  backend: "keychain" | "file";
+  /** "Keep key material on this device only" is on: not synced to iCloud Keychain, not in backups.
+   * A new key is device-only until the user chooses. */
+  device_only: boolean;
+  /** The user hasn't chosen between iCloud Keychain sync and this device only yet: show the choice
+   * (preselected to sync) and call `setDeviceOnly`. */
+  sync_choice_pending: boolean;
+  /** The user has confirmed the phrase is backed up. */
+  phrase_backed_up: boolean;
+  /** The app was reinstalled and a key from before is still stored: offer "Continue as @handle"
+   * and call `restoreStoredKey`. */
+  reinstall_detected: boolean;
+  /** The address of the stored current key, if any. */
+  stored_address: string | null;
+  /** How many times the app has been installed on this device (advisory only). */
+  install_count: number;
+  /** When the app was last installed on this device, in seconds since the Unix epoch. */
+  last_install_at: number | null;
+}
+
 export interface HandleLookupPartialResult {
   /** Algorand address of the matching account. */
   id: string;
@@ -227,6 +253,11 @@ export interface BingleJsiConfig {
    * messages. Needs `local`. Transitional: deprecated and then removed, with the legacy loop, once the
    * shared sender is proven. Optional. */
   send_pending_messages?: boolean | null;
+  /** Where the recovery phrase is kept (issue #385): "keychain" (the iOS Keychain; the state file
+   * then holds only the address) or "file" (the state file, as before). null/omitted defaults to
+   * "keychain" on iOS and "file" elsewhere; "keychain" anywhere but iOS is refused at init. Needs
+   * `local`. Optional. */
+  key_storage?: "keychain" | "file" | null;
 }
 
 // ── Enums ────────────────────────────────────────────────────────────
@@ -343,6 +374,12 @@ export interface BingleJsiApi {
   beginRecoveryKeypair(): Keypair;
   signRecoveryGroup(transactions: string[], signIndexes: number[], handle: string): string[];
   completeRecoveryKeypair(): Keypair;
+  // Key storage (#385)
+  keyStorageStatus(): KeyStorageStatus;
+  setDeviceOnly(enabled: boolean): void;
+  markPhraseBackedUp(): void;
+  restoreStoredKey(): Keypair;
+  removeKeyFromDevice(): void;
   requestPushRegistration(): void;
   registerApnsToken(token: Uint8Array): boolean;
   apnsRegistrationFailed(reason: string): void;

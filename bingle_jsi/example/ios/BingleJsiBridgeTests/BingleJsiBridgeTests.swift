@@ -835,3 +835,71 @@ final class BingleJsiBridgeTests: XCTestCase {
         }
     }
 }
+
+// MARK: - Key storage through the bridge (bingle_rust #385)
+
+/// The key storage bridge methods against the mock: parameter mapping and the resolved shape.
+final class KeyStorageBridgeTests: XCTestCase {
+
+    var bridge: SpyBingleJsiBridge!
+    var mockApi: MockBingleJsiApi!
+
+    override func setUp() {
+        super.setUp()
+        bridge = SpyBingleJsiBridge()
+        mockApi = MockBingleJsiApi()
+        bridge.injectApi(mockApi)
+    }
+
+    func testKeyStorageStatus_resolvesWithSnakeCaseFields() {
+        mockApi.keyStorageStatusResult = KeyStorageStatus(
+            backend: .keychain, deviceOnly: false, syncChoicePending: false, phraseBackedUp: true,
+            reinstallDetected: true, storedAddress: "ADDR", installCount: 2, lastInstallAt: 1_700_000_000
+        )
+        let expectation = self.expectation(description: "resolve called")
+        var dict: [String: Any]?
+        bridge.keyStorageStatus(
+            { value in
+                dict = value as? [String: Any]
+                expectation.fulfill()
+            },
+            rejecter: { _, _, _ in XCTFail("unexpected rejection") }
+        )
+        waitForExpectations(timeout: 2.0)
+        XCTAssertEqual(dict?["backend"] as? String, "keychain")
+        XCTAssertEqual(dict?["device_only"] as? Bool, false)
+        XCTAssertEqual(dict?["sync_choice_pending"] as? Bool, false)
+        XCTAssertEqual(dict?["phrase_backed_up"] as? Bool, true)
+        XCTAssertEqual(dict?["reinstall_detected"] as? Bool, true)
+        XCTAssertEqual(dict?["stored_address"] as? String, "ADDR")
+        XCTAssertEqual((dict?["install_count"] as? NSNumber)?.intValue, 2)
+        XCTAssertEqual((dict?["last_install_at"] as? NSNumber)?.int64Value, 1_700_000_000)
+    }
+
+    func testSetDeviceOnly_passesTheChoice() {
+        let expectation = self.expectation(description: "resolve called")
+        bridge.setDeviceOnly(
+            false,
+            resolver: { _ in expectation.fulfill() },
+            rejecter: { _, _, _ in XCTFail("unexpected rejection") }
+        )
+        waitForExpectations(timeout: 2.0)
+        XCTAssertEqual(mockApi.setDeviceOnlyCalls, [false])
+    }
+
+    func testMarkPhraseBackedUpAndRemove_reachTheApi() {
+        let marked = self.expectation(description: "markPhraseBackedUp resolved")
+        bridge.markPhraseBackedUp(
+            { _ in marked.fulfill() },
+            rejecter: { _, _, _ in XCTFail("unexpected rejection") }
+        )
+        let removed = self.expectation(description: "removeKeyFromDevice resolved")
+        bridge.removeKeyFromDevice(
+            { _ in removed.fulfill() },
+            rejecter: { _, _, _ in XCTFail("unexpected rejection") }
+        )
+        waitForExpectations(timeout: 2.0)
+        XCTAssertTrue(mockApi.markPhraseBackedUpCalled)
+        XCTAssertTrue(mockApi.removeKeyFromDeviceCalled)
+    }
+}

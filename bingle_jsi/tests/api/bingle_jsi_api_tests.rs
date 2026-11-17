@@ -6,9 +6,9 @@ use bingle_jsi::api::callback::{
 };
 use bingle_jsi::api::error::BingleJsiError;
 use bingle_jsi::api::types::{
-    BingleMessage, Contact, ContactSource, HandleLookupMatch, HandleLookupPartialResult, Keypair,
-    KeypairStatusResponse, Message, MessagingSettings, NatTypeResponse, NetworkSourceKey,
-    NotifyRegisterRequest, VersionInfo,
+    BingleMessage, Contact, ContactSource, HandleLookupMatch, HandleLookupPartialResult,
+    KeyStorageStatus, Keypair, KeypairStatusResponse, Message, MessagingSettings, NatTypeResponse,
+    NetworkSourceKey, NotifyRegisterRequest, VersionInfo,
 };
 
 /// Stub implementation where every method returns NotImplemented.
@@ -319,6 +319,36 @@ impl BingleJsiApi for StubApi {
     fn complete_recovery_keypair(&self) -> Result<Keypair, BingleJsiError> {
         Err(BingleJsiError::NotImplemented {
             reason: "complete_recovery_keypair".to_string(),
+        })
+    }
+
+    fn key_storage_status(&self) -> Result<KeyStorageStatus, BingleJsiError> {
+        Err(BingleJsiError::NotImplemented {
+            reason: "key_storage_status".to_string(),
+        })
+    }
+
+    fn set_device_only(&self, _enabled: bool) -> Result<(), BingleJsiError> {
+        Err(BingleJsiError::NotImplemented {
+            reason: "set_device_only".to_string(),
+        })
+    }
+
+    fn mark_phrase_backed_up(&self) -> Result<(), BingleJsiError> {
+        Err(BingleJsiError::NotImplemented {
+            reason: "mark_phrase_backed_up".to_string(),
+        })
+    }
+
+    fn restore_stored_key(&self) -> Result<Keypair, BingleJsiError> {
+        Err(BingleJsiError::NotImplemented {
+            reason: "restore_stored_key".to_string(),
+        })
+    }
+
+    fn remove_key_from_device(&self) -> Result<(), BingleJsiError> {
+        Err(BingleJsiError::NotImplemented {
+            reason: "remove_key_from_device".to_string(),
         })
     }
 

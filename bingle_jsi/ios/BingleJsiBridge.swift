@@ -91,7 +91,8 @@ class BingleJsiBridge: RCTEventEmitter {
                     storeAndForwardSend: config["store_and_forward_send"] as? Bool,
                     storeAndForwardReceive: config["store_and_forward_receive"] as? Bool,
                     storeAndForwardPollIntervalSecs: (config["store_and_forward_poll_interval_secs"] as? NSNumber)?.uint64Value,
-                    sendPendingMessages: config["send_pending_messages"] as? Bool
+                    sendPendingMessages: config["send_pending_messages"] as? Bool,
+                    keyStorage: config["key_storage"] as? String
                 )
                 let api = try createBingleApi(config: jsiConfig)
                 self.apiInstance = api
@@ -450,6 +451,97 @@ class BingleJsiBridge: RCTEventEmitter {
             do {
                 let kp = try api.completeRecoveryKeypair()
                 resolve(["id": kp.id, "passphrase": kp.passphrase])
+            } catch {
+                reject("BINGLE_ERROR", "\(error)", error)
+            }
+        }
+    }
+
+    // MARK: - Key storage (bingle_rust #385)
+
+    @objc
+    func keyStorageStatus(_ resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {
+        guard let api = apiInstance else {
+            reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.", nil)
+            return
+        }
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                let status = try api.keyStorageStatus()
+                resolve([
+                    "backend": status.backend == .keychain ? "keychain" : "file",
+                    "device_only": status.deviceOnly,
+                    "sync_choice_pending": status.syncChoicePending,
+                    "phrase_backed_up": status.phraseBackedUp,
+                    "reinstall_detected": status.reinstallDetected,
+                    "stored_address": status.storedAddress as Any,
+                    "install_count": status.installCount,
+                    "last_install_at": status.lastInstallAt.map { NSNumber(value: $0) } as Any,
+                ])
+            } catch {
+                reject("BINGLE_ERROR", "\(error)", error)
+            }
+        }
+    }
+
+    @objc
+    func setDeviceOnly(_ enabled: Bool, resolver resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {
+        guard let api = apiInstance else {
+            reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.", nil)
+            return
+        }
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                try api.setDeviceOnly(enabled: enabled)
+                resolve(nil)
+            } catch {
+                reject("BINGLE_ERROR", "\(error)", error)
+            }
+        }
+    }
+
+    @objc
+    func markPhraseBackedUp(_ resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {
+        guard let api = apiInstance else {
+            reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.", nil)
+            return
+        }
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                try api.markPhraseBackedUp()
+                resolve(nil)
+            } catch {
+                reject("BINGLE_ERROR", "\(error)", error)
+            }
+        }
+    }
+
+    @objc
+    func restoreStoredKey(_ resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {
+        guard let api = apiInstance else {
+            reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.", nil)
+            return
+        }
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                let kp = try api.restoreStoredKey()
+                resolve(["id": kp.id, "passphrase": kp.passphrase])
+            } catch {
+                reject("BINGLE_ERROR", "\(error)", error)
+            }
+        }
+    }
+
+    @objc
+    func removeKeyFromDevice(_ resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {
+        guard let api = apiInstance else {
+            reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.", nil)
+            return
+        }
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                try api.removeKeyFromDevice()
+                resolve(nil)
             } catch {
                 reject("BINGLE_ERROR", "\(error)", error)
             }

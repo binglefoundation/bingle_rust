@@ -16,6 +16,7 @@ import type {
   NotifyRegisterRequest,
   FailureKind,
   MessagingSettings,
+  KeyStorageStatus,
   VersionInfo,
 } from "./NativeBingleJsi";
 
@@ -35,6 +36,7 @@ export type {
   KeypairStatusResponse,
   NatTypeResponse,
   MessagingSettings,
+  KeyStorageStatus,
   BingleJsiConfig,
   MessageCallback,
   LogCallback,
@@ -201,6 +203,22 @@ export const BingleJsi = BingleJsiNative as {
   /** Finish a handle clash recovery once the service reports it `registered`: the pending recovery
    * keypair becomes current. Rejects if no recovery is pending. */
   completeRecoveryKeypair(): Promise<{ id: string; passphrase: string }>;
+  /** What the key store reports about the recovery phrase (#385): the backend, the sync choice,
+   * the backup confirmation, and reinstall detection. */
+  keyStorageStatus(): Promise<KeyStorageStatus>;
+  /** Keep the phrase on this device only (true) or sync it through iCloud Keychain (false), and
+   * record that the user has chosen (#385). Turning a synced key device-only removes it from the
+   * user's other devices, so it rejects until markPhraseBackedUp. Rejects with the file store. */
+  setDeviceOnly(enabled: boolean): Promise<void>;
+  /** Record that the user confirmed the phrase is backed up (#385). Rejects with the file store. */
+  markPhraseBackedUp(): Promise<void>;
+  /** After a reinstall, make the key the Keychain still holds the current keypair, without the user
+   * entering the phrase, and save (#385). Rejects with the file store or if no key is stored. */
+  restoreStoredKey(): Promise<{ id: string; passphrase: string }>;
+  /** Delete this device's stored keys and the state file (#385). A synced key is removed from every
+   * device on the user's Apple Account, so say so first; then re-initialise. Rejects with the file
+   * store. */
+  removeKeyFromDevice(): Promise<void>;
   /** Ask the host to begin iOS push registration (bingle_notify #i). Invokes the registered
    * PushRegistrationCallback so the thin Swift bridge performs the platform calls; the token arrives
    * asynchronously via registerApnsToken. Rejects if no push-registration callback is set. */
