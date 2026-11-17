@@ -69,6 +69,7 @@ bingle_jsi/
 │   ├── build_android.sh          # Android cross-compile + jniLibs
 │   ├── run_ios_bridge_tests.sh   # run Layer 2 Swift XCTests headlessly
 │   ├── add_swift_test_target.rb  # one-time: add BingleJsiBridgeTests Xcode target
+│   ├── add_keychain_test_target.rb # one-time: add the hosted BingleJsiKeychainTests target
 │   └── fix_test_target_settings.rb # one-time: configure test target build settings
 ├── ios/
 │   ├── generated/                # (created by build_ios.sh) Swift + C headers
@@ -77,9 +78,10 @@ bingle_jsi/
 │   └── BingleJsiBridge.m         # Objective-C bridge method declarations
 ├── example/
 │   └── ios/
-│       └── BingleJsiBridgeTests/ # Swift XCTest target (Layer 2 tests)
-│           ├── MockBingleJsiApi.swift     # mock BingleJsiApiProtocol
-│           └── BingleJsiBridgeTests.swift # 26 test cases
+│       ├── BingleJsiBridgeTests/ # Swift XCTest target (Layer 2 tests)
+│       │   ├── MockBingleJsiApi.swift     # mock BingleJsiApiProtocol
+│       │   └── BingleJsiBridgeTests.swift # bridge test cases
+│       └── BingleJsiKeychainTests/ # hosted XCTest target: the real Keychain key store
 ├── android/
 │   ├── build.gradle              # Android library configuration
 │   ├── generated/                # (created by build_android.sh) Kotlin bindings
@@ -366,7 +368,18 @@ The test target (`BingleJsiBridgeTests`) lives in:
 ```
 bingle_jsi/example/ios/BingleJsiBridgeTests/
 ├── MockBingleJsiApi.swift      # mock implementing all protocol methods
-└── BingleJsiBridgeTests.swift  # 26 XCTest cases
+└── BingleJsiBridgeTests.swift  # XCTest cases
+```
+
+A second target, `BingleJsiKeychainTests`, runs the Keychain key store (bingle_rust #385) through
+the real Rust library: device-only creation, the sync choice, the backup check, reinstall restore,
+removal and migration. The simulator Keychain refuses a hostless test bundle
+(`errSecMissingEntitlement`, -34018), so this target is hosted in the example app, and its scheme
+builds the app too:
+
+```
+bingle_jsi/example/ios/BingleJsiKeychainTests/
+└── KeychainKeyStorageTests.swift
 ```
 
 The mock records every call, exposes configurable return values, and can
@@ -417,7 +430,8 @@ These tests run on a local Mac only; iOS tests do not run in CI.
   ```bash
   BINGLE_IOS_SIM_ONLY=1 bash bingle_jsi/scripts/build_ios.sh
   ```
-- The example workspace pod-installed (the test target is in the Podfile):
+- The example workspace pod-installed (the test targets are in the Podfile). Run this after
+  `build_ios.sh`: the pod's source globs pick up `ios/generated` only if it exists at install time.
   ```bash
   cd bingle_jsi/example/ios && pod install
   ```
@@ -433,7 +447,9 @@ Use the provided script from the project root:
 The script will:
 1. Pick a simulator: `BINGLE_IOS_TEST_DEVICE` (a UDID) if set, else an already booted iPhone,
    else the first available iPhone; and boot it if needed
-2. Run `xcodebuild test` against the shared `BingleJsiBridgeTests` scheme
+2. Run `xcodebuild test` against the shared `BingleJsiBridgeTests` and `BingleJsiKeychainTests`
+   schemes (set `BINGLE_IOS_TEST_SCHEMES` to run a subset, for example
+   `BINGLE_IOS_TEST_SCHEMES=BingleJsiBridgeTests` to skip building the example app)
 3. Write the full `xcodebuild` log to `tmp/ios_bridge_tests.log`
 4. Print a pass/fail summary and exit with code 0 (pass) or 1 (fail)
 
@@ -447,15 +463,16 @@ The simulator runs headlessly; no display or UI interaction is required.
 
 #### Project setup scripts
 
-The test target, its shared scheme
-(`xcshareddata/xcschemes/BingleJsiBridgeTests.xcscheme`) and its Podfile entry are committed, so a
-fresh checkout needs only `pod install`. The target was originally added with two Ruby scripts,
-which only need re-running if the project file is regenerated:
+The test targets, their shared schemes (`xcshareddata/xcschemes/BingleJsiBridgeTests.xcscheme` and
+`BingleJsiKeychainTests.xcscheme`) and their Podfile entries are committed, so a fresh checkout needs
+only `pod install`. The targets were originally added with these Ruby scripts, which only need
+re-running if the project file is regenerated:
 
 | Script | Purpose |
 |--------|---------|
 | `bingle_jsi/scripts/add_swift_test_target.rb` | Adds the `BingleJsiBridgeTests` target and registers source files |
 | `bingle_jsi/scripts/fix_test_target_settings.rb` | Configures `PRODUCT_NAME`, deployment target, and standalone bundle settings (`TEST_HOST = ''`) |
+| `bingle_jsi/scripts/add_keychain_test_target.rb` | Adds the hosted `BingleJsiKeychainTests` target, its source files and its shared scheme |
 
 Both scripts use the `xcodeproj` gem bundled with CocoaPods and are
 invoked with:

@@ -30,6 +30,12 @@ target 'BingleJsiExample' do
     inherit! :complete
   end
 
+  # Real-Keychain tests (BingleJsiKeychainTests): hosted in the example app, because the simulator
+  # Keychain refuses a hostless test bundle. Added by bingle_jsi/scripts/add_keychain_test_target.rb.
+  target 'BingleJsiKeychainTests' do
+    inherit! :complete
+  end
+
   post_install do |installer|
     react_native_post_install(
       installer,
