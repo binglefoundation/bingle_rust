@@ -15,6 +15,7 @@ CRATES=(
   bingle_core
   bingle_webserver
   bingle_local
+  bingle_local_ios
   bingle_jsi
 )
 

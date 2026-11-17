@@ -21,7 +21,7 @@ die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 python3 - "$1" <<'PY'
 import pathlib, re, sys
 
-MEMBERS = ["bingle_core", "bingle_local", "bingle_jsi", "bingle_webserver", "bingle_test", "bingle_cli"]
+MEMBERS = ["bingle_core", "bingle_local", "bingle_local_ios", "bingle_jsi", "bingle_webserver", "bingle_test", "bingle_cli"]
 PACKAGE_VERSION = re.compile(r'(\[package\][^\[]*?\nversion\s*=\s*")([^"]*)(")', re.S)
 PATH_PIN = re.compile(r'(path\s*=\s*"\.\./bingle_[a-z_]+"\s*,\s*version\s*=\s*")([^"]*)(")')
 NPM_VERSION = re.compile(r'("version"\s*:\s*")([^"]*)(")')

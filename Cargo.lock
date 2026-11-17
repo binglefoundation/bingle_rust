@@ -667,6 +667,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "bingle_local_ios"
+version = "0.3.34"
+dependencies = [
+ "bingle_local",
+ "bingle_local_ios",
+ "bingle_test",
+ "core-foundation 0.10.1",
+ "core-foundation-sys",
+ "security-framework-sys",
+ "serde",
+ "serde_json",
+ "tracing",
+]
+
+[[package]]
 name = "bingle_test"
 version = "0.3.34"
 dependencies = [

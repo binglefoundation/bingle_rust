@@ -92,7 +92,10 @@ fn the_file_store_keeps_the_phrase_in_the_state_file() {
         api.key_storage_status().expect("status").backend,
         KeyStorageBackend::File
     );
-    assert!(api.set_device_only(false).is_err(), "file store has no sync setting");
+    assert!(
+        api.set_device_only(false).is_err(),
+        "file store has no sync setting"
+    );
     let _ = fs::remove_file(path);
 }
 
@@ -131,7 +134,10 @@ fn loading_an_old_file_moves_the_phrase_into_the_store_and_rewrites_the_file() {
     api.load(&path).expect("load");
     assert_eq!(api.get_keypair().unwrap(), Some(kp.clone()));
     assert_eq!(store.fetch(KeySlot::Current).unwrap(), Some(kp.clone()));
-    assert!(!file_text(&path).contains(&kp.passphrase), "rewritten without the phrase");
+    assert!(
+        !file_text(&path).contains(&kp.passphrase),
+        "rewritten without the phrase"
+    );
     let _ = fs::remove_file(path);
 }
 
@@ -190,14 +196,20 @@ fn recovery_keys_go_through_the_store() {
     let mut api = api_with(&store);
     api.generate_keypair().expect("generate");
     let pending = api.begin_recovery_keypair().expect("begin");
-    assert_eq!(store.fetch(KeySlot::Recovery).unwrap(), Some(pending.clone()));
+    assert_eq!(
+        store.fetch(KeySlot::Recovery).unwrap(),
+        Some(pending.clone())
+    );
 
     let path = state_path("key-store-recovery");
     api.save(&path).expect("save");
     assert!(!file_text(&path).contains(&pending.passphrase));
     let mut reloaded = api_with(&store);
     reloaded.load(&path).expect("load");
-    assert_eq!(reloaded.get_recovery_keypair().unwrap(), Some(pending.clone()));
+    assert_eq!(
+        reloaded.get_recovery_keypair().unwrap(),
+        Some(pending.clone())
+    );
 
     let completed = reloaded.complete_recovery_keypair().expect("complete");
     assert_eq!(completed, pending);

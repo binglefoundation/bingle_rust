@@ -1113,7 +1113,10 @@ impl BingleLocalApi for BingleApiLocalImpl {
         }
         // The recovery key is now the current one, so its separate copy is no longer needed.
         if let Err(e) = self.key_store.delete(KeySlot::Recovery) {
-            tracing::warn!("[BingleLocalApi] couldn't remove the stored recovery key: {}", e);
+            tracing::warn!(
+                "[BingleLocalApi] couldn't remove the stored recovery key: {}",
+                e
+            );
         }
         self.forget_stored_phrase(KeySlot::Recovery);
         tracing::info!("[BingleLocalApi] Completed recovery to {}", kp.id);

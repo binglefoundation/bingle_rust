@@ -74,6 +74,11 @@ Supported surface:
 - `api::bingle_local_api_impl::{BingleApiLocalImpl, LocalApiConfig}` — implementation and config.
 - Data types: `Contact`, `Message`, `DeliveryRoute`, `Keypair`, `KeypairStatus`, `ContactSource`,
   and the `REQUIRED_ALGO` constant.
+- Key storage (#385): `api::key_store::{KeyStore, FileKeyStore, KeySlot, KeyStorageBackend,
+  KeyStorageStatus, KeyStoreError}`, `BingleApiLocalImpl::with_key_store`, and the
+  `BingleLocalApi` methods `key_storage_status`, `set_device_only`, `mark_phrase_backed_up`,
+  `restore_stored_key` and `remove_key_from_device`. The iOS Keychain store is
+  `bingle_local_ios::KeychainKeyStore` (not published; used by `bingle_jsi`).
 - Registration: `api::registration::{RegistrationOps, ChainRegistrationOps, run_registration}`.
 - Notification posting traits and requests: `api::notify::{AlertPoster, RegisterPoster,
   AlertRequest, HttpAlertPoster, HttpRegisterPoster}`.

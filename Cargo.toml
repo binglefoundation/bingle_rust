@@ -5,6 +5,7 @@ members = [
     "bingle_test",
     "bingle_webserver",
     "bingle_local",
+    "bingle_local_ios",
     "bingle_jsi",
     "bingle_cli",
 ]
