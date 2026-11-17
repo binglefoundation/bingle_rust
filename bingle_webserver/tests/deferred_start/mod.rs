@@ -204,6 +204,26 @@ impl BingleLocalApi for ControllableLocalApi {
         Err(BingleError::Other("complete_recovery_keypair".to_string()))
     }
 
+    fn key_storage_status(&self) -> Result<bingle_local::api::KeyStorageStatus, BingleError> {
+        Err(BingleError::Other("key_storage_status".to_string()))
+    }
+
+    fn set_device_only(&self, _enabled: bool) -> Result<(), BingleError> {
+        Err(BingleError::Other("set_device_only".to_string()))
+    }
+
+    fn mark_phrase_backed_up(&self) -> Result<(), BingleError> {
+        Err(BingleError::Other("mark_phrase_backed_up".to_string()))
+    }
+
+    fn restore_stored_key(&mut self) -> Result<Keypair, BingleError> {
+        Err(BingleError::Other("restore_stored_key".to_string()))
+    }
+
+    fn remove_key_from_device(&mut self) -> Result<(), BingleError> {
+        Err(BingleError::Other("remove_key_from_device".to_string()))
+    }
+
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
         self
     }

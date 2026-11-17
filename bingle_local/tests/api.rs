@@ -33,6 +33,9 @@ mod inspect_passphrase;
 #[path = "api/local_impl_persistence.rs"]
 mod local_impl_persistence;
 
+#[path = "api/local_impl_key_store.rs"]
+mod local_impl_key_store;
+
 #[path = "api/local_impl_queue.rs"]
 mod local_impl_queue;
 

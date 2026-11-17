@@ -16,6 +16,12 @@ pub use bingle_local_api::*;
 pub mod bingle_local_api_impl;
 pub use bingle_local_api_impl::*;
 
+// Where the recovery phrase is kept: the state file or a platform store (issue #385).
+pub mod key_store;
+pub use key_store::{
+    FileKeyStore, KeySlot, KeyStorageBackend, KeyStorageStatus, KeyStore, KeyStoreError,
+};
+
 // On-chain registration seam (see issue #15, step A4).
 pub mod registration;
 pub use registration::{ChainRegistrationOps, RegistrationOps, run_registration};
