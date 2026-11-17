@@ -277,6 +277,7 @@ const config: BingleJsiConfig = {
   handle_cache_expiry_secs: 300,
   debug: false,
   local: '/path/to/local_state.json',
+  key_storage: null, // the recovery phrase: "keychain" on iOS by default, "file" elsewhere (#385)
 };
 
 await initBingleJsi(config);
@@ -580,6 +581,11 @@ The full API is defined in `src/api/bingle_jsi_api.rs`. Key methods:
 | `beginRecoveryKeypair()` | Start or resume a handle clash recovery: the pending new keypair, saved beside the current one |
 | `signRecoveryGroup(transactions, signIndexes, handle)` | Check and sign a handle clash recovery group with the current and pending keypairs |
 | `completeRecoveryKeypair()` | Make the pending recovery keypair current once the recovery is registered |
+| `keyStorageStatus()` | Where the recovery phrase is kept (`keychain` on iOS, `file` elsewhere), the sync choice (`sync_choice_pending`, `device_only`), `phrase_backed_up`, and reinstall detection (`reinstall_detected`, `stored_address`) (#385) |
+| `setDeviceOnly(enabled)` | Keep the phrase on this device only (`true`) or sync it through iCloud Keychain (`false`), recording the user's choice. A new key is device-only until this is called; turning a synced key device-only needs `markPhraseBackedUp` first. Keychain store only |
+| `markPhraseBackedUp()` | Record that the user confirmed the phrase is backed up. Keychain store only |
+| `restoreStoredKey()` | After a reinstall, make the key the Keychain still holds current, without entering the phrase. Keychain store only |
+| `removeKeyFromDevice()` | Delete this device's stored keys and the state file; a synced key goes from every device on the Apple Account. Re-initialise afterwards. Keychain store only |
 | `addContact(handle, id, source)` | Add a contact |
 | `blockContact(id)` | Block a contact; its live and Mailbox messages are dropped on receipt |
 | `unblockContact(id)` | Unblock a contact |

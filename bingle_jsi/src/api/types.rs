@@ -361,6 +361,46 @@ pub struct BingleJsiConfig {
     /// sends pending messages. Needs `local` to be set. **Transitional:** once the shared sender is
     /// proven in the app, this flag and the legacy loop are deprecated and then removed.
     pub send_pending_messages: Option<bool>,
+    /// Where the recovery phrase is kept (issue #385): `"keychain"` (the iOS Keychain; the state
+    /// file then holds only the address) or `"file"` (the state file, as before). `null` defaults to
+    /// `"keychain"` on iOS and `"file"` elsewhere; `"keychain"` anywhere but iOS is refused at init.
+    /// Applies only with `local` set. An existing state file's phrase moves into the Keychain on
+    /// first load, device-only until the user chooses sync.
+    pub key_storage: Option<String>,
+}
+
+/// Which store holds the recovery phrase (issue #385).
+#[derive(uniffi::Enum, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KeyStorageBackend {
+    /// The state file.
+    File,
+    /// The iOS Keychain.
+    Keychain,
+}
+
+/// What the key store reports about the recovery phrase (issue #385), for the app's onboarding and
+/// settings screens.
+#[derive(uniffi::Record, Debug, Clone)]
+pub struct KeyStorageStatus {
+    /// Which store holds the phrase.
+    pub backend: KeyStorageBackend,
+    /// "Keep key material on this device only" is on: the phrase isn't synced to iCloud Keychain
+    /// and isn't in backups. A new key is device-only until the user chooses.
+    pub device_only: bool,
+    /// The user hasn't chosen between iCloud Keychain sync and this device only yet. The app shows
+    /// the choice (preselected to sync) and calls `set_device_only`.
+    pub sync_choice_pending: bool,
+    /// The user has confirmed the phrase is backed up.
+    pub phrase_backed_up: bool,
+    /// The app was reinstalled and a key from before is still stored: offer "Continue as @handle"
+    /// and call `restore_stored_key`.
+    pub reinstall_detected: bool,
+    /// The address of the stored current key, if any.
+    pub stored_address: Option<String>,
+    /// How many times the app has been installed on this device (advisory only).
+    pub install_count: u32,
+    /// When the app was last installed on this device, in seconds since the Unix epoch.
+    pub last_install_at: Option<u64>,
 }
 
 /// How far a store-and-forward Mailbox check has got (bingle_rust #447), reported to

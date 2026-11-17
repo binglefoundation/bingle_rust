@@ -21,4 +21,9 @@ pub enum BingleJsiError {
 
     #[error("Handle already in use: {reason}")]
     HandleTaken { reason: String },
+
+    /// The key storage settings exist only for the Keychain store (issue #385); this instance keeps
+    /// the recovery phrase in the state file.
+    #[error("Key storage unavailable: {reason}")]
+    KeyStorageUnavailable { reason: String },
 }

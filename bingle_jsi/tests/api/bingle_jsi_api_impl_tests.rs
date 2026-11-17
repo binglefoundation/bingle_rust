@@ -60,6 +60,7 @@ fn config_with_handle(handle: &str) -> BingleJsiConfig {
         store_and_forward_receive: None,
         store_and_forward_poll_interval_secs: None,
         send_pending_messages: None,
+        key_storage: None,
     }
 }
 
@@ -86,6 +87,7 @@ fn config_with_local(path: &str) -> BingleJsiConfig {
         store_and_forward_receive: None,
         store_and_forward_poll_interval_secs: None,
         send_pending_messages: None,
+        key_storage: None,
     }
 }
 
@@ -112,6 +114,7 @@ fn empty_config() -> BingleJsiConfig {
         store_and_forward_receive: None,
         store_and_forward_poll_interval_secs: None,
         send_pending_messages: None,
+        key_storage: None,
     }
 }
 
@@ -901,6 +904,7 @@ fn init_with_optional_fields() {
         store_and_forward_receive: None,
         store_and_forward_poll_interval_secs: None,
         send_pending_messages: None,
+        key_storage: None,
     };
     let api = BingleJsiApiImpl::init(config);
     assert!(

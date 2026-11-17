@@ -3,9 +3,9 @@ use crate::api::callback::{
 };
 use crate::api::error::BingleJsiError;
 use crate::api::types::{
-    BingleMessage, Contact, ContactSource, HandleLookupMatch, HandleLookupPartialResult, Keypair,
-    KeypairStatusResponse, Message, MessagingSettings, NatTypeResponse, NetworkSourceKey,
-    NotifyRegisterRequest, VersionInfo,
+    BingleMessage, Contact, ContactSource, HandleLookupMatch, HandleLookupPartialResult,
+    KeyStorageStatus, Keypair, KeypairStatusResponse, Message, MessagingSettings, NatTypeResponse,
+    NetworkSourceKey, NotifyRegisterRequest, VersionInfo,
 };
 
 /// Primary Bingle API exposed over JSI / uniffi.
@@ -198,6 +198,31 @@ pub trait BingleJsiApi: Send + Sync {
     /// Finish a handle clash recovery once the registration service reports it `registered`: make
     /// the pending recovery keypair current and save it. Errors if no recovery is pending.
     fn complete_recovery_keypair(&self) -> Result<Keypair, BingleJsiError>;
+
+    /// What the key store reports about the recovery phrase (issue #385): the backend, the sync
+    /// choice, the backup confirmation, and reinstall detection. Needs `local`.
+    fn key_storage_status(&self) -> Result<KeyStorageStatus, BingleJsiError>;
+
+    /// Keep the recovery phrase on this device only (`true`) or sync it through iCloud Keychain
+    /// (`false`), recording that the user has chosen (issue #385). Turning a synced key device-only
+    /// removes it from the user's other devices, so it is refused until
+    /// [`mark_phrase_backed_up`](Self::mark_phrase_backed_up). `KeyStorageUnavailable` with the file
+    /// store.
+    fn set_device_only(&self, enabled: bool) -> Result<(), BingleJsiError>;
+
+    /// Record that the user confirmed the recovery phrase is backed up (issue #385).
+    /// `KeyStorageUnavailable` with the file store.
+    fn mark_phrase_backed_up(&self) -> Result<(), BingleJsiError>;
+
+    /// After a reinstall, make the key the Keychain still holds the current keypair, without the
+    /// user entering the phrase, and save (issue #385). `KeyStorageUnavailable` with the file store.
+    fn restore_stored_key(&self) -> Result<Keypair, BingleJsiError>;
+
+    /// Delete this device's stored keys (current and recovery) and the state file (issue #385). When
+    /// the key is synced this removes it from every device on the user's Apple Account, so the app
+    /// must say so first. Contacts and messages stay in memory until the app re-initialises, which it
+    /// should do next. `KeyStorageUnavailable` with the file store.
+    fn remove_key_from_device(&self) -> Result<(), BingleJsiError>;
 
     /// Ask the host to begin iOS push registration (bingle_notify #i). Invokes the registered
     /// [`PushRegistrationCallback`] so the thin Swift bridge performs the platform calls

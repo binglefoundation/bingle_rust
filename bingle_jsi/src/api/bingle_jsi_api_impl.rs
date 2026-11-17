@@ -13,9 +13,10 @@ use crate::api::callback::{
 use crate::api::error::BingleJsiError;
 use crate::api::types::{
     BingleJsiConfig, BingleMessage, Contact, ContactSource, DeliveryRoute, FailureKind,
-    HandleLookupMatch, HandleLookupPartialResult, InetSocketAddress, Keypair, KeypairStatus,
-    KeypairStatusResponse, MailboxCheckStage, Message, MessagingSettings, NatType, NatTypeResponse,
-    NetworkSourceKey, NotifyRegisterRequest, VersionInfo,
+    HandleLookupMatch, HandleLookupPartialResult, InetSocketAddress, KeyStorageBackend,
+    KeyStorageStatus, Keypair, KeypairStatus, KeypairStatusResponse, MailboxCheckStage, Message,
+    MessagingSettings, NatType, NatTypeResponse, NetworkSourceKey, NotifyRegisterRequest,
+    VersionInfo,
 };
 use algo_ops::error::AlgoErrorKind;
 use bingle_core::api::bingle_api::{
@@ -36,7 +37,8 @@ use bingle_local::api::pending_sender::{
     LocalOutboundStore, MessageDelivery, PendingSender, PendingSenderOptions,
 };
 use bingle_local::api::{
-    MailboxConfig, MailboxPoll, MailboxPollObserver, MailboxPollProgress, MailboxPollStatus,
+    FileKeyStore, KeyStore, MailboxConfig, MailboxPoll, MailboxPollObserver, MailboxPollProgress,
+    MailboxPollStatus,
 };
 // Shared outbound-send retry policy (issue #82). Re-exported so existing
 // `bingle_jsi::api::bingle_jsi_api_impl::{is_transient_send_failure, pending_failure_reason}`
@@ -391,6 +393,63 @@ fn save_strictly(
         .map_err(|e| BingleJsiError::InternalError {
             reason: format!("couldn't save {what}: {e}"),
         })
+}
+
+/// The key store for the state file at `path`, from the `key_storage` setting (issue #385):
+/// `"keychain"` (the default on iOS, refused elsewhere) or `"file"` (the default elsewhere).
+fn choose_key_store(
+    key_storage: Option<&str>,
+    path: &std::path::Path,
+) -> Result<Arc<dyn KeyStore>, BingleJsiError> {
+    let wanted = key_storage.unwrap_or(if cfg!(target_os = "ios") {
+        "keychain"
+    } else {
+        "file"
+    });
+    match wanted {
+        "file" => Ok(Arc::new(FileKeyStore)),
+        "keychain" => keychain_store(path),
+        other => Err(BingleJsiError::InvalidRequest {
+            reason: format!("key_storage must be \"keychain\" or \"file\", not \"{other}\""),
+        }),
+    }
+}
+
+#[cfg(target_os = "ios")]
+fn keychain_store(path: &std::path::Path) -> Result<Arc<dyn KeyStore>, BingleJsiError> {
+    Ok(Arc::new(
+        bingle_local::api::keychain::KeychainKeyStore::for_state_file(path),
+    ))
+}
+
+#[cfg(not(target_os = "ios"))]
+fn keychain_store(_path: &std::path::Path) -> Result<Arc<dyn KeyStore>, BingleJsiError> {
+    Err(BingleJsiError::InvalidRequest {
+        reason: "key_storage \"keychain\" is only available on iOS".to_string(),
+    })
+}
+
+/// A key store error from bingle_local as a JSI error: a missing backup confirmation or a missing
+/// key is the caller's to fix; anything else is a storage failure.
+fn key_store_error_to_jsi(e: BingleError) -> BingleJsiError {
+    let reason = e.to_string();
+    if reason.starts_with("key storage failed") {
+        BingleJsiError::InternalError { reason }
+    } else {
+        BingleJsiError::InvalidRequest { reason }
+    }
+}
+
+/// `KeyStorageUnavailable` unless this instance keeps the phrase in the Keychain.
+fn require_keychain(local: &dyn BingleLocalApi, operation: &str) -> Result<(), BingleJsiError> {
+    let status = local.key_storage_status().map_err(key_store_error_to_jsi)?;
+    if status.backend == bingle_local::api::KeyStorageBackend::Keychain {
+        Ok(())
+    } else {
+        Err(BingleJsiError::KeyStorageUnavailable {
+            reason: format!("{operation} needs the Keychain key store (key_storage \"keychain\")"),
+        })
+    }
 }
 
 /// The error for an operation that needs the current keypair when there is none.
@@ -1019,7 +1078,9 @@ impl BingleJsiApiImpl {
             // Fail loudly if store-and-forward is gated on with no reachable Mailbox (story #244).
             cfg.validate_store_and_forward()
                 .map_err(|reason| BingleJsiError::InvalidRequest { reason })?;
-            let mut impl_api = BingleApiLocalImpl::new(cfg);
+            // Where the recovery phrase is kept (issue #385): the iOS Keychain by default on iOS.
+            let key_store = choose_key_store(config.key_storage.as_deref(), path)?;
+            let mut impl_api = BingleApiLocalImpl::with_key_store(cfg, key_store);
             if path.exists()
                 && let Err(e) = impl_api.load(path.to_string_lossy().as_ref())
             {
@@ -1996,6 +2057,70 @@ impl BingleJsiApi for BingleJsiApiImpl {
             id: kp.id,
             passphrase: kp.passphrase,
         })
+    }
+
+    fn key_storage_status(&self) -> Result<KeyStorageStatus, BingleJsiError> {
+        let guard = local_api_guard(&self.local_api)?;
+        let status = guard.key_storage_status().map_err(key_store_error_to_jsi)?;
+        Ok(KeyStorageStatus {
+            backend: match status.backend {
+                bingle_local::api::KeyStorageBackend::File => KeyStorageBackend::File,
+                bingle_local::api::KeyStorageBackend::Keychain => KeyStorageBackend::Keychain,
+            },
+            device_only: status.device_only,
+            sync_choice_pending: status.sync_choice_pending,
+            phrase_backed_up: status.phrase_backed_up,
+            reinstall_detected: status.reinstall_detected,
+            stored_address: status.stored_address,
+            install_count: status.install_count,
+            last_install_at: status.last_install_at,
+        })
+    }
+
+    fn set_device_only(&self, enabled: bool) -> Result<(), BingleJsiError> {
+        let guard = local_api_guard(&self.local_api)?;
+        require_keychain(guard.as_ref(), "set_device_only")?;
+        guard
+            .set_device_only(enabled)
+            .map_err(key_store_error_to_jsi)
+    }
+
+    fn mark_phrase_backed_up(&self) -> Result<(), BingleJsiError> {
+        let guard = local_api_guard(&self.local_api)?;
+        require_keychain(guard.as_ref(), "mark_phrase_backed_up")?;
+        guard
+            .mark_phrase_backed_up()
+            .map_err(key_store_error_to_jsi)
+    }
+
+    fn restore_stored_key(&self) -> Result<Keypair, BingleJsiError> {
+        let mut guard = local_api_guard(&self.local_api)?;
+        require_keychain(guard.as_ref(), "restore_stored_key")?;
+        let kp = guard.restore_stored_key().map_err(key_store_error_to_jsi)?;
+        save_strictly(guard.as_ref(), &self.local_file, "the restored keypair")?;
+        Ok(Keypair {
+            id: kp.id,
+            passphrase: kp.passphrase,
+        })
+    }
+
+    fn remove_key_from_device(&self) -> Result<(), BingleJsiError> {
+        let mut guard = local_api_guard(&self.local_api)?;
+        require_keychain(guard.as_ref(), "remove_key_from_device")?;
+        guard
+            .remove_key_from_device()
+            .map_err(key_store_error_to_jsi)?;
+        if let Some(path) = &self.local_file
+            && path.exists()
+        {
+            std::fs::remove_file(path).map_err(|e| BingleJsiError::InternalError {
+                reason: format!(
+                    "the keys were removed, but the state file {} wasn't: {e}",
+                    path.display()
+                ),
+            })?;
+        }
+        Ok(())
     }
 
     fn request_push_registration(&self) -> Result<(), BingleJsiError> {
