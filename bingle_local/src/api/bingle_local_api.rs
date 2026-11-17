@@ -367,6 +367,27 @@ pub trait BingleLocalApi: Send + Sync {
     /// clear it. Errors if no recovery is pending.
     fn complete_recovery_keypair(&mut self) -> Result<Keypair, BingleError>;
 
+    /// What the key store reports about the stored recovery phrase (issue #385): which store, the
+    /// sync choice, the backup confirmation, and reinstall detection.
+    fn key_storage_status(&self) -> Result<crate::api::KeyStorageStatus, BingleError>;
+
+    /// Keep the phrase on this device only (`true`) or sync it through iCloud Keychain (`false`),
+    /// and record that the user has chosen. Turning a synced key device-only removes it from the
+    /// user's other devices, so it is refused until [`mark_phrase_backed_up`](Self::mark_phrase_backed_up).
+    /// Errors with a store that keeps the phrase in the state file.
+    fn set_device_only(&self, enabled: bool) -> Result<(), BingleError>;
+
+    /// Record that the user confirmed the recovery phrase is backed up.
+    fn mark_phrase_backed_up(&self) -> Result<(), BingleError>;
+
+    /// Make the key the store still holds after a reinstall the current keypair, without the user
+    /// entering the phrase. Errors if no key is stored.
+    fn restore_stored_key(&mut self) -> Result<Keypair, BingleError>;
+
+    /// Delete the stored keys (current and recovery) from the key store and forget the keypair.
+    /// A synced key is removed from the user's other devices too. The caller deletes the state file.
+    fn remove_key_from_device(&mut self) -> Result<(), BingleError>;
+
     /// Register the current keypair with Bingle (requires credited funds).
     /// Returns Ok(()) on success, or Err(message) on failure.
     /// Parameter:

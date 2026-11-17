@@ -7,9 +7,10 @@ use crate::api::notify::{
 };
 use crate::api::sidewinder::MailboxConfig;
 use crate::api::{
-    BingleLocalApi, ChainRegistrationOps, Contact, ContactSource, DeliveryRoute,
-    IgnoreMailboxPollProgress, Keypair, KeypairStatus, MailboxPoll, MailboxPollObserver, Message,
-    MessagingSettings, REQUIRED_ALGO, legacy_message_id, new_message_id, run_registration,
+    BingleLocalApi, ChainRegistrationOps, Contact, ContactSource, DeliveryRoute, FileKeyStore,
+    IgnoreMailboxPollProgress, KeySlot, KeyStorageStatus, KeyStore, KeyStoreError, Keypair,
+    KeypairStatus, MailboxPoll, MailboxPollObserver, Message, MessagingSettings, REQUIRED_ALGO,
+    legacy_message_id, new_message_id, run_registration,
 };
 use algo_ops::error::AlgoErrorKind;
 use algo_ops::{AlgoChainConfig, AlgoOps};
@@ -241,6 +242,15 @@ pub fn keypair_status_from_facts(
     }
 }
 
+/// A keypair as the state file stores it. The phrase is absent once the key store holds it
+/// (issue #385); a file written before then, or by [`FileKeyStore`], carries it.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct PersistedKeypair {
+    id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    passphrase: Option<String>,
+}
+
 /// The local API: persisted keypair, contacts and message history, plus the send-side
 /// store-and-forward and notify behaviour.
 ///
@@ -265,12 +275,21 @@ impl std::ops::Deref for BingleApiLocalImpl {
 const NETWORK_CHECK_TTL: std::time::Duration = std::time::Duration::from_secs(5);
 
 impl BingleApiLocalImpl {
-    /// Create a new local API implementation from `config`.
+    /// Create a new local API implementation from `config`, keeping the recovery phrase in the
+    /// state file ([`FileKeyStore`]).
     ///
     /// Starts with no keypair, an empty contact store and message queue, and the default HTTP
     /// notify posters. Generate or import a keypair before calling the on-chain operations.
     pub fn new(config: LocalApiConfig) -> Self {
-        let state = LocalState::new(config);
+        Self::with_key_store(config, Arc::new(FileKeyStore))
+    }
+
+    /// Create a new local API implementation from `config` whose recovery phrase is kept by
+    /// `key_store`, such as the iOS Keychain (issue #385). With a store that doesn't keep the
+    /// phrase in the state file, the file holds only the keypair's address once the store has
+    /// confirmed it holds the phrase.
+    pub fn with_key_store(config: LocalApiConfig, key_store: Arc<dyn KeyStore>) -> Self {
+        let state = LocalState::new(config, key_store);
         Self {
             state: Arc::new(state),
         }
@@ -880,19 +899,125 @@ impl BingleApiLocalImpl {
         Ok(forwarded)
     }
 
-    /// `&self` core of [`BingleLocalApi::import_keypair`].
-    pub fn import_keypair_shared(&self, passphrase: String) -> Result<Keypair, BingleError> {
-        tracing::info!("[BingleLocalApi] Importing keypair from passphrase");
-        // Validate the mnemonic and derive the account id. The passphrase itself is never logged.
-        let id = AlgoOps::address_from_passphrase(&passphrase)
-            .map_err(|e| BingleError::Other(e.to_string()))?;
-        let kp = Keypair { id, passphrase };
-        tracing::info!("[BingleLocalApi] Imported keypair with id: {}", kp.id);
+    /// Writes `keypair`'s phrase to the key store for `slot`, reads it back, and records that the
+    /// store holds it, so `save` can leave it out of the state file (issue #385). Does nothing for
+    /// a store that keeps the phrase in the state file.
+    fn store_phrase(&self, slot: KeySlot, keypair: &Keypair) -> Result<(), KeyStoreError> {
+        if self.key_store.keeps_phrase_in_state_file() {
+            return Ok(());
+        }
+        self.key_store.store(slot, keypair)?;
+        match self.key_store.fetch(slot)? {
+            Some(stored) if stored == *keypair => {
+                if let Ok(mut held) = self.phrase_in_store.lock() {
+                    held.insert(slot);
+                }
+                Ok(())
+            }
+            _ => Err(KeyStoreError::Storage(
+                "the stored key did not read back the same".to_string(),
+            )),
+        }
+    }
+
+    /// Forgets that the key store holds `slot`'s phrase, so `save` writes it to the file again.
+    fn forget_stored_phrase(&self, slot: KeySlot) {
+        if let Ok(mut held) = self.phrase_in_store.lock() {
+            held.remove(&slot);
+        }
+    }
+
+    /// The keypair for `slot` from a loaded state file, and whether its phrase was just moved from
+    /// the file into the key store (issue #385).
+    ///
+    /// - A phrase in the file stays in use. With a store that keeps phrases out of the file it is
+    ///   copied into the store; if that fails, it stays in the file and the failure is logged, so
+    ///   the key is never lost.
+    /// - A keypair saved without its phrase takes the phrase from the store. If the store doesn't
+    ///   have it (for example, a state file restored from a backup to another device), there is no
+    ///   keypair, and the user restores with their recovery phrase.
+    fn resolve_loaded_key(
+        &self,
+        slot: KeySlot,
+        persisted: Option<PersistedKeypair>,
+    ) -> (Option<Keypair>, bool) {
+        let Some(persisted) = persisted else {
+            return (None, false);
+        };
+        match persisted.passphrase {
+            Some(passphrase) => {
+                let kp = Keypair {
+                    id: persisted.id,
+                    passphrase,
+                };
+                if self.key_store.keeps_phrase_in_state_file() {
+                    return (Some(kp), false);
+                }
+                match self.store_phrase(slot, &kp) {
+                    Ok(()) => {
+                        tracing::info!(
+                            "[load] moved the {:?} key for {} out of the state file",
+                            slot,
+                            kp.id
+                        );
+                        (Some(kp), true)
+                    }
+                    Err(e) => {
+                        tracing::error!(
+                            "[load] couldn't move the {:?} key for {} into the key store; keeping it in the state file: {}",
+                            slot,
+                            kp.id,
+                            e
+                        );
+                        (Some(kp), false)
+                    }
+                }
+            }
+            None => match self.key_store.fetch(slot) {
+                Ok(Some(kp)) if kp.id == persisted.id => {
+                    if let Ok(mut held) = self.phrase_in_store.lock() {
+                        held.insert(slot);
+                    }
+                    (Some(kp), false)
+                }
+                Ok(_) => {
+                    tracing::warn!(
+                        "[load] the {:?} key for {} is not in the key store",
+                        slot,
+                        persisted.id
+                    );
+                    (None, false)
+                }
+                Err(e) => {
+                    tracing::error!(
+                        "[load] couldn't read the {:?} key for {} from the key store: {}",
+                        slot,
+                        persisted.id,
+                        e
+                    );
+                    (None, false)
+                }
+            },
+        }
+    }
+
+    /// Whether the state file should carry `slot`'s phrase.
+    fn phrase_goes_in_file(&self, slot: KeySlot) -> bool {
+        self.key_store.keeps_phrase_in_state_file()
+            || !self
+                .phrase_in_store
+                .lock()
+                .map(|held| held.contains(&slot))
+                .unwrap_or(false)
+    }
+
+    /// Makes `kp` the current keypair and clears everything cached for the previous one.
+    fn set_current_keypair(&self, kp: &Keypair) {
         if let Ok(mut guard) = self.keypair.lock() {
             *guard = Some(kp.clone());
         }
-        // The imported account's on-chain state is unknown (it may already be registered), so
-        // clear the memoized ACTIVE handle/status and let keypair_status re-resolve from chain.
+        // The account's on-chain state is unknown (it may already be registered), so clear the
+        // memoized ACTIVE handle/status and let keypair_status re-resolve from chain.
         if let Ok(mut g) = self.own_handle.lock() {
             *g = None;
         }
@@ -909,6 +1034,20 @@ impl BingleApiLocalImpl {
         if let Ok(mut ops_guard) = self.algo_ops.lock() {
             *ops_guard = None;
         }
+    }
+
+    /// `&self` core of [`BingleLocalApi::import_keypair`].
+    pub fn import_keypair_shared(&self, passphrase: String) -> Result<Keypair, BingleError> {
+        tracing::info!("[BingleLocalApi] Importing keypair from passphrase");
+        // Validate the mnemonic and derive the account id. The passphrase itself is never logged.
+        let id = AlgoOps::address_from_passphrase(&passphrase)
+            .map_err(|e| BingleError::Other(e.to_string()))?;
+        let kp = Keypair { id, passphrase };
+        tracing::info!("[BingleLocalApi] Imported keypair with id: {}", kp.id);
+        // Keep the phrase before making it current, so a key that can't be stored is never used.
+        self.store_phrase(KeySlot::Current, &kp)
+            .map_err(|e| BingleError::Other(format!("couldn't store the imported key: {e}")))?;
+        self.set_current_keypair(&kp);
         Ok(kp)
     }
 }
@@ -919,27 +1058,12 @@ impl BingleLocalApi for BingleApiLocalImpl {
         let (id, passphrase) = AlgoOps::generate_keypair();
         let kp = Keypair { id, passphrase };
         tracing::info!("[BingleLocalApi] Generated keypair with id: {}", kp.id);
-        if let Ok(mut guard) = self.keypair.lock() {
-            *guard = Some(kp.clone());
-        }
-        // A brand-new keypair is not yet ACTIVE: clear the memoized ACTIVE handle/status so
-        // keypair_status re-resolves from chain until this account registers.
-        if let Ok(mut g) = self.own_handle.lock() {
-            *g = None;
-        }
-        if let Ok(mut g) = self.own_handle_app_id.lock() {
-            *g = None;
-        }
-        if let Ok(mut g) = self.live_app_confirmed.lock() {
-            *g = None;
-        }
-        if let Ok(mut g) = self.last_status.lock() {
-            *g = None;
-        }
-        // Invalidate cached AlgoOps since keypair changed
-        if let Ok(mut ops_guard) = self.algo_ops.lock() {
-            *ops_guard = None;
-        }
+        // Keep the phrase before making it current, so a key that can't be stored is never used.
+        self.store_phrase(KeySlot::Current, &kp)
+            .map_err(|e| BingleError::Other(format!("couldn't store the new key: {e}")))?;
+        // A brand-new keypair is not yet ACTIVE: set_current_keypair clears the memoized ACTIVE
+        // handle/status so keypair_status re-resolves from chain until this account registers.
+        self.set_current_keypair(&kp);
         Ok(kp)
     }
 
@@ -966,6 +1090,8 @@ impl BingleLocalApi for BingleApiLocalImpl {
             current.id,
             kp.id
         );
+        self.store_phrase(KeySlot::Recovery, &kp)
+            .map_err(|e| BingleError::Other(format!("couldn't store the recovery key: {e}")))?;
         *pending = Some(kp.clone());
         Ok(kp)
     }
@@ -985,8 +1111,68 @@ impl BingleLocalApi for BingleApiLocalImpl {
         if let Ok(mut g) = self.recovery_keypair.lock() {
             *g = None;
         }
+        // The recovery key is now the current one, so its separate copy is no longer needed.
+        if let Err(e) = self.key_store.delete(KeySlot::Recovery) {
+            tracing::warn!(
+                "[BingleLocalApi] couldn't remove the stored recovery key: {}",
+                e
+            );
+        }
+        self.forget_stored_phrase(KeySlot::Recovery);
         tracing::info!("[BingleLocalApi] Completed recovery to {}", kp.id);
         Ok(kp)
+    }
+
+    fn key_storage_status(&self) -> Result<KeyStorageStatus, BingleError> {
+        self.key_store
+            .status()
+            .map_err(|e| BingleError::Other(e.to_string()))
+    }
+
+    fn set_device_only(&self, enabled: bool) -> Result<(), BingleError> {
+        self.key_store
+            .set_device_only(enabled)
+            .map_err(|e| BingleError::Other(e.to_string()))
+    }
+
+    fn mark_phrase_backed_up(&self) -> Result<(), BingleError> {
+        self.key_store
+            .mark_phrase_backed_up()
+            .map_err(|e| BingleError::Other(e.to_string()))
+    }
+
+    fn restore_stored_key(&mut self) -> Result<Keypair, BingleError> {
+        let kp = self
+            .key_store
+            .fetch(KeySlot::Current)
+            .map_err(|e| BingleError::Other(e.to_string()))?
+            .ok_or_else(|| BingleError::Other(KeyStoreError::NoKey.to_string()))?;
+        if let Ok(mut held) = self.phrase_in_store.lock() {
+            held.insert(KeySlot::Current);
+        }
+        self.set_current_keypair(&kp);
+        tracing::info!("[BingleLocalApi] Restored the stored key for {}", kp.id);
+        Ok(kp)
+    }
+
+    fn remove_key_from_device(&mut self) -> Result<(), BingleError> {
+        for slot in [KeySlot::Current, KeySlot::Recovery] {
+            self.key_store
+                .delete(slot)
+                .map_err(|e| BingleError::Other(e.to_string()))?;
+            self.forget_stored_phrase(slot);
+        }
+        if let Ok(mut g) = self.recovery_keypair.lock() {
+            *g = None;
+        }
+        if let Ok(mut g) = self.keypair.lock() {
+            *g = None;
+        }
+        if let Ok(mut ops_guard) = self.algo_ops.lock() {
+            *ops_guard = None;
+        }
+        tracing::info!("[BingleLocalApi] Removed the key from this device");
+        Ok(())
     }
 
     fn register_keypair(&self, handle: String) -> Result<bool, BingleError> {
@@ -1440,10 +1626,10 @@ impl BingleLocalApi for BingleApiLocalImpl {
         }
         #[derive(Debug, Clone, Serialize, Deserialize)]
         struct LocalState {
-            keypair: Option<Keypair>,
+            keypair: Option<PersistedKeypair>,
             // A handle clash recovery's pending keypair (issue #344); omitted when none is pending.
             #[serde(default, skip_serializing_if = "Option::is_none")]
-            recovery_keypair: Option<Keypair>,
+            recovery_keypair: Option<PersistedKeypair>,
             contacts: Vec<ContactEntry>,
             messages: Vec<Message>,
             // The registered handle, memoized once ACTIVE so status survives restart with no
@@ -1526,9 +1712,14 @@ impl BingleLocalApi for BingleApiLocalImpl {
             })
             .unwrap_or_default();
 
+        // The phrase goes in the file only while the key store doesn't hold it (issue #385).
+        let persist = |slot: KeySlot, kp: Keypair| PersistedKeypair {
+            passphrase: self.phrase_goes_in_file(slot).then_some(kp.passphrase),
+            id: kp.id,
+        };
         let state = LocalState {
-            keypair,
-            recovery_keypair,
+            keypair: keypair.map(|kp| persist(KeySlot::Current, kp)),
+            recovery_keypair: recovery_keypair.map(|kp| persist(KeySlot::Recovery, kp)),
             contacts: contacts_vec,
             messages,
             own_handle,
@@ -1603,9 +1794,9 @@ impl BingleLocalApi for BingleApiLocalImpl {
         #[derive(Debug, Clone, Serialize, Deserialize)]
         struct LocalState {
             #[serde(default)]
-            keypair: Option<Keypair>,
+            keypair: Option<PersistedKeypair>,
             #[serde(default)]
-            recovery_keypair: Option<Keypair>,
+            recovery_keypair: Option<PersistedKeypair>,
             #[serde(default)]
             contacts: Vec<ContactEntry>,
             #[serde(default)]
@@ -1635,15 +1826,24 @@ impl BingleLocalApi for BingleApiLocalImpl {
             }
         };
 
+        // Resolve each keypair's phrase: from the file (moving it into the key store when the
+        // store keeps it out of the file), or from the key store (issue #385).
+        if let Ok(mut held) = self.phrase_in_store.lock() {
+            held.clear();
+        }
+        let (keypair, moved_current) = self.resolve_loaded_key(KeySlot::Current, state.keypair);
+        let (recovery_keypair, moved_recovery) =
+            self.resolve_loaded_key(KeySlot::Recovery, state.recovery_keypair);
+
         // Replace current state under locks
         if let Ok(mut k) = self.keypair.lock() {
-            *k = state.keypair.clone();
+            *k = keypair;
         } else {
             tracing::error!("[load] Failed to lock keypair: mutex poisoned");
             return Err(BingleError::Other("mutex poisoned".to_string()));
         }
         if let Ok(mut k) = self.recovery_keypair.lock() {
-            *k = state.recovery_keypair.clone();
+            *k = recovery_keypair;
         } else {
             tracing::error!("[load] Failed to lock recovery keypair: mutex poisoned");
             return Err(BingleError::Other("mutex poisoned".to_string()));
@@ -1700,6 +1900,18 @@ impl BingleLocalApi for BingleApiLocalImpl {
         }
         if let Ok(mut ls) = self.last_status.lock() {
             *ls = None;
+        }
+
+        // A phrase just moved into the key store comes out of the file now (issue #385). If this
+        // save fails, the next one does it; the phrase is safe in the store either way.
+        if (moved_current || moved_recovery)
+            && let Err(e) = self.save(path)
+        {
+            tracing::warn!(
+                "[load] couldn't rewrite '{}' without the phrase yet: {}",
+                path,
+                e
+            );
         }
 
         tracing::info!("[BingleLocalApi] State loaded successfully from: {}", path);

@@ -6,7 +6,7 @@
 
 use super::LocalApiConfig;
 use crate::api::notify::{AlertPoster, HttpAlertPoster, HttpRegisterPoster, RegisterPoster};
-use crate::api::{ContactSource, Keypair, KeypairStatus, Message};
+use crate::api::{ContactSource, KeySlot, KeyStore, Keypair, KeypairStatus, Message};
 use algo_ops::AlgoOps;
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, RwLock, RwLockReadGuard};
@@ -19,6 +19,13 @@ pub struct LocalState {
     // (issue #344). Persisted, since once the recovery group is signed the current account may
     // already have closed into it.
     pub(super) recovery_keypair: Mutex<Option<Keypair>>,
+    // Where the recovery phrase is kept (issue #385): the state file, or a platform store such as
+    // the iOS Keychain.
+    pub(super) key_store: Arc<dyn KeyStore>,
+    // The slots whose phrase the key store is known to hold, because it was written and read back
+    // this session. `save` leaves the phrase out of the state file only for these, so a failed
+    // Keychain write never loses a key.
+    pub(super) phrase_in_store: Mutex<HashSet<KeySlot>>,
     pub(super) algo_ops: Mutex<Option<AlgoOps>>, // cache constructed AlgoOps for current keypair
     // Read per operation; the store-and-forward and notify setters swap fields live (story #242).
     pub(super) config: RwLock<LocalApiConfig>,
@@ -78,12 +85,14 @@ pub struct LocalState {
 }
 
 impl LocalState {
-    /// Fresh state: no keypair, an empty contact store and message queue, and the default HTTP
-    /// notify posters.
-    pub(super) fn new(config: LocalApiConfig) -> Self {
+    /// Fresh state: no keypair, an empty contact store and message queue, the default HTTP notify
+    /// posters, and `key_store` for the recovery phrase.
+    pub(super) fn new(config: LocalApiConfig, key_store: Arc<dyn KeyStore>) -> Self {
         Self {
             keypair: Mutex::new(None),
             recovery_keypair: Mutex::new(None),
+            key_store,
+            phrase_in_store: Mutex::new(HashSet::new()),
             algo_ops: Mutex::new(None),
             config: RwLock::new(config),
             contacts: Mutex::new(HashMap::new()),

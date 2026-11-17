@@ -71,6 +71,21 @@ impl BingleLocalApi for ScriptedMailboxLocal {
     fn complete_recovery_keypair(&mut self) -> Result<Keypair, BingleError> {
         self.inner.complete_recovery_keypair()
     }
+    fn key_storage_status(&self) -> Result<bingle_local::api::KeyStorageStatus, BingleError> {
+        self.inner.key_storage_status()
+    }
+    fn set_device_only(&self, enabled: bool) -> Result<(), BingleError> {
+        self.inner.set_device_only(enabled)
+    }
+    fn mark_phrase_backed_up(&self) -> Result<(), BingleError> {
+        self.inner.mark_phrase_backed_up()
+    }
+    fn restore_stored_key(&mut self) -> Result<Keypair, BingleError> {
+        self.inner.restore_stored_key()
+    }
+    fn remove_key_from_device(&mut self) -> Result<(), BingleError> {
+        self.inner.remove_key_from_device()
+    }
     fn register_keypair(&self, handle: String) -> Result<bool, BingleError> {
         self.inner.register_keypair(handle)
     }
