@@ -478,7 +478,9 @@ pub trait BingleLocalApi: Send + Sync {
     /// Drain this user's Sidewinder Mailbox, decrypting and storing each held store-and-forward
     /// message, and return the batch read this poll sorted by sent time (store-and-forward epic #200,
     /// story #215). A no-op returning an empty vector when the receive toggle is off or no Sidewinder
-    /// node is configured. `FIFO_REMOVE_HEAD` reads-and-drops, so a delivered message is not re-read.
+    /// node is configured. Each read drops what it returns from the node, so a delivered message is
+    /// not re-read. It reads in batches with `take` where the node has it (Sidewinder #626), one
+    /// transaction per batch, and otherwise one `pop` per message.
     ///
     /// The decrypt/store/sort logic all lives here (in Rust); the caller only decides *when* to check.
     /// The `bingle_jsi` client drives it from the app foreground lifecycle: an immediate poll on
