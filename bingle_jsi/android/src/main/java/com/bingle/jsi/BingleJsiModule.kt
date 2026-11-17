@@ -1138,7 +1138,9 @@ class ListeningCallbackBridge(private val reactContext: ReactApplicationContext)
  * Bridges uniffi's MailboxCheckCallback to React Native "onMailboxChecked" events (issue #358).
  *
  * Each [onMailboxChecked] invocation sends an "onMailboxChecked" event with the number of
- * messages the store-and-forward Mailbox check read.
+ * messages the store-and-forward Mailbox check read. Each [onMailboxProgress] invocation sends an
+ * "onMailboxProgress" event with the check's stage ("connecting", "reading" or "unreachable"), the
+ * messages read so far, and for "unreachable" the seconds until the retry (bingle_rust #447).
  */
 class MailboxCheckCallbackBridge(private val reactContext: ReactApplicationContext) : MailboxCheckCallback {
     override fun onMailboxChecked(read: UInt) {
@@ -1148,6 +1150,26 @@ class MailboxCheckCallbackBridge(private val reactContext: ReactApplicationConte
         reactContext
             .getJSModule(com.facebook.react.modules.core.DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
             .emit("onMailboxChecked", body)
+    }
+
+    override fun onMailboxProgress(stage: MailboxCheckStage, read: UInt, retryInSecs: UInt?) {
+        val body = Arguments.createMap()
+        body.putString(
+            "stage",
+            when (stage) {
+                MailboxCheckStage.CONNECTING -> "connecting"
+                MailboxCheckStage.READING -> "reading"
+                MailboxCheckStage.UNREACHABLE -> "unreachable"
+            },
+        )
+        body.putInt("read", read.toInt())
+        if (retryInSecs != null) {
+            body.putInt("retry_in_secs", retryInSecs.toInt())
+        }
+
+        reactContext
+            .getJSModule(com.facebook.react.modules.core.DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+            .emit("onMailboxProgress", body)
     }
 }
 

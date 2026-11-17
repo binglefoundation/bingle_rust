@@ -362,3 +362,18 @@ pub struct BingleJsiConfig {
     /// proven in the app, this flag and the legacy loop are deprecated and then removed.
     pub send_pending_messages: Option<bool>,
 }
+
+/// How far a store-and-forward Mailbox check has got (bingle_rust #447), reported to
+/// [`MailboxCheckCallback::on_mailbox_progress`](crate::api::callback::MailboxCheckCallback::on_mailbox_progress)
+/// so a host can show progress instead of a bare spinner. A check ends with
+/// [`on_mailbox_checked`](crate::api::callback::MailboxCheckCallback::on_mailbox_checked) once it
+/// has read the Mailbox until it was empty.
+#[derive(uniffi::Enum, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MailboxCheckStage {
+    /// Connecting to a Mailbox node: resolving it from the chain and opening mutual TLS.
+    Connecting,
+    /// Reading the next message. Each read is a sidechain transaction that waits to finalise.
+    Reading,
+    /// The node could not be reached, or failed partway; the check is retried after a delay.
+    Unreachable,
+}

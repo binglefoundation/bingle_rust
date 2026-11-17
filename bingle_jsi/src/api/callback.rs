@@ -1,4 +1,4 @@
-use crate::api::types::BingleMessage;
+use crate::api::types::{BingleMessage, MailboxCheckStage};
 
 /// Callback interface for incoming messages.
 ///
@@ -65,13 +65,24 @@ pub trait ListeningCallback: Send + Sync {
 ///
 /// Implement this trait on the React Native / TypeScript side to learn when a store-and-forward
 /// Mailbox check has finished, for example to clear a "checking for messages" indicator when
-/// nothing arrived. Register via `set_mailbox_check_callback`.
+/// nothing arrived, and to follow its progress. Register via `set_mailbox_check_callback`.
 #[uniffi::export(callback_interface)]
 pub trait MailboxCheckCallback: Send + Sync {
     /// Called after each Mailbox poll that reached the node and read it until it was empty.
     ///
     /// Parameters:
     /// - read: the number of new messages read by this check (0 when there were none); each one
-    ///   has already been passed to the message callback
+    ///   has already been passed to the message callback, as it was read
     fn on_mailbox_checked(&self, read: u32);
+
+    /// Called as a Mailbox check progresses (bingle_rust #447): when it starts connecting to the
+    /// node, before each read, and when the node could not be reached. Each message read is passed
+    /// to the message callback as soon as it is read, before the check finishes.
+    ///
+    /// Parameters:
+    /// - stage: how far the check has got
+    /// - read: the number of new messages read so far by this check
+    /// - retry_in_secs: for [`MailboxCheckStage::Unreachable`], how long until the check is retried;
+    ///   `None` for the other stages
+    fn on_mailbox_progress(&self, stage: MailboxCheckStage, read: u32, retry_in_secs: Option<u32>);
 }

@@ -1,7 +1,8 @@
 //! The store-and-forward backstop Mailbox poller fires the message callback for each message it
 //! reads (issue #307), so a host that refreshes on `onMessage` shows Mailbox messages at once. It
 //! also polls at once when foregrounded while running, retries soon after a node it could not
-//! reach, and reports each check that reached the node to the host (issue #358).
+//! reach, and reports each check that reached the node to the host (issue #358). Each message and
+//! each step of a check reaches the host as it happens, not after the drain (bingle_rust #447).
 //!
 //! A stub local API returns scripted poll outcomes (delegating everything else to a real
 //! `BingleApiLocalImpl`), so the poller runs without a Sidewinder node.
@@ -13,32 +14,40 @@ use bingle_jsi::api::bingle_jsi_api_impl::{
     BingleJsiApiImpl, MAILBOX_RETRY_INITIAL, mailbox_message_to_bingle, mailbox_retry_delay,
 };
 use bingle_jsi::api::callback::{MailboxCheckCallback, MessageCallback};
-use bingle_jsi::api::types::{BingleMessage, DeliveryRoute};
+use bingle_jsi::api::types::{BingleMessage, DeliveryRoute, MailboxCheckStage};
 use bingle_local::api::bingle_local_api::BingleLocalApi;
 use bingle_local::api::bingle_local_api_impl::{BingleApiLocalImpl, LocalApiConfig};
 use bingle_local::api::{
-    Contact, ContactSource, DeliveryRoute as LocalRoute, Keypair, KeypairStatus, MailboxPoll,
-    MailboxPollStatus, Message, MessagingSettings,
+    Contact, ContactSource, DeliveryRoute as LocalRoute, IgnoreMailboxPollProgress, Keypair,
+    KeypairStatus, MailboxPoll, MailboxPollObserver, MailboxPollProgress, MailboxPollStatus,
+    Message, MessagingSettings,
 };
 use std::collections::VecDeque;
-use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 /// A local API whose polls return scripted outcomes (then an empty, drained Mailbox), recording
 /// when each poll ran. Every other method delegates to a real in-memory `BingleApiLocalImpl`.
+/// Clones share their state, as `BingleApiLocalImpl`'s do, so one can be the JSI's locked handle and
+/// another its lock-free Mailbox reader (bingle_rust #447).
+#[derive(Clone)]
 struct ScriptedMailboxLocal {
     inner: BingleApiLocalImpl,
-    outcomes: Mutex<VecDeque<MailboxPoll>>,
+    outcomes: Arc<Mutex<VecDeque<MailboxPoll>>>,
     polls: Arc<Mutex<Vec<Instant>>>,
+    /// While `true`, a drain pauses after reading its first message, as a real one does while the
+    /// next read waits on the sidechain.
+    hold_after_first_read: Arc<AtomicBool>,
 }
 
 impl ScriptedMailboxLocal {
     fn new(outcomes: Vec<MailboxPoll>, polls: Arc<Mutex<Vec<Instant>>>) -> Self {
         Self {
             inner: BingleApiLocalImpl::new(LocalApiConfig::default()),
-            outcomes: Mutex::new(outcomes.into()),
+            outcomes: Arc::new(Mutex::new(outcomes.into())),
             polls,
+            hold_after_first_read: Arc::new(AtomicBool::new(false)),
         }
     }
 }
@@ -153,9 +162,37 @@ impl BingleLocalApi for ScriptedMailboxLocal {
         self.poll_mailbox_outcome().map(|poll| poll.messages)
     }
     fn poll_mailbox_outcome(&self) -> Result<MailboxPoll, BingleError> {
+        self.poll_mailbox_observed(&IgnoreMailboxPollProgress)
+    }
+    /// Reports the steps a real poll would: connecting, then for a poll that reached the node, a
+    /// read before each message and after the last, and each message as it is read.
+    fn poll_mailbox_observed(
+        &self,
+        observer: &dyn MailboxPollObserver,
+    ) -> Result<MailboxPoll, BingleError> {
         self.polls.lock().expect("polls lock").push(Instant::now());
-        let mut outcomes = self.outcomes.lock().expect("outcomes lock");
-        Ok(outcomes.pop_front().unwrap_or_else(|| drained(vec![])))
+        let poll = self
+            .outcomes
+            .lock()
+            .expect("outcomes lock")
+            .pop_front()
+            .unwrap_or_else(|| drained(vec![]));
+        if poll.status != MailboxPollStatus::Skipped {
+            observer.on_poll_progress(MailboxPollProgress::Connecting);
+        }
+        if poll.status == MailboxPollStatus::Drained {
+            for (read, message) in poll.messages.iter().enumerate() {
+                observer.on_poll_progress(MailboxPollProgress::Reading { read });
+                observer.on_poll_progress(MailboxPollProgress::Read(Box::new(message.clone())));
+                while read == 0 && self.hold_after_first_read.load(Ordering::SeqCst) {
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+            }
+            observer.on_poll_progress(MailboxPollProgress::Reading {
+                read: poll.messages.len(),
+            });
+        }
+        Ok(poll)
     }
     fn forward_pending_to_mailbox(&self) -> Result<usize, BingleError> {
         self.inner.forward_pending_to_mailbox()
@@ -189,13 +226,18 @@ impl BingleLocalApi for ScriptedMailboxLocal {
     }
 }
 
-/// Records every message callback invocation.
+/// Records every message callback invocation, and logs it to `events`.
 struct RecordingCallback {
     received: Arc<Mutex<Vec<(String, String, BingleMessage)>>>,
+    events: Arc<Mutex<Vec<String>>>,
 }
 
 impl MessageCallback for RecordingCallback {
     fn on_message(&self, sender_id: String, sender_handle: String, message: BingleMessage) {
+        self.events.lock().expect("events lock").push(format!(
+            "message {}",
+            message.id.clone().unwrap_or_default()
+        ));
         self.received
             .lock()
             .expect("received lock")
@@ -203,14 +245,29 @@ impl MessageCallback for RecordingCallback {
     }
 }
 
-/// Records every Mailbox check reported to the host.
+/// Records every Mailbox check and progress step reported to the host, and logs each to `events`.
 struct RecordingCheckCallback {
     checks: Arc<Mutex<Vec<u32>>>,
+    events: Arc<Mutex<Vec<String>>>,
 }
 
 impl MailboxCheckCallback for RecordingCheckCallback {
     fn on_mailbox_checked(&self, read: u32) {
+        self.events
+            .lock()
+            .expect("events lock")
+            .push(format!("checked {read}"));
         self.checks.lock().expect("checks lock").push(read);
+    }
+
+    fn on_mailbox_progress(&self, stage: MailboxCheckStage, read: u32, retry_in_secs: Option<u32>) {
+        let retry = retry_in_secs
+            .map(|s| format!(" retry {s}"))
+            .unwrap_or_default();
+        self.events
+            .lock()
+            .expect("events lock")
+            .push(format!("{stage:?} {read}{retry}"));
     }
 }
 
@@ -266,6 +323,10 @@ struct PollerHarness {
     polls: Arc<Mutex<Vec<Instant>>>,
     received: Arc<Mutex<Vec<(String, String, BingleMessage)>>>,
     checks: Arc<Mutex<Vec<u32>>>,
+    /// Message, progress and check callbacks in the order they arrived.
+    events: Arc<Mutex<Vec<String>>>,
+    /// Pauses a drain after its first message while `true` (see [`ScriptedMailboxLocal`]).
+    hold_after_first_read: Arc<AtomicBool>,
 }
 
 impl PollerHarness {
@@ -273,28 +334,35 @@ impl PollerHarness {
     /// `retry_initial`.
     fn new(outcomes: Vec<MailboxPoll>, interval: Duration, retry_initial: Duration) -> Self {
         let polls = Arc::new(Mutex::new(Vec::new()));
-        let local: Arc<Mutex<Box<dyn BingleLocalApi>>> = Arc::new(Mutex::new(Box::new(
-            ScriptedMailboxLocal::new(outcomes, polls.clone()),
-        )));
+        let scripted = ScriptedMailboxLocal::new(outcomes, polls.clone());
+        let hold_after_first_read = scripted.hold_after_first_read.clone();
+        let reader: Arc<dyn BingleLocalApi> = Arc::new(scripted.clone());
+        let local: Arc<Mutex<Box<dyn BingleLocalApi>>> = Arc::new(Mutex::new(Box::new(scripted)));
         let jsi = BingleJsiApiImpl::init_for_tests_with_mailbox_timing(
             mock_api(),
             Some(local),
+            Some(reader),
             interval,
             retry_initial,
         );
+        let events = Arc::new(Mutex::new(Vec::new()));
         let received = Arc::new(Mutex::new(Vec::new()));
         jsi.set_message_callback(Box::new(RecordingCallback {
             received: received.clone(),
+            events: events.clone(),
         }));
         let checks = Arc::new(Mutex::new(Vec::new()));
         jsi.set_mailbox_check_callback(Box::new(RecordingCheckCallback {
             checks: checks.clone(),
+            events: events.clone(),
         }));
         Self {
             jsi,
             polls,
             received,
             checks,
+            events,
+            hold_after_first_read,
         }
     }
 
@@ -516,4 +584,105 @@ fn retry_delay_doubles_up_to_the_interval() {
     );
     assert_eq!(mailbox_retry_delay(6, initial, interval), interval);
     assert_eq!(mailbox_retry_delay(u32::MAX, initial, interval), interval);
+}
+
+/// Each message reaches the message callback as it is read, between the check's progress steps and
+/// before the check finishes, so a host sees it without waiting for the drain (bingle_rust #447).
+#[test]
+fn messages_and_progress_reach_the_host_as_the_check_runs() {
+    let harness = PollerHarness::new(
+        vec![drained(vec![
+            mailbox_message("0001", "alice", "first"),
+            mailbox_message("0002", "bob", "second"),
+        ])],
+        Duration::from_secs(60),
+        MAILBOX_RETRY_INITIAL,
+    );
+    harness.jsi.foregrounding();
+    assert!(harness.wait_for_polls(1, Duration::from_secs(5)));
+    harness.stop();
+
+    assert_eq!(
+        *harness.events.lock().expect("events lock"),
+        vec![
+            "Connecting 0",
+            "Reading 0",
+            "message 0001",
+            "Reading 1",
+            "message 0002",
+            "Reading 2",
+            "checked 2",
+        ],
+    );
+}
+
+/// A check that could not reach the node reports it with how long until the retry, and is not
+/// reported as finished (bingle_rust #447).
+#[test]
+fn an_unreachable_check_reports_when_it_retries() {
+    let harness = PollerHarness::new(
+        vec![unreachable()],
+        Duration::from_secs(60),
+        Duration::from_secs(5),
+    );
+    harness.jsi.foregrounding();
+    assert!(harness.wait_for_polls(1, Duration::from_secs(5)));
+    harness.stop();
+
+    assert_eq!(
+        *harness.events.lock().expect("events lock"),
+        vec!["Connecting 0", "Unreachable 0 retry 5"],
+    );
+}
+
+/// A skipped check (receive gate off, no node) reports no progress (bingle_rust #447).
+#[test]
+fn a_skipped_check_reports_no_progress() {
+    let harness = PollerHarness::new(
+        vec![MailboxPoll::skipped()],
+        Duration::from_secs(60),
+        MAILBOX_RETRY_INITIAL,
+    );
+    harness.jsi.foregrounding();
+    assert!(harness.wait_for_polls(1, Duration::from_secs(5)));
+    harness.stop();
+
+    assert!(harness.events.lock().expect("events lock").is_empty());
+}
+
+/// The host can read the store while a drain is still running, so a message passed on as it is read
+/// can be shown at once: the poller does not hold the local API's lock across the drain
+/// (bingle_rust #447).
+#[test]
+fn the_store_can_be_read_while_a_drain_runs() {
+    let harness = PollerHarness::new(
+        vec![drained(vec![
+            mailbox_message("0001", "alice", "first"),
+            mailbox_message("0002", "bob", "second"),
+        ])],
+        Duration::from_secs(60),
+        MAILBOX_RETRY_INITIAL,
+    );
+    harness.hold_after_first_read.store(true, Ordering::SeqCst);
+    harness.jsi.foregrounding();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while harness.received.lock().expect("received lock").is_empty() {
+        assert!(
+            Instant::now() < deadline,
+            "the first message was not passed on"
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
+
+    // The drain is paused mid-way; reading the store must not wait for it.
+    let jsi = harness.jsi.clone();
+    let (done, finished) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = done.send(jsi.get_messages().is_ok());
+    });
+    let read = finished.recv_timeout(Duration::from_secs(1));
+
+    harness.hold_after_first_read.store(false, Ordering::SeqCst);
+    harness.stop();
+    assert_eq!(read, Ok(true), "get_messages returned while the drain ran");
 }

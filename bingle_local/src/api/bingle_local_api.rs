@@ -174,6 +174,39 @@ impl MailboxPoll {
     }
 }
 
+/// A step of a Mailbox poll, reported to a [`MailboxPollObserver`] as it happens (bingle_rust
+/// #447), so a host can show how far a check has got rather than waiting for the whole drain.
+#[derive(Debug, Clone, PartialEq)]
+pub enum MailboxPollProgress {
+    /// Connecting to a Mailbox node: resolving it from the chain and opening mutual TLS.
+    Connecting,
+    /// Reading the next message from the Mailbox, after `read` messages read so far this poll.
+    /// Each read is a sidechain transaction that waits to finalise, so this can take a while.
+    Reading {
+        /// Messages read and stored so far this poll.
+        read: usize,
+    },
+    /// A message was read from the Mailbox and stored. It also appears in the poll's result.
+    Read(Box<Message>),
+}
+
+/// Receives the steps of a Mailbox poll as they happen (bingle_rust #447). Called on the polling
+/// thread while the poll runs, so an implementation must return promptly and must not call back
+/// into the local API.
+pub trait MailboxPollObserver {
+    /// Called for each step of the poll, in order.
+    fn on_poll_progress(&self, progress: MailboxPollProgress);
+}
+
+/// A [`MailboxPollObserver`] that ignores every step, for a caller that only wants the result.
+pub struct IgnoreMailboxPollProgress;
+
+impl MailboxPollObserver for IgnoreMailboxPollProgress {
+    fn on_poll_progress(&self, progress: MailboxPollProgress) {
+        let _ = progress;
+    }
+}
+
 /// A send failure reason with the store-and-forward failure, when there is one, appended in
 /// brackets (issue #349), for example
 /// `Recipient unreachable — will keep retrying (store-and-forward failed: no account for 'bob')`.
@@ -459,6 +492,14 @@ pub trait BingleLocalApi: Send + Sync {
     /// after a node it could not reach, rather than waiting a full cycle, and to tell the host a
     /// check has finished.
     fn poll_mailbox_outcome(&self) -> Result<MailboxPoll, BingleError>;
+
+    /// As [`poll_mailbox_outcome`](Self::poll_mailbox_outcome), and also report each step of the
+    /// poll to `observer` as it happens (bingle_rust #447): connecting to the node, each read, and
+    /// each message read. A host passes each message on as it arrives rather than after the drain.
+    fn poll_mailbox_observed(
+        &self,
+        observer: &dyn MailboxPollObserver,
+    ) -> Result<MailboxPoll, BingleError>;
 
     /// Offer every pending outbound message to its recipients' Sidewinder Mailboxes now, without
     /// waiting for a direct send to fail (issue #352). The `bingle_jsi` client calls it on

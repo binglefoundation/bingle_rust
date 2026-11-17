@@ -7,9 +7,9 @@ use crate::api::notify::{
 };
 use crate::api::sidewinder::MailboxConfig;
 use crate::api::{
-    BingleLocalApi, ChainRegistrationOps, Contact, ContactSource, DeliveryRoute, Keypair,
-    KeypairStatus, MailboxPoll, Message, MessagingSettings, REQUIRED_ALGO, legacy_message_id,
-    new_message_id, run_registration,
+    BingleLocalApi, ChainRegistrationOps, Contact, ContactSource, DeliveryRoute,
+    IgnoreMailboxPollProgress, Keypair, KeypairStatus, MailboxPoll, MailboxPollObserver, Message,
+    MessagingSettings, REQUIRED_ALGO, legacy_message_id, new_message_id, run_registration,
 };
 use algo_ops::error::AlgoErrorKind;
 use algo_ops::{AlgoChainConfig, AlgoOps};
@@ -311,7 +311,7 @@ impl BingleApiLocalImpl {
 
     /// Fire the best-effort notify nudge for recipients a send could not reach — either still
     /// unreachable and retrying, or terminally given up (bingle_notify #11/#17). The caller
-    /// (`update_message_status`) dedups so this fires at most once per message.
+    /// ([`nudge_recipients`](Self::nudge_recipients)) decides which recipients are due one.
     ///
     /// Gated on `notify_on_giveup` and a configured `notify_gateway_url`; when either is off this is
     /// a no-op and sending behaves exactly as before. Resolves the local (sender) handle and the
@@ -770,29 +770,54 @@ impl BingleApiLocalImpl {
         // algo_ops) and hands off to the poster, which must not run under the messages lock.
         drop(guard);
         if let Some((id, sent_time, recipients, text)) = failed_recipients {
-            // Nudge at most once per message: HashSet::insert returns true only the first time this
-            // message is seen, so repeated retries of the same unreachable message don't re-nudge.
-            let first_nudge = match self.nudged_messages.lock() {
-                Ok(mut nudged) => nudged.insert(id.clone()),
-                Err(e) => {
-                    tracing::error!(
-                        "[update_message_status] Failed to lock nudged_messages: {}",
-                        e
-                    );
-                    false
-                }
-            };
-            if first_nudge {
-                self.notify_giveup(&recipients);
-            }
             // Store-and-forward post-on-delivery-fail (#214): post the sealed message to each
             // recipient's Sidewinder Mailbox so it survives until they reconnect. Runs on each failed
             // retry but is idempotent per recipient, so it posts once per recipient and retries only
             // recipients whose post has not yet succeeded. Gated + best-effort; never affects delivery.
             let outcome = self.forward_message_to_mailbox(&id, sent_time, &recipients, &text);
             self.apply_forward_outcome(&id, outcome);
+            // Nudge after the post (#447): a recipient woken by the alert then finds the message in
+            // its Mailbox, rather than polling before it lands.
+            self.nudge_recipients(&id, &recipients);
         }
         Ok(())
+    }
+
+    /// Fire the notify nudge for the recipients of message `id` that are due one (bingle_notify
+    /// #11/#17, bingle_rust #447). Call it after the message's Mailbox post was attempted. Each
+    /// recipient is nudged at most once while its post is outstanding, which wakes it so the direct
+    /// retries can land, and once more when its post has landed, so it then reads the message from
+    /// its Mailbox. A recipient first nudged after its post landed is nudged only that once.
+    fn nudge_recipients(&self, id: &str, recipients: &[String]) {
+        // Read the post state first, so the forwarded set is not locked under nudged_recipients.
+        let states: Vec<(&String, bool)> = recipients
+            .iter()
+            .map(|handle| (handle, self.is_forwarded(id, handle)))
+            .collect();
+        let due: Vec<String> = match self.nudged_recipients.lock() {
+            Ok(mut nudged) => states
+                .into_iter()
+                .filter(|(handle, posted)| {
+                    let key = (id.to_string(), handle.to_string());
+                    match nudged.get(&key) {
+                        Some(true) => false,
+                        Some(false) if !posted => false,
+                        _ => {
+                            nudged.insert(key, *posted);
+                            true
+                        }
+                    }
+                })
+                .map(|(handle, _)| handle.clone())
+                .collect(),
+            Err(e) => {
+                tracing::error!("[nudge_recipients] Failed to lock nudged_recipients: {}", e);
+                return;
+            }
+        };
+        if !due.is_empty() {
+            self.notify_giveup(&due);
+        }
     }
 
     /// Record a store-and-forward attempt's outcome on the message, and return whether it is now
@@ -843,6 +868,14 @@ impl BingleApiLocalImpl {
             if self.apply_forward_outcome(&m.id, outcome) {
                 forwarded += 1;
             }
+            // Wake the recipients whose post landed, so they read it from their Mailbox (#447).
+            let posted: Vec<String> = m
+                .recipient_handles
+                .iter()
+                .filter(|handle| self.is_forwarded(&m.id, handle))
+                .cloned()
+                .collect();
+            self.nudge_recipients(&m.id, &posted);
         }
         Ok(forwarded)
     }
@@ -1337,11 +1370,19 @@ impl BingleLocalApi for BingleApiLocalImpl {
 
     fn poll_mailbox(&self) -> Result<Vec<Message>, BingleError> {
         // The read-on-reconnect logic lives in the `store_and_forward` child module (#215).
-        self.poll_mailbox_inner().map(|poll| poll.messages)
+        self.poll_mailbox_inner(&IgnoreMailboxPollProgress)
+            .map(|poll| poll.messages)
     }
 
     fn poll_mailbox_outcome(&self) -> Result<MailboxPoll, BingleError> {
-        self.poll_mailbox_inner()
+        self.poll_mailbox_inner(&IgnoreMailboxPollProgress)
+    }
+
+    fn poll_mailbox_observed(
+        &self,
+        observer: &dyn MailboxPollObserver,
+    ) -> Result<MailboxPoll, BingleError> {
+        self.poll_mailbox_inner(observer)
     }
 
     fn forward_pending_to_mailbox(&self) -> Result<usize, BingleError> {
