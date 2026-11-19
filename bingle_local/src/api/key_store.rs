@@ -10,6 +10,7 @@
 use std::fmt;
 
 use serde::{Deserialize, Serialize};
+use zeroize::Zeroizing;
 
 use crate::api::Keypair;
 
@@ -67,6 +68,9 @@ pub enum KeyStoreError {
     PhraseNotBackedUp,
     /// There is no stored key to act on.
     NoKey,
+    /// The store can't be read now because the device is locked; reading again after the next
+    /// unlock may succeed (the state file's device secret, issue #459).
+    Locked,
     /// The platform store failed.
     Storage(String),
 }
@@ -80,6 +84,9 @@ impl fmt::Display for KeyStoreError {
                 "confirm the recovery phrase is backed up before keeping it on this device only"
             ),
             KeyStoreError::NoKey => write!(f, "no key is stored"),
+            KeyStoreError::Locked => {
+                write!(f, "the key store can't be read while the device is locked")
+            }
             KeyStoreError::Storage(reason) => write!(f, "key storage failed: {reason}"),
         }
     }
@@ -117,6 +124,19 @@ pub trait KeyStore: Send + Sync {
 
     /// Records that the user confirmed the phrase is backed up.
     fn mark_phrase_backed_up(&self) -> Result<(), KeyStoreError>;
+
+    /// Whether this store can hold the state file's device secret, so the state file can be sealed
+    /// (issue #459). `false` for [`FileKeyStore`].
+    fn holds_state_secret(&self) -> bool;
+
+    /// The 32-byte secret the sealed state file's device slot is wrapped under (issue #459). With
+    /// `create`, a missing secret is made: random, on this device only, never synced, readable only
+    /// while the device is unlocked. `Ok(None)` when there is none (and `create` is `false`), or the
+    /// store doesn't hold one. [`KeyStoreError::Locked`] while the device is locked.
+    fn state_secret(&self, create: bool) -> Result<Option<Zeroizing<[u8; 32]>>, KeyStoreError>;
+
+    /// Deletes the state file's device secret. Not an error if there is none.
+    fn delete_state_secret(&self) -> Result<(), KeyStoreError>;
 }
 
 /// Keeps the phrase in the state file, as the local API always has. Stores nothing itself.
@@ -163,5 +183,17 @@ impl KeyStore for FileKeyStore {
 
     fn mark_phrase_backed_up(&self) -> Result<(), KeyStoreError> {
         Err(KeyStoreError::Unavailable)
+    }
+
+    fn holds_state_secret(&self) -> bool {
+        false
+    }
+
+    fn state_secret(&self, _create: bool) -> Result<Option<Zeroizing<[u8; 32]>>, KeyStoreError> {
+        Ok(None)
+    }
+
+    fn delete_state_secret(&self) -> Result<(), KeyStoreError> {
+        Ok(())
     }
 }

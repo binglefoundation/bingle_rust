@@ -28,6 +28,10 @@ pub use key_store::{
 pub mod account_deletion;
 pub use account_deletion::{AccountOptOut, ChainAccountOptOut};
 
+// The sealed (encrypted) state file (issue #459).
+pub mod sealed_state;
+pub use sealed_state::StateFileStatus;
+
 // On-chain registration seam (see issue #15, step A4).
 pub mod registration;
 pub use registration::{ChainRegistrationOps, RegistrationOps, run_registration};

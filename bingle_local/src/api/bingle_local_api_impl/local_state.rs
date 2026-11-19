@@ -6,9 +6,13 @@
 
 use super::LocalApiConfig;
 use crate::api::notify::{AlertPoster, HttpAlertPoster, HttpRegisterPoster, RegisterPoster};
-use crate::api::{ContactSource, KeySlot, KeyStore, Keypair, KeypairStatus, Message};
+use crate::api::sealed_state::SealedState;
+use crate::api::{
+    ContactSource, KeySlot, KeyStore, Keypair, KeypairStatus, Message, StateFileStatus,
+};
 use algo_ops::AlgoOps;
 use std::collections::{HashMap, HashSet};
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex, RwLock, RwLockReadGuard};
 
 /// The state shared by every clone of a [`BingleApiLocalImpl`](super::BingleApiLocalImpl).
@@ -82,6 +86,11 @@ pub struct LocalState {
     pub(super) mailbox_identity_refused_at: Mutex<Option<std::time::Instant>>,
     // The node's reason for that refusal, reported on messages whose post it holds off (#349).
     pub(super) mailbox_identity_refusal_reason: Mutex<Option<String>>,
+    // The sealed state file's header and data key, once one is opened or sealed (issue #459).
+    pub(super) sealed: Mutex<SealedState>,
+    // The state file last loaded and what the load found. A sealed file that didn't open (device
+    // locked, or recovery phrase needed) isn't saved over until it does (issue #459).
+    pub(super) state_file: Mutex<(Option<PathBuf>, StateFileStatus)>,
 }
 
 impl LocalState {
@@ -109,6 +118,8 @@ impl LocalState {
             refused_forwards: Mutex::new(HashMap::new()),
             mailbox_identity_refused_at: Mutex::new(None),
             mailbox_identity_refusal_reason: Mutex::new(None),
+            sealed: Mutex::new(SealedState::default()),
+            state_file: Mutex::new((None, StateFileStatus::NotLoaded)),
         }
     }
 

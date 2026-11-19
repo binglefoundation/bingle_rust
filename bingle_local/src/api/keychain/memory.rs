@@ -15,6 +15,7 @@ type ItemMap = HashMap<(String, bool), (Accessibility, Vec<u8>)>;
 pub struct MemoryItems {
     items: Mutex<ItemMap>,
     fail_writes: AtomicBool,
+    locked: AtomicBool,
 }
 
 impl MemoryItems {
@@ -26,6 +27,12 @@ impl MemoryItems {
     /// Makes every add, update and delete fail, to test that a failed write leaves things intact.
     pub fn set_fail_writes(&self, fail: bool) {
         self.fail_writes.store(fail, Ordering::SeqCst);
+    }
+
+    /// Simulates a locked device: reading a `WhenUnlocked` item fails with
+    /// `errSecInteractionNotAllowed`, as the Keychain does (issue #459).
+    pub fn set_locked(&self, locked: bool) {
+        self.locked.store(locked, Ordering::SeqCst);
     }
 
     /// The accessibility an item was added with, or `None` if there is no such item.
@@ -48,12 +55,20 @@ impl MemoryItems {
 
 impl SecureItems for MemoryItems {
     fn read(&self, account: &str, synced: bool) -> Result<Option<Vec<u8>>, ItemError> {
-        Ok(self
-            .items
-            .lock()
-            .expect("memory items lock")
-            .get(&(account.to_string(), synced))
-            .map(|(_, data)| data.clone()))
+        let items = self.items.lock().expect("memory items lock");
+        let Some((accessibility, data)) = items.get(&(account.to_string(), synced)) else {
+            return Ok(None);
+        };
+        let needs_unlock = matches!(
+            accessibility,
+            Accessibility::WhenUnlocked | Accessibility::WhenUnlockedThisDeviceOnly
+        );
+        if needs_unlock && self.locked.load(Ordering::SeqCst) {
+            return Err(ItemError::Status(
+                super::store::ERR_SEC_INTERACTION_NOT_ALLOWED,
+            ));
+        }
+        Ok(Some(data.clone()))
     }
 
     fn add(

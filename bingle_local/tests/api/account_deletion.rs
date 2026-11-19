@@ -6,6 +6,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+use zeroize::Zeroizing;
 
 use algo_ops::error::{AlgoError, AlgoErrorKind};
 use bingle_core::api::bingle_api::BingleError;
@@ -65,6 +66,17 @@ impl KeyStore for MemoryKeyStore {
     }
 
     fn mark_phrase_backed_up(&self) -> Result<(), KeyStoreError> {
+        Ok(())
+    }
+    fn holds_state_secret(&self) -> bool {
+        false
+    }
+
+    fn state_secret(&self, _create: bool) -> Result<Option<Zeroizing<[u8; 32]>>, KeyStoreError> {
+        Ok(None)
+    }
+
+    fn delete_state_secret(&self) -> Result<(), KeyStoreError> {
         Ok(())
     }
 }

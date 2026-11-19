@@ -9,6 +9,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+use zeroize::Zeroizing;
 
 /// An in-memory key store that keeps phrases out of the state file, and can be made to fail.
 #[derive(Default)]
@@ -61,6 +62,17 @@ impl KeyStore for MemoryKeyStore {
     }
 
     fn mark_phrase_backed_up(&self) -> Result<(), KeyStoreError> {
+        Ok(())
+    }
+    fn holds_state_secret(&self) -> bool {
+        false
+    }
+
+    fn state_secret(&self, _create: bool) -> Result<Option<Zeroizing<[u8; 32]>>, KeyStoreError> {
+        Ok(None)
+    }
+
+    fn delete_state_secret(&self) -> Result<(), KeyStoreError> {
         Ok(())
     }
 }
