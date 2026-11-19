@@ -122,3 +122,37 @@ fn delete_account_with_no_keypair_deletes_the_state_file() {
     assert!(!api.is_started());
     api.delete_account().expect("deleting again is safe");
 }
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+fn delete_account_reports_an_unreachable_node_as_no_blockchain_and_changes_nothing() {
+    // A node file pointing at a closed local port, so the on-chain opt-out can't reach algod
+    // (issue #100).
+    let node_file = project_tmp_file_path("bingle-jsi-delete-unreachable-node", ".json");
+    std::fs::write(
+        &node_file,
+        r#"{"network":"localnet","client_api_url":"http://127.0.0.1","client_api_port":9,"indexer_api_url":"http://127.0.0.1","indexer_api_port":9,"token":null,"token_key":null,"app_id":1,"asset_id":2}"#,
+    )
+    .expect("write node file");
+    let path = project_tmp_file_path("bingle-jsi-delete-unreachable", ".json")
+        .to_string_lossy()
+        .into_owned();
+    let mut cfg = config(&path, Some("file"));
+    cfg.node_file = Some(node_file.to_string_lossy().into_owned());
+    let api = BingleJsiApiImpl::init(cfg).expect("init");
+    let kp = api.generate_keypair().expect("generate");
+    api.save(path.clone()).expect("save");
+
+    let err = api
+        .delete_account()
+        .expect_err("the opt-out can't reach the node");
+
+    assert!(
+        matches!(err, BingleJsiError::NoBlockchain { .. }),
+        "an unreachable node is NoBlockchain: {err:?}"
+    );
+    let text = std::fs::read_to_string(&path).expect("the state file is kept");
+    assert!(text.contains(&kp.id), "the keypair is kept");
+    let _ = std::fs::remove_file(&path);
+    let _ = std::fs::remove_file(&node_file);
+}

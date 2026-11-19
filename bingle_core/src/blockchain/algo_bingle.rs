@@ -1,4 +1,4 @@
-use anyhow::{Result, anyhow, bail};
+use anyhow::{Context, Result, anyhow, bail};
 use sha2::{Digest, Sha512_256};
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
@@ -784,9 +784,11 @@ impl AlgoBingle {
             if self.ops.local_state_for_account(app, &me)?.is_none() {
                 continue;
             }
+            // `with_context`, not a new error, so a typed `AlgoError` (such as an unreachable node)
+            // still downcasts for the caller.
             self.ops
                 .clear_state_app(app)
-                .map_err(|e| anyhow!("clearing local state on app {app} failed: {e}"))?;
+                .with_context(|| format!("clearing local state on app {app} failed"))?;
             cleared.push(app);
         }
         Ok(cleared)

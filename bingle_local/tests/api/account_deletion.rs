@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
+use algo_ops::error::{AlgoError, AlgoErrorKind};
 use bingle_core::api::bingle_api::BingleError;
 use bingle_local::api::{
     AccountOptOut, BingleApiLocalImpl, BingleLocalApi, ContactSource, KeySlot, KeyStorageBackend,
@@ -68,18 +69,23 @@ impl KeyStore for MemoryKeyStore {
     }
 }
 
-/// Records which accounts it was asked to opt out, and can be made to fail.
+/// Records which accounts it was asked to opt out, and can be made to fail with a given error.
 #[derive(Default)]
 struct RecordingOptOut {
     calls: RefCell<Vec<String>>,
-    fail: bool,
+    // Builds the error to fail with: `BingleError` isn't `Clone`.
+    failure: Option<fn() -> BingleError>,
 }
 
 impl RecordingOptOut {
     fn failing() -> Self {
+        Self::failing_with(|| BingleError::Other("clear-state rejected".into()))
+    }
+
+    fn failing_with(failure: fn() -> BingleError) -> Self {
         Self {
             calls: RefCell::new(Vec::new()),
-            fail: true,
+            failure: Some(failure),
         }
     }
 
@@ -91,8 +97,8 @@ impl RecordingOptOut {
 impl AccountOptOut for RecordingOptOut {
     fn opt_out(&self, keypair: &Keypair) -> Result<Vec<u64>, BingleError> {
         self.calls.borrow_mut().push(keypair.id.clone());
-        if self.fail {
-            return Err(BingleError::Retryable("algod unreachable".into()));
+        if let Some(failure) = self.failure {
+            return Err(failure());
         }
         Ok(vec![1])
     }
@@ -179,8 +185,8 @@ fn a_failed_opt_out_leaves_the_device_untouched_and_can_be_retried() {
         .delete_account_with(&RecordingOptOut::failing())
         .expect_err("the opt-out failure is returned");
     assert!(
-        matches!(err, BingleError::Retryable(_)),
-        "the opt-out's error is passed through: {err:?}"
+        matches!(&err, BingleError::Retryable(reason) if reason.contains("clear-state rejected")),
+        "an opt-out failure is reported as retryable, with its cause: {err:?}"
     );
     assert_eq!(api.get_keypair().unwrap(), Some(kp.clone()), "key kept");
     assert_eq!(store.fetch(KeySlot::Current).unwrap(), Some(kp.clone()));
@@ -242,4 +248,56 @@ fn the_trait_method_with_no_keypair_needs_no_network() {
     api.delete_account()
         .expect("delete with nothing to opt out");
     assert_cleared(&api, &store);
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+fn an_unreachable_node_stays_a_host_unreachable_error() {
+    let store = Arc::new(MemoryKeyStore::default());
+    let (api, kp) = populated_account(&store);
+    let err = api
+        .delete_account_with(&RecordingOptOut::failing_with(|| {
+            BingleError::Algo(AlgoError::unreachable("status", "connection refused"))
+        }))
+        .expect_err("the failure is returned");
+
+    assert!(
+        matches!(&err, BingleError::Algo(ae) if ae.kind == AlgoErrorKind::HostUnreachable),
+        "an unreachable node is reported as such (NoBlockchain in bingle_jsi): {err:?}"
+    );
+    assert_eq!(api.get_keypair().unwrap(), Some(kp), "nothing changed");
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+fn other_chain_errors_become_retryable() {
+    let store = Arc::new(MemoryKeyStore::default());
+    let (api, _kp) = populated_account(&store);
+    let err = api
+        .delete_account_with(&RecordingOptOut::failing_with(|| {
+            BingleError::Algo(AlgoError::transient("send_raw", "503 from algod"))
+        }))
+        .expect_err("the failure is returned");
+
+    assert!(
+        matches!(&err, BingleError::Retryable(reason) if reason.contains("503 from algod")),
+        "a chain error other than an unreachable node is retryable: {err:?}"
+    );
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+fn a_key_store_failure_after_the_opt_out_is_an_internal_error() {
+    let store = Arc::new(MemoryKeyStore::default());
+    let (api, _kp) = populated_account(&store);
+    store.fail_delete.store(true, Ordering::SeqCst);
+
+    let err = api
+        .delete_account_with(&RecordingOptOut::default())
+        .expect_err("the failure is returned");
+
+    assert!(
+        matches!(&err, BingleError::Other(reason) if reason.contains("simulated failure")),
+        "a key store failure is reported as an internal error: {err:?}"
+    );
 }

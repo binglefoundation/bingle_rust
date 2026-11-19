@@ -12,6 +12,8 @@ pub mod setup_localnet;
 pub mod blockchain_users;
 
 // Blockchain integration tests that hit localnet
+#[path = "integration/blockchain/account_deletion_localnet.rs"]
+pub mod account_deletion_localnet;
 #[path = "integration/blockchain/algo_bingle_buy_flow_localnet.rs"]
 pub mod algo_bingle_buy_flow_localnet;
 #[path = "integration/blockchain/algo_bingle_integration_localnet.rs"]
@@ -32,8 +34,6 @@ pub mod deploy_app_and_asset_localnet;
 pub mod handle_lookup_partial;
 #[path = "integration/blockchain/migrate_local_localnet.rs"]
 pub mod migrate_local_localnet;
-#[path = "integration/blockchain/account_deletion_localnet.rs"]
-pub mod account_deletion_localnet;
 #[path = "integration/blockchain/sidewinder_endpoint_localnet.rs"]
 pub mod sidewinder_endpoint_localnet;
 #[path = "integration/blockchain/unique_handle.rs"]

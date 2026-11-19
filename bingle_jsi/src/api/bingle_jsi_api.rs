@@ -228,10 +228,14 @@ pub trait BingleJsiApi: Send + Sync {
     /// keys and clear its contacts, blocks and messages, stop the engine, and delete the state file.
     /// The handle is free for anyone to register at once; the Algorand account, its ALGO and its
     /// Bingle$ holding stay, as does the blockchain's history. A synced Keychain key is removed from
-    /// every device on the user's Apple Account, so the app must say so first. If the on-chain step
-    /// fails, nothing is changed and the error is returned, so the app can offer a retry; calling
-    /// again after a part-way failure resumes. Works with either key store. The app should
-    /// re-initialise into first run afterwards.
+    /// every device on the user's Apple Account, so the app must say so first. Works with either key
+    /// store. The app should re-initialise into first run afterwards.
+    ///
+    /// Errors, all safe to retry (a retry resumes where the last call stopped):
+    /// - `NoBlockchain`: the Algorand node can't be reached; nothing has changed.
+    /// - `Retryable`: the on-chain opt-out failed; nothing on this device has changed.
+    /// - `InternalError`: the opt-out succeeded, but deleting the stored keys or the state file
+    ///   failed.
     fn delete_account(&self) -> Result<(), BingleJsiError>;
 
     /// Ask the host to begin iOS push registration (bingle_notify #i). Invokes the registered

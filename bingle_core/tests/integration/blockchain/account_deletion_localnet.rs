@@ -139,7 +139,9 @@ pub fn leave_app_lineage_clears_ancestor_apps_localnet() {
     );
 
     // Deletion clears both apps, the current one first.
-    let cleared = client.leave_app_lineage(new_app).expect("leave_app_lineage");
+    let cleared = client
+        .leave_app_lineage(new_app)
+        .expect("leave_app_lineage");
     assert_eq!(cleared, vec![new_app, old_app]);
     for app in [new_app, old_app] {
         assert!(

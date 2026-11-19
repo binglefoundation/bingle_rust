@@ -332,13 +332,14 @@ impl BingleApiLocalImpl {
             let Some(keypair) = keypair else {
                 continue;
             };
-            let cleared = opt_out.opt_out(&keypair).inspect_err(|e| {
+            let cleared = opt_out.opt_out(&keypair).map_err(|e| {
                 tracing::error!(
                     "[delete_account] opting the {} account {} out of the DApp failed: {}",
                     role,
                     keypair.id,
                     e
                 );
+                opt_out_failure(role, e)
             })?;
             tracing::info!(
                 "[delete_account] cleared the {} account {} from apps {:?}",
@@ -1138,6 +1139,20 @@ impl BingleApiLocalImpl {
             .map_err(|e| BingleError::Other(format!("couldn't store the imported key: {e}")))?;
         self.set_current_keypair(&kp);
         Ok(kp)
+    }
+}
+
+/// How [`delete_account`](BingleLocalApi::delete_account) reports a failed on-chain opt-out. Nothing
+/// on the device has changed yet and a retry resumes, so the app only needs to know it can retry:
+/// an unreachable node stays [`BingleError::Algo`] with
+/// [`HostUnreachable`](AlgoErrorKind::HostUnreachable) (bingle_jsi's `NoBlockchain`), and every
+/// other failure becomes [`BingleError::Retryable`].
+fn opt_out_failure(role: &str, e: BingleError) -> BingleError {
+    match e {
+        BingleError::Algo(ae) if ae.kind == AlgoErrorKind::HostUnreachable => BingleError::Algo(ae),
+        other => BingleError::Retryable(format!(
+            "opting the {role} account out of the Bingle DApp failed: {other}"
+        )),
     }
 }
 
