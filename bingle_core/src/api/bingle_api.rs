@@ -106,6 +106,16 @@ pub enum BingleError {
         /// The underlying human-readable message, for logging and display.
         detail: String,
     },
+    /// The state file is sealed and its device key can't be read now, because the device is
+    /// locked (bingle_rust #459). Load again after the next unlock; until then the file is left as
+    /// it is and isn't saved over.
+    #[error("State file locked: {0}")]
+    StateLocked(String),
+    /// The state file is sealed and this device has no key that opens it, for example a file
+    /// restored from a backup to a new device (bingle_rust #459). It opens with the account's
+    /// recovery phrase; until then the file is left as it is and isn't saved over.
+    #[error("Recovery phrase required: {0}")]
+    RecoveryPhraseRequired(String),
     /// Any other error, carrying a human-readable message.
     #[error("{0}")]
     Other(String),

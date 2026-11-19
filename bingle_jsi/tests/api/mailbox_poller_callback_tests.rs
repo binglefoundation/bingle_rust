@@ -89,6 +89,19 @@ impl BingleLocalApi for ScriptedMailboxLocal {
     fn delete_account(&mut self) -> Result<(), BingleError> {
         self.inner.delete_account()
     }
+    fn state_file_status(&self) -> bingle_local::api::StateFileStatus {
+        self.inner.state_file_status()
+    }
+    fn open_state_with_recovery_phrase(
+        &mut self,
+        path: &str,
+        phrase: String,
+    ) -> Result<Keypair, BingleError> {
+        self.inner.open_state_with_recovery_phrase(path, phrase)
+    }
+    fn forget_state_key(&self) {
+        self.inner.forget_state_key()
+    }
     fn register_keypair(&self, handle: String) -> Result<bool, BingleError> {
         self.inner.register_keypair(handle)
     }

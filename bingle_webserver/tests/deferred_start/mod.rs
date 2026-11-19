@@ -3,6 +3,7 @@ use std::sync::{Arc, Mutex};
 use crate::common::{CapturingMockBingleApi, TrackingMockBingleApi};
 use algo_ops::AlgoOps;
 use bingle_core::api::bingle_api::{BingleError, SendFailureKind, StartOptions};
+use bingle_local::api::StateFileStatus;
 use bingle_local::api::bingle_local_api::{
     BingleLocalApi, Contact, ContactSource, Keypair, KeypairStatus, MailboxPoll,
     MailboxPollObserver, Message, MessagingSettings,
@@ -227,6 +228,22 @@ impl BingleLocalApi for ControllableLocalApi {
     fn delete_account(&mut self) -> Result<(), BingleError> {
         Err(BingleError::Other("delete_account".to_string()))
     }
+
+    fn state_file_status(&self) -> StateFileStatus {
+        StateFileStatus::NotLoaded
+    }
+
+    fn open_state_with_recovery_phrase(
+        &mut self,
+        _path: &str,
+        _phrase: String,
+    ) -> Result<Keypair, BingleError> {
+        Err(BingleError::Other(
+            "open_state_with_recovery_phrase".to_string(),
+        ))
+    }
+
+    fn forget_state_key(&self) {}
 
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
         self

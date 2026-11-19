@@ -97,3 +97,6 @@ mod notify_after_forward;
 
 #[path = "api/account_deletion.rs"]
 mod account_deletion;
+
+#[path = "api/sealed_state.rs"]
+mod sealed_state;

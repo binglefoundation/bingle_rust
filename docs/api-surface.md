@@ -82,6 +82,12 @@ Supported surface:
   types; the real backend `api::keychain::apple::KeychainItems` is Apple-only, and the
   `test-support` feature adds the `memory::MemoryItems` fake.
 - Registration: `api::registration::{RegistrationOps, ChainRegistrationOps, run_registration}`.
+- Sealed state file (#459): `LocalApiConfig::encrypt_state` and `with_encrypt_state`, the
+  `BingleLocalApi` methods `state_file_status`, `open_state_with_recovery_phrase` and
+  `forget_state_key`, `api::sealed_state::{StateFileStatus, SealedState, SealError, is_sealed,
+  check_phrase, rekey_with_phrase}` and its slot-label constants, the `KeyStore` methods
+  `holds_state_secret`, `state_secret` and `delete_state_secret`, `KeyStoreError::Locked`, and
+  the `BingleError` variants `StateLocked` and `RecoveryPhraseRequired`.
 - Account deletion (#100): the `BingleLocalApi` method `delete_account`,
   `BingleApiLocalImpl::delete_account_with`, and `api::account_deletion::{AccountOptOut,
   ChainAccountOptOut}`. The module docs state what deletion removes and what stays.

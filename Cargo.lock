@@ -48,9 +48,9 @@ dependencies = [
 
 [[package]]
 name = "algo_ops"
-version = "0.9.6"
+version = "0.9.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ccdcbf604a3bfb24266b551b5af3aa5965fb50bf1f4544b81aebec0523721dac"
+checksum = "b8edeed89340d2aea141dcaa27176606e5676eba37a74bb177e128381321f34b"
 dependencies = [
  "algonaut",
  "anyhow",
@@ -345,6 +345,18 @@ name = "anyhow"
 version = "1.0.102"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f202df86484c868dbad7eaa557ef785d5c66295e41b460ef922eca0723b842c"
+
+[[package]]
+name = "argon2"
+version = "0.5.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3c3610892ee6e0cbce8ae2700349fcf8f98adb0dbfbee85aec3c9179d29cc072"
+dependencies = [
+ "base64ct",
+ "blake2",
+ "cpufeatures 0.2.17",
+ "password-hash",
+]
 
 [[package]]
 name = "askama"
@@ -657,6 +669,8 @@ dependencies = [
  "bingle_core",
  "bingle_local",
  "bingle_test",
+ "blockchain_account_vault",
+ "blockchain_keystore",
  "core-foundation 0.10.1",
  "core-foundation-sys",
  "getrandom 0.2.17",
@@ -668,6 +682,7 @@ dependencies = [
  "tempfile",
  "tracing",
  "tracing-subscriber",
+ "zeroize",
 ]
 
 [[package]]
@@ -724,6 +739,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b4388bee8683e3d04af747c73422af53102d2bd24d9eadb6cbc100baef4b43f8"
 
 [[package]]
+name = "blake2"
+version = "0.10.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "46502ad458c9a52b69d4d4d32775c788b7a1b85e8bc9d482d92250fc0e3f8efe"
+dependencies = [
+ "digest 0.10.7",
+]
+
+[[package]]
 name = "block-buffer"
 version = "0.10.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -751,10 +775,45 @@ dependencies = [
 ]
 
 [[package]]
-name = "blockchain_ops"
-version = "0.9.6"
+name = "blockchain_account_vault"
+version = "0.9.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e6e97d4b2977ca26aaebb05d9c686c0f134c065dec5d8abfa5e70da6c9226b87"
+checksum = "f9d43abff8141dcd66020fdf8506bd61bfef9d1215ece48c719cd37d33d0a5e1"
+dependencies = [
+ "aes-gcm",
+ "anyhow",
+ "argon2",
+ "base64 0.22.1",
+ "blockchain_keystore",
+ "data-encoding",
+ "ed25519-dalek",
+ "hkdf",
+ "hmac",
+ "rand 0.8.6",
+ "serde_json",
+ "sha2 0.10.9",
+ "zeroize",
+]
+
+[[package]]
+name = "blockchain_keystore"
+version = "0.9.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "80a459b9bcac6e4e17a66f00c2bdcc95aa84dfe6db898bb537c6096488c5dbda"
+dependencies = [
+ "aes-gcm",
+ "argon2",
+ "hkdf",
+ "rand 0.8.6",
+ "sha2 0.10.9",
+ "zeroize",
+]
+
+[[package]]
+name = "blockchain_ops"
+version = "0.9.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ef3fbc1acb01cd760d524e9ab6e1a15099ef4d0701fdc848fe17b2fc2459708f"
 dependencies = [
  "anyhow",
  "serde",
@@ -2571,6 +2630,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "password-hash"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "346f04948ba92c43e8469c1ee6736c7563d71012b17d40745260fe106aac2166"
+dependencies = [
+ "base64ct",
+ "rand_core 0.6.4",
+ "subtle",
+]
+
+[[package]]
 name = "paste"
 version = "1.0.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3571,9 +3641,9 @@ checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
 
 [[package]]
 name = "sidewinder_ops"
-version = "0.9.6"
+version = "0.9.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "022d60a32542ac7cb3c6347498841a17814f0ac92f84e379872a8a50bad86394"
+checksum = "32a71d3387c29c2f3848f59242698e90028688ebdff944efa929a981cfadc630"
 dependencies = [
  "algo_ops",
  "anyhow",
@@ -3730,9 +3800,9 @@ checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 
 [[package]]
 name = "sw_identity_tls"
-version = "0.9.6"
+version = "0.9.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6623e6aff42248cf6749ee5e9b4faa36dcecf12ef49f96ba91b0d151154f49c4"
+checksum = "d95b828b528d09c0ea9124e069c02c2a3f0f75e1cecd71e9905cffa77e8fbaf9"
 dependencies = [
  "algo_ops",
  "anyhow",

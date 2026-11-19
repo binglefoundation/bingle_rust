@@ -403,6 +403,29 @@ pub trait BingleLocalApi: Send + Sync {
     /// opt-out succeeded, is [`BingleError::Other`]. All of them are safe to retry.
     fn delete_account(&mut self) -> Result<(), BingleError>;
 
+    /// What the last [`load`](Self::load) found (issue #459): no file yet, a plain or sealed file
+    /// in use, or a sealed file that didn't open because the device is locked or this device has
+    /// no key for it. The app checks this after start-up before treating an empty state as a new
+    /// user.
+    fn state_file_status(&self) -> crate::api::StateFileStatus;
+
+    /// Open the sealed state file at `path` with the account's 25-word recovery `phrase`, for a
+    /// file restored from a backup to a new device (issue #459). The phrase is checked first, and
+    /// a wrong one changes nothing. Then the file gets a new device key, so it opens on this device
+    /// from now on, is loaded, and the phrase's keypair becomes current and is saved. Returns that
+    /// keypair. Errors with [`BingleError::RecoveryPhraseRequired`] if the phrase doesn't open the
+    /// file.
+    fn open_state_with_recovery_phrase(
+        &mut self,
+        path: &str,
+        phrase: String,
+    ) -> Result<Keypair, BingleError>;
+
+    /// Wipe the sealed state file's data key from memory (issue #459): the app calls it when the
+    /// device locks, after saving. The next save reads this device's key again, which works once the
+    /// device is unlocked. Does nothing for a plain file.
+    fn forget_state_key(&self);
+
     /// Register the current keypair with Bingle (requires credited funds).
     /// Returns Ok(()) on success, or Err(message) on failure.
     /// Parameter:

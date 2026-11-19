@@ -6,6 +6,8 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use zeroize::Zeroizing;
+
 use crate::api::{KeySlot, KeyStorageBackend, KeyStorageStatus, KeyStore, KeyStoreError, Keypair};
 
 use super::items::{Accessibility, ItemError, SecureItems};
@@ -61,6 +63,11 @@ impl KeychainKeyStore {
             .unwrap_or_else(|| PathBuf::from("."));
         let items = super::apple::KeychainItems::for_main_bundle();
         Self::new(Arc::new(items), &scope, &state_dir)
+    }
+
+    /// The account of the state file's device secret (issue #459).
+    fn state_account(&self) -> String {
+        format!("state/{}", self.scope)
     }
 
     fn account(&self, slot: KeySlot) -> String {
@@ -323,8 +330,56 @@ impl KeyStore for KeychainKeyStore {
         };
         self.write_record(KeySlot::Current, synced, &updated)
     }
+
+    fn holds_state_secret(&self) -> bool {
+        true
+    }
+
+    fn state_secret(&self, create: bool) -> Result<Option<Zeroizing<[u8; 32]>>, KeyStoreError> {
+        let account = self.state_account();
+        if let Some(data) = self.items.read(&account, false).map_err(storage)? {
+            let secret: [u8; 32] = data.as_slice().try_into().map_err(|_| {
+                KeyStoreError::Storage(format!(
+                    "the state file secret is {} bytes, not 32",
+                    data.len()
+                ))
+            })?;
+            return Ok(Some(Zeroizing::new(secret)));
+        }
+        if !create {
+            return Ok(None);
+        }
+        let mut secret = Zeroizing::new([0u8; 32]);
+        getrandom::getrandom(secret.as_mut())
+            .map_err(|e| KeyStoreError::Storage(format!("no randomness for the secret: {e}")))?;
+        // Never synced and never in a backup: a copy of the state file must not open elsewhere
+        // without the recovery phrase. Readable only while unlocked, so a dump of a locked phone
+        // gets the file but not this secret.
+        self.items
+            .add(
+                &account,
+                false,
+                Accessibility::WhenUnlockedThisDeviceOnly,
+                secret.as_ref(),
+            )
+            .map_err(storage)?;
+        Ok(Some(secret))
+    }
+
+    fn delete_state_secret(&self) -> Result<(), KeyStoreError> {
+        self.items
+            .delete(&self.state_account(), false)
+            .map_err(storage)
+    }
 }
 
+/// `errSecInteractionNotAllowed`: the Keychain refuses a `WhenUnlocked` item while the device is
+/// locked.
+pub const ERR_SEC_INTERACTION_NOT_ALLOWED: i32 = -25308;
+
 fn storage(e: ItemError) -> KeyStoreError {
-    KeyStoreError::Storage(e.to_string())
+    match e {
+        ItemError::Status(ERR_SEC_INTERACTION_NOT_ALLOWED) => KeyStoreError::Locked,
+        other => KeyStoreError::Storage(other.to_string()),
+    }
 }

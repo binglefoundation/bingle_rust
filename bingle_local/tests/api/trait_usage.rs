@@ -4,7 +4,7 @@ use algo_ops::AlgoOps;
 use bingle_core::api::bingle_api::{BingleError, SendFailureKind};
 use bingle_local::api::{
     BingleLocalApi, Contact, ContactSource, Keypair, KeypairStatus, MailboxPoll,
-    MailboxPollObserver, Message, MessagingSettings,
+    MailboxPollObserver, Message, MessagingSettings, StateFileStatus,
 };
 
 #[derive(Default)]
@@ -320,6 +320,22 @@ impl BingleLocalApi for DummyLocal {
     fn delete_account(&mut self) -> Result<(), BingleError> {
         Err(BingleError::Other("delete_account".to_string()))
     }
+
+    fn state_file_status(&self) -> StateFileStatus {
+        StateFileStatus::NotLoaded
+    }
+
+    fn open_state_with_recovery_phrase(
+        &mut self,
+        _path: &str,
+        _phrase: String,
+    ) -> Result<Keypair, BingleError> {
+        Err(BingleError::Other(
+            "open_state_with_recovery_phrase".to_string(),
+        ))
+    }
+
+    fn forget_state_key(&self) {}
 
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
         self

@@ -10,8 +10,8 @@ use crate::api::{
     AccountOptOut, BingleLocalApi, ChainAccountOptOut, ChainRegistrationOps, Contact,
     ContactSource, DeliveryRoute, FileKeyStore, IgnoreMailboxPollProgress, KeySlot,
     KeyStorageStatus, KeyStore, KeyStoreError, Keypair, KeypairStatus, MailboxPoll,
-    MailboxPollObserver, Message, MessagingSettings, REQUIRED_ALGO, legacy_message_id,
-    new_message_id, run_registration,
+    MailboxPollObserver, Message, MessagingSettings, REQUIRED_ALGO, StateFileStatus,
+    legacy_message_id, new_message_id, run_registration,
 };
 use algo_ops::error::AlgoErrorKind;
 use algo_ops::{AlgoChainConfig, AlgoOps};
@@ -21,6 +21,7 @@ use bingle_core::blockchain::algo_bingle::AlgoBingle;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
+use zeroize::Zeroizing;
 
 // The state shared by every clone of the handle (issue #283).
 mod local_state;
@@ -28,6 +29,10 @@ mod local_state;
 // hook, epic #200 / #214). A child module so it still reads this implementation's private state.
 mod store_and_forward;
 pub use store_and_forward::ForwardOutcome;
+// The state file on disk: sealed or plain, the refusal to save over an unopened sealed file, and
+// restoring with the recovery phrase (issue #459).
+mod state_file;
+use state_file::write_atomically;
 
 #[doc(hidden)]
 pub use local_state::LocalState;
@@ -71,6 +76,11 @@ pub struct LocalApiConfig {
     /// when `false` (the default), no polling happens. Independent of the send gate. Also requires
     /// `sidewinder` to be configured for there to be a Mailbox to poll.
     pub store_and_forward_receive: bool,
+    /// Seal the state file (issue #459): encrypt it at rest under a data key wrapped by this
+    /// device's secret and by the account's recovery phrase. Needs a key store that holds the
+    /// device secret (the iOS Keychain). `false` (the default) writes plain JSON, as before; a
+    /// sealed file still loads either way.
+    pub encrypt_state: bool,
 }
 
 /// The APNs environment assumed when a caller does not specify one: `"sandbox"`, matching a dev /
@@ -95,6 +105,7 @@ impl Default for LocalApiConfig {
             // build/environment once proven. Each side is independent.
             store_and_forward_send: false,
             store_and_forward_receive: false,
+            encrypt_state: false,
         }
     }
 }
@@ -121,7 +132,14 @@ impl LocalApiConfig {
             sidewinder: None,
             store_and_forward_send: false,
             store_and_forward_receive: false,
+            encrypt_state: false,
         }
+    }
+
+    /// Seal the state file at rest (issue #459); see [`encrypt_state`](Self::encrypt_state).
+    pub fn with_encrypt_state(mut self, encrypt_state: bool) -> Self {
+        self.encrypt_state = encrypt_state;
+        self
     }
 
     /// Attach a Sidewinder Mailbox connection (store-and-forward, epic #200). Chained after
@@ -396,6 +414,16 @@ impl BingleApiLocalImpl {
                 .delete(slot)
                 .map_err(|e| BingleError::Other(e.to_string()))?;
             self.forget_stored_phrase(slot);
+        }
+        // The state file's device secret goes with the keys: the caller deletes the file (#459).
+        self.key_store
+            .delete_state_secret()
+            .map_err(|e| BingleError::Other(e.to_string()))?;
+        if let Ok(mut sealed) = self.sealed.lock() {
+            sealed.clear();
+        }
+        if let Ok(mut g) = self.state_file.lock() {
+            *g = (None, StateFileStatus::NotLoaded);
         }
         if let Ok(mut g) = self.recovery_keypair.lock() {
             *g = None;
@@ -1273,6 +1301,27 @@ impl BingleLocalApi for BingleApiLocalImpl {
         self.delete_account_with(&opt_out)
     }
 
+    fn state_file_status(&self) -> StateFileStatus {
+        self.state_file
+            .lock()
+            .map(|g| g.1)
+            .unwrap_or(StateFileStatus::NotLoaded)
+    }
+
+    fn open_state_with_recovery_phrase(
+        &mut self,
+        path: &str,
+        phrase: String,
+    ) -> Result<Keypair, BingleError> {
+        self.restore_with_phrase(path, phrase)
+    }
+
+    fn forget_state_key(&self) {
+        if let Ok(mut sealed) = self.sealed.lock() {
+            sealed.forget_data_key();
+        }
+    }
+
     fn register_keypair(&self, handle: String) -> Result<bool, BingleError> {
         tracing::info!(
             "[BingleLocalApi] Registering keypair with handle: {}",
@@ -1816,7 +1865,7 @@ impl BingleLocalApi for BingleApiLocalImpl {
             id: kp.id,
         };
         let state = LocalState {
-            keypair: keypair.map(|kp| persist(KeySlot::Current, kp)),
+            keypair: keypair.clone().map(|kp| persist(KeySlot::Current, kp)),
             recovery_keypair: recovery_keypair.map(|kp| persist(KeySlot::Recovery, kp)),
             contacts: contacts_vec,
             messages,
@@ -1825,48 +1874,16 @@ impl BingleLocalApi for BingleApiLocalImpl {
             forwarded_messages,
         };
 
-        // Ensure parent directory exists
-        if let Some(parent) = std::path::Path::new(path).parent()
-            && !parent.as_os_str().is_empty()
-            && !parent.is_dir()
-            && let Err(e) = std::fs::create_dir_all(parent)
-        {
-            let msg = format!(
-                "Failed to create parent directory '{}' for '{}': {}",
-                parent.display(),
-                path,
-                e
-            );
-            tracing::error!("[save] {}", msg);
-            return Err(BingleError::Other(msg));
-        }
-
-        // Write a uniquely named temp file beside the target, then rename it over the target. The
-        // rename is atomic, so a reader never sees a half-written file and two threads saving at
-        // once (the pending-message sender and the client, issue #283) each land a whole snapshot.
-        static SAVE_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-        let seq = SAVE_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        let tmp_path = format!("{path}.tmp.{}.{seq}", std::process::id());
-        let file = match std::fs::File::create(&tmp_path) {
-            Ok(f) => f,
+        let json = match serde_json::to_vec_pretty(&state) {
+            Ok(json) => Zeroizing::new(json),
             Err(e) => {
                 let msg = e.to_string();
-                tracing::error!("[save] Failed to create file '{}': {}", tmp_path, msg);
+                tracing::error!("[save] Failed to serialize state for '{}': {}", path, msg);
                 return Err(BingleError::Other(msg));
             }
         };
-        if let Err(e) = serde_json::to_writer_pretty(file, &state) {
-            let msg = e.to_string();
-            tracing::error!("[save] Failed to write JSON to '{}': {}", tmp_path, msg);
-            let _ = std::fs::remove_file(&tmp_path);
-            return Err(BingleError::Other(msg));
-        }
-        if let Err(e) = std::fs::rename(&tmp_path, path) {
-            let msg = e.to_string();
-            tracing::error!("[save] Failed to replace '{}': {}", path, msg);
-            let _ = std::fs::remove_file(&tmp_path);
-            return Err(BingleError::Other(msg));
-        }
+        let bytes = self.state_bytes_for_save(path, json, keypair.as_ref())?;
+        write_atomically(path, &bytes)?;
         tracing::info!("[BingleLocalApi] State saved successfully to: {}", path);
         Ok(())
     }
@@ -1907,15 +1924,10 @@ impl BingleLocalApi for BingleApiLocalImpl {
             forwarded_messages: Vec<ForwardedEntry>,
         }
 
-        let file = match std::fs::File::open(path) {
-            Ok(f) => f,
-            Err(e) => {
-                let msg = e.to_string();
-                tracing::error!("[load] Failed to open file '{}': {}", path, msg);
-                return Err(BingleError::Other(msg));
-            }
-        };
-        let state: LocalState = match serde_json::from_reader(file) {
+        // A sealed file is opened with this device's key (issue #459); one that doesn't open is
+        // recorded, so it isn't saved over, and its error returned.
+        let (json, was_sealed) = self.read_state_json(path)?;
+        let state: LocalState = match serde_json::from_slice(&json) {
             Ok(s) => s,
             Err(e) => {
                 let msg = e.to_string();
@@ -2000,16 +2012,24 @@ impl BingleLocalApi for BingleApiLocalImpl {
             *ls = None;
         }
 
-        // A phrase just moved into the key store comes out of the file now (issue #385). If this
-        // save fails, the next one does it; the phrase is safe in the store either way.
-        if (moved_current || moved_recovery)
+        self.set_state_file(
+            path,
+            if was_sealed {
+                StateFileStatus::Sealed
+            } else {
+                StateFileStatus::Plain
+            },
+        );
+
+        // A phrase just moved into the key store comes out of the file now (issue #385), and a
+        // plain file is sealed now when sealing is on (issue #459): the rename replaces it whole,
+        // so an interrupted rewrite leaves the plain file. If this save fails, the next one does it;
+        // the phrase is safe in the store either way.
+        let migrate = !was_sealed && self.config().encrypt_state;
+        if (moved_current || moved_recovery || migrate)
             && let Err(e) = self.save(path)
         {
-            tracing::warn!(
-                "[load] couldn't rewrite '{}' without the phrase yet: {}",
-                path,
-                e
-            );
+            tracing::warn!("[load] couldn't rewrite '{}' yet: {}", path, e);
         }
 
         tracing::info!("[BingleLocalApi] State loaded successfully from: {}", path);
