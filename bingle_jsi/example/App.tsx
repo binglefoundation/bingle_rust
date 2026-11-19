@@ -10,7 +10,7 @@
  * Every element a test drives or reads carries a stable `testID` so Detox can operate the whole API
  * surface without any per-method UI.
  */
-import React, {useCallback, useEffect, useRef, useState} from 'react';
+import React, {useCallback, useEffect, useState, useSyncExternalStore} from 'react';
 import {
   AppState,
   SafeAreaView,
@@ -30,6 +30,13 @@ import {
   failureKindIsRetryable,
 } from 'react-native-bingle-jsi';
 import type {BingleJsiConfig, FailureKind} from 'react-native-bingle-jsi';
+
+import {
+  getHarnessState,
+  pushEvent,
+  subscribeHarnessState,
+  updateHarnessState,
+} from './harnessStore';
 
 /** Default config used when `init` is invoked without an explicit argument. */
 const defaultConfig: BingleJsiConfig = {
@@ -60,8 +67,6 @@ const defaultConfig: BingleJsiConfig = {
   notify_env: null,
 };
 
-type CommandStatus = 'idle' | 'running' | 'ok' | 'error';
-
 /**
  * Extra dispatch entries that are not plain methods on the `BingleJsi` proxy: `init` (a top-level
  * export that must run before other methods) and the pure `failureKindIsRetryable` helper. Any other
@@ -74,117 +79,130 @@ const extraDispatch: Record<string, (...args: any[]) => unknown> = {
   init: (config?: Partial<BingleJsiConfig>) =>
     initBingleJsi({...defaultConfig, ...(config ?? {})}),
   failureKindIsRetryable: (kind: FailureKind) => failureKindIsRetryable(kind),
+  // Resolve with `ms` after `ms` milliseconds: a command that is reliably still in flight, for the
+  // test that recreates the activity mid-command (issue #431).
+  delay: (ms: number) =>
+    new Promise<number>(resolve => setTimeout(() => resolve(ms), ms)),
 };
 
-/** How many event-feed lines to keep in view. */
-const MAX_EVENT_LINES = 300;
+/**
+ * Run a dispatcher command and record its status and result in the harness store, not in a
+ * component: if Android recreates the activity while the command runs, the remounted screen still
+ * shows the result (issue #431).
+ */
+async function runHarnessCommand(command: string): Promise<void> {
+  updateHarnessState({status: 'running', output: ''});
+  try {
+    const parsed = JSON.parse(command) as {method?: string; args?: unknown[]};
+    const method = parsed.method;
+    const args = parsed.args ?? [];
+    if (!method) {
+      throw new Error('command must include a "method"');
+    }
+    const fn =
+      extraDispatch[method] ?? (BingleJsi as Record<string, any>)[method];
+    if (typeof fn !== 'function') {
+      throw new Error(`unknown method: ${method}`);
+    }
+    const result = await fn.apply(BingleJsi, args as unknown[]);
+    // `undefined` (void methods) render as `null` so the output element is always valid JSON.
+    updateHarnessState({output: JSON.stringify(result ?? null), status: 'ok'});
+  } catch (e: unknown) {
+    updateHarnessState({
+      output: e instanceof Error ? e.message : String(e),
+      status: 'error',
+    });
+  }
+}
+
+/**
+ * Register the native event listeners and the app lifecycle forwarding once per JavaScript runtime,
+ * not per mount, so a callback that fires while Android recreates the activity is still recorded
+ * (issue #431). We deliberately do NOT auto-init: the e2e drives the lifecycle via the command box
+ * so each test controls it.
+ */
+let nativeListenersRegistered = false;
+function registerNativeListeners(): void {
+  if (nativeListenersRegistered) {
+    return;
+  }
+  nativeListenersRegistered = true;
+  const emitter = new NativeEventEmitter(NativeModules.BingleJsi);
+  emitter.addListener(
+    'onLog',
+    (e: {timestamp: number; level: string; message: string}) => {
+      pushEvent(`onLog ${e.level} ${e.message}`);
+    },
+  );
+  emitter.addListener(
+    'onMessage',
+    (e: {senderId: string; senderHandle: string; message: unknown}) => {
+      pushEvent(`onMessage ${e.senderHandle} ${JSON.stringify(e.message)}`);
+    },
+  );
+  emitter.addListener(
+    'onListening',
+    (e: {listening: boolean; nat_type: string}) => {
+      pushEvent(`onListening ${e.listening} ${e.nat_type}`);
+    },
+  );
+  emitter.addListener('onMailboxChecked', (e: {read: number}) => {
+    pushEvent(`onMailboxChecked ${e.read}`);
+  });
+  emitter.addListener(
+    'onMailboxProgress',
+    (e: {stage: string; read: number; retry_in_secs?: number}) => {
+      const retry = e.retry_in_secs === undefined ? '' : ` ${e.retry_in_secs}`;
+      pushEvent(`onMailboxProgress ${e.stage} ${e.read}${retry}`);
+    },
+  );
+
+  // Forward app lifecycle to the engine as a host app does (bingle_ux_rn App.tsx), so a test that
+  // backgrounds the app (`device.sendToHome()`) drives the real native backgrounding path (#352).
+  // The bridge resolves without doing anything before `init`, so no gate is needed.
+  let previous = AppState.currentState;
+  AppState.addEventListener('change', next => {
+    const was = previous;
+    previous = next;
+    if (next === 'active' && was !== 'active') {
+      pushEvent('lifecycle foregrounding');
+      BingleJsi.foregrounding().catch((err: unknown) =>
+        pushEvent(`foregrounding error: ${String(err)}`),
+      );
+    } else if (next === 'background') {
+      pushEvent('lifecycle backgrounding');
+      BingleJsi.backgrounding().catch((err: unknown) =>
+        pushEvent(`backgrounding error: ${String(err)}`),
+      );
+    }
+  });
+}
 
 function App(): React.JSX.Element {
   const [ready, setReady] = useState(false);
-  const [command, setCommand] = useState('{"method":"version","args":[]}');
-  const [status, setStatus] = useState<CommandStatus>('idle');
-  const [output, setOutput] = useState('');
-  const [events, setEvents] = useState<string[]>([]);
-  const eventsRef = useRef<string[]>([]);
+  const {command, status, output, events} = useSyncExternalStore(
+    subscribeHarnessState,
+    getHarnessState,
+  );
 
-  const pushEvent = useCallback((line: string) => {
-    const next = [...eventsRef.current, line].slice(-MAX_EVENT_LINES);
-    eventsRef.current = next;
-    setEvents(next);
-  }, []);
-
-  // Register native event listeners once, before any command runs, so callbacks emitted during init
-  // or delivery are captured. We deliberately do NOT auto-init: the e2e drives the lifecycle via the
-  // command box so each test controls it.
   useEffect(() => {
-    const emitter = new NativeEventEmitter(NativeModules.BingleJsi);
-    const subs = [
-      emitter.addListener(
-        'onLog',
-        (e: {timestamp: number; level: string; message: string}) => {
-          pushEvent(`onLog ${e.level} ${e.message}`);
-        },
-      ),
-      emitter.addListener(
-        'onMessage',
-        (e: {senderId: string; senderHandle: string; message: unknown}) => {
-          pushEvent(`onMessage ${e.senderHandle} ${JSON.stringify(e.message)}`);
-        },
-      ),
-      emitter.addListener(
-        'onListening',
-        (e: {listening: boolean; nat_type: string}) => {
-          pushEvent(`onListening ${e.listening} ${e.nat_type}`);
-        },
-      ),
-      emitter.addListener('onMailboxChecked', (e: {read: number}) => {
-        pushEvent(`onMailboxChecked ${e.read}`);
-      }),
-      emitter.addListener(
-        'onMailboxProgress',
-        (e: {stage: string; read: number; retry_in_secs?: number}) => {
-          const retry =
-            e.retry_in_secs === undefined ? '' : ` ${e.retry_in_secs}`;
-          pushEvent(`onMailboxProgress ${e.stage} ${e.read}${retry}`);
-        },
-      ),
-    ];
-    // Route native logs into the event feed from the start (safe before init).
+    registerNativeListeners();
+    // Route native logs into the event feed (safe before init). It runs again after a remount, which
+    // only resets the log level.
     BingleJsi.setLogCallback(defaultConfig.log_level)
       .catch((err: unknown) =>
         pushEvent(`setLogCallback error: ${String(err)}`),
       )
       .finally(() => setReady(true));
-    return () => subs.forEach(s => s.remove());
-  }, [pushEvent]);
+  }, []);
 
-  // Forward app lifecycle to the engine as a host app does (bingle_ux_rn App.tsx), so a test that
-  // backgrounds the app (`device.sendToHome()`) drives the real native backgrounding path (#352).
-  // The bridge resolves without doing anything before `init`, so no gate is needed.
-  useEffect(() => {
-    let previous = AppState.currentState;
-    const sub = AppState.addEventListener('change', next => {
-      const was = previous;
-      previous = next;
-      if (next === 'active' && was !== 'active') {
-        pushEvent('lifecycle foregrounding');
-        BingleJsi.foregrounding().catch((err: unknown) =>
-          pushEvent(`foregrounding error: ${String(err)}`),
-        );
-      } else if (next === 'background') {
-        pushEvent('lifecycle backgrounding');
-        BingleJsi.backgrounding().catch((err: unknown) =>
-          pushEvent(`backgrounding error: ${String(err)}`),
-        );
-      }
-    });
-    return () => sub.remove();
-  }, [pushEvent]);
-
-  const runCommand = useCallback(async () => {
-    setStatus('running');
-    setOutput('');
-    try {
-      const parsed = JSON.parse(command) as {method?: string; args?: unknown[]};
-      const method = parsed.method;
-      const args = parsed.args ?? [];
-      if (!method) {
-        throw new Error('command must include a "method"');
-      }
-      const fn =
-        extraDispatch[method] ?? (BingleJsi as Record<string, any>)[method];
-      if (typeof fn !== 'function') {
-        throw new Error(`unknown method: ${method}`);
-      }
-      const result = await fn.apply(BingleJsi, args as unknown[]);
-      // `undefined` (void methods) render as `null` so the output element is always valid JSON.
-      setOutput(JSON.stringify(result ?? null));
-      setStatus('ok');
-    } catch (e: unknown) {
-      setOutput(e instanceof Error ? e.message : String(e));
-      setStatus('error');
-    }
-  }, [command]);
+  const setCommand = useCallback(
+    (text: string) => updateHarnessState({command: text}),
+    [],
+  );
+  const runCommand = useCallback(() => {
+    runHarnessCommand(getHarnessState().command);
+  }, []);
 
   return (
     <SafeAreaView style={styles.container}>

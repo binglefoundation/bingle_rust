@@ -46,6 +46,13 @@ function androidSerial(): string | null {
   return line ? line.split(/\s+/)[0] : null;
 }
 
+/** Run `adb shell <command>` on the emulator and return its output, trimmed. */
+export function adbShell(command: string): string {
+  const serial = androidSerial();
+  const adb = serial ? `adb -s ${serial}` : 'adb';
+  return execSync(`${adb} shell ${command}`).toString().trim();
+}
+
 /**
  * Resolve the network `init` inputs for the current platform (issue #131). The Detox test runs on
  * the host, but `node_file` is read by the app on the device — and unlike the iOS simulator (which
