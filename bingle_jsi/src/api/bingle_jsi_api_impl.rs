@@ -2561,6 +2561,11 @@ impl BingleJsiApi for BingleJsiApiImpl {
     }
 
     fn stop(&self) -> Result<(), BingleJsiError> {
+        // Stop the backstop Mailbox poller first, started or not: foregrounding starts it apart from
+        // the engine, and a poller left running would take messages from the Mailbox into a stopped
+        // instance's state, where the app never sees them (issue #455).
+        self.stop_mailbox_poller();
+
         // Mark as stopped
         {
             let mut guard = self

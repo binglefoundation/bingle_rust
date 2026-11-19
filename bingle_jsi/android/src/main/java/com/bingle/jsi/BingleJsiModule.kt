@@ -1,5 +1,6 @@
 package com.bingle.jsi
 
+import android.util.Log
 import com.facebook.react.bridge.*
 import uniffi.bingle_jsi.*
 
@@ -14,6 +15,34 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
     private var apiInstance: BingleJsiApi? = null
 
     override fun getName(): String = "BingleJsi"
+
+    /**
+     * React Native discards this module when it reloads the JavaScript (a Metro reload, or anything
+     * else that rebuilds the bridge) and creates a new one, which the app initializes again. Stop
+     * this module's engine, or it keeps running on the same account: it acknowledges incoming
+     * messages and saves its own state over the new engine's, so those messages are lost (issue #455).
+     */
+    override fun invalidate() {
+        val api = apiInstance
+        apiInstance = null
+        stopInBackground(api)
+        super.invalidate()
+    }
+
+    /**
+     * Stop an engine off the calling thread: stop signs off the DDB advert, bounded, and joins the
+     * engine's threads, which the bridge teardown or a JS call must not wait for.
+     */
+    private fun stopInBackground(api: BingleJsiApi?) {
+        if (api == null) return
+        Thread {
+            try {
+                api.stop()
+            } catch (e: Exception) {
+                Log.w("BingleJsi", "stopping a replaced engine failed: ${e.message}", e)
+            }
+        }.start()
+    }
 
     @ReactMethod
     fun initialize(config: ReadableMap, promise: Promise) {
@@ -45,7 +74,10 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
                 // Initialize the platform TLS verifier before any HTTPS to an Algorand node (#135).
                 BingleJsiTls.ensureInitialized(reactApplicationContext)
                 val api = createBingleApi(jsiConfig)
+                // A second initialize on this module replaces its engine: stop the old one (#455).
+                val previous = apiInstance
                 apiInstance = api
+                stopInBackground(previous)
                 promise.resolve(true)
             } catch (e: Exception) {
                 promise.reject("BINGLE_INIT_ERROR", "Failed to initialize BingleJsi: ${e.message}", e)

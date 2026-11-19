@@ -34,6 +34,32 @@ class BingleJsiBridge: RCTEventEmitter {
         NotificationCenter.default.removeObserver(self)
     }
 
+    /// React Native discards this module when it reloads the JavaScript (a Metro reload, or
+    /// anything else that rebuilds the bridge) and creates a new one, which the app initializes
+    /// again. Stop this module's engine, or it keeps running on the same account: it acknowledges
+    /// incoming messages and saves its own state over the new engine's, so those messages are lost
+    /// (issue #455).
+    override func invalidate() {
+        NotificationCenter.default.removeObserver(self)
+        let api = apiInstance
+        apiInstance = nil
+        BingleJsiBridge.stopInBackground(api)
+        super.invalidate()
+    }
+
+    /// Stop an engine off the calling thread: stop signs off the DDB advert, bounded, and joins
+    /// the engine's threads, which the bridge teardown or a JS call must not wait for.
+    private static func stopInBackground(_ api: (any BingleJsiApiProtocol)?) {
+        guard let api = api else { return }
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                try api.stop()
+            } catch {
+                NSLog("[BingleJsi] stopping a replaced engine failed: \(error)")
+            }
+        }
+    }
+
     /// Inject a mock or alternative API instance for testing.
     /// Call this before any bridge methods that require initialization.
     func injectApi(_ api: any BingleJsiApiProtocol) {
@@ -95,7 +121,10 @@ class BingleJsiBridge: RCTEventEmitter {
                     keyStorage: config["key_storage"] as? String
                 )
                 let api = try createBingleApi(config: jsiConfig)
+                // A second initialize on this module replaces its engine: stop the old one (#455).
+                let previous = self.apiInstance
                 self.apiInstance = api
+                BingleJsiBridge.stopInBackground(previous)
                 resolve(true)
             } catch {
                 reject("BINGLE_INIT_ERROR", "Failed to initialize BingleJsi: \(error)", error)
