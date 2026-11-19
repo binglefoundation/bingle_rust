@@ -114,6 +114,9 @@ RCT_EXTERN_METHOD(restoreStoredKey:(RCTPromiseResolveBlock)resolve
 RCT_EXTERN_METHOD(removeKeyFromDevice:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
+RCT_EXTERN_METHOD(deleteAccount:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+
 RCT_EXTERN_METHOD(addContact:(NSString *)handle
                   id:(NSString *)id
                   source:(NSString *)source

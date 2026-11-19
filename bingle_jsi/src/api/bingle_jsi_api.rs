@@ -224,6 +224,16 @@ pub trait BingleJsiApi: Send + Sync {
     /// should do next. `KeyStorageUnavailable` with the file store.
     fn remove_key_from_device(&self) -> Result<(), BingleJsiError>;
 
+    /// Delete the account (issue #100): opt it out of the Bingle DApp on chain, delete its stored
+    /// keys and clear its contacts, blocks and messages, stop the engine, and delete the state file.
+    /// The handle is free for anyone to register at once; the Algorand account, its ALGO and its
+    /// Bingle$ holding stay, as does the blockchain's history. A synced Keychain key is removed from
+    /// every device on the user's Apple Account, so the app must say so first. If the on-chain step
+    /// fails, nothing is changed and the error is returned, so the app can offer a retry; calling
+    /// again after a part-way failure resumes. Works with either key store. The app should
+    /// re-initialise into first run afterwards.
+    fn delete_account(&self) -> Result<(), BingleJsiError>;
+
     /// Ask the host to begin iOS push registration (bingle_notify #i). Invokes the registered
     /// [`PushRegistrationCallback`] so the thin Swift bridge performs the platform calls
     /// (`requestAuthorization` + `registerForRemoteNotifications`). Returns once the callback has

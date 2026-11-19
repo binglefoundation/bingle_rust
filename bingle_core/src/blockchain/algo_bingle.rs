@@ -758,6 +758,40 @@ impl AlgoBingle {
         Ok(Some(txid))
     }
 
+    /// Drop this account's local state from `app_id` and from every blessed ancestor of it, so its
+    /// handle is released and can't be migrated back (account deletion, issue #100).
+    ///
+    /// Uses clear-state, not close-out: the DApp's approval program has no close-out method, and
+    /// clear-state always succeeds whatever the approval program says. Each app is cleared only if
+    /// the account still holds local state there, so a retry after a part-way failure skips the
+    /// apps already cleared. The current app goes first, since its `Handle` is what blocks the
+    /// handle's re-registration. Returns the app ids cleared, in order; empty if there was nothing
+    /// to clear.
+    pub fn leave_app_lineage(&self, app_id: u64) -> Result<Vec<u64>> {
+        if app_id == 0 {
+            bail!("app_id must be > 0");
+        }
+        let me = self
+            .ops
+            .address
+            .as_ref()
+            .ok_or_else(|| anyhow!("No sender address"))?
+            .to_string();
+        let mut lineage = vec![app_id];
+        lineage.extend(self.ancestor_apps(app_id)?);
+        let mut cleared = Vec::new();
+        for app in lineage {
+            if self.ops.local_state_for_account(app, &me)?.is_none() {
+                continue;
+            }
+            self.ops
+                .clear_state_app(app)
+                .map_err(|e| anyhow!("clearing local state on app {app} failed: {e}"))?;
+            cleared.push(app);
+        }
+        Ok(cleared)
+    }
+
     /// Decode an account's effective allow bitfield from its decoded local-state key/values,
     /// transparently handling both encodings (issue #232). Mirrors the on-chain `_effective_allow_bits`:
     /// if the packed `allow_static` value has the [`allow_flags::BIT_MIGRATED`] sentinel it is returned

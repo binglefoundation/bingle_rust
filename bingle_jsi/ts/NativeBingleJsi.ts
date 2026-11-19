@@ -380,6 +380,8 @@ export interface BingleJsiApi {
   markPhraseBackedUp(): void;
   restoreStoredKey(): Keypair;
   removeKeyFromDevice(): void;
+  // Account deletion (#100)
+  deleteAccount(): void;
   requestPushRegistration(): void;
   registerApnsToken(token: Uint8Array): boolean;
   apnsRegistrationFailed(reason: string): void;

@@ -352,6 +352,12 @@ impl BingleJsiApi for StubApi {
         })
     }
 
+    fn delete_account(&self) -> Result<(), BingleJsiError> {
+        Err(BingleJsiError::NotImplemented {
+            reason: "delete_account".to_string(),
+        })
+    }
+
     fn keypair_status(&self) -> Result<KeypairStatusResponse, BingleJsiError> {
         Err(BingleJsiError::NotImplemented {
             reason: "keypair_status".to_string(),

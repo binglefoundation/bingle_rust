@@ -902,4 +902,27 @@ final class KeyStorageBridgeTests: XCTestCase {
         XCTAssertTrue(mockApi.markPhraseBackedUpCalled)
         XCTAssertTrue(mockApi.removeKeyFromDeviceCalled)
     }
+
+    func testDeleteAccount_reachesTheApi() {
+        let deleted = self.expectation(description: "deleteAccount resolved")
+        bridge.deleteAccount(
+            { _ in deleted.fulfill() },
+            rejecter: { _, _, _ in XCTFail("unexpected rejection") }
+        )
+        waitForExpectations(timeout: 2.0)
+        XCTAssertTrue(mockApi.deleteAccountCalled)
+    }
+
+    func testDeleteAccount_rejectsWhenTheApiFails() {
+        mockApi.deleteAccountError = NSError(domain: "test", code: 1)
+        let rejected = self.expectation(description: "deleteAccount rejected")
+        bridge.deleteAccount(
+            { _ in XCTFail("unexpected resolve") },
+            rejecter: { code, _, _ in
+                XCTAssertEqual(code, "BINGLE_ERROR")
+                rejected.fulfill()
+            }
+        )
+        waitForExpectations(timeout: 2.0)
+    }
 }

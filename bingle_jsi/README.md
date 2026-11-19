@@ -603,6 +603,7 @@ The full API is defined in `src/api/bingle_jsi_api.rs`. Key methods:
 | `markPhraseBackedUp()` | Record that the user confirmed the phrase is backed up. Keychain store only |
 | `restoreStoredKey()` | After a reinstall, make the key the Keychain still holds current, without entering the phrase. Keychain store only |
 | `removeKeyFromDevice()` | Delete this device's stored keys and the state file; a synced key goes from every device on the Apple Account. Re-initialise afterwards. Keychain store only |
+| `deleteAccount()` | Delete the account (#100): opt it out of the Bingle DApp on chain (its handle is free at once), delete its stored keys, contacts and messages, stop the engine and delete the state file. The Algorand account, its ALGO and its Bingle$ stay. A synced key goes from every device on the Apple Account. If the on-chain step fails nothing changes, so offer a retry. Re-initialise afterwards. Either key store |
 | `addContact(handle, id, source)` | Add a contact |
 | `blockContact(id)` | Block a contact; its live and Mailbox messages are dropped on receipt |
 | `unblockContact(id)` | Unblock a contact |

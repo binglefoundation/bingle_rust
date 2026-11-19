@@ -219,6 +219,13 @@ export const BingleJsi = BingleJsiNative as {
    * device on the user's Apple Account, so say so first; then re-initialise. Rejects with the file
    * store. */
   removeKeyFromDevice(): Promise<void>;
+  /** Delete the account (#100): opt it out of the Bingle DApp on chain, delete its stored keys,
+   * contacts and messages, stop the engine and delete the state file. The handle is free at once;
+   * the Algorand account, its ALGO and its Bingle$ stay. A synced key is removed from every device
+   * on the user's Apple Account, so say so first; then re-initialise into first run. If the on-chain
+   * step fails nothing changes and the promise rejects, so offer a retry. Works with either key
+   * store. */
+  deleteAccount(): Promise<void>;
   /** Ask the host to begin iOS push registration (bingle_notify #i). Invokes the registered
    * PushRegistrationCallback so the thin Swift bridge performs the platform calls; the token arrives
    * asynchronously via registerApnsToken. Rejects if no push-registration callback is set. */

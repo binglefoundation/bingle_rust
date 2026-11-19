@@ -7,10 +7,11 @@ use crate::api::notify::{
 };
 use crate::api::sidewinder::MailboxConfig;
 use crate::api::{
-    BingleLocalApi, ChainRegistrationOps, Contact, ContactSource, DeliveryRoute, FileKeyStore,
-    IgnoreMailboxPollProgress, KeySlot, KeyStorageStatus, KeyStore, KeyStoreError, Keypair,
-    KeypairStatus, MailboxPoll, MailboxPollObserver, Message, MessagingSettings, REQUIRED_ALGO,
-    legacy_message_id, new_message_id, run_registration,
+    AccountOptOut, BingleLocalApi, ChainAccountOptOut, ChainRegistrationOps, Contact,
+    ContactSource, DeliveryRoute, FileKeyStore, IgnoreMailboxPollProgress, KeySlot,
+    KeyStorageStatus, KeyStore, KeyStoreError, Keypair, KeypairStatus, MailboxPoll,
+    MailboxPollObserver, Message, MessagingSettings, REQUIRED_ALGO, legacy_message_id,
+    new_message_id, run_registration,
 };
 use algo_ops::error::AlgoErrorKind;
 use algo_ops::{AlgoChainConfig, AlgoOps};
@@ -317,6 +318,94 @@ impl BingleApiLocalImpl {
     /// to start the engine from a saved state file without requiring `--handle` on the command line.
     pub fn own_handle(&self) -> Option<String> {
         self.own_handle.lock().ok().and_then(|g| g.clone())
+    }
+
+    /// [`delete_account`](BingleLocalApi::delete_account), opting out through `opt_out` instead of
+    /// the configured network, so the sequence can be tested without a chain.
+    ///
+    /// Opts out the current keypair and then any pending recovery keypair (the handle may already
+    /// have moved to it), then removes the stored keys and clears this device's state in memory.
+    pub fn delete_account_with(&self, opt_out: &dyn AccountOptOut) -> Result<(), BingleError> {
+        let current = self.keypair.lock().ok().and_then(|g| g.clone());
+        let recovery = self.recovery_keypair.lock().ok().and_then(|g| g.clone());
+        for (role, keypair) in [("current", current), ("recovery", recovery)] {
+            let Some(keypair) = keypair else {
+                continue;
+            };
+            let cleared = opt_out.opt_out(&keypair).inspect_err(|e| {
+                tracing::error!(
+                    "[delete_account] opting the {} account {} out of the DApp failed: {}",
+                    role,
+                    keypair.id,
+                    e
+                );
+            })?;
+            tracing::info!(
+                "[delete_account] cleared the {} account {} from apps {:?}",
+                role,
+                keypair.id,
+                cleared
+            );
+        }
+
+        self.remove_stored_keys()?;
+        if let Ok(mut g) = self.contacts.lock() {
+            g.clear();
+        }
+        if let Ok(mut g) = self.messages.lock() {
+            g.clear();
+        }
+        if let Ok(mut g) = self.own_handle.lock() {
+            *g = None;
+        }
+        if let Ok(mut g) = self.own_handle_app_id.lock() {
+            *g = None;
+        }
+        if let Ok(mut g) = self.live_app_confirmed.lock() {
+            *g = None;
+        }
+        if let Ok(mut g) = self.last_status.lock() {
+            *g = None;
+        }
+        if let Ok(mut g) = self.nudged_recipients.lock() {
+            g.clear();
+        }
+        if let Ok(mut g) = self.forwarded_messages.lock() {
+            g.clear();
+        }
+        if let Ok(mut g) = self.refused_forwards.lock() {
+            g.clear();
+        }
+        if let Ok(mut g) = self.mailbox_identity_refused_at.lock() {
+            *g = None;
+        }
+        if let Ok(mut g) = self.mailbox_identity_refusal_reason.lock() {
+            *g = None;
+        }
+        tracing::info!("[delete_account] deleted the account from this device");
+        Ok(())
+    }
+
+    /// Delete the stored keys (current and recovery) from the key store, then forget both keypairs
+    /// and the cached `AlgoOps`. A key store failure returns before anything is forgotten, so the
+    /// caller can retry.
+    fn remove_stored_keys(&self) -> Result<(), BingleError> {
+        for slot in [KeySlot::Current, KeySlot::Recovery] {
+            self.key_store
+                .delete(slot)
+                .map_err(|e| BingleError::Other(e.to_string()))?;
+            self.forget_stored_phrase(slot);
+        }
+        if let Ok(mut g) = self.recovery_keypair.lock() {
+            *g = None;
+        }
+        if let Ok(mut g) = self.keypair.lock() {
+            *g = None;
+        }
+        if let Ok(mut ops_guard) = self.algo_ops.lock() {
+            *ops_guard = None;
+        }
+        Ok(())
     }
 
     /// Seed the memoized local handle (tests only). Lets a test exercise the give-up nudge, which
@@ -1156,23 +1245,17 @@ impl BingleLocalApi for BingleApiLocalImpl {
     }
 
     fn remove_key_from_device(&mut self) -> Result<(), BingleError> {
-        for slot in [KeySlot::Current, KeySlot::Recovery] {
-            self.key_store
-                .delete(slot)
-                .map_err(|e| BingleError::Other(e.to_string()))?;
-            self.forget_stored_phrase(slot);
-        }
-        if let Ok(mut g) = self.recovery_keypair.lock() {
-            *g = None;
-        }
-        if let Ok(mut g) = self.keypair.lock() {
-            *g = None;
-        }
-        if let Ok(mut ops_guard) = self.algo_ops.lock() {
-            *ops_guard = None;
-        }
+        self.remove_stored_keys()?;
         tracing::info!("[BingleLocalApi] Removed the key from this device");
         Ok(())
+    }
+
+    fn delete_account(&mut self) -> Result<(), BingleError> {
+        let opt_out = {
+            let config = self.config();
+            ChainAccountOptOut::new(config.algo_config.clone(), config.app_id)
+        };
+        self.delete_account_with(&opt_out)
     }
 
     fn register_keypair(&self, handle: String) -> Result<bool, BingleError> {

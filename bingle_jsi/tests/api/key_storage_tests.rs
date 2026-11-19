@@ -5,7 +5,7 @@
 use bingle_jsi::api::bingle_jsi_api::BingleJsiApi;
 use bingle_jsi::api::bingle_jsi_api_impl::BingleJsiApiImpl;
 use bingle_jsi::api::error::BingleJsiError;
-use bingle_jsi::api::types::{BingleJsiConfig, KeyStorageBackend};
+use bingle_jsi::api::types::{BingleJsiConfig, ContactSource, KeyStorageBackend};
 use bingle_test::temp_file_helpers::project_tmp_file_path;
 
 fn config(path: &str, key_storage: Option<&str>) -> BingleJsiConfig {
@@ -100,4 +100,25 @@ fn key_storage_needs_the_local_api() {
         api.key_storage_status(),
         Err(BingleJsiError::InvalidRequest { .. })
     ));
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+fn delete_account_with_no_keypair_deletes_the_state_file() {
+    // With no keypair there is nothing to opt out on chain, so this needs no network (issue #100).
+    let path = project_tmp_file_path("bingle-jsi-delete-account", ".json")
+        .to_string_lossy()
+        .into_owned();
+    let api = BingleJsiApiImpl::init(config(&path, Some("file"))).expect("init");
+    api.add_contact("friend".into(), "FRIEND_ID".into(), ContactSource::Manual)
+        .expect("add contact");
+    api.save(path.clone()).expect("save");
+    assert!(std::path::Path::new(&path).exists());
+
+    api.delete_account().expect("delete");
+
+    assert!(!std::path::Path::new(&path).exists(), "state file deleted");
+    assert!(api.get_contacts().expect("contacts").is_empty());
+    assert!(!api.is_started());
+    api.delete_account().expect("deleting again is safe");
 }
