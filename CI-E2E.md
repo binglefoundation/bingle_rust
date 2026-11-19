@@ -60,10 +60,11 @@ the snapshot restore. The diagnostics below run on every run, so the next failur
 1. logs the focused window (`dumpsys window`, `mCurrentFocus`);
 2. dismisses the keyguard, closes system dialogs (`CLOSE_SYSTEM_DIALOGS`) and presses Home;
 3. waits up to a minute for the launcher to hold focus, and logs it again;
-4. records every change of focus during the run in `artifacts/window_focus.log`, and the system's
-   activity and configuration events in `artifacts/device_events.log` and `device_system.log`;
-   every run prints the configuration changes and the app's activity relaunches (from boot), and a
-   failing run also prints the focus changes.
+4. records the system's activity, configuration and focus events in `artifacts/device_events.log`
+   (the `configuration_changed`, `wm_relaunch_*`, `wm_destroy_activity` and `input_focus` lines),
+   and the activity and overlay managers' messages in `device_system.log`. Every run prints the
+   configuration changes and the app's activity relaunches (from boot), and a failing run also
+   prints the focus changes (`input_focus`).
 
 A failing test also keeps a screenshot and the device log (`--take-screenshots failing
 --record-logs failing`). All of these are in the `detox-artifacts` upload.

@@ -49,32 +49,18 @@ for _ in $(seq 1 30); do
 done
 echo "    focus before tests ($(date -u +%H:%M:%S)): $focus"
 
-# Record every change of focus while the suites run, so a failure names the window that held it.
 ARTIFACTS_DIR="$EXAMPLE_DIR/artifacts"
 mkdir -p "$ARTIFACTS_DIR"
-FOCUS_LOG="$ARTIFACTS_DIR/window_focus.log"
-(
-  last=""
-  while true; do
-    now=$(focused_window)
-    if [[ -n "$now" && "$now" != "$last" ]]; then
-      echo "$(date -u +%H:%M:%S) $now"
-      last=$now
-    fi
-    sleep 2
-  done
-) >"$FOCUS_LOG" 2>/dev/null &
-focus_watch=$!
 
-# Record the system's activity and configuration events too: the app's activity was recreated
-# mid-suite in one run, losing the harness state, and the cause is not yet known (issues #414, #431).
-# The events buffer (configuration_changed, wm_relaunch_*, wm_destroy_activity) is small; the system
-# tags say what triggered it. The buffers are not cleared first, so changes during boot are kept.
+# Record the system's activity, configuration and focus events: the app's activity was recreated
+# mid-suite by an overlay update (issues #414, #431). The events buffer (configuration_changed,
+# wm_relaunch_*, wm_destroy_activity, input_focus) is small; the system tags say what triggered it.
+# The buffers are not cleared first, so changes during boot are kept.
 adb logcat -b events -v time >"$ARTIFACTS_DIR/device_events.log" 2>/dev/null &
 events_watch=$!
 adb logcat -b system,main -v time 'ActivityTaskManager:I' 'ActivityManager:I' 'WindowManager:W' 'OverlayManager:I' '*:S' >"$ARTIFACTS_DIR/device_system.log" 2>/dev/null &
 system_watch=$!
-trap 'kill "$focus_watch" "$events_watch" "$system_watch" 2>/dev/null || true' EXIT
+trap 'kill "$events_watch" "$system_watch" 2>/dev/null || true' EXIT
 
 # localnet backend: the provisioner (started in a prior workflow step) wrote the node-file/STUN list
 # (advertising 10.0.2.2) and an env file with the derived creds. The app reaches host services via
@@ -113,6 +99,6 @@ echo "configuration changes and activity relaunches during the run (issue #414):
 grep -E 'configuration_changed|wm_relaunch|wm_destroy_activity' "$ARTIFACTS_DIR/device_events.log" | grep -E 'configuration_changed|binglejsiexample' || true
 if [[ $status -ne 0 ]]; then
   echo "window focus during the run (issue #414):"
-  cat "$FOCUS_LOG"
+  grep -E 'input_focus' "$ARTIFACTS_DIR/device_events.log" || true
 fi
 exit "$status"
