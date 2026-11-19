@@ -69,7 +69,8 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
                     storeAndForwardReceive = config.tryGetBoolean("store_and_forward_receive"),
                     storeAndForwardPollIntervalSecs = config.tryGetULong("store_and_forward_poll_interval_secs"),
                     sendPendingMessages = config.tryGetBoolean("send_pending_messages"),
-                    keyStorage = config.tryGetString("key_storage")
+                    keyStorage = config.tryGetString("key_storage"),
+                    encryptState = config.tryGetBoolean("encrypt_state")
                 )
                 // Initialize the platform TLS verifier before any HTTPS to an Algorand node (#135).
                 BingleJsiTls.ensureInitialized(reactApplicationContext)
@@ -576,6 +577,62 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
             try {
                 api.removeKeyFromDevice()
                 promise.resolve(null)
+            } catch (e: Exception) {
+                promise.reject("BINGLE_ERROR", e.message, e)
+            }
+        }.start()
+    }
+
+    @ReactMethod
+    fun stateFileStatus(promise: Promise) {
+        val api = apiInstance
+        if (api == null) {
+            promise.reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.")
+            return
+        }
+        Thread {
+            try {
+                val status = when (api.stateFileStatus()) {
+                    StateFileStatus.NOT_LOADED -> "not_loaded"
+                    StateFileStatus.PLAIN -> "plain"
+                    StateFileStatus.SEALED -> "sealed"
+                    StateFileStatus.LOCKED -> "locked"
+                    StateFileStatus.RECOVERY_PHRASE_REQUIRED -> "recovery_phrase_required"
+                }
+                promise.resolve(status)
+            } catch (e: Exception) {
+                promise.reject("BINGLE_ERROR", e.message, e)
+            }
+        }.start()
+    }
+
+    @ReactMethod
+    fun forgetStateKey(promise: Promise) {
+        val api = apiInstance
+        if (api == null) {
+            promise.reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.")
+            return
+        }
+        Thread {
+            try {
+                api.forgetStateKey()
+                promise.resolve(null)
+            } catch (e: Exception) {
+                promise.reject("BINGLE_ERROR", e.message, e)
+            }
+        }.start()
+    }
+
+    @ReactMethod
+    fun openStateWithRecoveryPhrase(phrase: String, promise: Promise) {
+        val api = apiInstance
+        if (api == null) {
+            promise.reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.")
+            return
+        }
+        Thread {
+            try {
+                promise.resolve(keypairMap(api.openStateWithRecoveryPhrase(phrase)))
             } catch (e: Exception) {
                 promise.reject("BINGLE_ERROR", e.message, e)
             }

@@ -24,6 +24,11 @@ final class KeychainKeyStorageTests: XCTestCase {
         "key/\(statePath.deletingPathExtension().lastPathComponent)"
     }
 
+    /// The sealed state file's device secret (bingle_rust #459).
+    private var stateAccount: String {
+        "state/\(statePath.deletingPathExtension().lastPathComponent)"
+    }
+
     override func setUp() {
         super.setUp()
         stateDir = FileManager.default.temporaryDirectory
@@ -41,14 +46,15 @@ final class KeychainKeyStorageTests: XCTestCase {
         super.tearDown()
     }
 
-    private func makeApi(keyStorage: String = "keychain") throws -> any BingleJsiApiProtocol {
+    private func makeApi(keyStorage: String = "keychain", encryptState: Bool? = nil) throws -> any BingleJsiApiProtocol {
         let config = BingleJsiConfig(
             handle: nil, passphrase: nil, relay: false, staticIp: nil, stunServers: nil,
             stunServersFile: nil, nodeFile: nil, logLevel: nil, appId: nil, assetId: nil,
             handleCacheExpirySecs: nil, debug: false, local: statePath.path,
             notifyGatewayUrl: nil, notifyOnGiveup: nil, notifyEnv: nil,
             storeAndForwardSend: nil, storeAndForwardReceive: nil,
-            storeAndForwardPollIntervalSecs: nil, sendPendingMessages: nil, keyStorage: keyStorage
+            storeAndForwardPollIntervalSecs: nil, sendPendingMessages: nil, keyStorage: keyStorage,
+            encryptState: encryptState
         )
         let api = try createBingleApi(config: config)
         apis.append(api)
@@ -81,6 +87,22 @@ final class KeychainKeyStorageTests: XCTestCase {
             kSecUseDataProtectionKeychain as String: true,
         ]
         SecItemDelete(query as CFDictionary)
+    }
+
+    /// The device secret item's accessibility, or nil if there is none (unsynced items only).
+    private func stateSecretAccessibility() -> String? {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: stateAccount,
+            kSecAttrSynchronizable as String: false,
+            kSecUseDataProtectionKeychain as String: true,
+            kSecReturnAttributes as String: true,
+        ]
+        var result: CFTypeRef?
+        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
+              let attributes = result as? [String: Any] else { return nil }
+        return attributes[kSecAttrAccessible as String] as? String
     }
 
     private func stateFileText() -> String {
@@ -161,5 +183,43 @@ final class KeychainKeyStorageTests: XCTestCase {
         let status = try migrated.keyStorageStatus()
         XCTAssertTrue(status.syncChoicePending)
         XCTAssertEqual(status.storedAddress, kp.id)
+    }
+
+    // MARK: - The sealed state file (bingle_rust #459)
+
+    func testASealedStateFileHoldsNothingReadableAndReopens() throws {
+        let api = try makeApi(encryptState: true)
+        let kp = try api.generateKeypair()
+        try api.addContact(handle: "friend", id: "FRIEND_ID", source: .manual)
+        try api.save(path: statePath.path)
+
+        let bytes = try Data(contentsOf: statePath)
+        for text in [kp.id, kp.passphrase, "FRIEND_ID", "friend"] {
+            XCTAssertNil(bytes.range(of: Data(text.utf8)), "'\(text)' is readable in the file")
+        }
+        XCTAssertEqual(stateSecretAccessibility(), kSecAttrAccessibleWhenUnlockedThisDeviceOnly as String)
+
+        let reopened = try makeApi(encryptState: true)
+        XCTAssertEqual(try reopened.stateFileStatus(), .sealed)
+        XCTAssertEqual(try reopened.getContacts().map(\.id), ["FRIEND_ID"])
+    }
+
+    func testAPlainStateFileIsSealedOnFirstLoad() throws {
+        let old = try makeApi()
+        let kp = try old.generateKeypair()
+        XCTAssertTrue(stateFileText().contains(kp.id), "plain before")
+
+        let sealed = try makeApi(encryptState: true)
+        XCTAssertEqual(try sealed.stateFileStatus(), .sealed)
+        XCTAssertFalse(stateFileText().contains(kp.id), "sealed after")
+    }
+
+    func testRemoveKeyFromDeviceDeletesTheStateSecret() throws {
+        let api = try makeApi(encryptState: true)
+        _ = try api.generateKeypair()
+        XCTAssertNotNil(stateSecretAccessibility())
+
+        try api.removeKeyFromDevice()
+        XCTAssertNil(stateSecretAccessibility())
     }
 }

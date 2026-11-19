@@ -37,6 +37,8 @@ rustls-platform-verifier = "0.7"
 uniffi = { version = "0.28", features = ["build"] }
 tempfile = "3"
 bingle_test = { path = "../bingle_test" }
+# The in-memory Keychain, for the sealed state file tests (#459).
+bingle_local = { path = "../bingle_local", features = ["test-support"] }
 
 [build-dependencies]
 vergen = { version = "8", features = ["build", "git", "gitcl", "cargo"] }

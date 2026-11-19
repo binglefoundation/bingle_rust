@@ -367,6 +367,33 @@ pub struct BingleJsiConfig {
     /// Applies only with `local` set. An existing state file's phrase moves into the Keychain on
     /// first load, device-only until the user chooses sync.
     pub key_storage: Option<String>,
+    /// Seal the state file at rest (issue #459): encrypt it under a key wrapped by a secret in this
+    /// device's Keychain (never synced, readable only while unlocked) and by the account's recovery
+    /// phrase. An existing plain file is sealed on first load. Needs `key_storage` `"keychain"`;
+    /// `true` with the file store is refused at init. `null` defaults to `false` (plain JSON, as
+    /// before); a sealed file still loads either way. With it on, check `state_file_status` at
+    /// start-up, call `forget_state_key` when the device locks, and offer
+    /// `open_state_with_recovery_phrase` for a restored file.
+    pub encrypt_state: Option<bool>,
+}
+
+/// What the last load of the state file found (issue #459): read with
+/// [`state_file_status`](crate::api::bingle_jsi_api::BingleJsiApi::state_file_status).
+#[derive(uniffi::Enum, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StateFileStatus {
+    /// No state file has been loaded or saved yet: a new install.
+    NotLoaded,
+    /// A plain JSON state file is in use.
+    Plain,
+    /// A sealed state file is open.
+    Sealed,
+    /// The sealed state file couldn't be opened because the device is locked, as in a prewarmed
+    /// launch. Call `load` again after the device unlocks; until then it isn't saved over.
+    Locked,
+    /// The sealed state file doesn't open on this device, as with a file restored from a backup:
+    /// ask for the recovery phrase and call `open_state_with_recovery_phrase`. Until then it isn't
+    /// saved over.
+    RecoveryPhraseRequired,
 }
 
 /// Which store holds the recovery phrase (issue #385).

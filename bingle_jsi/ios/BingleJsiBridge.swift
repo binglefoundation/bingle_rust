@@ -118,7 +118,8 @@ class BingleJsiBridge: RCTEventEmitter {
                     storeAndForwardReceive: config["store_and_forward_receive"] as? Bool,
                     storeAndForwardPollIntervalSecs: (config["store_and_forward_poll_interval_secs"] as? NSNumber)?.uint64Value,
                     sendPendingMessages: config["send_pending_messages"] as? Bool,
-                    keyStorage: config["key_storage"] as? String
+                    keyStorage: config["key_storage"] as? String,
+                    encryptState: config["encrypt_state"] as? Bool
                 )
                 let api = try createBingleApi(config: jsiConfig)
                 // A second initialize on this module replaces its engine: stop the old one (#455).
@@ -571,6 +572,61 @@ class BingleJsiBridge: RCTEventEmitter {
             do {
                 try api.removeKeyFromDevice()
                 resolve(nil)
+            } catch {
+                reject("BINGLE_ERROR", "\(error)", error)
+            }
+        }
+    }
+
+    // MARK: - Sealed state file (#459)
+
+    @objc
+    func stateFileStatus(_ resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {
+        guard let api = apiInstance else {
+            reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.", nil)
+            return
+        }
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                switch try api.stateFileStatus() {
+                case .notLoaded: resolve("not_loaded")
+                case .plain: resolve("plain")
+                case .sealed: resolve("sealed")
+                case .locked: resolve("locked")
+                case .recoveryPhraseRequired: resolve("recovery_phrase_required")
+                }
+            } catch {
+                reject("BINGLE_ERROR", "\(error)", error)
+            }
+        }
+    }
+
+    @objc
+    func forgetStateKey(_ resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {
+        guard let api = apiInstance else {
+            reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.", nil)
+            return
+        }
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                try api.forgetStateKey()
+                resolve(nil)
+            } catch {
+                reject("BINGLE_ERROR", "\(error)", error)
+            }
+        }
+    }
+
+    @objc
+    func openStateWithRecoveryPhrase(_ phrase: String, resolver resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {
+        guard let api = apiInstance else {
+            reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.", nil)
+            return
+        }
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                let kp = try api.openStateWithRecoveryPhrase(phrase: phrase)
+                resolve(["id": kp.id, "passphrase": kp.passphrase])
             } catch {
                 reject("BINGLE_ERROR", "\(error)", error)
             }

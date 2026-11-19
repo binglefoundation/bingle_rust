@@ -26,4 +26,12 @@ pub enum BingleJsiError {
     /// the recovery phrase in the state file.
     #[error("Key storage unavailable: {reason}")]
     KeyStorageUnavailable { reason: String },
+    /// The sealed state file can't be opened or saved because the device is locked (issue #459).
+    /// Try again after the device unlocks.
+    #[error("State file locked: {reason}")]
+    StateLocked { reason: String },
+    /// The sealed state file doesn't open on this device, or the recovery phrase given doesn't open
+    /// it (issue #459). Ask for the account's recovery phrase.
+    #[error("Recovery phrase required: {reason}")]
+    RecoveryPhraseRequired { reason: String },
 }
