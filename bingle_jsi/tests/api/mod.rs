@@ -8,4 +8,5 @@ mod mailbox_poller_callback_tests;
 mod message_queue_integration_tests;
 mod receive_dedup_tests;
 mod registration_group_tests;
+mod sealed_state_tests;
 mod types_tests;

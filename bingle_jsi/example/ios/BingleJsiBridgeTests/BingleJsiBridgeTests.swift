@@ -913,6 +913,40 @@ final class KeyStorageBridgeTests: XCTestCase {
         XCTAssertTrue(mockApi.deleteAccountCalled)
     }
 
+    func testStateFileStatus_resolvesItsName() {
+        mockApi.stateFileStatusResult = .recoveryPhraseRequired
+        let resolved = self.expectation(description: "stateFileStatus resolved")
+        bridge.stateFileStatus(
+            { value in
+                XCTAssertEqual(value as? String, "recovery_phrase_required")
+                resolved.fulfill()
+            },
+            rejecter: { _, _, _ in XCTFail("unexpected rejection") }
+        )
+        waitForExpectations(timeout: 2.0)
+    }
+
+    func testForgetStateKeyAndOpenWithPhrase_reachTheApi() {
+        let forgot = self.expectation(description: "forgetStateKey resolved")
+        bridge.forgetStateKey(
+            { _ in forgot.fulfill() },
+            rejecter: { _, _, _ in XCTFail("unexpected rejection") }
+        )
+        let opened = self.expectation(description: "openStateWithRecoveryPhrase resolved")
+        bridge.openStateWithRecoveryPhrase(
+            "twenty five words",
+            resolver: { value in
+                let kp = value as? [String: Any]
+                XCTAssertEqual(kp?["id"] as? String, self.mockApi.keypairResult.id)
+                opened.fulfill()
+            },
+            rejecter: { _, _, _ in XCTFail("unexpected rejection") }
+        )
+        waitForExpectations(timeout: 2.0)
+        XCTAssertTrue(mockApi.forgetStateKeyCalled)
+        XCTAssertEqual(mockApi.openStatePhrases, ["twenty five words"])
+    }
+
     func testDeleteAccount_rejectsWhenTheApiFails() {
         mockApi.deleteAccountError = NSError(domain: "test", code: 1)
         let rejected = self.expectation(description: "deleteAccount rejected")

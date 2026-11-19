@@ -258,7 +258,33 @@ export interface BingleJsiConfig {
    * "keychain" on iOS and "file" elsewhere; "keychain" anywhere but iOS is refused at init. Needs
    * `local`. Optional. */
   key_storage?: "keychain" | "file" | null;
+  /** Seal the state file at rest (issue #459): encrypt it under a key wrapped by a secret in this
+   * device's Keychain (never synced, readable only while unlocked) and by the account's recovery
+   * phrase. An existing plain file is sealed on first load. Needs key_storage "keychain"; true with
+   * the file store is refused at init. null/omitted defaults to false (plain JSON); a sealed file
+   * still loads either way. With it on, check stateFileStatus() at start-up, call forgetStateKey()
+   * when the device locks, and offer openStateWithRecoveryPhrase() for a restored file. Optional. */
+  encrypt_state?: boolean | null;
 }
+
+/**
+ * What the last load of the state file found (issue #459), from `stateFileStatus()`:
+ * - "not_loaded": no state file yet, a new install;
+ * - "plain": a plain JSON state file is in use;
+ * - "sealed": a sealed state file is open;
+ * - "locked": the sealed file couldn't open because the device is locked (a prewarmed launch);
+ *   call load() again after the unlock. Don't treat the empty state as a new user;
+ * - "recovery_phrase_required": the sealed file doesn't open on this device (a restored backup);
+ *   ask for the recovery phrase and call openStateWithRecoveryPhrase(). Don't treat the empty state
+ *   as a new user.
+ * Until a "locked" or "recovery_phrase_required" file opens, it isn't saved over.
+ */
+export type StateFileStatus =
+  | "not_loaded"
+  | "plain"
+  | "sealed"
+  | "locked"
+  | "recovery_phrase_required";
 
 // ── Enums ────────────────────────────────────────────────────────────
 
@@ -382,6 +408,10 @@ export interface BingleJsiApi {
   removeKeyFromDevice(): void;
   // Account deletion (#100)
   deleteAccount(): void;
+  // Sealed state file (#459)
+  stateFileStatus(): StateFileStatus;
+  forgetStateKey(): void;
+  openStateWithRecoveryPhrase(phrase: string): Keypair;
   requestPushRegistration(): void;
   registerApnsToken(token: Uint8Array): boolean;
   apnsRegistrationFailed(reason: string): void;

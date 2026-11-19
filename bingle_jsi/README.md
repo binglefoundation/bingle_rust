@@ -280,6 +280,7 @@ const config: BingleJsiConfig = {
   debug: false,
   local: '/path/to/local_state.json',
   key_storage: null, // the recovery phrase: "keychain" on iOS by default, "file" elsewhere (#385)
+  encrypt_state: null, // seal the state file at rest; needs key_storage "keychain"; default false (#459)
 };
 
 await initBingleJsi(config);
@@ -604,6 +605,9 @@ The full API is defined in `src/api/bingle_jsi_api.rs`. Key methods:
 | `restoreStoredKey()` | After a reinstall, make the key the Keychain still holds current, without entering the phrase. Keychain store only |
 | `removeKeyFromDevice()` | Delete this device's stored keys and the state file; a synced key goes from every device on the Apple Account. Re-initialise afterwards. Keychain store only |
 | `deleteAccount()` | Delete the account (#100): opt it out of the Bingle DApp on chain (its handle is free at once), delete its stored keys, contacts and messages, stop the engine and delete the state file. The Algorand account, its ALGO and its Bingle$ stay. A synced key goes from every device on the Apple Account. On failure the message names `NoBlockchain` (node unreachable) or `Retryable` (opt-out failed), when nothing on the device has changed, or `InternalError` (keys or state file not deleted after the opt-out); all are safe to retry. Re-initialise afterwards. Either key store |
+| `stateFileStatus()` | What the last state file load found (#459): `not_loaded`, `plain`, `sealed`, `locked` (the device was locked: load again after the unlock) or `recovery_phrase_required` (a restored file: ask for the phrase). Check it at start-up before treating an empty state as a new user; a `locked` or `recovery_phrase_required` file isn't saved over until it opens |
+| `forgetStateKey()` | Save, then wipe the sealed state file's key from memory (#459). Call on `protectedDataWillBecomeUnavailable`; saves then fail with `StateLocked` until the unlock, and the next save writes everything |
+| `openStateWithRecoveryPhrase(phrase)` | Open a sealed state file restored from a backup with the recovery phrase (#459). A wrong phrase changes nothing (`RecoveryPhraseRequired`); on success the file opens on this device from now on, and resolves with the now-current keypair |
 | `addContact(handle, id, source)` | Add a contact |
 | `blockContact(id)` | Block a contact; its live and Mailbox messages are dropped on receipt |
 | `unblockContact(id)` | Unblock a contact |

@@ -16,7 +16,7 @@ use crate::api::types::{
     HandleLookupMatch, HandleLookupPartialResult, InetSocketAddress, KeyStorageBackend,
     KeyStorageStatus, Keypair, KeypairStatus, KeypairStatusResponse, MailboxCheckStage, Message,
     MessagingSettings, NatType, NatTypeResponse, NetworkSourceKey, NotifyRegisterRequest,
-    VersionInfo,
+    StateFileStatus, VersionInfo,
 };
 use algo_ops::error::AlgoErrorKind;
 use bingle_core::api::bingle_api::{
@@ -916,6 +916,10 @@ fn bingle_error_to_jsi(e: BingleError) -> BingleJsiError {
             }
         }
         BingleError::Retryable(reason) => BingleJsiError::Retryable { reason },
+        BingleError::StateLocked(reason) => BingleJsiError::StateLocked { reason },
+        BingleError::RecoveryPhraseRequired(reason) => {
+            BingleJsiError::RecoveryPhraseRequired { reason }
+        }
         BingleError::HandleTaken(owner) => BingleJsiError::HandleTaken {
             reason: format!("handle already in use by {}", owner),
         },
@@ -1080,6 +1084,14 @@ impl BingleJsiApiImpl {
                 .map_err(|reason| BingleJsiError::InvalidRequest { reason })?;
             // Where the recovery phrase is kept (issue #385): the iOS Keychain by default on iOS.
             let key_store = choose_key_store(config.key_storage.as_deref(), path)?;
+            // Sealing the state file (issue #459) needs a store that holds the device secret.
+            let encrypt_state = config.encrypt_state.unwrap_or(false);
+            if encrypt_state && !key_store.holds_state_secret() {
+                return Err(BingleJsiError::InvalidRequest {
+                    reason: "encrypt_state needs key_storage \"keychain\"".to_string(),
+                });
+            }
+            cfg = cfg.with_encrypt_state(encrypt_state);
             let mut impl_api = BingleApiLocalImpl::with_key_store(cfg, key_store);
             if path.exists()
                 && let Err(e) = impl_api.load(path.to_string_lossy().as_ref())
@@ -2147,6 +2159,49 @@ impl BingleJsiApi for BingleJsiApiImpl {
             })?;
         }
         Ok(())
+    }
+
+    fn state_file_status(&self) -> Result<StateFileStatus, BingleJsiError> {
+        let guard = local_api_guard(&self.local_api)?;
+        Ok(match guard.state_file_status() {
+            bingle_local::api::StateFileStatus::NotLoaded => StateFileStatus::NotLoaded,
+            bingle_local::api::StateFileStatus::Plain => StateFileStatus::Plain,
+            bingle_local::api::StateFileStatus::Sealed => StateFileStatus::Sealed,
+            bingle_local::api::StateFileStatus::Locked => StateFileStatus::Locked,
+            bingle_local::api::StateFileStatus::RecoveryPhraseRequired => {
+                StateFileStatus::RecoveryPhraseRequired
+            }
+        })
+    }
+
+    fn forget_state_key(&self) -> Result<(), BingleJsiError> {
+        let guard = local_api_guard(&self.local_api)?;
+        // Flush first, so nothing waits on the key once it is gone. A failed save loses nothing:
+        // the state stays in memory, and the next save after the unlock writes it.
+        if let Some(path) = &self.local_file
+            && let Err(e) = guard.save(path.to_string_lossy().as_ref())
+        {
+            tracing::warn!("[forget_state_key] saving before the lock failed: {e}");
+        }
+        guard.forget_state_key();
+        Ok(())
+    }
+
+    fn open_state_with_recovery_phrase(&self, phrase: String) -> Result<Keypair, BingleJsiError> {
+        let path = self
+            .local_file
+            .as_ref()
+            .ok_or_else(|| BingleJsiError::InvalidRequest {
+                reason: "no state file is set ('local' in BingleJsiConfig)".to_string(),
+            })?;
+        let mut guard = local_api_guard(&self.local_api)?;
+        let kp = guard
+            .open_state_with_recovery_phrase(path.to_string_lossy().as_ref(), phrase)
+            .map_err(bingle_error_to_jsi)?;
+        Ok(Keypair {
+            id: kp.id,
+            passphrase: kp.passphrase,
+        })
     }
 
     fn request_push_registration(&self) -> Result<(), BingleJsiError> {

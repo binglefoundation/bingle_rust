@@ -60,6 +60,7 @@ fn config(local: Option<String>, ids: Option<(u64, u64)>) -> BingleJsiConfig {
         store_and_forward_poll_interval_secs: None,
         send_pending_messages: None,
         key_storage: None,
+        encrypt_state: None,
     }
 }
 

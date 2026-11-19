@@ -117,6 +117,16 @@ RCT_EXTERN_METHOD(removeKeyFromDevice:(RCTPromiseResolveBlock)resolve
 RCT_EXTERN_METHOD(deleteAccount:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
+RCT_EXTERN_METHOD(stateFileStatus:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+
+RCT_EXTERN_METHOD(forgetStateKey:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+
+RCT_EXTERN_METHOD(openStateWithRecoveryPhrase:(NSString *)phrase
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+
 RCT_EXTERN_METHOD(addContact:(NSString *)handle
                   id:(NSString *)id
                   source:(NSString *)source

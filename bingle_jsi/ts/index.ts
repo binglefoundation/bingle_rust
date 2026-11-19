@@ -17,6 +17,7 @@ import type {
   FailureKind,
   MessagingSettings,
   KeyStorageStatus,
+  StateFileStatus,
   VersionInfo,
 } from "./NativeBingleJsi";
 
@@ -37,6 +38,7 @@ export type {
   NatTypeResponse,
   MessagingSettings,
   KeyStorageStatus,
+  StateFileStatus,
   BingleJsiConfig,
   MessageCallback,
   LogCallback,
@@ -230,6 +232,19 @@ export const BingleJsi = BingleJsiNative as {
    * - `InternalError`: the opt-out succeeded, but deleting the stored keys or the state file
    *   failed. */
   deleteAccount(): Promise<void>;
+  /** What the last load of the state file found (#459). Check it at start-up before treating an
+   * empty state as a new user: "locked" means load again after the unlock, and
+   * "recovery_phrase_required" means ask for the recovery phrase. */
+  stateFileStatus(): Promise<StateFileStatus>;
+  /** Save, then wipe the sealed state file's key from memory (#459). Call it on
+   * protectedDataWillBecomeUnavailable. Saves then fail with a StateLocked error until the device
+   * unlocks; nothing is lost, as the next save writes everything. */
+  forgetStateKey(): Promise<void>;
+  /** Open a sealed state file restored from a backup with the account's recovery phrase (#459). A
+   * wrong phrase changes nothing and rejects with a message naming RecoveryPhraseRequired. On
+   * success the file opens on this device from now on, its contacts and messages are loaded, and
+   * the phrase's keypair is current; resolves with it. */
+  openStateWithRecoveryPhrase(phrase: string): Promise<{ id: string; passphrase: string }>;
   /** Ask the host to begin iOS push registration (bingle_notify #i). Invokes the registered
    * PushRegistrationCallback so the thin Swift bridge performs the platform calls; the token arrives
    * asynchronously via registerApnsToken. Rejects if no push-registration callback is set. */

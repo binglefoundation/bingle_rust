@@ -5,7 +5,7 @@
 use bingle_jsi::api::bingle_jsi_api::BingleJsiApi;
 use bingle_jsi::api::bingle_jsi_api_impl::BingleJsiApiImpl;
 use bingle_jsi::api::error::BingleJsiError;
-use bingle_jsi::api::types::{BingleJsiConfig, ContactSource, KeyStorageBackend};
+use bingle_jsi::api::types::{BingleJsiConfig, ContactSource, KeyStorageBackend, StateFileStatus};
 use bingle_test::temp_file_helpers::project_tmp_file_path;
 
 fn config(path: &str, key_storage: Option<&str>) -> BingleJsiConfig {
@@ -31,6 +31,7 @@ fn config(path: &str, key_storage: Option<&str>) -> BingleJsiConfig {
         store_and_forward_poll_interval_secs: None,
         send_pending_messages: None,
         key_storage: key_storage.map(str::to_string),
+        encrypt_state: None,
     }
 }
 
@@ -155,4 +156,55 @@ fn delete_account_reports_an_unreachable_node_as_no_blockchain_and_changes_nothi
     assert!(text.contains(&kp.id), "the keypair is kept");
     let _ = std::fs::remove_file(&path);
     let _ = std::fs::remove_file(&node_file);
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+fn encrypt_state_with_the_file_store_is_refused() {
+    // Sealing needs the Keychain's device secret (issue #459); never fall back to plain JSON.
+    let mut cfg = config(&state_path(), Some("file"));
+    cfg.encrypt_state = Some(true);
+    assert!(matches!(
+        BingleJsiApiImpl::init(cfg),
+        Err(BingleJsiError::InvalidRequest { .. })
+    ));
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+fn state_file_status_reports_a_new_install_and_a_plain_file() {
+    let path = project_tmp_file_path("bingle-jsi-state-status", ".json")
+        .to_string_lossy()
+        .into_owned();
+    let api = BingleJsiApiImpl::init(config(&path, Some("file"))).expect("init");
+    assert_eq!(api.state_file_status().unwrap(), StateFileStatus::NotLoaded);
+    api.generate_keypair().expect("generate");
+    api.save(path.clone()).expect("save");
+
+    let reopened = BingleJsiApiImpl::init(config(&path, Some("file"))).expect("init again");
+    assert_eq!(
+        reopened.state_file_status().unwrap(),
+        StateFileStatus::Plain
+    );
+    let _ = std::fs::remove_file(&path);
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+fn forget_state_key_saves_and_a_plain_file_needs_no_phrase() {
+    let path = project_tmp_file_path("bingle-jsi-forget-key", ".json")
+        .to_string_lossy()
+        .into_owned();
+    let api = BingleJsiApiImpl::init(config(&path, Some("file"))).expect("init");
+    let kp = api.generate_keypair().expect("generate");
+
+    api.forget_state_key().expect("forget");
+    let text = std::fs::read_to_string(&path).expect("saved before forgetting");
+    assert!(text.contains(&kp.id));
+
+    assert!(
+        api.open_state_with_recovery_phrase(kp.passphrase).is_err(),
+        "a plain file isn't opened with the phrase"
+    );
+    let _ = std::fs::remove_file(&path);
 }

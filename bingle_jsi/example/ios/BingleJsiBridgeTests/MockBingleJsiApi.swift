@@ -369,4 +369,23 @@ class MockBingleJsiApi: BingleJsiApiProtocol {
             throw error
         }
     }
+
+    // MARK: - Sealed state file (#459)
+
+    var stateFileStatusResult: StateFileStatus = .notLoaded
+    var forgetStateKeyCalled = false
+    var openStatePhrases: [String] = []
+
+    func stateFileStatus() throws -> StateFileStatus {
+        return stateFileStatusResult
+    }
+
+    func forgetStateKey() throws {
+        forgetStateKeyCalled = true
+    }
+
+    func openStateWithRecoveryPhrase(phrase: String) throws -> Keypair {
+        openStatePhrases.append(phrase)
+        return keypairResult
+    }
 }

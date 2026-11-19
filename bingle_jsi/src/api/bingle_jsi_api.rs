@@ -5,7 +5,7 @@ use crate::api::error::BingleJsiError;
 use crate::api::types::{
     BingleMessage, Contact, ContactSource, HandleLookupMatch, HandleLookupPartialResult,
     KeyStorageStatus, Keypair, KeypairStatusResponse, Message, MessagingSettings, NatTypeResponse,
-    NetworkSourceKey, NotifyRegisterRequest, VersionInfo,
+    NetworkSourceKey, NotifyRegisterRequest, StateFileStatus, VersionInfo,
 };
 
 /// Primary Bingle API exposed over JSI / uniffi.
@@ -237,6 +237,23 @@ pub trait BingleJsiApi: Send + Sync {
     /// - `InternalError`: the opt-out succeeded, but deleting the stored keys or the state file
     ///   failed.
     fn delete_account(&self) -> Result<(), BingleJsiError>;
+
+    /// What the last load of the state file found (issue #459). Check it at start-up before treating
+    /// an empty state as a new user: `Locked` means load again after the device unlocks, and
+    /// `RecoveryPhraseRequired` means ask for the recovery phrase.
+    fn state_file_status(&self) -> Result<StateFileStatus, BingleJsiError>;
+
+    /// Save the state, then wipe the sealed state file's key from memory (issue #459). Call it when
+    /// the device is about to lock (`protectedDataWillBecomeUnavailable`). Saves after that fail with
+    /// `StateLocked` until the device unlocks, and nothing is lost: the next save writes everything.
+    /// Does nothing to a plain file beyond the save.
+    fn forget_state_key(&self) -> Result<(), BingleJsiError>;
+
+    /// Open a sealed state file restored from a backup with the account's 25-word recovery phrase
+    /// (issue #459). A wrong phrase changes nothing and fails with `RecoveryPhraseRequired`. On
+    /// success the file opens on this device from now on, its contacts and messages are loaded, and
+    /// the phrase's keypair is current and saved; returns it.
+    fn open_state_with_recovery_phrase(&self, phrase: String) -> Result<Keypair, BingleJsiError>;
 
     /// Ask the host to begin iOS push registration (bingle_notify #i). Invokes the registered
     /// [`PushRegistrationCallback`] so the thin Swift bridge performs the platform calls

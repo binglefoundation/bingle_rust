@@ -8,7 +8,7 @@ use bingle_jsi::api::error::BingleJsiError;
 use bingle_jsi::api::types::{
     BingleMessage, Contact, ContactSource, HandleLookupMatch, HandleLookupPartialResult,
     KeyStorageStatus, Keypair, KeypairStatusResponse, Message, MessagingSettings, NatTypeResponse,
-    NetworkSourceKey, NotifyRegisterRequest, VersionInfo,
+    NetworkSourceKey, NotifyRegisterRequest, StateFileStatus, VersionInfo,
 };
 
 /// Stub implementation where every method returns NotImplemented.
@@ -355,6 +355,24 @@ impl BingleJsiApi for StubApi {
     fn delete_account(&self) -> Result<(), BingleJsiError> {
         Err(BingleJsiError::NotImplemented {
             reason: "delete_account".to_string(),
+        })
+    }
+
+    fn state_file_status(&self) -> Result<StateFileStatus, BingleJsiError> {
+        Err(BingleJsiError::NotImplemented {
+            reason: "state_file_status".to_string(),
+        })
+    }
+
+    fn forget_state_key(&self) -> Result<(), BingleJsiError> {
+        Err(BingleJsiError::NotImplemented {
+            reason: "forget_state_key".to_string(),
+        })
+    }
+
+    fn open_state_with_recovery_phrase(&self, _phrase: String) -> Result<Keypair, BingleJsiError> {
+        Err(BingleJsiError::NotImplemented {
+            reason: "open_state_with_recovery_phrase".to_string(),
         })
     }
 
