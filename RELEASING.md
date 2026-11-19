@@ -83,6 +83,10 @@ Then run `scripts/roll_relays.sh` there without `--dry-run`. MainNet rolls only 
 
 Move the app's version and its `react-native-bingle-jsi` dependency to the released version, once npm serves it (`npm view react-native-bingle-jsi version`).
 
+### Run the post-release checks
+
+[`POST_RELEASE_CHECKS.md`](POST_RELEASE_CHECKS.md) lists the checks that can only run after a release: on a device, in the app, or on MainNet. `scripts/release.sh` prints them when it finishes. Run each one whose change this release ships, post the result on its issue, and remove the entry once it passes.
+
 ## What is published
 
 | Package | Registry | What it is |
