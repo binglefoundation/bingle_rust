@@ -44,6 +44,11 @@
 2. Ensure `tests`, `bingle_jsi`, `bingle_local`, `bingle_cli`, and `bingle_webserver` trees all compile.
 3. Ensure `scripts/run_quality_checks.sh --strict` passes.
 
+## Post-release checks
+
+- When a PR leaves a check that can only run after a release (on a device, in the app, or on MainNet), add an entry to `POST_RELEASE_CHECKS.md` in the same PR, and write "Part of #N" so the issue stays open.
+- After the check passes, close the issue and remove its entry.
+
 ## Git notes
 - Make all changes through the branch -> PR -> review -> merge workflow. You can land directly on a PR when you don't need input before it.
 - *While still modifying a PR*, and if it is incomplete (doesn't yet meet requirements) keep it in draft.
