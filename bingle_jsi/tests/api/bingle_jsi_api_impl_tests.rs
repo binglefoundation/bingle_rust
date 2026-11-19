@@ -1268,6 +1268,27 @@ fn foregrounding_starts_and_backgrounding_stops_the_backstop_poller() {
     let _ = std::fs::remove_file(&tmp);
 }
 
+/// Stop also stops the backstop poller, whether or not the engine started: the bridge stops an
+/// instance React Native has discarded, and its poller must not keep taking Mailbox messages
+/// (issue #455).
+#[test]
+fn stop_stops_the_backstop_poller() {
+    let tmp = project_tmp_file_path("bingle-jsi-poller-stop", ".json");
+    let api = BingleJsiApiImpl::init(config_with_local(&tmp.to_string_lossy()))
+        .expect("init should succeed");
+
+    api.foregrounding();
+    assert!(api.mailbox_poller_running_for_tests());
+
+    api.stop().expect("stop should succeed");
+    assert!(
+        !api.mailbox_poller_running_for_tests(),
+        "stop stops the poller"
+    );
+
+    let _ = std::fs::remove_file(&tmp);
+}
+
 // ── Sidewinder discovery/mTLS selection at init (story #252) ──────────────────
 //
 // `init` threads the config's existing Bingle `app_id` into `MailboxConfig::from_app_id`, so a JSI
