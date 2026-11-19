@@ -94,3 +94,6 @@ mod local_impl_recovery_keypair;
 
 #[path = "api/notify_after_forward.rs"]
 mod notify_after_forward;
+
+#[path = "api/account_deletion.rs"]
+mod account_deletion;

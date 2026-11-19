@@ -12,6 +12,8 @@ pub mod setup_localnet;
 pub mod blockchain_users;
 
 // Blockchain integration tests that hit localnet
+#[path = "integration/blockchain/account_deletion_localnet.rs"]
+pub mod account_deletion_localnet;
 #[path = "integration/blockchain/algo_bingle_buy_flow_localnet.rs"]
 pub mod algo_bingle_buy_flow_localnet;
 #[path = "integration/blockchain/algo_bingle_integration_localnet.rs"]

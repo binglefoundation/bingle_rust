@@ -24,6 +24,10 @@ pub use key_store::{
     FileKeyStore, KeySlot, KeyStorageBackend, KeyStorageStatus, KeyStore, KeyStoreError,
 };
 
+// Account deletion: the DApp opt-out seam and the deletion semantics (issue #100).
+pub mod account_deletion;
+pub use account_deletion::{AccountOptOut, ChainAccountOptOut};
+
 // On-chain registration seam (see issue #15, step A4).
 pub mod registration;
 pub use registration::{ChainRegistrationOps, RegistrationOps, run_registration};

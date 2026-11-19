@@ -317,6 +317,10 @@ impl BingleLocalApi for DummyLocal {
         Err(BingleError::Other("remove_key_from_device".to_string()))
     }
 
+    fn delete_account(&mut self) -> Result<(), BingleError> {
+        Err(BingleError::Other("delete_account".to_string()))
+    }
+
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
         self
     }

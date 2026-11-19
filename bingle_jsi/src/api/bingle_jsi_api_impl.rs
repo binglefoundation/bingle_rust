@@ -2123,6 +2123,32 @@ impl BingleJsiApi for BingleJsiApiImpl {
         Ok(())
     }
 
+    fn delete_account(&self) -> Result<(), BingleJsiError> {
+        {
+            let mut guard = local_api_guard(&self.local_api)?;
+            guard.delete_account().map_err(bingle_error_to_jsi)?;
+        }
+        // The account is gone: stop the engine, the pending sender and the Mailbox poller, so
+        // nothing keeps advertising, sending or polling as it, and nothing re-saves the state file
+        // after it is deleted below.
+        if let Err(e) = self.stop() {
+            tracing::warn!(
+                "[delete_account] the account is deleted, but stopping the engine failed: {e}"
+            );
+        }
+        if let Some(path) = &self.local_file
+            && path.exists()
+        {
+            std::fs::remove_file(path).map_err(|e| BingleJsiError::InternalError {
+                reason: format!(
+                    "the account was deleted, but the state file {} wasn't: {e}",
+                    path.display()
+                ),
+            })?;
+        }
+        Ok(())
+    }
+
     fn request_push_registration(&self) -> Result<(), BingleJsiError> {
         // Rust cannot call the UIKit registration APIs; it asks the host, whose thin Swift bridge
         // does the platform calls and later returns the token via register_apns_token.

@@ -357,4 +357,16 @@ class MockBingleJsiApi: BingleJsiApiProtocol {
     func removeKeyFromDevice() throws {
         removeKeyFromDeviceCalled = true
     }
+
+    // MARK: - Account deletion (#100)
+
+    var deleteAccountCalled = false
+    var deleteAccountError: Error?
+
+    func deleteAccount() throws {
+        deleteAccountCalled = true
+        if let error = deleteAccountError {
+            throw error
+        }
+    }
 }

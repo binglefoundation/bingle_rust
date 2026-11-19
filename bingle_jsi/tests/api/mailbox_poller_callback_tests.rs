@@ -86,6 +86,9 @@ impl BingleLocalApi for ScriptedMailboxLocal {
     fn remove_key_from_device(&mut self) -> Result<(), BingleError> {
         self.inner.remove_key_from_device()
     }
+    fn delete_account(&mut self) -> Result<(), BingleError> {
+        self.inner.delete_account()
+    }
     fn register_keypair(&self, handle: String) -> Result<bool, BingleError> {
         self.inner.register_keypair(handle)
     }

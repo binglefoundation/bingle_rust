@@ -577,6 +577,22 @@ class BingleJsiBridge: RCTEventEmitter {
         }
     }
 
+    @objc
+    func deleteAccount(_ resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {
+        guard let api = apiInstance else {
+            reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.", nil)
+            return
+        }
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                try api.deleteAccount()
+                resolve(nil)
+            } catch {
+                reject("BINGLE_ERROR", "\(error)", error)
+            }
+        }
+    }
+
     // MARK: - iOS push registration (bingle_notify #i)
     //
     // Pure bridge: the raw APNs token bytes cross to Rust untouched (hex-encoding, envelope

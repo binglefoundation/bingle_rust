@@ -388,6 +388,21 @@ pub trait BingleLocalApi: Send + Sync {
     /// A synced key is removed from the user's other devices too. The caller deletes the state file.
     fn remove_key_from_device(&mut self) -> Result<(), BingleError>;
 
+    /// Delete the account (issue #100): opt it out of the Bingle DApp on chain, then delete its
+    /// keys from the key store and clear the keypair, contacts, blocks, messages and memoized handle
+    /// from memory. The handle is free for re-registration at once; the Algorand account, its ALGO
+    /// and its Bingle$ holding stay. The caller deletes the state file. See
+    /// [`account_deletion`](crate::api::account_deletion) for what is removed and what stays.
+    ///
+    /// The on-chain step goes first, as it needs the key; if it fails, nothing on this device is
+    /// changed. Safe to call again after a part-way failure, and when there is no keypair (it then
+    /// only clears this device).
+    ///
+    /// Errors: an on-chain failure is [`BingleError::Algo`] with `HostUnreachable` when the node
+    /// can't be reached, and [`BingleError::Retryable`] otherwise. A key store failure, after the
+    /// opt-out succeeded, is [`BingleError::Other`]. All of them are safe to retry.
+    fn delete_account(&mut self) -> Result<(), BingleError>;
+
     /// Register the current keypair with Bingle (requires credited funds).
     /// Returns Ok(()) on success, or Err(message) on failure.
     /// Parameter:

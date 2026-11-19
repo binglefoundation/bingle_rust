@@ -9,3 +9,4 @@ pub mod blockchain_users;
 pub mod unique_handle;
 pub mod migrate_local_localnet;
 pub mod block_old_app_localnet;
+pub mod account_deletion_localnet;

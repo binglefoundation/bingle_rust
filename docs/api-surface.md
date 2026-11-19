@@ -82,6 +82,9 @@ Supported surface:
   types; the real backend `api::keychain::apple::KeychainItems` is Apple-only, and the
   `test-support` feature adds the `memory::MemoryItems` fake.
 - Registration: `api::registration::{RegistrationOps, ChainRegistrationOps, run_registration}`.
+- Account deletion (#100): the `BingleLocalApi` method `delete_account`,
+  `BingleApiLocalImpl::delete_account_with`, and `api::account_deletion::{AccountOptOut,
+  ChainAccountOptOut}`. The module docs state what deletion removes and what stays.
 - Notification posting traits and requests: `api::notify::{AlertPoster, RegisterPoster,
   AlertRequest, HttpAlertPoster, HttpRegisterPoster}`.
 - The re-export of `bingle_core::api::bingle_api::SendFailureKind`.

@@ -1,4 +1,4 @@
-use anyhow::{Result, anyhow, bail};
+use anyhow::{Context, Result, anyhow, bail};
 use sha2::{Digest, Sha512_256};
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
@@ -756,6 +756,42 @@ impl AlgoBingle {
         self.ops.opt_in_app(new_app_id)?;
         let txid = self.migrate_local(new_app_id, ancestor)?;
         Ok(Some(txid))
+    }
+
+    /// Drop this account's local state from `app_id` and from every blessed ancestor of it, so its
+    /// handle is released and can't be migrated back (account deletion, issue #100).
+    ///
+    /// Uses clear-state, not close-out: the DApp's approval program has no close-out method, and
+    /// clear-state always succeeds whatever the approval program says. Each app is cleared only if
+    /// the account still holds local state there, so a retry after a part-way failure skips the
+    /// apps already cleared. The current app goes first, since its `Handle` is what blocks the
+    /// handle's re-registration. Returns the app ids cleared, in order; empty if there was nothing
+    /// to clear.
+    pub fn leave_app_lineage(&self, app_id: u64) -> Result<Vec<u64>> {
+        if app_id == 0 {
+            bail!("app_id must be > 0");
+        }
+        let me = self
+            .ops
+            .address
+            .as_ref()
+            .ok_or_else(|| anyhow!("No sender address"))?
+            .to_string();
+        let mut lineage = vec![app_id];
+        lineage.extend(self.ancestor_apps(app_id)?);
+        let mut cleared = Vec::new();
+        for app in lineage {
+            if self.ops.local_state_for_account(app, &me)?.is_none() {
+                continue;
+            }
+            // `with_context`, not a new error, so a typed `AlgoError` (such as an unreachable node)
+            // still downcasts for the caller.
+            self.ops
+                .clear_state_app(app)
+                .with_context(|| format!("clearing local state on app {app} failed"))?;
+            cleared.push(app);
+        }
+        Ok(cleared)
     }
 
     /// Decode an account's effective allow bitfield from its decoded local-state key/values,
