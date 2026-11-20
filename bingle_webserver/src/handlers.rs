@@ -254,7 +254,7 @@ fn save_if_configured(state: &AppState) {
 pub async fn local_generate_keypair(State(state): State<AppState>) -> impl IntoResponse {
     match local_api_guard(&state) {
         Ok(mut api) => {
-            let res = api.generate_keypair(false);
+            let res = api.generate_keypair();
             drop(api); // release lock before potential save
             match res {
                 Ok(kp) => {

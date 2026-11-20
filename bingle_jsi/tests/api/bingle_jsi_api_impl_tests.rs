@@ -218,7 +218,7 @@ fn end_to_end_giveup_via_jsi_fires_alert_to_configured_gateway() {
             .expect("local api is BingleApiLocalImpl");
         concrete.set_alert_poster(recording.clone());
         concrete
-            .import_keypair(TEST_MNEMONIC.to_string(), false)
+            .import_keypair(TEST_MNEMONIC.to_string())
             .expect("import test keypair");
         concrete.seed_own_handle_for_tests("alice".to_string());
         concrete
@@ -266,7 +266,7 @@ fn end_to_end_giveup_via_jsi_is_silent_when_disabled() {
             .expect("local api is BingleApiLocalImpl");
         concrete.set_alert_poster(recording.clone());
         concrete
-            .import_keypair(TEST_MNEMONIC.to_string(), false)
+            .import_keypair(TEST_MNEMONIC.to_string())
             .expect("import test keypair");
         concrete.seed_own_handle_for_tests("alice".to_string());
         concrete
@@ -329,7 +329,7 @@ fn get_nat_type_returns_unknown_initially() {
 fn local_methods_fail_without_local_flag() {
     let api = BingleJsiApiImpl::init(config_with_handle("testuser")).expect("init should succeed");
 
-    let result = api.generate_keypair(false);
+    let result = api.generate_keypair();
     assert!(result.is_err());
     assert!(matches!(
         result.unwrap_err(),
@@ -370,7 +370,7 @@ fn keypair_status_returns_none_initially() {
 fn generate_keypair_succeeds() {
     let api = init_with_local_helper();
     let kp = api
-        .generate_keypair(false)
+        .generate_keypair()
         .expect("generate_keypair should succeed");
     assert!(!kp.id.is_empty());
     assert!(!kp.passphrase.is_empty());
@@ -381,10 +381,10 @@ fn import_keypair_adopts_account() {
     let api = init_with_local_helper();
     // Generate to obtain a valid mnemonic, then import it and confirm the same account is adopted.
     let generated = api
-        .generate_keypair(false)
+        .generate_keypair()
         .expect("generate_keypair should succeed");
     let imported = api
-        .import_keypair(generated.passphrase.clone(), false)
+        .import_keypair(generated.passphrase.clone())
         .expect("import_keypair should succeed for a valid mnemonic");
     assert_eq!(imported.id, generated.id);
     assert_eq!(imported.passphrase, generated.passphrase);
@@ -393,7 +393,7 @@ fn import_keypair_adopts_account() {
 #[test]
 fn import_keypair_rejects_invalid_passphrase() {
     let api = init_with_local_helper();
-    let result = api.import_keypair("not a valid mnemonic".to_string(), false);
+    let result = api.import_keypair("not a valid mnemonic".to_string());
     assert!(result.is_err(), "invalid mnemonic must not import");
 }
 
@@ -410,10 +410,10 @@ fn inspect_passphrase_rejects_invalid_passphrase() {
 fn inspect_passphrase_leaves_stored_keypair_unchanged() {
     let api = init_with_local_helper();
     let kp = api
-        .generate_keypair(false)
+        .generate_keypair()
         .expect("generate_keypair should succeed");
     let other = init_with_local_helper()
-        .generate_keypair(false)
+        .generate_keypair()
         .expect("generate_keypair should succeed");
 
     if let Ok(status) = api.inspect_passphrase(other.passphrase) {
@@ -439,7 +439,7 @@ fn runtime_messaging_settings_toggle_preserves_session() {
     let api = init_with_local_helper();
 
     // A generated keypair stands in for live session state that a re-init would tear down.
-    let kp = api.generate_keypair(false).expect("generate keypair");
+    let kp = api.generate_keypair().expect("generate keypair");
 
     // config_with_local leaves both gates unset -> off.
     let before = api.messaging_settings().expect("messaging_settings");
@@ -496,7 +496,7 @@ fn api_with_vector_keypair() -> std::sync::Arc<BingleJsiApiImpl> {
     let api = init_with_local_helper();
     let mnemonic = "square flat curtain negative three april hobby culture unit fit drip bronze cactus stage vault pluck captain nation pond pizza grief domain coin abstract path";
     let imported = api
-        .import_keypair(mnemonic.to_string(), false)
+        .import_keypair(mnemonic.to_string())
         .expect("import_keypair should succeed for the vector mnemonic");
     assert_eq!(
         imported.id,
@@ -664,7 +664,7 @@ fn build_notify_register_request_fails_without_a_keypair() {
 fn generate_keypair_changes_status_to_unfunded() {
     let api = init_with_local_helper();
     let _kp = api
-        .generate_keypair(false)
+        .generate_keypair()
         .expect("generate_keypair should succeed");
     let status = api.keypair_status().expect("keypair_status should succeed");
     assert_eq!(status.status, KeypairStatus::Unfunded);
@@ -970,7 +970,7 @@ fn start_fails_when_keypair_none() {
 fn start_fails_when_keypair_unfunded() {
     let api = init_with_local_helper();
     let _kp = api
-        .generate_keypair(false)
+        .generate_keypair()
         .expect("generate_keypair should succeed");
     let status = api.keypair_status().expect("keypair_status should succeed");
     assert_eq!(status.status, KeypairStatus::Unfunded);

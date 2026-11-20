@@ -139,7 +139,7 @@ describeOrSkip(`bingle_jsi prompt Mailbox read (${backend})`, () => {
         },
       ],
     });
-    await call({method: 'importKeypair', args: [passphrase, false]});
+    await call({method: 'importKeypair', args: [passphrase]});
     await call({method: 'setMessageCallback', args: []});
     await call({method: 'setListeningCallback', args: []});
     await call({method: 'setMailboxCheckCallback', args: []});

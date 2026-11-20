@@ -27,7 +27,7 @@ fn inspect_rejects_invalid_phrase_as_import_does() {
         .inspect_passphrase("not a valid mnemonic".to_string())
         .expect_err("an invalid phrase must be rejected");
     let import_err = api
-        .import_keypair("not a valid mnemonic".to_string(), false)
+        .import_keypair("not a valid mnemonic".to_string())
         .expect_err("an invalid phrase must be rejected");
     assert_eq!(inspect_err.to_string(), import_err.to_string());
 }
@@ -35,7 +35,7 @@ fn inspect_rejects_invalid_phrase_as_import_does() {
 #[test]
 fn inspect_saves_no_keypair() {
     let mut source = BingleApiLocalImpl::new(LocalApiConfig::default());
-    let phrase = source.generate_keypair(false).expect("keypair").passphrase;
+    let phrase = source.generate_keypair().expect("keypair").passphrase;
 
     let api = BingleApiLocalImpl::new(LocalApiConfig::default());
     // With no node the chain read fails; either way nothing may be stored.
@@ -57,7 +57,7 @@ fn inspect_leaves_stored_keypair_and_memo_unchanged() {
     api.load(&path).expect("load");
 
     let mut source = BingleApiLocalImpl::new(LocalApiConfig::default());
-    let other = source.generate_keypair(false).expect("keypair");
+    let other = source.generate_keypair().expect("keypair");
     let _ = api.inspect_passphrase(other.passphrase);
 
     let kp = api
@@ -87,7 +87,7 @@ fn inspect_offline_is_an_error_not_a_cached_status() {
     assert_eq!(api.keypair_status().expect("memo").status, "ACTIVE");
 
     let mut source = BingleApiLocalImpl::new(LocalApiConfig::default());
-    let other = source.generate_keypair(false).expect("keypair");
+    let other = source.generate_keypair().expect("keypair");
     if let Ok(status) = api.inspect_passphrase(other.passphrase) {
         // Only possible with a reachable node; then it must describe the inspected account.
         assert_eq!(status.id.as_deref(), Some(other.id.as_str()));

@@ -24,7 +24,7 @@ fn keychain_api(items: &Arc<MemoryItems>, dir: &Path) -> BingleApiLocalImpl {
 fn with_synced_key(name: &str) -> (Arc<MemoryItems>, BingleApiLocalImpl, String) {
     let items = Arc::new(MemoryItems::new());
     let mut api = keychain_api(&items, &project_tmp_dir_path(name));
-    let kp = api.generate_keypair(false).expect("generate");
+    let kp = api.generate_keypair().expect("generate");
     api.set_device_only(false).expect("choose sync");
     assert_eq!(
         items.accessibility(KEY, true),
@@ -35,7 +35,7 @@ fn with_synced_key(name: &str) -> (Arc<MemoryItems>, BingleApiLocalImpl, String)
 
 fn another_phrase() -> String {
     let mut other = BingleApiLocalImpl::new(LocalApiConfig::default());
-    other.generate_keypair(false).expect("generate").passphrase
+    other.generate_keypair().expect("generate").passphrase
 }
 
 #[test]
@@ -43,7 +43,7 @@ fn another_phrase() -> String {
 fn generating_over_a_synced_key_is_refused_and_changes_nothing() {
     let (items, mut api, synced) = with_synced_key("synced-guard-generate");
 
-    match api.generate_keypair(false) {
+    match api.generate_keypair() {
         Err(BingleError::SyncedKeyWouldBeReplaced(address)) => assert_eq!(address, synced),
         other => panic!("expected SyncedKeyWouldBeReplaced, got {other:?}"),
     }
@@ -51,6 +51,14 @@ fn generating_over_a_synced_key_is_refused_and_changes_nothing() {
     assert_eq!(
         items.accessibility(KEY, true),
         Some(Accessibility::WhenUnlocked)
+    );
+
+    let replacement = api.generate_keypair_replacing(true).expect("replace");
+    assert_eq!(api.get_keypair().unwrap(), Some(replacement));
+    assert_eq!(
+        items.accessibility(KEY, true),
+        None,
+        "the synced item is gone"
     );
 }
 
@@ -60,13 +68,13 @@ fn importing_over_a_synced_key_needs_the_override() {
     let (items, mut api, synced) = with_synced_key("synced-guard-import");
     let phrase = another_phrase();
 
-    match api.import_keypair(phrase.clone(), false) {
+    match api.import_keypair(phrase.clone()) {
         Err(BingleError::SyncedKeyWouldBeReplaced(address)) => assert_eq!(address, synced),
         other => panic!("expected SyncedKeyWouldBeReplaced, got {other:?}"),
     }
     assert_eq!(api.get_keypair().unwrap().map(|kp| kp.id), Some(synced));
 
-    let imported = api.import_keypair(phrase, true).expect("replace");
+    let imported = api.import_keypair_replacing(phrase, true).expect("replace");
     assert_eq!(api.get_keypair().unwrap(), Some(imported));
     assert_eq!(
         items.accessibility(KEY, true),
@@ -83,7 +91,7 @@ fn re_importing_the_synced_key_needs_no_override() {
     let (items, mut api, synced) = with_synced_key("synced-guard-same");
     let phrase = api.get_keypair().unwrap().expect("a key").passphrase;
 
-    let kp = api.import_keypair(phrase, false).expect("same key");
+    let kp = api.import_keypair(phrase).expect("same key");
     assert_eq!(kp.id, synced);
     assert_eq!(
         items.accessibility(KEY, true),
@@ -106,10 +114,10 @@ fn completing_a_recovery_replaces_the_synced_key_without_the_override() {
 
 #[test]
 #[cfg(not(target_os = "ios"))]
-fn the_file_store_ignores_the_override() {
+fn the_file_store_replaces_without_the_override() {
     let mut api = BingleApiLocalImpl::new(LocalApiConfig::default());
-    api.generate_keypair(false).expect("first");
-    let second = api.generate_keypair(false).expect("second");
+    api.generate_keypair().expect("first");
+    let second = api.generate_keypair().expect("second");
     assert_eq!(api.get_keypair().unwrap(), Some(second));
 }
 
@@ -121,12 +129,12 @@ fn migrating_a_state_file_never_replaces_a_synced_key() {
     let path_str = path.to_str().unwrap().to_string();
     // a plain state file holding another account's phrase.
     let mut old = BingleApiLocalImpl::new(LocalApiConfig::default());
-    let file_key = old.generate_keypair(false).expect("generate");
+    let file_key = old.generate_keypair().expect("generate");
     old.save(&path_str).expect("save");
     // this device's Keychain syncs a different key.
     let items = Arc::new(MemoryItems::new());
     let mut synced_api = keychain_api(&items, &dir);
-    let synced = synced_api.generate_keypair(false).expect("generate");
+    let synced = synced_api.generate_keypair().expect("generate");
     synced_api.set_device_only(false).expect("choose sync");
 
     let mut api = keychain_api(&items, &dir);

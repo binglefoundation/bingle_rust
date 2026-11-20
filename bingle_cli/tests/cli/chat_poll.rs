@@ -21,7 +21,7 @@ fn alice_state_receive(receive_gate: bool) -> ChatState {
         store_and_forward_receive: receive_gate,
         ..LocalApiConfig::default()
     });
-    local.generate_keypair(false).expect("keypair");
+    local.generate_keypair().expect("keypair");
     local.seed_own_handle_for_tests("alice".to_string());
     ChatState::from_parts_for_tests(local, StartOptions::new("alice".to_string()))
 }

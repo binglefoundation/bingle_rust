@@ -106,7 +106,7 @@ fn report(outcome: SendOutcome, previously_failed: bool) -> SendReport {
 fn alice_state() -> (ChatState, TempDir) {
     let dir = tempfile::tempdir().expect("tempdir");
     let mut local = BingleApiLocalImpl::new(LocalApiConfig::default());
-    local.generate_keypair(false).expect("keypair");
+    local.generate_keypair().expect("keypair");
     local.seed_own_handle_for_tests("alice".to_string());
     let path = dir.path().join("state.json").to_string_lossy().into_owned();
     local.save(&path).expect("save");
@@ -126,7 +126,7 @@ fn alice_state_gated(send_gate: bool, sidewinder: Option<MailboxConfig>) -> Chat
         store_and_forward_send: send_gate,
         ..LocalApiConfig::default()
     });
-    local.generate_keypair(false).expect("keypair");
+    local.generate_keypair().expect("keypair");
     local.seed_own_handle_for_tests("alice".to_string());
     ChatState::from_parts_for_tests(local, StartOptions::new("alice".to_string()))
 }

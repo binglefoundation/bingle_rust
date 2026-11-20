@@ -33,26 +33,28 @@ fn keychain_jsi(name: &str) -> Arc<BingleJsiApiImpl> {
 #[cfg(not(target_os = "ios"))]
 fn replacing_a_synced_key_reports_its_address_until_the_app_agrees() {
     let api = keychain_jsi("jsi-synced-key");
-    let synced = api.generate_keypair(false).expect("generate");
+    let synced = api.generate_keypair().expect("generate");
     api.set_device_only(false).expect("choose sync");
 
-    match api.generate_keypair(false) {
+    match api.generate_keypair() {
         Err(BingleJsiError::SyncedKeyWouldBeReplaced { stored_address }) => {
             assert_eq!(stored_address, synced.id)
         }
         other => panic!("expected SyncedKeyWouldBeReplaced, got {other:?}"),
     }
     let other_phrase = BingleApiLocalImpl::new(LocalApiConfig::default())
-        .generate_keypair(false)
+        .generate_keypair()
         .expect("generate")
         .passphrase;
     assert!(matches!(
-        api.import_keypair(other_phrase.clone(), false),
+        api.import_keypair(other_phrase.clone()),
         Err(BingleJsiError::SyncedKeyWouldBeReplaced { .. })
     ));
     assert_eq!(api.export_keypair().expect("export").id, synced.id);
 
-    let imported = api.import_keypair(other_phrase, true).expect("replace");
+    let imported = api
+        .import_keypair_replacing(other_phrase, true)
+        .expect("replace");
     assert_eq!(api.export_keypair().expect("export").id, imported.id);
     assert!(
         api.key_storage_status()

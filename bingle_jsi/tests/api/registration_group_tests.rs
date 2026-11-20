@@ -88,7 +88,6 @@ fn registration_group_is_signed_with_the_stored_keypair() {
             .as_str()
             .expect("mnemonic")
             .to_string(),
-        false,
     )
     .expect("import");
     let group = &f["registration"];
@@ -108,7 +107,7 @@ fn registration_group_is_signed_with_the_stored_keypair() {
 fn registration_group_from_another_account_is_refused() {
     let f = fixture();
     let (api, path) = api_with_state("bingle-jsi-registration-other");
-    api.generate_keypair(false).expect("generate");
+    api.generate_keypair().expect("generate");
     let group = &f["registration"];
     let result = api.sign_registration_group(
         strings(group, "transactions"),
@@ -132,7 +131,6 @@ fn registration_group_needs_the_app_and_asset_ids() {
             .as_str()
             .expect("mnemonic")
             .to_string(),
-        false,
     )
     .expect("import");
     let group = &f["registration"];
@@ -155,7 +153,6 @@ fn recovery_group_needs_a_recovery_to_have_begun() {
             .as_str()
             .expect("mnemonic")
             .to_string(),
-        false,
     )
     .expect("import");
     let group = &f["recovery"];
@@ -183,7 +180,6 @@ fn recovery_group_is_signed_with_the_pending_keypair() {
             .as_str()
             .expect("mnemonic")
             .to_string(),
-        false,
     )
     .expect("import");
     let pending = api.begin_recovery_keypair().expect("begin");
@@ -207,7 +203,7 @@ fn recovery_group_is_signed_with_the_pending_keypair() {
 #[cfg(not(target_os = "ios"))]
 fn recovery_keypair_is_saved_before_it_is_returned() {
     let (api, path) = api_with_state("bingle-jsi-recovery-saved");
-    api.generate_keypair(false).expect("generate");
+    api.generate_keypair().expect("generate");
     let pending = api.begin_recovery_keypair().expect("begin");
     let saved: Json =
         serde_json::from_str(&std::fs::read_to_string(&path).expect("state file")).expect("JSON");
@@ -229,7 +225,7 @@ fn recovery_keypair_is_saved_before_it_is_returned() {
 #[cfg(not(target_os = "ios"))]
 fn completing_a_recovery_makes_the_pending_keypair_current() {
     let (api, path) = api_with_state("bingle-jsi-recovery-complete");
-    api.generate_keypair(false).expect("generate");
+    api.generate_keypair().expect("generate");
     let pending = api.begin_recovery_keypair().expect("begin");
     let current = api.complete_recovery_keypair().expect("complete");
     assert_eq!(current.id, pending.id);

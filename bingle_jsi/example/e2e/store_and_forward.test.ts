@@ -108,7 +108,7 @@ describeOrSkip(`bingle_jsi store-and-forward receive (${backend})`, () => {
         },
       ],
     });
-    await call({method: 'importKeypair', args: [passphrase, false]});
+    await call({method: 'importKeypair', args: [passphrase]});
     await call({method: 'setMessageCallback', args: []});
     await call({method: 'setListeningCallback', args: []});
     await call({method: 'start', args: []});

@@ -20,7 +20,7 @@ fn poll_is_a_no_op_when_receive_gate_off() {
         ..LocalApiConfig::default()
     };
     let mut api = BingleApiLocalImpl::new(config);
-    api.import_keypair(TEST_MNEMONIC.to_string(), false)
+    api.import_keypair(TEST_MNEMONIC.to_string())
         .expect("import test keypair");
 
     let read = api
@@ -45,7 +45,7 @@ fn poll_is_a_no_op_when_no_node_configured() {
         ..LocalApiConfig::default()
     };
     let mut api = BingleApiLocalImpl::new(config);
-    api.import_keypair(TEST_MNEMONIC.to_string(), false)
+    api.import_keypair(TEST_MNEMONIC.to_string())
         .expect("import test keypair");
 
     let read = api.poll_mailbox().expect("poll is infallible with no node");
@@ -106,7 +106,7 @@ fn poll_outcome_is_unreachable_when_the_node_cannot_be_reached() {
         ..LocalApiConfig::default()
     };
     let mut api = BingleApiLocalImpl::new(config);
-    api.import_keypair(TEST_MNEMONIC.to_string(), false)
+    api.import_keypair(TEST_MNEMONIC.to_string())
         .expect("import test keypair");
 
     let poll = api.poll_mailbox_outcome().expect("poll is infallible");

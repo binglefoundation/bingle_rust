@@ -17,7 +17,7 @@ fn store_with_pending_message(send_gate: bool) -> (BingleApiLocalImpl, String) {
         ..LocalApiConfig::default()
     };
     let mut api = BingleApiLocalImpl::new(config);
-    api.import_keypair(TEST_MNEMONIC.to_string(), false)
+    api.import_keypair(TEST_MNEMONIC.to_string())
         .expect("import test keypair");
     api.add_message(
         "me".to_string(),

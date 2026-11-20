@@ -500,8 +500,7 @@ final class BingleJsiBridgeTests: XCTestCase {
         var resolvedDict: [String: Any]?
 
         bridge.generateKeypair(
-            false,
-            resolver: { value in
+            { value in
                 resolvedDict = value as? [String: Any]
                 expectation.fulfill()
             },
@@ -511,25 +510,31 @@ final class BingleJsiBridgeTests: XCTestCase {
         waitForExpectations(timeout: 2.0)
         XCTAssertEqual(resolvedDict?["id"] as? String, "gen-id-42")
         XCTAssertEqual(resolvedDict?["passphrase"] as? String, "gen-passphrase-42")
-        XCTAssertEqual(mockApi.generateReplaceSyncedKeyArgs, [false])
     }
 
-    func testImportKeypair_passesTheReplaceArgument() {
-        let resolved = self.expectation(description: "importKeypair resolved")
-        bridge.importKeypair(
+    func testReplacingVariants_passTheArgument() {
+        let generated = self.expectation(description: "generateKeypairReplacing resolved")
+        bridge.generateKeypairReplacing(
+            true,
+            resolver: { _ in generated.fulfill() },
+            rejecter: { _, _, _ in XCTFail("unexpected rejection") }
+        )
+        let imported = self.expectation(description: "importKeypairReplacing resolved")
+        bridge.importKeypairReplacing(
             "twenty five words",
-            replaceSyncedKey: true,
-            resolver: { _ in resolved.fulfill() },
+            replaceSyncedKey: false,
+            resolver: { _ in imported.fulfill() },
             rejecter: { _, _, _ in XCTFail("unexpected rejection") }
         )
         waitForExpectations(timeout: 2.0)
-        XCTAssertEqual(mockApi.importReplaceSyncedKeyArgs, [true])
+        XCTAssertEqual(mockApi.generateReplaceSyncedKeyArgs, [true])
+        XCTAssertEqual(mockApi.importReplaceSyncedKeyArgs, [false])
     }
 
-    func testGenerateKeypair_rejectionNamesTheSyncedKeyAndItsAddress() {
-        mockApi.keypairError = BingleJsiError.SyncedKeyWouldBeReplaced(storedAddress: "STORED_ADDR")
-        let rejected = self.expectation(description: "generateKeypair rejected")
-        bridge.generateKeypair(
+    func testReplacing_rejectionNamesTheSyncedKeyAndItsAddress() {
+        mockApi.replacingError = BingleJsiError.SyncedKeyWouldBeReplaced(storedAddress: "STORED_ADDR")
+        let rejected = self.expectation(description: "generateKeypairReplacing rejected")
+        bridge.generateKeypairReplacing(
             false,
             resolver: { _ in XCTFail("unexpected resolve") },
             rejecter: { code, message, _ in

@@ -1894,10 +1894,17 @@ impl BingleJsiApi for BingleJsiApiImpl {
         })
     }
 
-    fn generate_keypair(&self, replace_synced_key: bool) -> Result<Keypair, BingleJsiError> {
+    fn generate_keypair(&self) -> Result<Keypair, BingleJsiError> {
+        self.generate_keypair_replacing(false)
+    }
+
+    fn generate_keypair_replacing(
+        &self,
+        replace_synced_key: bool,
+    ) -> Result<Keypair, BingleJsiError> {
         let mut guard = local_api_guard(&self.local_api)?;
         let kp = guard
-            .generate_keypair(replace_synced_key)
+            .generate_keypair_replacing(replace_synced_key)
             .map_err(bingle_error_to_jsi)?;
         drop(guard);
         save_if_configured(&self.local_api, &self.local_file);
@@ -1907,14 +1914,18 @@ impl BingleJsiApi for BingleJsiApiImpl {
         })
     }
 
-    fn import_keypair(
+    fn import_keypair(&self, passphrase: String) -> Result<Keypair, BingleJsiError> {
+        self.import_keypair_replacing(passphrase, false)
+    }
+
+    fn import_keypair_replacing(
         &self,
         passphrase: String,
         replace_synced_key: bool,
     ) -> Result<Keypair, BingleJsiError> {
         let mut guard = local_api_guard(&self.local_api)?;
         let kp = guard
-            .import_keypair(passphrase, replace_synced_key)
+            .import_keypair_replacing(passphrase, replace_synced_key)
             .map_err(bingle_error_to_jsi)?;
         drop(guard);
         save_if_configured(&self.local_api, &self.local_file);

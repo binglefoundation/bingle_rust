@@ -33,7 +33,7 @@ fn jsi_over(local: BingleApiLocalImpl) -> Arc<BingleJsiApiImpl> {
 fn sealed_file(dir: &Path) -> String {
     let items = Arc::new(MemoryItems::new());
     let mut local = sealing_local(&items, dir);
-    local.generate_keypair(false).expect("generate");
+    local.generate_keypair().expect("generate");
     let path = dir
         .join(format!("{SCOPE}.json"))
         .to_string_lossy()
@@ -70,7 +70,7 @@ fn a_locked_device_reports_state_locked_then_loads_after_the_unlock() {
     let dir = project_tmp_dir_path("jsi-sealed-locked");
     let items = Arc::new(MemoryItems::new());
     let mut writer = sealing_local(&items, &dir);
-    writer.generate_keypair(false).expect("generate");
+    writer.generate_keypair().expect("generate");
     let path = dir
         .join(format!("{SCOPE}.json"))
         .to_string_lossy()
@@ -95,7 +95,7 @@ fn export_keypair_returns_the_phrase_the_sealed_file_leaves_out() {
     let dir = project_tmp_dir_path("jsi-sealed-export");
     let items = Arc::new(MemoryItems::new());
     let mut local = sealing_local(&items, &dir);
-    let kp = local.generate_keypair(false).expect("generate");
+    let kp = local.generate_keypair().expect("generate");
     let path = dir.join(format!("{SCOPE}.json"));
     local.save(path.to_string_lossy().as_ref()).expect("save");
     let raw = std::fs::read(&path).expect("read the sealed file");

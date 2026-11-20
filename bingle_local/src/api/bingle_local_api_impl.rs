@@ -1207,7 +1207,14 @@ fn opt_out_failure(role: &str, e: BingleError) -> BingleError {
 }
 
 impl BingleLocalApi for BingleApiLocalImpl {
-    fn generate_keypair(&mut self, replace_synced_key: bool) -> Result<Keypair, BingleError> {
+    fn generate_keypair(&mut self) -> Result<Keypair, BingleError> {
+        self.generate_keypair_replacing(false)
+    }
+
+    fn generate_keypair_replacing(
+        &mut self,
+        replace_synced_key: bool,
+    ) -> Result<Keypair, BingleError> {
         tracing::info!("[BingleLocalApi] Generating new keypair");
         let (id, passphrase) = AlgoOps::generate_keypair();
         let kp = Keypair { id, passphrase };
@@ -1221,7 +1228,11 @@ impl BingleLocalApi for BingleApiLocalImpl {
         Ok(kp)
     }
 
-    fn import_keypair(
+    fn import_keypair(&mut self, passphrase: String) -> Result<Keypair, BingleError> {
+        self.import_keypair_shared(passphrase, false)
+    }
+
+    fn import_keypair_replacing(
         &mut self,
         passphrase: String,
         replace_synced_key: bool,

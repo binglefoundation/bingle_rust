@@ -55,7 +55,7 @@ fn the_file_store_is_the_default_off_ios() {
 #[cfg(not(target_os = "ios"))]
 fn file_store_settings_report_key_storage_unavailable() {
     let api = BingleJsiApiImpl::init(config(&state_path(), Some("file"))).expect("init");
-    api.generate_keypair(false).expect("generate");
+    api.generate_keypair().expect("generate");
     assert!(matches!(
         api.set_device_only(false),
         Err(BingleJsiError::KeyStorageUnavailable { .. })
@@ -141,7 +141,7 @@ fn delete_account_reports_an_unreachable_node_as_no_blockchain_and_changes_nothi
     let mut cfg = config(&path, Some("file"));
     cfg.node_file = Some(node_file.to_string_lossy().into_owned());
     let api = BingleJsiApiImpl::init(cfg).expect("init");
-    let kp = api.generate_keypair(false).expect("generate");
+    let kp = api.generate_keypair().expect("generate");
     api.save(path.clone()).expect("save");
 
     let err = api
@@ -178,7 +178,7 @@ fn state_file_status_reports_a_new_install_and_a_plain_file() {
         .into_owned();
     let api = BingleJsiApiImpl::init(config(&path, Some("file"))).expect("init");
     assert_eq!(api.state_file_status().unwrap(), StateFileStatus::NotLoaded);
-    api.generate_keypair(false).expect("generate");
+    api.generate_keypair().expect("generate");
     api.save(path.clone()).expect("save");
 
     let reopened = BingleJsiApiImpl::init(config(&path, Some("file"))).expect("init again");
@@ -196,7 +196,7 @@ fn forget_state_key_saves_and_a_plain_file_needs_no_phrase() {
         .to_string_lossy()
         .into_owned();
     let api = BingleJsiApiImpl::init(config(&path, Some("file"))).expect("init");
-    let kp = api.generate_keypair(false).expect("generate");
+    let kp = api.generate_keypair().expect("generate");
 
     api.forget_state_key().expect("forget");
     let text = std::fs::read_to_string(&path).expect("saved before forgetting");
@@ -214,7 +214,7 @@ fn forget_state_key_saves_and_a_plain_file_needs_no_phrase() {
 fn export_keypair_returns_the_current_keypair_with_the_file_store() {
     let path = state_path();
     let api = BingleJsiApiImpl::init(config(&path, Some("file"))).expect("init");
-    let kp = api.generate_keypair(false).expect("generate");
+    let kp = api.generate_keypair().expect("generate");
 
     let exported = api.export_keypair().expect("export");
     assert_eq!(exported.id, kp.id);

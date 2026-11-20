@@ -103,7 +103,7 @@ impl MessageDelivery for MockDelivery {
 /// A local store with `alice` as the sender.
 fn local_store(config: LocalApiConfig) -> BingleApiLocalImpl {
     let mut local = BingleApiLocalImpl::new(config);
-    local.generate_keypair(false).expect("keypair");
+    local.generate_keypair().expect("keypair");
     local.seed_own_handle_for_tests("alice".to_string());
     local
 }

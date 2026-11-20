@@ -3,7 +3,7 @@ use bingle_local::api::{BingleApiLocalImpl, BingleLocalApi, LocalApiConfig};
 #[test]
 fn test_generate_keypair_works() {
     let mut api = BingleApiLocalImpl::new(LocalApiConfig::default());
-    let kp = api.generate_keypair(false).expect("keypair");
+    let kp = api.generate_keypair().expect("keypair");
     assert!(!kp.id.is_empty(), "id should not be empty");
     assert!(!kp.passphrase.is_empty(), "passphrase should not be empty");
     assert!(
@@ -17,11 +17,11 @@ fn test_import_keypair_adopts_account() {
     // Generate a keypair to obtain a valid mnemonic, then import that same mnemonic into a
     // fresh api instance and confirm it adopts the identical account (id derived from passphrase).
     let mut source = BingleApiLocalImpl::new(LocalApiConfig::default());
-    let generated = source.generate_keypair(false).expect("keypair");
+    let generated = source.generate_keypair().expect("keypair");
 
     let mut api = BingleApiLocalImpl::new(LocalApiConfig::default());
     let imported = api
-        .import_keypair(generated.passphrase.clone(), false)
+        .import_keypair(generated.passphrase.clone())
         .expect("import should succeed for a valid mnemonic");
 
     assert_eq!(
@@ -37,7 +37,7 @@ fn test_import_keypair_adopts_account() {
 #[test]
 fn test_import_keypair_rejects_invalid_passphrase() {
     let mut api = BingleApiLocalImpl::new(LocalApiConfig::default());
-    let res = api.import_keypair("not a valid mnemonic".to_string(), false);
+    let res = api.import_keypair("not a valid mnemonic".to_string());
     assert!(res.is_err(), "importing an invalid mnemonic must fail");
     // A failed import must not leave a partial keypair behind.
     assert!(
@@ -49,7 +49,7 @@ fn test_import_keypair_rejects_invalid_passphrase() {
 #[test]
 fn test_get_algo_ops_uses_existing_keypair() {
     let mut api = BingleApiLocalImpl::new(LocalApiConfig::default());
-    let kp = api.generate_keypair(false).expect("keypair");
+    let kp = api.generate_keypair().expect("keypair");
     let ops = api.get_algo_ops().expect("ops");
     // Address should be derived from the stored passphrase and equal to the generated id
     let addr = ops.address.expect("address should be present");
@@ -69,7 +69,7 @@ fn test_get_algo_ops_errors_when_missing() {
 #[test]
 fn test_get_algo_ops_caches_instance() {
     let mut api = BingleApiLocalImpl::new(LocalApiConfig::default());
-    let _ = api.generate_keypair(false).expect("keypair");
+    let _ = api.generate_keypair().expect("keypair");
     let ops1 = api.get_algo_ops().expect("ops1");
     let ops2 = api.get_algo_ops().expect("ops2");
     assert_eq!(

@@ -16,7 +16,7 @@ fn args(items: &[&str]) -> Vec<String> {
 fn state_registered_as(handle: &str, seed_contact: Option<(&str, &str)>) -> (ChatState, TempDir) {
     let dir = tempfile::tempdir().expect("tempdir");
     let mut local = BingleApiLocalImpl::new(LocalApiConfig::default());
-    local.generate_keypair(false).expect("keypair");
+    local.generate_keypair().expect("keypair");
     local.seed_own_handle_for_tests(handle.to_string());
     if let Some((h, id)) = seed_contact {
         local
@@ -170,7 +170,7 @@ pub fn receive_persists_across_reload() {
     // The state file written on receive should reload with the message and contact intact.
     let dir = tempfile::tempdir().expect("tempdir");
     let mut local = BingleApiLocalImpl::new(LocalApiConfig::default());
-    local.generate_keypair(false).expect("keypair");
+    local.generate_keypair().expect("keypair");
     local.seed_own_handle_for_tests("alice".to_string());
     let path = dir.path().join("state.json").to_string_lossy().into_owned();
     local.save(&path).expect("save");
@@ -201,7 +201,7 @@ pub fn a_blocked_senders_message_is_dropped() {
     // bingle_ux_rn #34: a message from a blocked contact is neither stored nor shown.
     let dir = tempfile::tempdir().expect("tempdir");
     let mut local = BingleApiLocalImpl::new(LocalApiConfig::default());
-    local.generate_keypair(false).expect("keypair");
+    local.generate_keypair().expect("keypair");
     local.seed_own_handle_for_tests("alice".to_string());
     local
         .add_contact(

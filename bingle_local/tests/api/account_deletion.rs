@@ -124,7 +124,7 @@ impl AccountOptOut for RecordingOptOut {
 /// An account with a key in the store, a contact, a block, a message and a memoized handle.
 fn populated_account(store: &Arc<MemoryKeyStore>) -> (BingleApiLocalImpl, Keypair) {
     let mut api = BingleApiLocalImpl::with_key_store(LocalApiConfig::default(), store.clone());
-    let kp = api.generate_keypair(false).expect("generate");
+    let kp = api.generate_keypair().expect("generate");
     api.seed_own_handle_for_tests("deleter".into());
     api.add_contact("friend".into(), "FRIEND_ID".into(), ContactSource::Manual)
         .expect("add contact");

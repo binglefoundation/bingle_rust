@@ -6,7 +6,7 @@ use std::fs;
 fn persistence_roundtrip_preserves_state() {
     let mut api = BingleApiLocalImpl::new(LocalApiConfig::default());
     // Generate a keypair so AlgoOps can be re-created after load
-    let _kp = api.generate_keypair(false).expect("keypair");
+    let _kp = api.generate_keypair().expect("keypair");
 
     // Contacts: one visible, one blocked
     api.add_contact("alice".into(), "ID_ALICE".into(), ContactSource::Manual)
@@ -85,7 +85,7 @@ fn load_empty_json_object_yields_empty_state() {
 #[test]
 fn save_creates_parent_directories() {
     let mut api = BingleApiLocalImpl::new(LocalApiConfig::default());
-    let _kp = api.generate_keypair(false).expect("keypair");
+    let _kp = api.generate_keypair().expect("keypair");
     let base = project_tmp_dir_path("bingle-local-parent-dirs");
     let nested = base.join("nested/sub/dir/state.json");
     let path = nested
@@ -100,7 +100,7 @@ fn save_creates_parent_directories() {
 #[test]
 fn save_succeeds_when_parent_directory_already_exists() {
     let mut api = BingleApiLocalImpl::new(LocalApiConfig::default());
-    let _kp = api.generate_keypair(false).expect("keypair");
+    let _kp = api.generate_keypair().expect("keypair");
     let base = project_tmp_dir_path("bingle-local-existing-parent");
     let file_path = base.join("state.json");
     let path = file_path

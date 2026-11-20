@@ -59,7 +59,7 @@ impl Drop for Device {
 /// A sealing account with a contact and a message, saved.
 fn sealed_account(device: &Device) -> (BingleApiLocalImpl, Keypair) {
     let mut api = device.api(true);
-    let kp = api.generate_keypair(false).expect("generate");
+    let kp = api.generate_keypair().expect("generate");
     api.add_contact("friend".into(), "FRIEND_ID".into(), ContactSource::Manual)
         .expect("add contact");
     api.add_message(
@@ -141,7 +141,7 @@ fn a_sealed_file_loads_with_the_device_key() {
 fn a_plain_file_is_sealed_on_load_without_losing_messages() {
     let device = Device::new("sealed-migration");
     let mut old = device.api(false);
-    old.generate_keypair(false).expect("generate");
+    old.generate_keypair().expect("generate");
     old.add_message("me".into(), vec!["friend".into()], 1, "kept".into(), None)
         .expect("add message");
     old.save(&device.path()).expect("save plain");
@@ -281,10 +281,7 @@ fn a_restored_file_opens_with_the_recovery_phrase_on_a_new_device() {
     assert!(api.save(&path).is_err(), "not saved over");
 
     // A valid phrase for another account opens nothing and changes nothing.
-    let other = new_device
-        .api(false)
-        .generate_keypair(false)
-        .expect("other");
+    let other = new_device.api(false).generate_keypair().expect("other");
     let err = api
         .open_state_with_recovery_phrase(&path, other.passphrase)
         .expect_err("wrong account");
@@ -319,7 +316,7 @@ fn a_restored_file_opens_with_the_recovery_phrase_on_a_new_device() {
 fn the_recovery_slot_follows_the_current_account() {
     let device = Device::new("sealed-account-change");
     let (mut api, first) = sealed_account(&device);
-    let second = api.generate_keypair(false).expect("generate another");
+    let second = api.generate_keypair().expect("generate another");
     api.save(&device.path()).expect("save");
 
     let new_device = Device::new("sealed-account-change-new");
@@ -382,7 +379,7 @@ fn a_large_history_seals_and_opens_about_as_fast_as_plain_json() {
     // Save and load 10,000 messages, plain and sealed.
     fn round_trip(device: &Device, encrypt_state: bool) -> std::time::Duration {
         let mut api = device.api(encrypt_state);
-        api.generate_keypair(false).expect("generate");
+        api.generate_keypair().expect("generate");
         for i in 0..10_000 {
             api.add_message(
                 "me".into(),

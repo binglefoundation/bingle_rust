@@ -336,19 +336,31 @@ pub trait BingleLocalApi: Send + Sync {
     /// Generate a new Algorand keypair (id and passphrase) and set it as current.
     ///
     /// With a key store that syncs through iCloud Keychain, a different synced key already stored
-    /// is replaced only with `replace_synced_key`: replacing it removes that account from every
-    /// device on the user's Apple Account. Without it the call fails with
-    /// [`BingleError::SyncedKeyWouldBeReplaced`], carrying the stored address, and changes nothing
-    /// (issue #452). The file store ignores it.
-    fn generate_keypair(&mut self, replace_synced_key: bool) -> Result<Keypair, BingleError>;
+    /// isn't replaced: replacing it removes that account from every device on the user's Apple
+    /// Account. The call fails with [`BingleError::SyncedKeyWouldBeReplaced`], carrying the stored
+    /// address, and changes nothing (issue #452). The same as
+    /// [`generate_keypair_replacing(false)`](BingleLocalApi::generate_keypair_replacing).
+    fn generate_keypair(&mut self) -> Result<Keypair, BingleError>;
+
+    /// [`generate_keypair`](BingleLocalApi::generate_keypair), replacing a different synced key
+    /// when `replace_synced_key` is set, once the user agrees (issue #452). The file store ignores
+    /// it.
+    fn generate_keypair_replacing(
+        &mut self,
+        replace_synced_key: bool,
+    ) -> Result<Keypair, BingleError>;
 
     /// Import an existing account from its 25-word Algorand mnemonic `passphrase` and set it
     /// as current. Validates the mnemonic and derives the account id, then clears any memoized
     /// ACTIVE handle/status so `keypair_status` re-resolves from chain (the imported account may
     /// already be registered). Errors if `passphrase` is not a valid mnemonic. Never logs the
-    /// passphrase. A different synced key is replaced only with `replace_synced_key`, as for
+    /// passphrase. A different synced key isn't replaced, as for
     /// [`generate_keypair`](BingleLocalApi::generate_keypair).
-    fn import_keypair(
+    fn import_keypair(&mut self, passphrase: String) -> Result<Keypair, BingleError>;
+
+    /// [`import_keypair`](BingleLocalApi::import_keypair), replacing a different synced key when
+    /// `replace_synced_key` is set (issue #452).
+    fn import_keypair_replacing(
         &mut self,
         passphrase: String,
         replace_synced_key: bool,

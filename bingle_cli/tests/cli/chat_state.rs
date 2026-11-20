@@ -23,7 +23,7 @@ fn write_state_file(
     contact_id: &str,
 ) -> (String, String) {
     let mut local = BingleApiLocalImpl::new(LocalApiConfig::default());
-    let keypair = local.generate_keypair(false).expect("generate keypair");
+    let keypair = local.generate_keypair().expect("generate keypair");
     // Mark the account ACTIVE with a registered handle so the bridge can resolve it offline.
     local.seed_own_handle_for_tests(handle.to_string());
     local
@@ -61,7 +61,7 @@ pub fn state_file_surfaces_keypair_handle_and_contacts() {
 /// A fresh account (address, passphrase) unrelated to any state file.
 fn other_account() -> (String, String) {
     let mut local = BingleApiLocalImpl::new(LocalApiConfig::default());
-    let keypair = local.generate_keypair(false).expect("generate keypair");
+    let keypair = local.generate_keypair().expect("generate keypair");
     (keypair.id, keypair.passphrase)
 }
 
@@ -332,7 +332,7 @@ pub fn bridge_never_logs_the_passphrase() {
 /// A store with a keypair and no handle, as after importing from `--passphrase` alone (issue #397).
 fn imported_state_without_handle() -> ChatState {
     let mut local = BingleApiLocalImpl::new(LocalApiConfig::default());
-    local.generate_keypair(false).expect("keypair");
+    local.generate_keypair().expect("keypair");
     ChatState::from_parts_for_tests(local, StartOptions::new(String::new()))
 }
 
@@ -352,7 +352,7 @@ pub fn adopted_handle_is_the_sender_of_queued_messages() {
 #[cfg(not(target_os = "ios"))]
 pub fn adopt_handle_keeps_a_handle_already_set() {
     let mut local = BingleApiLocalImpl::new(LocalApiConfig::default());
-    local.generate_keypair(false).expect("keypair");
+    local.generate_keypair().expect("keypair");
     let mut state = ChatState::from_parts_for_tests(local, StartOptions::new("alice".to_string()));
 
     state.adopt_handle("other");

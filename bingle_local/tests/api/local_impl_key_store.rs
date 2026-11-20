@@ -101,7 +101,7 @@ fn file_text(path: &str) -> String {
 #[cfg(not(target_os = "ios"))]
 fn the_file_store_keeps_the_phrase_in_the_state_file() {
     let mut api = BingleApiLocalImpl::new(LocalApiConfig::default());
-    let kp = api.generate_keypair(false).expect("generate");
+    let kp = api.generate_keypair().expect("generate");
     let path = state_path("key-store-file-backend");
     api.save(&path).expect("save");
     assert!(file_text(&path).contains(&kp.passphrase));
@@ -121,7 +121,7 @@ fn the_file_store_keeps_the_phrase_in_the_state_file() {
 fn a_platform_store_keeps_the_phrase_out_of_the_file_and_reloads_it() {
     let store = Arc::new(MemoryKeyStore::default());
     let mut api = api_with(&store);
-    let kp = api.generate_keypair(false).expect("generate");
+    let kp = api.generate_keypair().expect("generate");
     assert_eq!(store.fetch(KeySlot::Current).unwrap(), Some(kp.clone()));
 
     let path = state_path("key-store-platform-backend");
@@ -141,7 +141,7 @@ fn a_platform_store_keeps_the_phrase_out_of_the_file_and_reloads_it() {
 fn loading_an_old_file_moves_the_phrase_into_the_store_and_rewrites_the_file() {
     // A state file written by the file store, as every install has today.
     let mut old = BingleApiLocalImpl::new(LocalApiConfig::default());
-    let kp = old.generate_keypair(false).expect("generate");
+    let kp = old.generate_keypair().expect("generate");
     let path = state_path("key-store-migration-success");
     old.save(&path).expect("save");
     assert!(file_text(&path).contains(&kp.passphrase));
@@ -162,7 +162,7 @@ fn loading_an_old_file_moves_the_phrase_into_the_store_and_rewrites_the_file() {
 #[cfg(not(target_os = "ios"))]
 fn a_failed_move_keeps_the_phrase_in_the_file() {
     let mut old = BingleApiLocalImpl::new(LocalApiConfig::default());
-    let kp = old.generate_keypair(false).expect("generate");
+    let kp = old.generate_keypair().expect("generate");
     let path = state_path("key-store-migration-failure");
     old.save(&path).expect("save");
 
@@ -184,7 +184,7 @@ fn a_failed_move_keeps_the_phrase_in_the_file() {
 fn a_file_whose_key_is_missing_from_the_store_loads_without_a_keypair() {
     let store = Arc::new(MemoryKeyStore::default());
     let mut api = api_with(&store);
-    api.generate_keypair(false).expect("generate");
+    api.generate_keypair().expect("generate");
     let path = state_path("key-store-missing-key");
     api.save(&path).expect("save");
 
@@ -202,7 +202,7 @@ fn a_key_that_cant_be_stored_is_not_used() {
     let store = Arc::new(MemoryKeyStore::default());
     store.fail_store.store(true, Ordering::SeqCst);
     let mut api = api_with(&store);
-    assert!(api.generate_keypair(false).is_err());
+    assert!(api.generate_keypair().is_err());
     assert_eq!(api.get_keypair().unwrap(), None);
 }
 
@@ -211,7 +211,7 @@ fn a_key_that_cant_be_stored_is_not_used() {
 fn recovery_keys_go_through_the_store() {
     let store = Arc::new(MemoryKeyStore::default());
     let mut api = api_with(&store);
-    api.generate_keypair(false).expect("generate");
+    api.generate_keypair().expect("generate");
     let pending = api.begin_recovery_keypair().expect("begin");
     assert_eq!(
         store.fetch(KeySlot::Recovery).unwrap(),
@@ -240,7 +240,7 @@ fn recovery_keys_go_through_the_store() {
 fn restore_and_remove_use_the_stored_key() {
     let store = Arc::new(MemoryKeyStore::default());
     let mut first = api_with(&store);
-    let kp = first.generate_keypair(false).expect("generate");
+    let kp = first.generate_keypair().expect("generate");
 
     // a reinstall: no state file, the store still has the key.
     let mut reinstalled = api_with(&store);

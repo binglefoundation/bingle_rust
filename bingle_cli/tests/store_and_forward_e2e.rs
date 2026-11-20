@@ -214,7 +214,7 @@ fn offline_send_survives_and_is_read_on_reconnect() {
     // ── sender: two offline sends give up and are posted to the receiver's Mailbox ──────────────
     let mut sender = BingleApiLocalImpl::new(local_config(app_id, asset_id, true, false));
     sender
-        .import_keypair(accounts.sender.mnemonic.clone(), false)
+        .import_keypair(accounts.sender.mnemonic.clone())
         .expect("import sender keypair");
 
     // The earlier-sent message is added second and posted first, so a correct read must reorder by
@@ -246,7 +246,7 @@ fn offline_send_survives_and_is_read_on_reconnect() {
     // ── receiver: reconnect, poll, read, decrypt ─────────────────────────────────────────────────
     let mut receiver = BingleApiLocalImpl::new(local_config(app_id, asset_id, false, true));
     receiver
-        .import_keypair(accounts.receiver.mnemonic.clone(), false)
+        .import_keypair(accounts.receiver.mnemonic.clone())
         .expect("import receiver keypair");
 
     let read = receiver.poll_mailbox().expect("poll");
@@ -316,7 +316,7 @@ fn exit_flush_posts_a_queued_message_to_the_offline_peers_mailbox() {
     // ── sender: queue a message, then exit before any direct attempt ─────────────────────────────
     let mut sender = BingleApiLocalImpl::new(local_config(app_id, asset_id, true, false));
     sender
-        .import_keypair(accounts.sender.mnemonic.clone(), false)
+        .import_keypair(accounts.sender.mnemonic.clone())
         .expect("import sender keypair");
     let ts = 1_726_700_000_000;
     sender
@@ -357,7 +357,7 @@ fn exit_flush_posts_a_queued_message_to_the_offline_peers_mailbox() {
     // ── receiver: next start reads it from the Mailbox ───────────────────────────────────────────
     let mut receiver = BingleApiLocalImpl::new(local_config(app_id, asset_id, false, true));
     receiver
-        .import_keypair(accounts.receiver.mnemonic.clone(), false)
+        .import_keypair(accounts.receiver.mnemonic.clone())
         .expect("import receiver keypair");
     let read = receiver.poll_mailbox().expect("poll");
     assert_eq!(read.len(), 1);

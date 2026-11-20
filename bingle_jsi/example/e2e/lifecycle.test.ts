@@ -65,7 +65,7 @@ describe(`bingle_jsi account lifecycle (${backend})`, () => {
     });
 
     it('generates a keypair that reads back as Unfunded', async () => {
-      const keypair = await call({method: 'generateKeypair', args: [false]});
+      const keypair = await call({method: 'generateKeypair', args: []});
       assert.strictEqual(typeof keypair.id, 'string');
       assert.ok(keypair.id.length > 0, 'keypair id should be non-empty');
 
@@ -80,8 +80,8 @@ describe(`bingle_jsi account lifecycle (${backend})`, () => {
 
     it('imports a keypair by its passphrase and derives the same id', async () => {
       // Generate one, then import its passphrase back: a deterministic round-trip needing no fixture.
-      const generated = await call({method: 'generateKeypair', args: [false]});
-      const imported = await call({method: 'importKeypair', args: [generated.passphrase, false]});
+      const generated = await call({method: 'generateKeypair', args: []});
+      const imported = await call({method: 'importKeypair', args: [generated.passphrase]});
       assert.strictEqual(
         imported.id,
         generated.id,
@@ -169,7 +169,7 @@ describe(`bingle_jsi account lifecycle (${backend})`, () => {
       });
       // init sets the engine passphrase but does not import it into the local API keypair; import the
       // funded, registered fixture explicitly so keypairStatus reads the funded/active path (#111).
-      await call({method: 'importKeypair', args: [passphrase, false]});
+      await call({method: 'importKeypair', args: [passphrase]});
     });
 
     it('reports the funded fixture as Funded or Active', async () => {
