@@ -162,22 +162,27 @@ fi
 # ── 2. staging CI ─────────────────────────────────────────────────────
 # deploy.yml re-runs every gate, but checking the staging runs first fails in seconds, not an hour.
 info "staging CI on $SHORT"
-runs=$(gh api "repos/$GH_REPO/commits/$SHA/check-runs?per_page=100" -q '.check_runs[] | "\(.name)\t\(.status)\t\(.conclusion)"')
-ci_ok=1
+runs=$(gh api "repos/$GH_REPO/commits/$SHA/check-runs?per_page=100" -q '.check_runs[] | "\(.name)\t\(.status)\t\(.conclusion)\t\(.html_url)"')
+ci_failed=0
+ci_running=0
 # a gate passes when any of its runs on the commit succeeded (a re-run after a flake counts).
 for gate in "${GATES[@]}"; do
   lines=$(awk -F'\t' -v g="$gate" '$1 == g' <<< "$runs")
   if [[ -z "$lines" ]]; then
     warn "$gate has no run on $SHORT (a newer staging push may have cancelled it; release the head of staging)"
-    ci_ok=0
-  elif ! awk -F'\t' '$3 == "success"' <<< "$lines" | grep -q .; then
-    warn "$gate on $SHORT: $(head -1 <<< "$lines" | cut -f2,3 | tr '\t' ' ')"
-    ci_ok=0
-  else
+    ci_failed=1
+  elif awk -F'\t' '$3 == "success"' <<< "$lines" | grep -q .; then
     ok "$gate passed"
+  elif running=$(awk -F'\t' '$2 != "completed"' <<< "$lines" | head -1) && [[ -n "$running" ]]; then
+    warn "$gate on $SHORT is still running ($(cut -f2 <<< "$running")); check it at $(cut -f4 <<< "$running")"
+    ci_running=1
+  else
+    warn "$gate on $SHORT: $(head -1 <<< "$lines" | cut -f3); see $(head -1 <<< "$lines" | cut -f4)"
+    ci_failed=1
   fi
 done
-[[ $ci_ok -eq 1 ]] || die "staging CI has not passed on $SHORT; wait for it or fix it first"
+[[ $ci_failed -eq 0 ]] || die "staging CI has not passed on $SHORT; fix or re-run the job above, then rerun scripts/release.sh"
+[[ $ci_running -eq 0 ]] || die "staging CI is still running on $SHORT; when the job above passes, rerun scripts/release.sh"
 
 # ── the plan ──────────────────────────────────────────────────────────
 deployed=$(git rev-parse origin/deployed)
