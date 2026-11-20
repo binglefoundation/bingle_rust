@@ -593,7 +593,9 @@ The full API is defined in `src/api/bingle_jsi_api.rs`. Key methods:
 | `version()` | Get version info |
 | `getVersions()` | Get the version of every library module, keyed by module name (needs init) |
 | `getNatType()` | Get detected NAT type |
-| `generateKeypair()` | Generate a new Algorand keypair |
+| `generateKeypair()` | Generate a new Algorand keypair and make it current. With the Keychain store, a different key synced through iCloud Keychain isn't replaced, since that removes it from every device on the Apple Account: it rejects with `SyncedKeyWouldBeReplaced(storedAddress: …)` and changes nothing (#452) |
+| `generateKeypairReplacing(replaceSyncedKey)` | `generateKeypair`, replacing a different synced key when `replaceSyncedKey` is true, once the user agrees (#452) |
+| `importKeypairReplacing(passphrase, replaceSyncedKey)` | `importKeypair`, replacing a different synced key when `replaceSyncedKey` is true (#452) |
 | `registerKeypair(handle)` | Register keypair on-chain |
 | `signRegistrationGroup(transactions, signIndexes, handle)` | Check and sign the client's transactions in the registration service's registration group |
 | `beginRecoveryKeypair()` | Start or resume a handle clash recovery: the pending new keypair, saved beside the current one |

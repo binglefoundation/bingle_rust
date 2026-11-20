@@ -325,6 +325,38 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
         }.start()
     }
 
+    @ReactMethod
+    fun generateKeypairReplacing(replaceSyncedKey: Boolean, promise: Promise) {
+        val api = apiInstance
+        if (api == null) {
+            promise.reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.")
+            return
+        }
+        Thread {
+            try {
+                promise.resolve(keypairMap(api.generateKeypairReplacing(replaceSyncedKey)))
+            } catch (e: Exception) {
+                promise.reject("BINGLE_ERROR", e.message, e)
+            }
+        }.start()
+    }
+
+    @ReactMethod
+    fun importKeypairReplacing(passphrase: String, replaceSyncedKey: Boolean, promise: Promise) {
+        val api = apiInstance
+        if (api == null) {
+            promise.reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.")
+            return
+        }
+        Thread {
+            try {
+                promise.resolve(keypairMap(api.importKeypairReplacing(passphrase, replaceSyncedKey)))
+            } catch (e: Exception) {
+                promise.reject("BINGLE_ERROR", e.message, e)
+            }
+        }.start()
+    }
+
     // Inspect the account a recovery phrase belongs to without importing it (issue #388).
     @ReactMethod
     fun inspectPassphrase(passphrase: String, promise: Promise) {

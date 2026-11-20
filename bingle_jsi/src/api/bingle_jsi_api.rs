@@ -101,11 +101,33 @@ pub trait BingleJsiApi: Send + Sync {
     // ── Local storage and contacts ───────────────────────────────────
 
     /// Generate a new Algorand keypair and set it as current.
+    ///
+    /// With the Keychain store, a different key the user syncs through iCloud Keychain isn't
+    /// replaced: replacing it removes that account from every device on their Apple Account. The
+    /// call fails with `SyncedKeyWouldBeReplaced { stored_address }` and changes nothing, so the app
+    /// can warn and retry with [`generate_keypair_replacing`](Self::generate_keypair_replacing)
+    /// (issue #452).
     fn generate_keypair(&self) -> Result<Keypair, BingleJsiError>;
 
+    /// [`generate_keypair`](Self::generate_keypair), replacing a different synced key when
+    /// `replace_synced_key` is set, once the user agrees (issue #452). The file store ignores it.
+    fn generate_keypair_replacing(
+        &self,
+        replace_synced_key: bool,
+    ) -> Result<Keypair, BingleJsiError>;
+
     /// Import an existing account from its 25-word Algorand mnemonic passphrase and set it as
-    /// current. Errors if the passphrase is not a valid mnemonic.
+    /// current. Errors if the passphrase is not a valid mnemonic. A different synced key isn't
+    /// replaced, as for [`generate_keypair`](Self::generate_keypair).
     fn import_keypair(&self, passphrase: String) -> Result<Keypair, BingleJsiError>;
+
+    /// [`import_keypair`](Self::import_keypair), replacing a different synced key when
+    /// `replace_synced_key` is set (issue #452).
+    fn import_keypair_replacing(
+        &self,
+        passphrase: String,
+        replace_synced_key: bool,
+    ) -> Result<Keypair, BingleJsiError>;
 
     /// Inspect the account a 25-word Algorand mnemonic passphrase belongs to without importing it
     /// (issue #388): its address (`id`) and on-chain status on the configured network, as

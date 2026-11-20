@@ -53,6 +53,15 @@ RCT_EXTERN_METHOD(importKeypair:(NSString *)passphrase
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
+RCT_EXTERN_METHOD(generateKeypairReplacing:(BOOL)replaceSyncedKey
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+
+RCT_EXTERN_METHOD(importKeypairReplacing:(NSString *)passphrase
+                  replaceSyncedKey:(BOOL)replaceSyncedKey
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+
 RCT_EXTERN_METHOD(inspectPassphrase:(NSString *)passphrase
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)

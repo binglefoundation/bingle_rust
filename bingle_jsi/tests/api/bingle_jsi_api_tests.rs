@@ -141,6 +141,25 @@ impl BingleJsiApi for StubApi {
         })
     }
 
+    fn generate_keypair_replacing(
+        &self,
+        _replace_synced_key: bool,
+    ) -> Result<Keypair, BingleJsiError> {
+        Err(BingleJsiError::NotImplemented {
+            reason: "generate_keypair_replacing".to_string(),
+        })
+    }
+
+    fn import_keypair_replacing(
+        &self,
+        _passphrase: String,
+        _replace_synced_key: bool,
+    ) -> Result<Keypair, BingleJsiError> {
+        Err(BingleJsiError::NotImplemented {
+            reason: "import_keypair_replacing".to_string(),
+        })
+    }
+
     fn inspect_passphrase(
         &self,
         _passphrase: String,

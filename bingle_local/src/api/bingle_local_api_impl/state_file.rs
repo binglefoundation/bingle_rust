@@ -180,7 +180,9 @@ impl BingleApiLocalImpl {
             sealed_state::rekey_with_phrase(&bytes, &phrase, &secret).map_err(phrase_error)?;
         write_atomically(path, &rekeyed)?;
         self.load(path)?;
-        let keypair = self.import_keypair_shared(phrase)?;
+        // The phrase's file is open on this device now, so its key becomes current here, as a
+        // restore with the phrase does.
+        let keypair = self.import_keypair_shared(phrase, true)?;
         self.save(path)?;
         tracing::info!(
             "[BingleLocalApi] Opened '{}' with the recovery phrase",

@@ -27,7 +27,12 @@ impl KeyStore for MemoryKeyStore {
         false
     }
 
-    fn store(&self, slot: KeySlot, keypair: &Keypair) -> Result<(), KeyStoreError> {
+    fn store(
+        &self,
+        slot: KeySlot,
+        keypair: &Keypair,
+        _replace_synced: bool,
+    ) -> Result<(), KeyStoreError> {
         if self.fail_store.load(Ordering::SeqCst) {
             return Err(KeyStoreError::Storage("simulated failure".into()));
         }

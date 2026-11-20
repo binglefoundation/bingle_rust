@@ -59,6 +59,20 @@ impl BingleLocalApi for ScriptedMailboxLocal {
     fn import_keypair(&mut self, passphrase: String) -> Result<Keypair, BingleError> {
         self.inner.import_keypair(passphrase)
     }
+    fn generate_keypair_replacing(
+        &mut self,
+        replace_synced_key: bool,
+    ) -> Result<Keypair, BingleError> {
+        self.inner.generate_keypair_replacing(replace_synced_key)
+    }
+    fn import_keypair_replacing(
+        &mut self,
+        passphrase: String,
+        replace_synced_key: bool,
+    ) -> Result<Keypair, BingleError> {
+        self.inner
+            .import_keypair_replacing(passphrase, replace_synced_key)
+    }
     fn inspect_passphrase(&self, passphrase: String) -> Result<KeypairStatus, BingleError> {
         self.inner.inspect_passphrase(passphrase)
     }

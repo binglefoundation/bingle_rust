@@ -31,7 +31,12 @@ impl KeyStore for MemoryKeyStore {
         false
     }
 
-    fn store(&self, slot: KeySlot, keypair: &Keypair) -> Result<(), KeyStoreError> {
+    fn store(
+        &self,
+        slot: KeySlot,
+        keypair: &Keypair,
+        _replace_synced: bool,
+    ) -> Result<(), KeyStoreError> {
         self.keys.lock().unwrap().insert(slot, keypair.clone());
         Ok(())
     }

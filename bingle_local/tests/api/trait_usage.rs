@@ -25,6 +25,21 @@ impl BingleLocalApi for DummyLocal {
         Ok(kp)
     }
 
+    fn generate_keypair_replacing(
+        &mut self,
+        _replace_synced_key: bool,
+    ) -> Result<Keypair, BingleError> {
+        self.generate_keypair()
+    }
+
+    fn import_keypair_replacing(
+        &mut self,
+        passphrase: String,
+        _replace_synced_key: bool,
+    ) -> Result<Keypair, BingleError> {
+        self.import_keypair(passphrase)
+    }
+
     fn import_keypair(&mut self, passphrase: String) -> Result<Keypair, BingleError> {
         let kp = Keypair {
             id: "TEST_ID".into(),

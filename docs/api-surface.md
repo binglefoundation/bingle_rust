@@ -81,6 +81,11 @@ Supported surface:
   `api::keychain::{KeychainKeyStore, SecureItems, Accessibility, ItemError}` with its `record`
   types; the real backend `api::keychain::apple::KeychainItems` is Apple-only, and the
   `test-support` feature adds the `memory::MemoryItems` fake.
+- Synced key guard (#452): the `BingleLocalApi` methods `generate_keypair_replacing` and
+  `import_keypair_replacing`, the `replace_synced_key` argument of
+  `BingleApiLocalImpl::import_keypair_shared`, the `replace_synced` argument of `KeyStore::store`,
+  `KeyStoreError::WouldReplaceSyncedKey`, and the `BingleError` variant
+  `SyncedKeyWouldBeReplaced`.
 - Registration: `api::registration::{RegistrationOps, ChainRegistrationOps, run_registration}`.
 - Sealed state file (#459): `LocalApiConfig::encrypt_state` and `with_encrypt_state`, the
   `BingleLocalApi` methods `state_file_status`, `open_state_with_recovery_phrase` and

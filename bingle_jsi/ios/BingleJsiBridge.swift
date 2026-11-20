@@ -359,6 +359,41 @@ class BingleJsiBridge: RCTEventEmitter {
         }
     }
 
+    /// generateKeypair, replacing a different key synced through iCloud Keychain when
+    /// replaceSyncedKey is set, once the user agrees (issue #452).
+    @objc
+    func generateKeypairReplacing(_ replaceSyncedKey: Bool, resolver resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {
+        guard let api = apiInstance else {
+            reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.", nil)
+            return
+        }
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                let kp = try api.generateKeypairReplacing(replaceSyncedKey: replaceSyncedKey)
+                resolve(["id": kp.id, "passphrase": kp.passphrase])
+            } catch {
+                reject("BINGLE_ERROR", "\(error)", error)
+            }
+        }
+    }
+
+    /// importKeypair, replacing a different synced key when replaceSyncedKey is set (issue #452).
+    @objc
+    func importKeypairReplacing(_ passphrase: String, replaceSyncedKey: Bool, resolver resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {
+        guard let api = apiInstance else {
+            reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.", nil)
+            return
+        }
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                let kp = try api.importKeypairReplacing(passphrase: passphrase, replaceSyncedKey: replaceSyncedKey)
+                resolve(["id": kp.id, "passphrase": kp.passphrase])
+            } catch {
+                reject("BINGLE_ERROR", "\(error)", error)
+            }
+        }
+    }
+
     /// Inspect the account a recovery phrase belongs to without importing it (issue #388).
     @objc
     func inspectPassphrase(_ passphrase: String, resolver resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {

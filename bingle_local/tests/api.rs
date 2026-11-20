@@ -42,6 +42,9 @@ mod keychain_key_store;
 #[path = "api/keychain/local_api_migration.rs"]
 mod keychain_local_api_migration;
 
+#[path = "api/keychain/synced_key_guard.rs"]
+mod keychain_synced_key_guard;
+
 #[path = "api/local_impl_queue.rs"]
 mod local_impl_queue;
 

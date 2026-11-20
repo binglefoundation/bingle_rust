@@ -142,6 +142,29 @@ final class KeychainKeyStorageTests: XCTestCase {
         XCTAssertTrue(try api.keyStorageStatus().deviceOnly)
     }
 
+    func testANewKeyDoesNotSilentlyReplaceASyncedKey() throws {
+        let api = try makeApi()
+        let synced = try api.generateKeypair()
+        try api.setDeviceOnly(enabled: false)
+        XCTAssertTrue(itemExists(synced: true))
+
+        XCTAssertThrowsError(try api.generateKeypair()) { error in
+            guard case BingleJsiError.SyncedKeyWouldBeReplaced(let storedAddress) = error else {
+                return XCTFail("unexpected error \(error)")
+            }
+            XCTAssertEqual(storedAddress, synced.id)
+        }
+        XCTAssertTrue(itemExists(synced: true), "the synced key is untouched")
+        XCTAssertEqual(try api.keyStorageStatus().storedAddress, synced.id)
+
+        let replacement = try api.generateKeypairReplacing(replaceSyncedKey: true)
+        XCTAssertFalse(itemExists(synced: true), "replacing removes the synced item")
+        XCTAssertTrue(itemExists(synced: false))
+        let status = try api.keyStorageStatus()
+        XCTAssertEqual(status.storedAddress, replacement.id)
+        XCTAssertTrue(status.syncChoicePending)
+    }
+
     func testAReinstallRestoresTheStoredKey() throws {
         let first = try makeApi()
         let kp = try first.generateKeypair()

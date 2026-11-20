@@ -116,6 +116,12 @@ pub enum BingleError {
     /// recovery phrase; until then the file is left as it is and isn't saved over.
     #[error("Recovery phrase required: {0}")]
     RecoveryPhraseRequired(String),
+    /// Generating or importing a key would replace a different key the user syncs through iCloud
+    /// Keychain, which removes that account from every device on their Apple Account (bingle_rust
+    /// #452). Carries the stored key's address. Retry with `replace_synced_key` once the user
+    /// agrees.
+    #[error("A different synced key is stored for {0}")]
+    SyncedKeyWouldBeReplaced(String),
     /// Any other error, carrying a human-readable message.
     #[error("{0}")]
     Other(String),

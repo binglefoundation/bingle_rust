@@ -271,6 +271,28 @@ class MockBingleJsiApi: BingleJsiApiProtocol {
         return keypairResult
     }
 
+    // MARK: - Synced key replacement (#452)
+
+    var generateReplaceSyncedKeyArgs: [Bool] = []
+    var importReplaceSyncedKeyArgs: [Bool] = []
+    var replacingError: Error?
+
+    func generateKeypairReplacing(replaceSyncedKey: Bool) throws -> Keypair {
+        generateReplaceSyncedKeyArgs.append(replaceSyncedKey)
+        if let error = replacingError {
+            throw error
+        }
+        return keypairResult
+    }
+
+    func importKeypairReplacing(passphrase: String, replaceSyncedKey: Bool) throws -> Keypair {
+        importReplaceSyncedKeyArgs.append(replaceSyncedKey)
+        if let error = replacingError {
+            throw error
+        }
+        return keypairResult
+    }
+
     func inspectPassphrase(passphrase: String) throws -> KeypairStatusResponse {
         return keypairStatusResult
     }

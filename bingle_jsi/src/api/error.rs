@@ -34,4 +34,10 @@ pub enum BingleJsiError {
     /// it (issue #459). Ask for the account's recovery phrase.
     #[error("Recovery phrase required: {reason}")]
     RecoveryPhraseRequired { reason: String },
+    /// Generating or importing a key would replace a different key the user syncs through iCloud
+    /// Keychain, removing that account from every device on their Apple Account (issue #452).
+    /// Nothing changed. Warn the user, naming `stored_address`, and retry with
+    /// `replace_synced_key: true` if they agree.
+    #[error("Synced key would be replaced: {stored_address}")]
+    SyncedKeyWouldBeReplaced { stored_address: String },
 }

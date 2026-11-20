@@ -399,7 +399,8 @@ impl ChatState {
     /// the first-run flow when the state file has no keypair. Never logs the passphrase.
     pub fn import_keypair(&mut self, passphrase: &str) -> Result<(), String> {
         self.local
-            .import_keypair_shared(passphrase.to_string())
+            // The command-line tool keeps the phrase in the state file: no synced key to replace.
+            .import_keypair_shared(passphrase.to_string(), false)
             .map(|_keypair| ())
             .map_err(|e| e.to_string())
     }
