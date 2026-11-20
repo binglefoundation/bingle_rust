@@ -18,24 +18,6 @@ Checks that can only run once a change is released: on a device, in the app (bin
 
 ## Waiting for a release
 
-### #455 jsi bridges stop the engine when React Native reloads
-
-- **Merged in:** #456, ships in 0.3.35.
-- **Needs:** bingle_ux_rn on `react-native-bingle-jsi` 0.3.35 or later, as a Debug build loading its JavaScript from Metro. Use the iOS simulator and an Android emulator or device, both on TestNet, with a second account to send from.
-- **Steps:**
-  1. Start the app, let it go online, and count its UDP sockets with the command for the platform.
-     - iOS simulator:
-       ```
-       lsof -nP -a -p $(pgrep -f "bingle_ux.app/bingle_ux" | head -1) -iUDP | tail -n +2 | awk '{print $9}' | sort -u | wc -l
-       ```
-     - Android (generic flavour, `com.bingle_ux`):
-       ```
-       adb shell "U=\$(stat -c %u /proc/\$(pidof com.bingle_ux)); cat /proc/net/udp /proc/net/udp6 | awk -v u=\$U '\$8==u' | wc -l"
-       ```
-  2. Reload the JavaScript three times (⌘R in the simulator, `r` in Metro), wait for it to go online, and count again.
-  3. Send three messages from the second account.
-- **Passes when:** the UDP socket count is the same after the reloads as before (before the fix, each reload added an engine's sockets), and every message shows in the app. None is acknowledged as `Direct` without appearing.
-
 ### #460 account deletion in the app (bingle_ux_rn #45)
 
 - **Merged in:** #460, ships in 0.3.35. The app side is bingle_ux_rn #191, a draft until it moves to 0.3.35.
