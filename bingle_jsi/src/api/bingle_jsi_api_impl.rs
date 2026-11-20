@@ -2204,6 +2204,20 @@ impl BingleJsiApi for BingleJsiApiImpl {
         })
     }
 
+    fn export_keypair(&self) -> Result<Keypair, BingleJsiError> {
+        let guard = local_api_guard(&self.local_api)?;
+        let kp = guard
+            .get_keypair()
+            .map_err(bingle_error_to_jsi)?
+            .ok_or_else(|| BingleJsiError::InvalidRequest {
+                reason: "no keypair to export: generate or import one first".to_string(),
+            })?;
+        Ok(Keypair {
+            id: kp.id,
+            passphrase: kp.passphrase,
+        })
+    }
+
     fn request_push_registration(&self) -> Result<(), BingleJsiError> {
         // Rust cannot call the UIKit registration APIs; it asks the host, whose thin Swift bridge
         // does the platform calls and later returns the token via register_apns_token.

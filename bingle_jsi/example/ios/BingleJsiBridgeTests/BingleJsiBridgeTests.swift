@@ -947,6 +947,34 @@ final class KeyStorageBridgeTests: XCTestCase {
         XCTAssertEqual(mockApi.openStatePhrases, ["twenty five words"])
     }
 
+    func testExportKeypair_resolvesWithThePhrase() {
+        mockApi.keypairResult = Keypair(id: "export-id", passphrase: "export-passphrase")
+        let resolved = self.expectation(description: "exportKeypair resolved")
+        bridge.exportKeypair(
+            { value in
+                let kp = value as? [String: Any]
+                XCTAssertEqual(kp?["id"] as? String, "export-id")
+                XCTAssertEqual(kp?["passphrase"] as? String, "export-passphrase")
+                resolved.fulfill()
+            },
+            rejecter: { _, _, _ in XCTFail("unexpected rejection") }
+        )
+        waitForExpectations(timeout: 2.0)
+    }
+
+    func testExportKeypair_rejectsWhenThereIsNoKeypair() {
+        mockApi.exportKeypairError = NSError(domain: "test", code: 1)
+        let rejected = self.expectation(description: "exportKeypair rejected")
+        bridge.exportKeypair(
+            { _ in XCTFail("unexpected resolve") },
+            rejecter: { code, _, _ in
+                XCTAssertEqual(code, "BINGLE_ERROR")
+                rejected.fulfill()
+            }
+        )
+        waitForExpectations(timeout: 2.0)
+    }
+
     func testDeleteAccount_rejectsWhenTheApiFails() {
         mockApi.deleteAccountError = NSError(domain: "test", code: 1)
         let rejected = self.expectation(description: "deleteAccount rejected")

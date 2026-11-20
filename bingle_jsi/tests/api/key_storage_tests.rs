@@ -208,3 +208,28 @@ fn forget_state_key_saves_and_a_plain_file_needs_no_phrase() {
     );
     let _ = std::fs::remove_file(&path);
 }
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+fn export_keypair_returns_the_current_keypair_with_the_file_store() {
+    let path = state_path();
+    let api = BingleJsiApiImpl::init(config(&path, Some("file"))).expect("init");
+    let kp = api.generate_keypair().expect("generate");
+
+    let exported = api.export_keypair().expect("export");
+    assert_eq!(exported.id, kp.id);
+    assert_eq!(exported.passphrase, kp.passphrase);
+    let _ = std::fs::remove_file(&path);
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+fn export_keypair_with_no_keypair_is_an_invalid_request() {
+    let path = state_path();
+    let api = BingleJsiApiImpl::init(config(&path, Some("file"))).expect("init");
+    assert!(matches!(
+        api.export_keypair(),
+        Err(BingleJsiError::InvalidRequest { .. })
+    ));
+    let _ = std::fs::remove_file(&path);
+}

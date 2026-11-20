@@ -412,6 +412,8 @@ export interface BingleJsiApi {
   stateFileStatus(): StateFileStatus;
   forgetStateKey(): void;
   openStateWithRecoveryPhrase(phrase: string): Keypair;
+  // Key export (#466)
+  exportKeypair(): Keypair;
   requestPushRegistration(): void;
   registerApnsToken(token: Uint8Array): boolean;
   apnsRegistrationFailed(reason: string): void;

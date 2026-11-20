@@ -245,6 +245,11 @@ export const BingleJsi = BingleJsiNative as {
    * success the file opens on this device from now on, its contacts and messages are loaded, and
    * the phrase's keypair is current; resolves with it. */
   openStateWithRecoveryPhrase(phrase: string): Promise<{ id: string; passphrase: string }>;
+  /** The current keypair with its recovery phrase, for Export Key and the backup step (#466). Read
+   * from memory, so it works with either key store and a sealed state file; the state file no
+   * longer holds the phrase with the Keychain store. Rejects with InvalidRequest when there is no
+   * keypair. */
+  exportKeypair(): Promise<{ id: string; passphrase: string }>;
   /** Ask the host to begin iOS push registration (bingle_notify #i). Invokes the registered
    * PushRegistrationCallback so the thin Swift bridge performs the platform calls; the token arrives
    * asynchronously via registerApnsToken. Rejects if no push-registration callback is set. */

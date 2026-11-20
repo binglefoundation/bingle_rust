@@ -376,6 +376,12 @@ impl BingleJsiApi for StubApi {
         })
     }
 
+    fn export_keypair(&self) -> Result<Keypair, BingleJsiError> {
+        Err(BingleJsiError::NotImplemented {
+            reason: "export_keypair".to_string(),
+        })
+    }
+
     fn keypair_status(&self) -> Result<KeypairStatusResponse, BingleJsiError> {
         Err(BingleJsiError::NotImplemented {
             reason: "keypair_status".to_string(),
