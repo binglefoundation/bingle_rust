@@ -18,7 +18,7 @@ fn an_existing_state_file_migrates_to_a_device_only_keychain_item() {
 
     // today's install: the phrase is in the state file.
     let mut old = BingleApiLocalImpl::new(LocalApiConfig::default());
-    let kp = old.generate_keypair().expect("generate");
+    let kp = old.generate_keypair(false).expect("generate");
     old.save(&path_str).expect("save");
 
     // the update: the same file, now with the Keychain store.

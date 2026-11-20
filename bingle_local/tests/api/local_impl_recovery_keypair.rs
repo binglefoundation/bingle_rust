@@ -16,7 +16,7 @@ fn state_path(name: &str) -> String {
 fn generated_keypair_restores_identically_from_its_recovery_phrase() {
     // Generating needs no network: the default config has no node.
     let mut api = BingleApiLocalImpl::new(LocalApiConfig::default());
-    let generated = api.generate_keypair().expect("generate offline");
+    let generated = api.generate_keypair(false).expect("generate offline");
     assert_eq!(generated.passphrase.split_whitespace().count(), 25);
 
     let path = state_path("bingle-local-offline-keypair");
@@ -30,7 +30,7 @@ fn generated_keypair_restores_identically_from_its_recovery_phrase() {
 
     let mut restored = BingleApiLocalImpl::new(LocalApiConfig::default());
     let imported = restored
-        .import_keypair(generated.passphrase.clone())
+        .import_keypair(generated.passphrase.clone(), false)
         .expect("restore");
     assert_eq!(imported, generated);
     let _ = fs::remove_file(path);
@@ -48,7 +48,7 @@ fn recovery_needs_a_current_keypair() {
 #[cfg(not(target_os = "ios"))]
 fn recovery_keypair_sits_beside_the_current_one_and_resumes() {
     let mut api = BingleApiLocalImpl::new(LocalApiConfig::default());
-    let current = api.generate_keypair().expect("generate");
+    let current = api.generate_keypair(false).expect("generate");
     let pending = api.begin_recovery_keypair().expect("begin");
     assert_ne!(pending.id, current.id);
     assert_eq!(api.get_keypair().expect("get"), Some(current.clone()));
@@ -64,7 +64,7 @@ fn recovery_keypair_sits_beside_the_current_one_and_resumes() {
 #[cfg(not(target_os = "ios"))]
 fn recovery_keypair_survives_a_restart() {
     let mut api = BingleApiLocalImpl::new(LocalApiConfig::default());
-    let current = api.generate_keypair().expect("generate");
+    let current = api.generate_keypair(false).expect("generate");
     let pending = api.begin_recovery_keypair().expect("begin");
     let path = state_path("bingle-local-recovery-keypair");
     api.save(&path).expect("save");
@@ -84,7 +84,7 @@ fn recovery_keypair_survives_a_restart() {
 #[cfg(not(target_os = "ios"))]
 fn state_without_a_recovery_omits_it() {
     let mut api = BingleApiLocalImpl::new(LocalApiConfig::default());
-    api.generate_keypair().expect("generate");
+    api.generate_keypair(false).expect("generate");
     let path = state_path("bingle-local-no-recovery");
     api.save(&path).expect("save");
     let saved = fs::read_to_string(&path).expect("read");
@@ -96,7 +96,7 @@ fn state_without_a_recovery_omits_it() {
 #[cfg(not(target_os = "ios"))]
 fn completing_a_recovery_makes_its_keypair_current() {
     let mut api = BingleApiLocalImpl::new(LocalApiConfig::default());
-    api.generate_keypair().expect("generate");
+    api.generate_keypair(false).expect("generate");
     let pending = api.begin_recovery_keypair().expect("begin");
     assert_eq!(api.complete_recovery_keypair().expect("complete"), pending);
     assert_eq!(api.get_keypair().expect("get"), Some(pending));

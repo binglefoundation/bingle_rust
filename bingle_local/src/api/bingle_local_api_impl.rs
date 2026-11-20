@@ -1019,12 +1019,18 @@ impl BingleApiLocalImpl {
 
     /// Writes `keypair`'s phrase to the key store for `slot`, reads it back, and records that the
     /// store holds it, so `save` can leave it out of the state file (issue #385). Does nothing for
-    /// a store that keeps the phrase in the state file.
-    fn store_phrase(&self, slot: KeySlot, keypair: &Keypair) -> Result<(), KeyStoreError> {
+    /// a store that keeps the phrase in the state file. A different synced key is replaced only
+    /// with `replace_synced` (issue #452).
+    fn store_phrase(
+        &self,
+        slot: KeySlot,
+        keypair: &Keypair,
+        replace_synced: bool,
+    ) -> Result<(), KeyStoreError> {
         if self.key_store.keeps_phrase_in_state_file() {
             return Ok(());
         }
-        self.key_store.store(slot, keypair)?;
+        self.key_store.store(slot, keypair, replace_synced)?;
         match self.key_store.fetch(slot)? {
             Some(stored) if stored == *keypair => {
                 if let Ok(mut held) = self.phrase_in_store.lock() {
@@ -1071,7 +1077,8 @@ impl BingleApiLocalImpl {
                 if self.key_store.keeps_phrase_in_state_file() {
                     return (Some(kp), false);
                 }
-                match self.store_phrase(slot, &kp) {
+                // Never replaces a synced key: if that's refused, the phrase stays in the file.
+                match self.store_phrase(slot, &kp, false) {
                     Ok(()) => {
                         tracing::info!(
                             "[load] moved the {:?} key for {} out of the state file",
@@ -1155,7 +1162,11 @@ impl BingleApiLocalImpl {
     }
 
     /// `&self` core of [`BingleLocalApi::import_keypair`].
-    pub fn import_keypair_shared(&self, passphrase: String) -> Result<Keypair, BingleError> {
+    pub fn import_keypair_shared(
+        &self,
+        passphrase: String,
+        replace_synced_key: bool,
+    ) -> Result<Keypair, BingleError> {
         tracing::info!("[BingleLocalApi] Importing keypair from passphrase");
         // Validate the mnemonic and derive the account id. The passphrase itself is never logged.
         let id = AlgoOps::address_from_passphrase(&passphrase)
@@ -1163,8 +1174,8 @@ impl BingleApiLocalImpl {
         let kp = Keypair { id, passphrase };
         tracing::info!("[BingleLocalApi] Imported keypair with id: {}", kp.id);
         // Keep the phrase before making it current, so a key that can't be stored is never used.
-        self.store_phrase(KeySlot::Current, &kp)
-            .map_err(|e| BingleError::Other(format!("couldn't store the imported key: {e}")))?;
+        self.store_phrase(KeySlot::Current, &kp, replace_synced_key)
+            .map_err(|e| store_failure("couldn't store the imported key", e))?;
         self.set_current_keypair(&kp);
         Ok(kp)
     }
@@ -1175,6 +1186,17 @@ impl BingleApiLocalImpl {
 /// an unreachable node stays [`BingleError::Algo`] with
 /// [`HostUnreachable`](AlgoErrorKind::HostUnreachable) (bingle_jsi's `NoBlockchain`), and every
 /// other failure becomes [`BingleError::Retryable`].
+/// How storing a new current key fails: a refused replacement of a synced key keeps its stored
+/// address for the app's warning (issue #452); anything else is reported with `context`.
+fn store_failure(context: &str, e: KeyStoreError) -> BingleError {
+    match e {
+        KeyStoreError::WouldReplaceSyncedKey { stored_address } => {
+            BingleError::SyncedKeyWouldBeReplaced(stored_address)
+        }
+        other => BingleError::Other(format!("{context}: {other}")),
+    }
+}
+
 fn opt_out_failure(role: &str, e: BingleError) -> BingleError {
     match e {
         BingleError::Algo(ae) if ae.kind == AlgoErrorKind::HostUnreachable => BingleError::Algo(ae),
@@ -1185,22 +1207,26 @@ fn opt_out_failure(role: &str, e: BingleError) -> BingleError {
 }
 
 impl BingleLocalApi for BingleApiLocalImpl {
-    fn generate_keypair(&mut self) -> Result<Keypair, BingleError> {
+    fn generate_keypair(&mut self, replace_synced_key: bool) -> Result<Keypair, BingleError> {
         tracing::info!("[BingleLocalApi] Generating new keypair");
         let (id, passphrase) = AlgoOps::generate_keypair();
         let kp = Keypair { id, passphrase };
         tracing::info!("[BingleLocalApi] Generated keypair with id: {}", kp.id);
         // Keep the phrase before making it current, so a key that can't be stored is never used.
-        self.store_phrase(KeySlot::Current, &kp)
-            .map_err(|e| BingleError::Other(format!("couldn't store the new key: {e}")))?;
+        self.store_phrase(KeySlot::Current, &kp, replace_synced_key)
+            .map_err(|e| store_failure("couldn't store the new key", e))?;
         // A brand-new keypair is not yet ACTIVE: set_current_keypair clears the memoized ACTIVE
         // handle/status so keypair_status re-resolves from chain until this account registers.
         self.set_current_keypair(&kp);
         Ok(kp)
     }
 
-    fn import_keypair(&mut self, passphrase: String) -> Result<Keypair, BingleError> {
-        self.import_keypair_shared(passphrase)
+    fn import_keypair(
+        &mut self,
+        passphrase: String,
+        replace_synced_key: bool,
+    ) -> Result<Keypair, BingleError> {
+        self.import_keypair_shared(passphrase, replace_synced_key)
     }
 
     fn begin_recovery_keypair(&mut self) -> Result<Keypair, BingleError> {
@@ -1222,7 +1248,9 @@ impl BingleLocalApi for BingleApiLocalImpl {
             current.id,
             kp.id
         );
-        self.store_phrase(KeySlot::Recovery, &kp)
+        // The recovery key follows the current one; a recovery the user started may replace a
+        // leftover synced recovery key (issue #452 covers the current key only).
+        self.store_phrase(KeySlot::Recovery, &kp, true)
             .map_err(|e| BingleError::Other(format!("couldn't store the recovery key: {e}")))?;
         *pending = Some(kp.clone());
         Ok(kp)
@@ -1239,7 +1267,8 @@ impl BingleLocalApi for BingleApiLocalImpl {
         let pending = self
             .get_recovery_keypair()?
             .ok_or_else(|| BingleError::Other("no recovery is pending".to_string()))?;
-        let kp = self.import_keypair_shared(pending.passphrase)?;
+        // The user confirmed moving the account, so a synced key is replaced (issue #452).
+        let kp = self.import_keypair_shared(pending.passphrase, true)?;
         if let Ok(mut g) = self.recovery_keypair.lock() {
             *g = None;
         }

@@ -920,6 +920,9 @@ fn bingle_error_to_jsi(e: BingleError) -> BingleJsiError {
         BingleError::RecoveryPhraseRequired(reason) => {
             BingleJsiError::RecoveryPhraseRequired { reason }
         }
+        BingleError::SyncedKeyWouldBeReplaced(stored_address) => {
+            BingleJsiError::SyncedKeyWouldBeReplaced { stored_address }
+        }
         BingleError::HandleTaken(owner) => BingleJsiError::HandleTaken {
             reason: format!("handle already in use by {}", owner),
         },
@@ -1891,9 +1894,11 @@ impl BingleJsiApi for BingleJsiApiImpl {
         })
     }
 
-    fn generate_keypair(&self) -> Result<Keypair, BingleJsiError> {
+    fn generate_keypair(&self, replace_synced_key: bool) -> Result<Keypair, BingleJsiError> {
         let mut guard = local_api_guard(&self.local_api)?;
-        let kp = guard.generate_keypair().map_err(bingle_error_to_jsi)?;
+        let kp = guard
+            .generate_keypair(replace_synced_key)
+            .map_err(bingle_error_to_jsi)?;
         drop(guard);
         save_if_configured(&self.local_api, &self.local_file);
         Ok(Keypair {
@@ -1902,10 +1907,14 @@ impl BingleJsiApi for BingleJsiApiImpl {
         })
     }
 
-    fn import_keypair(&self, passphrase: String) -> Result<Keypair, BingleJsiError> {
+    fn import_keypair(
+        &self,
+        passphrase: String,
+        replace_synced_key: bool,
+    ) -> Result<Keypair, BingleJsiError> {
         let mut guard = local_api_guard(&self.local_api)?;
         let kp = guard
-            .import_keypair(passphrase)
+            .import_keypair(passphrase, replace_synced_key)
             .map_err(bingle_error_to_jsi)?;
         drop(guard);
         save_if_configured(&self.local_api, &self.local_file);

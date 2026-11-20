@@ -334,14 +334,25 @@ pub struct MessagingSettings {
 /// Do not provide default method implementations per project guidelines.
 pub trait BingleLocalApi: Send + Sync {
     /// Generate a new Algorand keypair (id and passphrase) and set it as current.
-    fn generate_keypair(&mut self) -> Result<Keypair, BingleError>;
+    ///
+    /// With a key store that syncs through iCloud Keychain, a different synced key already stored
+    /// is replaced only with `replace_synced_key`: replacing it removes that account from every
+    /// device on the user's Apple Account. Without it the call fails with
+    /// [`BingleError::SyncedKeyWouldBeReplaced`], carrying the stored address, and changes nothing
+    /// (issue #452). The file store ignores it.
+    fn generate_keypair(&mut self, replace_synced_key: bool) -> Result<Keypair, BingleError>;
 
     /// Import an existing account from its 25-word Algorand mnemonic `passphrase` and set it
     /// as current. Validates the mnemonic and derives the account id, then clears any memoized
     /// ACTIVE handle/status so `keypair_status` re-resolves from chain (the imported account may
     /// already be registered). Errors if `passphrase` is not a valid mnemonic. Never logs the
-    /// passphrase.
-    fn import_keypair(&mut self, passphrase: String) -> Result<Keypair, BingleError>;
+    /// passphrase. A different synced key is replaced only with `replace_synced_key`, as for
+    /// [`generate_keypair`](BingleLocalApi::generate_keypair).
+    fn import_keypair(
+        &mut self,
+        passphrase: String,
+        replace_synced_key: bool,
+    ) -> Result<Keypair, BingleError>;
 
     /// Inspect the account a 25-word Algorand mnemonic `passphrase` belongs to, without importing
     /// it (issue #388): derive its address and resolve its on-chain status (`ACTIVE`, `FUNDED` or

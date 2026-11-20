@@ -125,7 +125,7 @@ fn gate_off_attempts_no_post_on_delivery_failure() {
         ..LocalApiConfig::default()
     };
     let mut api = BingleApiLocalImpl::new(config);
-    api.import_keypair(TEST_MNEMONIC.to_string())
+    api.import_keypair(TEST_MNEMONIC.to_string(), false)
         .expect("import test keypair");
     api.add_message(
         "me".to_string(),
@@ -161,7 +161,7 @@ fn a_fully_forwarded_message_stops_retrying_direct_delivery() {
         ..LocalApiConfig::default()
     };
     let mut api = BingleApiLocalImpl::new(config);
-    api.import_keypair(TEST_MNEMONIC.to_string())
+    api.import_keypair(TEST_MNEMONIC.to_string(), false)
         .expect("import test keypair");
     let ts = 5150;
     api.add_message(
@@ -211,7 +211,7 @@ fn a_refused_recipient_is_not_treated_as_handed_off() {
         ..LocalApiConfig::default()
     };
     let mut api = BingleApiLocalImpl::new(config);
-    api.import_keypair(TEST_MNEMONIC.to_string())
+    api.import_keypair(TEST_MNEMONIC.to_string(), false)
         .expect("import test keypair");
     let ts = 6160;
     api.add_message(
@@ -259,7 +259,7 @@ fn an_identity_refusal_holds_off_mailbox_posts_and_reads() {
         ..LocalApiConfig::default()
     };
     let mut api = BingleApiLocalImpl::new(config);
-    api.import_keypair(TEST_MNEMONIC.to_string())
+    api.import_keypair(TEST_MNEMONIC.to_string(), false)
         .expect("import test keypair");
     assert!(
         !api.mailbox_identity_refusal_holds(),

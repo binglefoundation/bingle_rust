@@ -121,7 +121,7 @@ describeOrSkip(`bingle_jsi shared pending-message sender (${backend})`, () => {
         },
       ],
     });
-    await call({method: 'importKeypair', args: [passphrase]});
+    await call({method: 'importKeypair', args: [passphrase, false]});
     await call({method: 'setMessageCallback', args: []});
     await call({method: 'setListeningCallback', args: []});
     await call({method: 'start', args: []});

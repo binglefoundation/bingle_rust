@@ -12,6 +12,11 @@
 //!   That deletes the synced item, which removes it from the user's other devices, so it is
 //!   refused until the user has confirmed the phrase is backed up. A key that has never synced
 //!   needs no such check.
+//! - **A synced key isn't replaced silently.** Storing a different key over a synced one would
+//!   delete the synced item, removing that account from every device on the user's Apple Account,
+//!   so `store` refuses with `WouldReplaceSyncedKey` unless the caller passes `replace_synced`
+//!   after the user agrees (issue #452). Completing a handle clash recovery passes it: the user
+//!   already confirmed that move.
 //! - **Safe switching.** The sync setting is part of a Keychain item's identity, so a switch
 //!   writes the new item, reads it back, and only then deletes the old one.
 //! - **Reinstall detection.** iOS deletes the app container on uninstall but keeps the Keychain. A

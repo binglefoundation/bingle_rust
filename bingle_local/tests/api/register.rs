@@ -51,7 +51,7 @@ fn register_api(
     let mut api = BingleApiLocalImpl::new(config);
     let poster = Arc::new(RecordingRegisterPoster::default());
     api.set_register_poster(poster.clone());
-    api.import_keypair(TEST_MNEMONIC.to_string())
+    api.import_keypair(TEST_MNEMONIC.to_string(), false)
         .expect("import test keypair");
     api.seed_own_handle_for_tests(ISS.to_string());
     (api, poster)

@@ -16,7 +16,7 @@ struct DummyLocal {
 }
 
 impl BingleLocalApi for DummyLocal {
-    fn generate_keypair(&mut self) -> Result<Keypair, BingleError> {
+    fn generate_keypair(&mut self, _replace_synced_key: bool) -> Result<Keypair, BingleError> {
         let kp = Keypair {
             id: "TEST_ID".into(),
             passphrase: "TEST_PASSPHRASE".into(),
@@ -25,7 +25,11 @@ impl BingleLocalApi for DummyLocal {
         Ok(kp)
     }
 
-    fn import_keypair(&mut self, passphrase: String) -> Result<Keypair, BingleError> {
+    fn import_keypair(
+        &mut self,
+        passphrase: String,
+        _replace_synced_key: bool,
+    ) -> Result<Keypair, BingleError> {
         let kp = Keypair {
             id: "TEST_ID".into(),
             passphrase,
@@ -347,7 +351,7 @@ fn test_bingle_local_api_smoke() {
     let mut api = DummyLocal::default();
 
     // generate keypair
-    let kp = api.generate_keypair().expect("keypair");
+    let kp = api.generate_keypair(false).expect("keypair");
     assert_eq!(kp.id, "TEST_ID");
 
     // contacts

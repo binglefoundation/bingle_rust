@@ -23,7 +23,7 @@ fn test_keypair_status_none_when_no_keypair() {
 fn test_keypair_status_has_id_after_generate() {
     let mut api = BingleApiLocalImpl::new(LocalApiConfig::default());
     let kp = api
-        .generate_keypair()
+        .generate_keypair(false)
         .expect("generate_keypair should succeed");
 
     // With default config (no real blockchain), get_algo_ops will succeed but
@@ -218,7 +218,7 @@ fn test_generate_keypair_clears_memoized_active() {
     api.load(&path).expect("load");
     assert_eq!(api.keypair_status().unwrap().status, "ACTIVE");
 
-    api.generate_keypair().expect("generate");
+    api.generate_keypair(false).expect("generate");
     // No memo now: with default config and no node, status must not be ACTIVE (either a non-ACTIVE
     // status or a blockchain error — both acceptable, but never a false ACTIVE).
     if let Ok(s) = api.keypair_status() {

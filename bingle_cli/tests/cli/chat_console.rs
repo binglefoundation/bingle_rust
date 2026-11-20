@@ -67,7 +67,7 @@ fn session(dir: &tempfile::TempDir) -> (ChatState, Arc<SessionShutdown>, Arc<Ato
         store_and_forward_send: true,
         ..LocalApiConfig::default()
     });
-    local.generate_keypair().expect("keypair");
+    local.generate_keypair(false).expect("keypair");
     local.seed_own_handle_for_tests("alice".to_string());
     let state = ChatState::from_parts_for_tests(local, StartOptions::new("alice".to_string()));
     let path = dir.path().join("state.json").to_string_lossy().into_owned();

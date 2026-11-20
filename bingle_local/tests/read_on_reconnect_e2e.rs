@@ -92,7 +92,7 @@ fn poll_reads_decrypts_and_drops_a_mailbox_message() {
     };
     let mut recipient = BingleApiLocalImpl::new(config);
     recipient
-        .import_keypair(mnemonic)
+        .import_keypair(mnemonic, false)
         .expect("import recipient keypair");
 
     // Poll: the held message is read, decrypted, and stored.

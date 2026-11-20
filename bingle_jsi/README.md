@@ -301,7 +301,7 @@ const msg: BingleMessage = {
 await BingleJsi.sendMessageToHandle('bob', msg);
 
 // Local API (when `local` is set in config)
-const keypair = await BingleJsi.generateKeypair();
+const keypair = await BingleJsi.generateKeypair(false);
 console.log(`Generated keypair: ${keypair.id}`);
 await BingleJsi.addContact('bob', 'BOB_ALGO_ADDRESS', ContactSource.Manual);
 const contacts = await BingleJsi.getContacts();
@@ -593,7 +593,8 @@ The full API is defined in `src/api/bingle_jsi_api.rs`. Key methods:
 | `version()` | Get version info |
 | `getVersions()` | Get the version of every library module, keyed by module name (needs init) |
 | `getNatType()` | Get detected NAT type |
-| `generateKeypair()` | Generate a new Algorand keypair |
+| `generateKeypair(replaceSyncedKey)` | Generate a new Algorand keypair and make it current. With the Keychain store, a different key synced through iCloud Keychain is replaced only with `replaceSyncedKey` true, since that removes it from every device on the Apple Account; otherwise it rejects with `SyncedKeyWouldBeReplaced(storedAddress: …)` and changes nothing (#452) |
+| `importKeypair(passphrase, replaceSyncedKey)` | Import an account from its recovery phrase and make it current; `replaceSyncedKey` as for `generateKeypair` (#452) |
 | `registerKeypair(handle)` | Register keypair on-chain |
 | `signRegistrationGroup(transactions, signIndexes, handle)` | Check and sign the client's transactions in the registration service's registration group |
 | `beginRecoveryKeypair()` | Start or resume a handle clash recovery: the pending new keypair, saved beside the current one |

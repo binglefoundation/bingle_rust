@@ -252,7 +252,7 @@ fn offline_send_survives_and_is_read_on_reconnect_on_testnet() {
     // message is added second and posted first, so a correct read must reorder by sent time.
     let mut sender = BingleApiLocalImpl::new(local_config(&cfg, true, false));
     sender
-        .import_keypair(cfg.sender_mnemonic.clone())
+        .import_keypair(cfg.sender_mnemonic.clone(), false)
         .expect("import sender keypair");
     let earlier_ts = 1_726_600_000_000;
     let later_ts = 1_726_600_005_000;
@@ -280,7 +280,7 @@ fn offline_send_survives_and_is_read_on_reconnect_on_testnet() {
     // Receiver: reconnect, poll, read, decrypt.
     let mut receiver = BingleApiLocalImpl::new(local_config(&cfg, false, true));
     receiver
-        .import_keypair(cfg.receiver_mnemonic.clone())
+        .import_keypair(cfg.receiver_mnemonic.clone(), false)
         .expect("import receiver keypair");
     let read = receiver.poll_mailbox().expect("poll");
 

@@ -47,7 +47,7 @@ fn record(items: &MemoryItems, account: &str, synced: bool) -> Option<KeyRecord>
 #[test]
 fn a_new_key_is_device_only_with_the_choice_pending() {
     let (items, s) = fresh();
-    s.store(KeySlot::Current, &keypair("A")).unwrap();
+    s.store(KeySlot::Current, &keypair("A"), false).unwrap();
 
     assert_eq!(
         items.accessibility(KEY, false),
@@ -66,7 +66,7 @@ fn a_new_key_is_device_only_with_the_choice_pending() {
 #[test]
 fn choosing_sync_moves_the_key_to_a_synced_item() {
     let (items, s) = fresh();
-    s.store(KeySlot::Current, &keypair("A")).unwrap();
+    s.store(KeySlot::Current, &keypair("A"), false).unwrap();
     s.set_device_only(false).unwrap();
 
     assert_eq!(
@@ -87,7 +87,7 @@ fn choosing_sync_moves_the_key_to_a_synced_item() {
 #[test]
 fn choosing_device_only_for_a_never_synced_key_needs_no_backup() {
     let (items, s) = fresh();
-    s.store(KeySlot::Current, &keypair("A")).unwrap();
+    s.store(KeySlot::Current, &keypair("A"), false).unwrap();
     s.set_device_only(true).unwrap();
 
     assert_eq!(
@@ -102,7 +102,7 @@ fn choosing_device_only_for_a_never_synced_key_needs_no_backup() {
 #[test]
 fn making_a_synced_key_device_only_needs_the_backup_confirmed() {
     let (items, s) = fresh();
-    s.store(KeySlot::Current, &keypair("A")).unwrap();
+    s.store(KeySlot::Current, &keypair("A"), false).unwrap();
     s.set_device_only(false).unwrap();
 
     assert_eq!(
@@ -130,7 +130,7 @@ fn making_a_synced_key_device_only_needs_the_backup_confirmed() {
 #[test]
 fn a_failed_switch_leaves_the_old_item() {
     let (items, s) = fresh();
-    s.store(KeySlot::Current, &keypair("A")).unwrap();
+    s.store(KeySlot::Current, &keypair("A"), false).unwrap();
     items.set_fail_writes(true);
     assert!(s.set_device_only(false).is_err());
     items.set_fail_writes(false);
@@ -150,8 +150,8 @@ fn a_failed_switch_leaves_the_old_item() {
 #[test]
 fn a_pending_recovery_key_follows_the_current_one() {
     let (items, s) = fresh();
-    s.store(KeySlot::Current, &keypair("A")).unwrap();
-    s.store(KeySlot::Recovery, &keypair("R")).unwrap();
+    s.store(KeySlot::Current, &keypair("A"), false).unwrap();
+    s.store(KeySlot::Recovery, &keypair("R"), false).unwrap();
     assert_eq!(
         items.accessibility(RECOVERY, false),
         Some(Accessibility::WhenUnlockedThisDeviceOnly)
@@ -172,9 +172,9 @@ fn a_pending_recovery_key_follows_the_current_one() {
 #[test]
 fn storing_the_same_key_again_keeps_the_users_choice() {
     let (items, s) = fresh();
-    s.store(KeySlot::Current, &keypair("A")).unwrap();
+    s.store(KeySlot::Current, &keypair("A"), false).unwrap();
     s.set_device_only(false).unwrap();
-    s.store(KeySlot::Current, &keypair("A")).unwrap();
+    s.store(KeySlot::Current, &keypair("A"), false).unwrap();
     assert_eq!(
         items.accessibility(KEY, true),
         Some(Accessibility::WhenUnlocked)
@@ -183,15 +183,62 @@ fn storing_the_same_key_again_keeps_the_users_choice() {
 }
 
 #[test]
-fn storing_a_different_key_starts_device_only_and_removes_the_old_synced_one() {
+fn storing_a_different_key_over_a_synced_one_is_refused_and_changes_nothing() {
     let (items, s) = fresh();
-    s.store(KeySlot::Current, &keypair("A")).unwrap();
+    s.store(KeySlot::Current, &keypair("A"), false).unwrap();
     s.set_device_only(false).unwrap();
-    s.store(KeySlot::Current, &keypair("B")).unwrap();
+
+    assert_eq!(
+        s.store(KeySlot::Current, &keypair("B"), false).err(),
+        Some(KeyStoreError::WouldReplaceSyncedKey {
+            stored_address: "A".to_string()
+        })
+    );
+    assert_eq!(
+        items.accessibility(KEY, true),
+        Some(Accessibility::WhenUnlocked)
+    );
+    assert_eq!(items.accessibility(KEY, false), None);
+    assert_eq!(s.fetch(KeySlot::Current).unwrap(), Some(keypair("A")));
+    assert!(!s.status().unwrap().sync_choice_pending);
+}
+
+#[test]
+fn replacing_a_synced_key_when_asked_starts_device_only_and_removes_the_synced_one() {
+    let (items, s) = fresh();
+    s.store(KeySlot::Current, &keypair("A"), false).unwrap();
+    s.set_device_only(false).unwrap();
+    s.store(KeySlot::Current, &keypair("B"), true).unwrap();
 
     assert_eq!(items.accessibility(KEY, true), None);
     assert_eq!(s.fetch(KeySlot::Current).unwrap(), Some(keypair("B")));
-    assert!(s.status().unwrap().sync_choice_pending);
+    let status = s.status().unwrap();
+    assert!(status.sync_choice_pending);
+    assert!(status.device_only);
+}
+
+#[test]
+fn a_device_only_key_is_replaced_without_asking() {
+    let (items, s) = fresh();
+    s.store(KeySlot::Current, &keypair("A"), false).unwrap();
+    s.store(KeySlot::Current, &keypair("B"), false).unwrap();
+
+    assert_eq!(s.fetch(KeySlot::Current).unwrap(), Some(keypair("B")));
+    assert_eq!(items.accessibility(KEY, true), None);
+}
+
+#[test]
+fn storing_the_same_synced_key_again_needs_no_override() {
+    let (items, s) = fresh();
+    s.store(KeySlot::Current, &keypair("A"), false).unwrap();
+    s.set_device_only(false).unwrap();
+    s.store(KeySlot::Current, &keypair("A"), false).unwrap();
+
+    assert_eq!(
+        items.accessibility(KEY, true),
+        Some(Accessibility::WhenUnlocked)
+    );
+    assert_eq!(s.fetch(KeySlot::Current).unwrap(), Some(keypair("A")));
 }
 
 #[test]
@@ -236,7 +283,7 @@ fn installs_are_counted_once_per_install_and_a_reinstall_is_detected() {
         items.accessibility("install", false),
         Some(Accessibility::AfterFirstUnlockThisDeviceOnly)
     );
-    first.store(KeySlot::Current, &keypair("A")).unwrap();
+    first.store(KeySlot::Current, &keypair("A"), false).unwrap();
 
     // a relaunch or app update: the marker is still there.
     let relaunched = store(&items, &dir);

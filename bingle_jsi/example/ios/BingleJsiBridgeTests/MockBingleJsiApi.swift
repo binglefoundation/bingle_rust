@@ -136,7 +136,17 @@ class MockBingleJsiApi: BingleJsiApiProtocol {
         return natTypeResult
     }
 
-    func generateKeypair() throws -> Keypair {
+    // MARK: - Synced key replacement (#452)
+
+    var generateReplaceSyncedKeyArgs: [Bool] = []
+    var importReplaceSyncedKeyArgs: [Bool] = []
+    var keypairError: Error?
+
+    func generateKeypair(replaceSyncedKey: Bool) throws -> Keypair {
+        generateReplaceSyncedKeyArgs.append(replaceSyncedKey)
+        if let error = keypairError {
+            throw error
+        }
         return keypairResult
     }
 
@@ -267,7 +277,11 @@ class MockBingleJsiApi: BingleJsiApiProtocol {
         return true
     }
 
-    func importKeypair(passphrase: String) throws -> Keypair {
+    func importKeypair(passphrase: String, replaceSyncedKey: Bool) throws -> Keypair {
+        importReplaceSyncedKeyArgs.append(replaceSyncedKey)
+        if let error = keypairError {
+            throw error
+        }
         return keypairResult
     }
 

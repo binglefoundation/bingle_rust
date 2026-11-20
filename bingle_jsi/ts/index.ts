@@ -154,8 +154,18 @@ export const BingleJsi = BingleJsiNative as {
   getVersions(): Promise<Record<string, VersionInfo>>;
   queued(): Promise<Record<string, unknown>[]>;
   getNatType(): Promise<{ nat_type: string }>;
-  generateKeypair(): Promise<{ id: string; passphrase: string }>;
-  importKeypair(passphrase: string): Promise<{ id: string; passphrase: string }>;
+  /** Generate a keypair and make it current. With the Keychain store, a different key the user
+   * syncs through iCloud Keychain is replaced only with replaceSyncedKey, as that removes the
+   * account from every device on their Apple Account. Without it the call rejects with a message
+   * naming SyncedKeyWouldBeReplaced and the stored address, changing nothing: warn the user and
+   * retry with true if they agree (#452). The file store ignores it. */
+  generateKeypair(replaceSyncedKey: boolean): Promise<{ id: string; passphrase: string }>;
+  /** Import an account from its recovery phrase and make it current. replaceSyncedKey as for
+   * generateKeypair (#452). */
+  importKeypair(
+    passphrase: string,
+    replaceSyncedKey: boolean
+  ): Promise<{ id: string; passphrase: string }>;
   /** The address (`id`) and on-chain status of the account a recovery phrase belongs to, on the
    * configured network, without importing it: the stored keypair is unchanged (issue #388).
    * `status` is as for keypairStatus (`Active` when registered). Rejects an invalid phrase as

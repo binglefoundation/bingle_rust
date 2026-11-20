@@ -62,7 +62,7 @@ fn giveup_api(
     let mut api = BingleApiLocalImpl::new(config);
     let poster = Arc::new(RecordingPoster::default());
     api.set_alert_poster(poster.clone());
-    api.import_keypair(TEST_MNEMONIC.to_string())
+    api.import_keypair(TEST_MNEMONIC.to_string(), false)
         .expect("import test keypair");
     // Seed the local handle the envelope is issued as (import clears it).
     api.seed_own_handle_for_tests(ALERT_ISS.to_string());

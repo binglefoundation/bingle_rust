@@ -87,7 +87,7 @@ describeOrSkip(`bingle_jsi backgrounding hand-off (${backend})`, () => {
         }),
       ],
     });
-    await call({method: 'importKeypair', args: [passphrase]});
+    await call({method: 'importKeypair', args: [passphrase, false]});
     await call({method: 'queueMessage', args: [[offlineHandle], text]});
     await call({method: 'start', args: []});
     await device.sendToHome();
@@ -127,7 +127,7 @@ describeOrSkip(`bingle_jsi backgrounding hand-off (${backend})`, () => {
         },
       ],
     });
-    await call({method: 'importKeypair', args: [offlinePassphrase]});
+    await call({method: 'importKeypair', args: [offlinePassphrase, false]});
     const start = Date.now();
     let received: any = null;
     while (!received && Date.now() - start < READ_TIMEOUT) {

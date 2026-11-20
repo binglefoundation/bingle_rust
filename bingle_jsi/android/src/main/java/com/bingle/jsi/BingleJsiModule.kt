@@ -286,7 +286,7 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun generateKeypair(promise: Promise) {
+    fun generateKeypair(replaceSyncedKey: Boolean, promise: Promise) {
         val api = apiInstance
         if (api == null) {
             promise.reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.")
@@ -294,7 +294,7 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
         }
         Thread {
             try {
-                val kp = api.generateKeypair()
+                val kp = api.generateKeypair(replaceSyncedKey)
                 val map = Arguments.createMap()
                 map.putString("id", kp.id)
                 map.putString("passphrase", kp.passphrase)
@@ -306,7 +306,7 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun importKeypair(passphrase: String, promise: Promise) {
+    fun importKeypair(passphrase: String, replaceSyncedKey: Boolean, promise: Promise) {
         val api = apiInstance
         if (api == null) {
             promise.reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.")
@@ -314,7 +314,7 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
         }
         Thread {
             try {
-                val kp = api.importKeypair(passphrase)
+                val kp = api.importKeypair(passphrase, replaceSyncedKey)
                 val map = Arguments.createMap()
                 map.putString("id", kp.id)
                 map.putString("passphrase", kp.passphrase)

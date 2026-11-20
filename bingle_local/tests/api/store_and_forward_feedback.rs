@@ -19,7 +19,7 @@ fn store_with_message(send_gate: bool, recipients: &[&str]) -> (BingleApiLocalIm
         ..LocalApiConfig::default()
     };
     let mut api = BingleApiLocalImpl::new(config);
-    api.import_keypair(TEST_MNEMONIC.to_string())
+    api.import_keypair(TEST_MNEMONIC.to_string(), false)
         .expect("import test keypair");
     api.add_message(
         "me".to_string(),

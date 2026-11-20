@@ -40,7 +40,7 @@ describe('bingle_jsi harness smoke', () => {
   it('inits, generates a keypair, and reads it back', async () => {
     await call({method: 'init', args: []});
 
-    const keypair = await call({method: 'generateKeypair', args: []});
+    const keypair = await call({method: 'generateKeypair', args: [false]});
     assert.strictEqual(typeof keypair.id, 'string');
     assert.ok(keypair.id.length > 0, 'keypair id should be non-empty');
 

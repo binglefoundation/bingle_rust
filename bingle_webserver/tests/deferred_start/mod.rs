@@ -26,7 +26,7 @@ impl ControllableLocalApi {
 }
 
 impl BingleLocalApi for ControllableLocalApi {
-    fn generate_keypair(&mut self) -> Result<Keypair, BingleError> {
+    fn generate_keypair(&mut self, _replace_synced_key: bool) -> Result<Keypair, BingleError> {
         let kp = Keypair {
             id: "TEST_ID".into(),
             passphrase: "TEST_PASS".into(),
@@ -35,7 +35,11 @@ impl BingleLocalApi for ControllableLocalApi {
         Ok(kp)
     }
 
-    fn import_keypair(&mut self, passphrase: String) -> Result<Keypair, BingleError> {
+    fn import_keypair(
+        &mut self,
+        passphrase: String,
+        _replace_synced_key: bool,
+    ) -> Result<Keypair, BingleError> {
         let kp = Keypair {
             id: "TEST_ID".into(),
             passphrase,

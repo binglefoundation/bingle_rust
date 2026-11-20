@@ -71,6 +71,13 @@ pub enum KeyStoreError {
     /// The store can't be read now because the device is locked; reading again after the next
     /// unlock may succeed (the state file's device secret, issue #459).
     Locked,
+    /// Storing the key would replace a different key that syncs through iCloud Keychain, which
+    /// removes it from every device on the user's Apple Account (issue #452). Stored again with
+    /// `replace_synced` once the user agrees.
+    WouldReplaceSyncedKey {
+        /// The address of the synced key that would be removed.
+        stored_address: String,
+    },
     /// The platform store failed.
     Storage(String),
 }
@@ -87,6 +94,10 @@ impl fmt::Display for KeyStoreError {
             KeyStoreError::Locked => {
                 write!(f, "the key store can't be read while the device is locked")
             }
+            KeyStoreError::WouldReplaceSyncedKey { stored_address } => write!(
+                f,
+                "storing this key would replace the synced key for {stored_address} on every device"
+            ),
             KeyStoreError::Storage(reason) => write!(f, "key storage failed: {reason}"),
         }
     }
@@ -106,8 +117,15 @@ pub trait KeyStore: Send + Sync {
     fn keeps_phrase_in_state_file(&self) -> bool;
 
     /// Stores `keypair` for `slot`, replacing what was there. A platform store creates a new key
-    /// on this device only, never synced, until the user chooses sync.
-    fn store(&self, slot: KeySlot, keypair: &Keypair) -> Result<(), KeyStoreError>;
+    /// on this device only, never synced, until the user chooses sync. A platform store refuses
+    /// to replace a different key that syncs through iCloud Keychain with
+    /// [`KeyStoreError::WouldReplaceSyncedKey`] unless `replace_synced` is set (issue #452).
+    fn store(
+        &self,
+        slot: KeySlot,
+        keypair: &Keypair,
+        replace_synced: bool,
+    ) -> Result<(), KeyStoreError>;
 
     /// The stored keypair for `slot`, if there is one.
     fn fetch(&self, slot: KeySlot) -> Result<Option<Keypair>, KeyStoreError>;
@@ -152,7 +170,12 @@ impl KeyStore for FileKeyStore {
         true
     }
 
-    fn store(&self, _slot: KeySlot, _keypair: &Keypair) -> Result<(), KeyStoreError> {
+    fn store(
+        &self,
+        _slot: KeySlot,
+        _keypair: &Keypair,
+        _replace_synced: bool,
+    ) -> Result<(), KeyStoreError> {
         Ok(())
     }
 

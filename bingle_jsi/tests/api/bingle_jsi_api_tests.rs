@@ -129,13 +129,17 @@ impl BingleJsiApi for StubApi {
         })
     }
 
-    fn generate_keypair(&self) -> Result<Keypair, BingleJsiError> {
+    fn generate_keypair(&self, _replace_synced_key: bool) -> Result<Keypair, BingleJsiError> {
         Err(BingleJsiError::NotImplemented {
             reason: "generate_keypair".to_string(),
         })
     }
 
-    fn import_keypair(&self, _passphrase: String) -> Result<Keypair, BingleJsiError> {
+    fn import_keypair(
+        &self,
+        _passphrase: String,
+        _replace_synced_key: bool,
+    ) -> Result<Keypair, BingleJsiError> {
         Err(BingleJsiError::NotImplemented {
             reason: "import_keypair".to_string(),
         })
@@ -543,7 +547,7 @@ fn stub_queued_returns_not_implemented() {
 #[test]
 fn stub_generate_keypair_returns_not_implemented() {
     let api = StubApi;
-    let result = api.generate_keypair();
+    let result = api.generate_keypair(false);
     assert!(result.is_err());
 }
 

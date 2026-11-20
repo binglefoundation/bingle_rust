@@ -111,7 +111,7 @@ final class KeychainKeyStorageTests: XCTestCase {
 
     func testNewKeyIsDeviceOnlyUntilTheUserChooses() throws {
         let api = try makeApi()
-        let kp = try api.generateKeypair()
+        let kp = try api.generateKeypair(replaceSyncedKey: false)
         let status = try api.keyStorageStatus()
         XCTAssertEqual(status.backend, .keychain)
         XCTAssertTrue(status.deviceOnly)
@@ -125,7 +125,7 @@ final class KeychainKeyStorageTests: XCTestCase {
 
     func testChoosingSyncThenDeviceOnlyNeedsTheBackupConfirmed() throws {
         let api = try makeApi()
-        _ = try api.generateKeypair()
+        _ = try api.generateKeypair(replaceSyncedKey: false)
 
         try api.setDeviceOnly(enabled: false)
         XCTAssertTrue(itemExists(synced: true))
@@ -142,9 +142,32 @@ final class KeychainKeyStorageTests: XCTestCase {
         XCTAssertTrue(try api.keyStorageStatus().deviceOnly)
     }
 
+    func testANewKeyDoesNotSilentlyReplaceASyncedKey() throws {
+        let api = try makeApi()
+        let synced = try api.generateKeypair(replaceSyncedKey: false)
+        try api.setDeviceOnly(enabled: false)
+        XCTAssertTrue(itemExists(synced: true))
+
+        XCTAssertThrowsError(try api.generateKeypair(replaceSyncedKey: false)) { error in
+            guard case BingleJsiError.SyncedKeyWouldBeReplaced(let storedAddress) = error else {
+                return XCTFail("unexpected error \(error)")
+            }
+            XCTAssertEqual(storedAddress, synced.id)
+        }
+        XCTAssertTrue(itemExists(synced: true), "the synced key is untouched")
+        XCTAssertEqual(try api.keyStorageStatus().storedAddress, synced.id)
+
+        let replacement = try api.generateKeypair(replaceSyncedKey: true)
+        XCTAssertFalse(itemExists(synced: true), "replacing removes the synced item")
+        XCTAssertTrue(itemExists(synced: false))
+        let status = try api.keyStorageStatus()
+        XCTAssertEqual(status.storedAddress, replacement.id)
+        XCTAssertTrue(status.syncChoicePending)
+    }
+
     func testAReinstallRestoresTheStoredKey() throws {
         let first = try makeApi()
-        let kp = try first.generateKeypair()
+        let kp = try first.generateKeypair(replaceSyncedKey: false)
 
         // an uninstall removes the app container (state file and install marker), not the Keychain.
         try FileManager.default.removeItem(at: stateDir)
@@ -161,7 +184,7 @@ final class KeychainKeyStorageTests: XCTestCase {
 
     func testRemoveKeyFromDeviceDeletesTheItemsAndTheStateFile() throws {
         let api = try makeApi()
-        _ = try api.generateKeypair()
+        _ = try api.generateKeypair(replaceSyncedKey: false)
         XCTAssertTrue(FileManager.default.fileExists(atPath: statePath.path))
 
         try api.removeKeyFromDevice()
@@ -173,7 +196,7 @@ final class KeychainKeyStorageTests: XCTestCase {
 
     func testAnExistingStateFileMigratesToADeviceOnlyItem() throws {
         let old = try makeApi(keyStorage: "file")
-        let kp = try old.generateKeypair()
+        let kp = try old.generateKeypair(replaceSyncedKey: false)
         XCTAssertTrue(stateFileText().contains(kp.passphrase), "today's state file holds the phrase")
 
         let migrated = try makeApi()
@@ -189,7 +212,7 @@ final class KeychainKeyStorageTests: XCTestCase {
 
     func testASealedStateFileHoldsNothingReadableAndReopens() throws {
         let api = try makeApi(encryptState: true)
-        let kp = try api.generateKeypair()
+        let kp = try api.generateKeypair(replaceSyncedKey: false)
         try api.addContact(handle: "friend", id: "FRIEND_ID", source: .manual)
         try api.save(path: statePath.path)
 
@@ -206,7 +229,7 @@ final class KeychainKeyStorageTests: XCTestCase {
 
     func testAPlainStateFileIsSealedOnFirstLoad() throws {
         let old = try makeApi()
-        let kp = try old.generateKeypair()
+        let kp = try old.generateKeypair(replaceSyncedKey: false)
         XCTAssertTrue(stateFileText().contains(kp.id), "plain before")
 
         let sealed = try makeApi(encryptState: true)
@@ -216,7 +239,7 @@ final class KeychainKeyStorageTests: XCTestCase {
 
     func testRemoveKeyFromDeviceDeletesTheStateSecret() throws {
         let api = try makeApi(encryptState: true)
-        _ = try api.generateKeypair()
+        _ = try api.generateKeypair(replaceSyncedKey: false)
         XCTAssertNotNil(stateSecretAccessibility())
 
         try api.removeKeyFromDevice()

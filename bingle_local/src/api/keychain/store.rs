@@ -238,7 +238,12 @@ impl KeyStore for KeychainKeyStore {
         false
     }
 
-    fn store(&self, slot: KeySlot, keypair: &Keypair) -> Result<(), KeyStoreError> {
+    fn store(
+        &self,
+        slot: KeySlot,
+        keypair: &Keypair,
+        replace_synced: bool,
+    ) -> Result<(), KeyStoreError> {
         let existing = self.read_record(slot)?;
         if let Some((record, _)) = &existing
             && record.address == keypair.id
@@ -246,6 +251,15 @@ impl KeyStore for KeychainKeyStore {
         {
             // Already stored, in whatever mode the user chose.
             return Ok(());
+        }
+        if let Some((old, true)) = &existing
+            && !replace_synced
+        {
+            // Replacing a synced key removes that account from every device on the user's Apple
+            // Account, so it needs the caller to say the user agreed (issue #452).
+            return Err(KeyStoreError::WouldReplaceSyncedKey {
+                stored_address: old.address.clone(),
+            });
         }
         // A new key starts device-only, with no choice made, so it never reaches iCloud before the
         // user chooses sync.

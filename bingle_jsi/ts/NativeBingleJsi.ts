@@ -370,8 +370,8 @@ export interface BingleJsiApi {
   getNatType(): NatTypeResponse;
 
   // Local storage and contacts
-  generateKeypair(): Keypair;
-  importKeypair(passphrase: string): Keypair;
+  generateKeypair(replaceSyncedKey: boolean): Keypair;
+  importKeypair(passphrase: string, replaceSyncedKey: boolean): Keypair;
   /**
    * The address (`id`) and on-chain status of the account a recovery phrase belongs to, on the
    * configured network, without importing it: the stored keypair is unchanged (issue #388).
