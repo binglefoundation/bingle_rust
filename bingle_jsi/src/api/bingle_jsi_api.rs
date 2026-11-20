@@ -255,6 +255,11 @@ pub trait BingleJsiApi: Send + Sync {
     /// the phrase's keypair is current and saved; returns it.
     fn open_state_with_recovery_phrase(&self, phrase: String) -> Result<Keypair, BingleJsiError>;
 
+    /// The current keypair, with its 25-word recovery phrase, for the app's Export Key screen and
+    /// its backup step (issue #466). Read from memory, so it works with either key store and with
+    /// a sealed state file. `InvalidRequest` when there is no keypair.
+    fn export_keypair(&self) -> Result<Keypair, BingleJsiError>;
+
     /// Ask the host to begin iOS push registration (bingle_notify #i). Invokes the registered
     /// [`PushRegistrationCallback`] so the thin Swift bridge performs the platform calls
     /// (`requestAuthorization` + `registerForRemoteNotifications`). Returns once the callback has

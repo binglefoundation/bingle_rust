@@ -388,4 +388,15 @@ class MockBingleJsiApi: BingleJsiApiProtocol {
         openStatePhrases.append(phrase)
         return keypairResult
     }
+
+    // MARK: - Key export (#466)
+
+    var exportKeypairError: Error?
+
+    func exportKeypair() throws -> Keypair {
+        if let error = exportKeypairError {
+            throw error
+        }
+        return keypairResult
+    }
 }

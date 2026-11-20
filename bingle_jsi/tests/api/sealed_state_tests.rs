@@ -88,3 +88,26 @@ fn a_locked_device_reports_state_locked_then_loads_after_the_unlock() {
     assert_eq!(jsi.state_file_status().unwrap(), StateFileStatus::Sealed);
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+fn export_keypair_returns_the_phrase_the_sealed_file_leaves_out() {
+    let dir = project_tmp_dir_path("jsi-sealed-export");
+    let items = Arc::new(MemoryItems::new());
+    let mut local = sealing_local(&items, &dir);
+    let kp = local.generate_keypair().expect("generate");
+    let path = dir.join(format!("{SCOPE}.json"));
+    local.save(path.to_string_lossy().as_ref()).expect("save");
+    let raw = std::fs::read(&path).expect("read the sealed file");
+    assert!(
+        !raw.windows(kp.passphrase.len())
+            .any(|w| w == kp.passphrase.as_bytes()),
+        "the phrase isn't in the file"
+    );
+
+    let api = jsi_over(local);
+    let exported = api.export_keypair().expect("export");
+    assert_eq!(exported.id, kp.id);
+    assert_eq!(exported.passphrase, kp.passphrase);
+    let _ = std::fs::remove_dir_all(&dir);
+}

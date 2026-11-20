@@ -608,6 +608,7 @@ The full API is defined in `src/api/bingle_jsi_api.rs`. Key methods:
 | `stateFileStatus()` | What the last state file load found (#459): `not_loaded`, `plain`, `sealed`, `locked` (the device was locked: load again after the unlock) or `recovery_phrase_required` (a restored file: ask for the phrase). Check it at start-up before treating an empty state as a new user; a `locked` or `recovery_phrase_required` file isn't saved over until it opens |
 | `forgetStateKey()` | Save, then wipe the sealed state file's key from memory (#459). Call on `protectedDataWillBecomeUnavailable`; saves then fail with `StateLocked` until the unlock, and the next save writes everything |
 | `openStateWithRecoveryPhrase(phrase)` | Open a sealed state file restored from a backup with the recovery phrase (#459). A wrong phrase changes nothing (`RecoveryPhraseRequired`); on success the file opens on this device from now on, and resolves with the now-current keypair |
+| `exportKeypair()` | The current keypair with its recovery phrase (#466), for Export Key and the backup step. Read from memory, so it works with either key store and a sealed state file; with the Keychain store the state file doesn't hold the phrase. Rejects with `InvalidRequest` when there is no keypair |
 | `addContact(handle, id, source)` | Add a contact |
 | `blockContact(id)` | Block a contact; its live and Mailbox messages are dropped on receipt |
 | `unblockContact(id)` | Unblock a contact |
