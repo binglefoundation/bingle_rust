@@ -138,7 +138,11 @@ fn init_logger_from_args(args: &mut Vec<String>) -> bingle_cli::logging::Console
     let default_level = bingle_cli::logging::default_log_level(args.first().map(String::as_str));
     let level = chosen.unwrap_or(default_level);
     let mode = chosen_mode.unwrap_or(LogMode::Plain);
-    let sink = bingle_cli::logging::ConsoleLogSink::default();
+    let sink = if bingle_cli::logging::logs_to_stderr(args.first().map(String::as_str)) {
+        bingle_cli::logging::ConsoleLogSink::to_stderr()
+    } else {
+        bingle_cli::logging::ConsoleLogSink::default()
+    };
     let fmt_layer = tracing_subscriber::fmt::layer()
         .event_format(BingleFormatter { mode })
         .with_writer(sink.clone());
@@ -189,6 +193,7 @@ fn main() {
     match sub.as_str() {
         "run" => cmd_run(args),
         "chat" => cmd_chat(args, log_sink),
+        "logclient" => cmd_logclient(args),
         "register" => cmd_register(args),
         "migrate" => cmd_migrate(args),
         "buybingle" => cmd_buybingle(args),
@@ -206,12 +211,13 @@ fn print_usage_and_exit(code: i32) -> ! {
     // One string literal per output line (adjacent literals are concatenated at compile time), so the
     // usage block stays readable in source; each line keeps its trailing `\n` except the last.
     let usage = concat!(
-        "Usage: bingle_cli <run|chat|register|migrate|buybingle|sellbingle|checkrelays> [options]\n",
+        "Usage: bingle_cli <run|chat|logclient|register|migrate|buybingle|sellbingle|checkrelays> [options]\n",
         "  Common options (for all commands): -h|--help | -V|--version | --log-warn|--warn|-q | --log-info|--info | --log-debug|--debug|-v | --log-trace|--vv|-vv | --log-mode <Plain|ANSI|AWS|JS> | --stun-servers <list> | --stun-servers-file <file>\n",
         "  Note: chat and checkrelays default to WARN-level logs so their output isn't buried under engine tracing; use --info or --debug to see more (or --log-level error for just the result).\n",
         "  Note: HTTP client detail (h2, hyper, hyper_util, reqwest) is capped at WARN at every level; set RUST_LOG (which overrides the level flags) to see it.\n",
         "  bingle_cli run [--handle <handle>|<handle>] [--passphrase <text>] [--relay] [--static-ip <ip:port>] [--stun-servers <list>] [--stun-servers-file <file>] [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--sentinel-file <path>] [--echo] [--auto-migrate] [--log-mode <Plain|ANSI|AWS|JS>]\n",
         "  bingle_cli chat [--handle <handle>|<handle>] [--passphrase <text>] [--to <handle> | --to-id <id>] [--state_file <file>] [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--stun-servers <list>] [--stun-servers-file <file>] [--no-retries] [--store-forward <both|send|receive|none>] [--notify <url>] [--auto-migrate] [--plain] [--info|--debug]\n",
+        "  bingle_cli logclient --state_file <file> [--handle <handle>] [--passphrase <text>] [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--stun-servers <list>] [--stun-servers-file <file>] [--store-forward <receive|none>] [--poll-interval <secs>] [--auto-migrate]  (receive messages; one JSON line per message on stdout, logs on stderr)\n",
         "  bingle_cli register --handle <handle> --passphrase <text> --app-id <id> --asset-id <id> --price-units <n> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>] [--log-mode <Plain|ANSI|AWS|JS>]\n",
         "  bingle_cli migrate --passphrase <text> [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--log-mode <Plain|ANSI|AWS|JS>]  (opt-in + migrate local state to the app from a blessed ancestor; handle is copied on-chain)\n",
         "  bingle_cli buybingle [<price_algos>] --passphrase <text> --app-id <id> --asset-id <id> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>] [--log-mode <Plain|ANSI|AWS|JS>]  (omit <price_algos> to pay the on-chain price)\n",
@@ -707,6 +713,28 @@ fn cmd_chat(args: Vec<String>, log_sink: bingle_cli::logging::ConsoleLogSink) {
         }
     };
 
+    let state = prepare_chat_state_or_exit(&chat_args, USAGE);
+
+    // Start the engine and run the interactive REPL (send / receive / switch) until exit.
+    let poll_interval = bingle_cli::chat_poll::resolve_poll_interval(chat_args.poll_interval_secs);
+    run_chat_session(
+        state,
+        chat_args.to.clone(),
+        chat_args.to_id.clone(),
+        !chat_args.no_retries,
+        poll_interval,
+        ChatOutput {
+            plain: chat_args.plain,
+            log_sink,
+        },
+    );
+}
+
+/// Bridge the state file and bring the account to a ready (registered, funded) state for `chat` and
+/// `logclient`: migrate from an ancestor app if needed (#314), import from `--passphrase` and register
+/// with `--handle` on a first run. Exits non-zero with a clear message when the account cannot be made
+/// ready; `usage` is printed after a state-file error.
+fn prepare_chat_state_or_exit(chat_args: &ChatArgs, usage: &str) -> ChatState {
     // Capture the credentials the user supplied on the *command line* (before the state-file bridge
     // may fill them in from the file). The registration decision distinguishes a CLI-supplied handle
     // (to detect a mismatch with an already-registered one) from one resolved out of the file.
@@ -714,10 +742,10 @@ fn cmd_chat(args: Vec<String>, log_sink: bingle_cli::logging::ConsoleLogSink) {
     let cli_passphrase: Option<String> = chat_args.opts.algo_passphrase.clone();
 
     // Bridge the state file: resolves handle/passphrase from the stored keypair and seeds contacts.
-    let mut state = match ChatState::from_chat_args(&chat_args) {
+    let mut state = match ChatState::from_chat_args(chat_args) {
         Ok(s) => s,
         Err(e) => {
-            eprintln!("Error: {e}\n{USAGE}");
+            eprintln!("Error: {e}\n{usage}");
             std::process::exit(2);
         }
     };
@@ -750,20 +778,54 @@ fn cmd_chat(args: Vec<String>, log_sink: bingle_cli::logging::ConsoleLogSink) {
 
     // Ensure the account is registered and funded (exits non-zero with a clear message otherwise).
     run_chat_startup(&mut state, cli_handle.as_deref(), cli_passphrase.as_deref());
+    state
+}
 
-    // Start the engine and run the interactive REPL (send / receive / switch) until exit.
-    let poll_interval = bingle_cli::chat_poll::resolve_poll_interval(chat_args.poll_interval_secs);
-    run_chat_session(
-        state,
-        chat_args.to.clone(),
-        chat_args.to_id.clone(),
-        !chat_args.no_retries,
-        poll_interval,
-        ChatOutput {
-            plain: chat_args.plain,
-            log_sink,
-        },
-    );
+/// Start the engine, retrying every 60s while the Algorand node is unreachable (mirrors cmd_run).
+/// Any other start failure is logged under `label` and exits 1.
+fn start_engine_or_exit(api: &Arc<BingleApiImpl>, opts: &StartOptions, label: &str) {
+    loop {
+        let mut start_res = Ok(());
+        api.access(|api_mut| {
+            start_res = api_mut.start(opts);
+        });
+        match start_res {
+            Ok(_) => return,
+            Err(e) => {
+                if let BingleError::Algo(ae) = &e
+                    && ae.kind == AlgoErrorKind::HostUnreachable
+                {
+                    tracing::error!("Algorand node unreachable: {}. Retrying in 60s...", ae);
+                    std::thread::sleep(Duration::from_secs(60));
+                    continue;
+                }
+                warn!("{label}: failed to start: {}", e);
+                std::process::exit(1);
+            }
+        }
+    }
+}
+
+/// Spawn the background store-and-forward receive poller (issue #274): drain this account's Mailbox
+/// now and then every `poll_interval`, handing each non-empty batch to `on_read`. Polls run on the
+/// shared local store handle, off any session lock, so a poll's network wait (up to 120s) never
+/// blocks the caller or shutdown (issue #276).
+fn spawn_mailbox_poller(
+    local: Arc<BingleApiLocalImpl>,
+    state_file: Option<String>,
+    poll_interval: Duration,
+    on_read: impl Fn(&[Message]) + Send + 'static,
+) {
+    std::thread::spawn(move || {
+        tracing::info!("mailbox poller started (every {:?})", poll_interval);
+        loop {
+            let read = bingle_cli::chat_poll::poll_shared(&local, state_file.as_deref());
+            if !read.is_empty() {
+                on_read(&read);
+            }
+            std::thread::sleep(poll_interval);
+        }
+    });
 }
 
 /// How the chat session presents its output (issue #81).
@@ -940,27 +1002,7 @@ fn run_chat_session(
         });
     }
 
-    // Start the engine, retrying while the Algorand node is unreachable (mirrors cmd_run).
-    loop {
-        let mut start_res = Ok(());
-        api.access(|api_mut| {
-            start_res = api_mut.start(&opts);
-        });
-        match start_res {
-            Ok(_) => break,
-            Err(e) => {
-                if let BingleError::Algo(ae) = &e
-                    && ae.kind == AlgoErrorKind::HostUnreachable
-                {
-                    tracing::error!("Algorand node unreachable: {}. Retrying in 60s...", ae);
-                    std::thread::sleep(Duration::from_secs(60));
-                    continue;
-                }
-                warn!("chat: failed to start: {}", e);
-                std::process::exit(1);
-            }
-        }
-    }
+    start_engine_or_exit(&api, &opts, "chat");
 
     // The clean shutdown every way of leaving shares (issue #336): flush what is still queued to the
     // recipients' Mailboxes (issue #282), stop the engine, save.
@@ -1027,19 +1069,13 @@ fn run_chat_session(
     if let (true, Some(poll_local)) = (receive_enabled, poll_local) {
         let poll_out = out.clone();
         let poll_sender = pending_sender.clone();
-        std::thread::spawn(move || {
-            tracing::info!("chat: mailbox poller started (every {:?})", poll_interval);
-            loop {
-                let read =
-                    bingle_cli::chat_poll::poll_shared(&poll_local, poll_state_file.as_deref());
-                // Print each held message above the prompt — the same presentation as a
-                // real-time message.
-                for msg in &read {
-                    // A Mailbox message shows the sender is back online (issue #278).
-                    poll_sender.peer_seen(&msg.sender_handle);
-                    poll_out.print_line(&format!("{}: {}", msg.sender_handle, msg.text));
-                }
-                std::thread::sleep(poll_interval);
+        spawn_mailbox_poller(poll_local, poll_state_file, poll_interval, move |read| {
+            // Print each held message above the prompt — the same presentation as a real-time
+            // message.
+            for msg in read {
+                // A Mailbox message shows the sender is back online (issue #278).
+                poll_sender.peer_seen(&msg.sender_handle);
+                poll_out.print_line(&format!("{}: {}", msg.sender_handle, msg.text));
             }
         });
     }
@@ -1142,6 +1178,124 @@ fn run_chat_session(
     }
 }
 
+fn cmd_logclient(args: Vec<String>) {
+    // One string literal per output line, as for `chat`.
+    const USAGE: &str = concat!(
+        "Usage: bingle_cli logclient --state_file <file> [--handle <handle>] [--passphrase <text>] [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--stun-servers <list>] [--stun-servers-file <file>] [--store-forward <receive|none>] [--poll-interval <secs>] [--auto-migrate]\n",
+        "  Runs as the account in --state_file and writes each received text message to stdout as one JSON line: {\"id\", \"sender\", \"sent_time\", \"text\"}. Logs go to stderr.\n",
+        "  --handle/--passphrase: only needed on a first run, to import (and register) the account; afterwards the state file is enough.\n",
+        "  --store-forward: receive (default) also drains the Sidewinder Mailbox on start and every --poll-interval seconds; none takes direct delivery only.",
+    );
+
+    // Subcommand help prints to stdout and exits 0, mirroring the other subcommands.
+    if args.iter().any(|a| a == "--help" || a == "-h") {
+        println!("{USAGE}");
+        std::process::exit(0);
+    }
+
+    let parsed = match parse_logclient_args(args) {
+        Ok(a) => a,
+        Err(e) => {
+            eprintln!("Error: {e}\n{USAGE}");
+            std::process::exit(2);
+        }
+    };
+    let chat_args = parsed.chat;
+    let state = prepare_chat_state_or_exit(&chat_args, USAGE);
+    let poll_interval = bingle_cli::chat_poll::resolve_poll_interval(chat_args.poll_interval_secs);
+    run_logclient_session(
+        state,
+        Box::new(JsonLinesSink::new(std::io::stdout())),
+        poll_interval,
+    );
+}
+
+/// Start the engine for a ready account and hand every received text message to `sink` until
+/// SIGINT/SIGTERM: real-time messages through the engine's `on_message` callback, and, when the
+/// store-and-forward receive gate is on, Mailbox messages from the background poller. On a signal it
+/// stops the engine and saves the state file; a second signal exits at once.
+fn run_logclient_session(state: ChatState, sink: Box<dyn MessageSink>, poll_interval: Duration) {
+    let opts = state.opts.clone();
+    let receive_enabled = state.store_and_forward_receive_enabled();
+    let local = state.local_handle();
+    let state_file = state.state_file_path();
+    // Shared with the engine callback and the poller: both deliver through the one client.
+    let client = Arc::new(Mutex::new(LogClient::new(state, sink)));
+    let api = BingleApiImpl::new(&opts);
+
+    {
+        let client_for_msg = client.clone();
+        let listening_now = Arc::new(AtomicBool::new(false));
+        api.access(|api_mut| {
+            let on_message: Arc<OnMessageHandler> = Arc::new(
+                move |sender, sender_handle, message| match client_for_msg.lock() {
+                    Ok(mut c) => {
+                        c.receive(&sender, &sender_handle, &message);
+                    }
+                    Err(e) => {
+                        tracing::error!("logclient: state lock poisoned; dropping message: {e}")
+                    }
+                },
+            );
+            api_mut.set_on_message(Some(on_message));
+
+            // Log only changes, so a reconnect is visible in the log without repeating every call.
+            let on_listening: Arc<OnListeningHandler> = Arc::new(move |listening, _nat_type| {
+                if listening_now.swap(listening, Ordering::SeqCst) == listening {
+                    return;
+                }
+                if listening {
+                    tracing::info!("logclient: listening for messages");
+                } else {
+                    warn!("logclient: connection lost; reconnecting");
+                }
+            });
+            api_mut.set_on_listening(Some(on_listening));
+        });
+    }
+
+    start_engine_or_exit(&api, &opts, "logclient");
+
+    if receive_enabled {
+        let client_for_poll = client.clone();
+        spawn_mailbox_poller(
+            local.clone(),
+            state_file.clone(),
+            poll_interval,
+            move |read| match client_for_poll.lock() {
+                Ok(mut c) => {
+                    c.deliver_polled(read);
+                }
+                Err(e) => tracing::error!(
+                    "logclient: state lock poisoned; dropping {} mailbox message(s): {e}",
+                    read.len()
+                ),
+            },
+        );
+    }
+
+    tracing::info!("logclient: receiving as '{}'", opts.handle);
+
+    // Wait for SIGINT/SIGTERM. A second signal while shutting down exits immediately.
+    let (tx, rx) = channel::<()>();
+    let signalled = AtomicBool::new(false);
+    if let Err(e) = ctrlc::set_handler(move || {
+        if signalled.swap(true, Ordering::SeqCst) {
+            std::process::exit(130);
+        }
+        let _ = tx.send(());
+    }) {
+        warn!("logclient: failed to install signal handler: {}", e);
+    }
+    let _ = rx.recv();
+
+    tracing::info!("logclient: shutting down");
+    api.access(|api_mut| api_mut.stop());
+    bingle_cli::chat_poll::save_shared(&local, state_file.as_deref());
+    let delivered = client.lock().map(|c| c.delivered()).unwrap_or(0);
+    tracing::info!("logclient: stopped after delivering {delivered} message(s)");
+}
+
 /// Drive the first-run registration state machine to a ready account, or exit non-zero with a clear
 /// message. On success (the account is registered and adequately funded) it logs readiness and
 /// returns; the interactive session loop lands in a later subtask. Never logs the passphrase.
@@ -1241,7 +1395,7 @@ fn resolve_status_or_exit(state: &ChatState) -> chat_register::AccountStatus {
 }
 
 use bingle_cli::account_check::{self, AccountReadiness};
-use bingle_cli::chat::parse_chat_args;
+use bingle_cli::chat::{ChatArgs, parse_chat_args};
 use bingle_cli::chat_console::{ChatConsole, ReadLine, SessionShutdown};
 use bingle_cli::chat_register::{self, CredentialGap, StartupDecision, decide_startup};
 use bingle_cli::chat_repl::{ChatInput, CurrentRecipient, parse_input};
@@ -1249,10 +1403,16 @@ use bingle_cli::chat_send::{ChatDelivery, report_line};
 use bingle_cli::chat_state::ChatState;
 use bingle_cli::chat_state::RegisterError;
 use bingle_cli::checkrelays;
+use bingle_cli::logclient::{JsonLinesSink, LogClient, MessageSink, parse_logclient_args};
+use bingle_core::api::bingle_api::StartOptions;
 use bingle_core::api::network_endpoint::NetworkEndpoint;
+use bingle_local::api::bingle_local_api::Message;
+use bingle_local::api::bingle_local_api_impl::BingleApiLocalImpl;
 use bingle_local::api::pending_sender::{PendingSender, PendingSenderOptions};
 use serde_json::json;
 use std::net::SocketAddr;
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use std::time::Instant;
 

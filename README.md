@@ -123,7 +123,7 @@ bingle_cli run \
 ```
 
 Run `bingle_cli` with no arguments to see the full usage for every command (`run`, `chat`,
-`register`, `buybingle`, `sellbingle`, `checkrelays`).
+`logclient`, `register`, `buybingle`, `sellbingle`, `checkrelays`).
 
 ### Interactive chat
 

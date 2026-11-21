@@ -2,6 +2,7 @@
 use bingle_cli::chat_console::ConsoleOut;
 use bingle_cli::logging::{
     ConsoleLogSink, HTTP_STACK_TARGETS, default_log_level, filter_directives, log_filter,
+    logs_to_stderr,
 };
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -28,6 +29,29 @@ pub fn other_subcommands_and_none_default_to_info() {
         );
     }
     assert_eq!(default_log_level(None), LevelFilter::INFO);
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn only_logclient_logs_to_stderr() {
+    // logclient's stdout carries received messages for another program, so its logs go to stderr
+    // (issue #64); everything else keeps logging to stdout.
+    assert!(logs_to_stderr(Some("logclient")));
+    for sc in [
+        "run",
+        "chat",
+        "register",
+        "migrate",
+        "buybingle",
+        "sellbingle",
+        "checkrelays",
+    ] {
+        assert!(
+            !logs_to_stderr(Some(sc)),
+            "subcommand {sc} should log to stdout"
+        );
+    }
+    assert!(!logs_to_stderr(None));
 }
 
 #[test]
