@@ -217,7 +217,7 @@ fn print_usage_and_exit(code: i32) -> ! {
         "  Note: HTTP client detail (h2, hyper, hyper_util, reqwest) is capped at WARN at every level; set RUST_LOG (which overrides the level flags) to see it.\n",
         "  bingle_cli run [--handle <handle>|<handle>] [--passphrase <text>] [--relay] [--static-ip <ip:port>] [--stun-servers <list>] [--stun-servers-file <file>] [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--sentinel-file <path>] [--echo] [--auto-migrate] [--log-mode <Plain|ANSI|AWS|JS>]\n",
         "  bingle_cli chat [--handle <handle>|<handle>] [--passphrase <text>] [--to <handle> | --to-id <id>] [--state_file <file>] [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--stun-servers <list>] [--stun-servers-file <file>] [--no-retries] [--store-forward <both|send|receive|none>] [--notify <url>] [--auto-migrate] [--plain] [--info|--debug]\n",
-        "  bingle_cli logclient --state_file <file> [--handle <handle>] [--passphrase <text>] [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--stun-servers <list>] [--stun-servers-file <file>] [--store-forward <receive|none>] [--poll-interval <secs>] [--auto-migrate]  (receive messages; one JSON line per message on stdout, logs on stderr)\n",
+        "  bingle_cli logclient --state_file <file> [--maildir <dir> --from <address>] [--handle <handle>] [--passphrase <text>] [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--stun-servers <list>] [--stun-servers-file <file>] [--store-forward <receive|none>] [--poll-interval <secs>] [--auto-migrate]  (receive messages into a Maildir as emails, or as JSON lines on stdout; logs on stderr)\n",
         "  bingle_cli register --handle <handle> --passphrase <text> --app-id <id> --asset-id <id> --price-units <n> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>] [--log-mode <Plain|ANSI|AWS|JS>]\n",
         "  bingle_cli migrate --passphrase <text> [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--log-mode <Plain|ANSI|AWS|JS>]  (opt-in + migrate local state to the app from a blessed ancestor; handle is copied on-chain)\n",
         "  bingle_cli buybingle [<price_algos>] --passphrase <text> --app-id <id> --asset-id <id> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>] [--log-mode <Plain|ANSI|AWS|JS>]  (omit <price_algos> to pay the on-chain price)\n",
@@ -1181,8 +1181,10 @@ fn run_chat_session(
 fn cmd_logclient(args: Vec<String>) {
     // One string literal per output line, as for `chat`.
     const USAGE: &str = concat!(
-        "Usage: bingle_cli logclient --state_file <file> [--handle <handle>] [--passphrase <text>] [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--stun-servers <list>] [--stun-servers-file <file>] [--store-forward <receive|none>] [--poll-interval <secs>] [--auto-migrate]\n",
-        "  Runs as the account in --state_file and writes each received text message to stdout as one JSON line: {\"id\", \"sender\", \"sent_time\", \"text\"}. Logs go to stderr.\n",
+        "Usage: bingle_cli logclient --state_file <file> [--maildir <dir> --from <address>] [--handle <handle>] [--passphrase <text>] [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--stun-servers <list>] [--stun-servers-file <file>] [--store-forward <receive|none>] [--poll-interval <secs>] [--auto-migrate]\n",
+        "  Runs as the account in --state_file and hands on each received text message. Logs go to stderr.\n",
+        "  --maildir <dir> --from <address>: write each message into the Maildir <dir> as an email from <address> (an SES-verified address), for scripts/mailer.sh to send.\n",
+        "  Without --maildir, each message is written to stdout as one JSON line: {\"id\", \"sender\", \"sender_id\", \"sent_time\", \"text\"}.\n",
         "  --handle/--passphrase: only needed on a first run, to import (and register) the account; afterwards the state file is enough.\n",
         "  --store-forward: receive (default) also drains the Sidewinder Mailbox on start and every --poll-interval seconds; none takes direct delivery only.",
     );
@@ -1200,20 +1202,29 @@ fn cmd_logclient(args: Vec<String>) {
             std::process::exit(2);
         }
     };
+    // Open the sink before the account startup, so a bad Maildir fails fast.
+    let sink: Box<dyn MessageSink> = match (&parsed.maildir, &parsed.from) {
+        (Some(dir), Some(from)) => match MaildirSink::open(std::path::Path::new(dir), from) {
+            Ok(sink) => Box::new(sink),
+            Err(e) => {
+                eprintln!("Error: {e}");
+                std::process::exit(2);
+            }
+        },
+        _ => Box::new(JsonLinesSink::new(std::io::stdout())),
+    };
     let chat_args = parsed.chat;
     let state = prepare_chat_state_or_exit(&chat_args, USAGE);
     let poll_interval = bingle_cli::chat_poll::resolve_poll_interval(chat_args.poll_interval_secs);
-    run_logclient_session(
-        state,
-        Box::new(JsonLinesSink::new(std::io::stdout())),
-        poll_interval,
-    );
+    run_logclient_session(state, sink, poll_interval);
 }
 
 /// Start the engine for a ready account and hand every received text message to `sink` until
 /// SIGINT/SIGTERM: real-time messages through the engine's `on_message` callback, and, when the
-/// store-and-forward receive gate is on, Mailbox messages from the background poller. On a signal it
-/// stops the engine and saves the state file; a second signal exits at once.
+/// store-and-forward receive gate is on, Mailbox messages from the background poller. Each message is
+/// handed to the sink before the state file is saved (issue #65), so every save happens under the
+/// client lock. On a signal it stops the engine and saves the state file; a second signal exits at
+/// once.
 fn run_logclient_session(state: ChatState, sink: Box<dyn MessageSink>, poll_interval: Duration) {
     let opts = state.opts.clone();
     let receive_enabled = state.store_and_forward_receive_enabled();
@@ -1258,9 +1269,10 @@ fn run_logclient_session(state: ChatState, sink: Box<dyn MessageSink>, poll_inte
 
     if receive_enabled {
         let client_for_poll = client.clone();
+        // No state file for the poll itself: deliver_polled saves after handing the batch on.
         spawn_mailbox_poller(
             local.clone(),
-            state_file.clone(),
+            None,
             poll_interval,
             move |read| match client_for_poll.lock() {
                 Ok(mut c) => {
@@ -1291,8 +1303,17 @@ fn run_logclient_session(state: ChatState, sink: Box<dyn MessageSink>, poll_inte
 
     tracing::info!("logclient: shutting down");
     api.access(|api_mut| api_mut.stop());
-    bingle_cli::chat_poll::save_shared(&local, state_file.as_deref());
-    let delivered = client.lock().map(|c| c.delivered()).unwrap_or(0);
+    // Save under the client lock, so it cannot land between a message's acceptance and its delivery.
+    let delivered = match client.lock() {
+        Ok(c) => {
+            c.save();
+            c.delivered()
+        }
+        Err(_) => {
+            bingle_cli::chat_poll::save_shared(&local, state_file.as_deref());
+            0
+        }
+    };
     tracing::info!("logclient: stopped after delivering {delivered} message(s)");
 }
 
@@ -1403,7 +1424,9 @@ use bingle_cli::chat_send::{ChatDelivery, report_line};
 use bingle_cli::chat_state::ChatState;
 use bingle_cli::chat_state::RegisterError;
 use bingle_cli::checkrelays;
-use bingle_cli::logclient::{JsonLinesSink, LogClient, MessageSink, parse_logclient_args};
+use bingle_cli::logclient::{
+    JsonLinesSink, LogClient, MaildirSink, MessageSink, parse_logclient_args,
+};
 use bingle_core::api::bingle_api::StartOptions;
 use bingle_core::api::network_endpoint::NetworkEndpoint;
 use bingle_local::api::bingle_local_api::Message;

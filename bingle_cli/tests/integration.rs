@@ -428,14 +428,14 @@ mod localnet {
         );
     }
 
-    /// Issue #64: `logclient` over a real localnet. A first run registers "support" from
-    /// `--passphrase --handle` and keeps running; an in-process peer sends it a message, which must
-    /// appear exactly once on stdout as a JSON line, with stdout carrying nothing else. SIGTERM must
-    /// stop it cleanly with the message saved in the state file.
+    /// Issues #64 and #65: `logclient --maildir` over a real localnet. A first run registers
+    /// "support" from `--passphrase --handle` and keeps running; an in-process peer sends it a
+    /// message, which must land exactly once in the Maildir's `new/` as an email, with stdout left
+    /// empty. SIGTERM must stop it cleanly with the message saved in the state file.
     #[ntest::timeout(300_000)]
     #[serial_test::serial(localnet_chat)]
     #[test]
-    fn logclient_registers_and_writes_received_messages_to_stdout_over_localnet() {
+    fn logclient_registers_and_writes_received_messages_to_a_maildir_over_localnet() {
         if !provision::localnet_available() {
             eprintln!(
                 "skipping localnet logclient e2e: algokit localnet not reachable at localhost:4001"
@@ -514,6 +514,8 @@ mod localnet {
         let node_file = dir.path().join("localnet.node.json");
         provision::write_localnet_node_file(&node_file, app_id, asset_id);
         let node_file_s = node_file.to_string_lossy().into_owned();
+        let maildir = dir.path().join("maildir");
+        let maildir_s = maildir.to_string_lossy().into_owned();
 
         // First run: register "support" and keep receiving. The Mailbox path needs a Sidewinder node
         // (feature-gated suites), so take direct delivery only here.
@@ -528,6 +530,10 @@ mod localnet {
                 &stun_arg,
                 "--store-forward",
                 "none",
+                "--maildir",
+                &maildir_s,
+                "--from",
+                "support@example.com",
                 "--passphrase",
                 test_util::PASSPHRASE_10MIL,
                 "--handle",
@@ -650,24 +656,33 @@ mod localnet {
             "logclient should exit 0 on SIGTERM within 30s (status {status:?}); stderr:\n{stderr}"
         );
 
-        // stdout carries exactly the one message, as a JSON line.
-        let lines: Vec<&str> = stdout.lines().collect();
+        // stdout stays empty; the message is one email in new/, none left in tmp/.
+        assert!(stdout.is_empty(), "stdout should be empty; was:\n{stdout}");
+        let new: Vec<std::path::PathBuf> = std::fs::read_dir(maildir.join("new"))
+            .expect("read new/")
+            .filter_map(|e| e.ok().map(|e| e.path()))
+            .collect();
+        assert_eq!(new.len(), 1, "new/ should hold one email; held {new:?}");
         assert_eq!(
-            lines.len(),
-            1,
-            "stdout should hold one line; was:\n{stdout}"
+            std::fs::read_dir(maildir.join("tmp"))
+                .expect("read tmp/")
+                .count(),
+            0
         );
-        let line: serde_json::Value =
-            serde_json::from_str(lines[0]).expect("stdout line should be JSON");
-        assert_eq!(line["sender"], serde_json::json!("peer"), "{line}");
-        assert_eq!(
-            line["text"],
-            serde_json::json!("help please\nsecond line"),
-            "{line}"
+        let email = std::fs::read_to_string(&new[0]).expect("read email");
+        assert!(
+            email.contains("From: \"peer (Bingle)\" <support@example.com>\r\n"),
+            "{email}"
         );
         assert!(
-            line["id"].as_str().is_some_and(|id| !id.is_empty()),
-            "{line}"
+            email.contains("Subject: Bingle message from peer\r\n"),
+            "{email}"
+        );
+        assert!(email.contains("\r\nX-Bingle-Sender: "), "{email}");
+        assert!(!email.contains("\r\nTo:"), "no To: header; {email}");
+        assert!(
+            email.ends_with("\r\n\r\nhelp please\r\nsecond line\r\n"),
+            "{email}"
         );
 
         // The message is also durable in the state file.

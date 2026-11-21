@@ -14,19 +14,36 @@ use serde_json::Value;
 
 use crate::chat_state::ChatState;
 
-/// Handle an inbound engine message.
+/// Handle an inbound engine message: [`accept_message`], then save the state file.
+///
+/// The `chat` receive path. Persistence failures are logged, not propagated: a receive callback must
+/// never panic or tear down the connection, so a save hiccup only costs durability of that one
+/// message.
+pub fn receive_message(
+    state: &mut ChatState,
+    sender_id: &str,
+    sender_handle: &str,
+    message: &Value,
+) -> Option<Message> {
+    let stored = accept_message(state, sender_id, sender_handle, message)?;
+    if let Err(e) = state.save_state() {
+        tracing::warn!("chat: could not save state after message: {}", e);
+    }
+    Some(stored)
+}
+
+/// Accept an inbound engine message into the in-memory history, without saving the state file.
 ///
 /// When `message` is a plaintext `{ "text": ... }` message (the same shape `run --echo` uses — no
 /// non-null `app`/`type`) from a sender that is not blocked, this records the sender as a
-/// `Received` contact if it is new, appends the
-/// message to the history, saves the state file, and returns the stored [`Message`] for the caller
-/// to display (its `sender_handle` is the resolved handle, or the id when the sender is unknown).
+/// `Received` contact if it is new, appends the message to the history, and returns the stored
+/// [`Message`] (its `sender_handle` is the resolved handle, or the id when the sender is unknown).
 /// Non-plaintext or text-less messages are ignored (`None`), as is a copy of a message already
 /// received by the other route, e.g. read from the Mailbox (issue #355).
 ///
-/// Persistence failures are logged, not propagated: a receive callback must never panic or tear down
-/// the connection, so a save hiccup only costs durability of that one message.
-pub fn receive_message(
+/// The caller saves the state file. `logclient` hands the message on before saving (issue #65), so a
+/// crash can never leave a message in the saved history that was not handed on.
+pub fn accept_message(
     state: &mut ChatState,
     sender_id: &str,
     sender_handle: &str,
@@ -78,10 +95,6 @@ pub fn receive_message(
             return None;
         }
     };
-    if let Err(e) = state.save_state() {
-        tracing::warn!("chat: could not save state after message: {}", e);
-    }
-
     Some(stored)
 }
 
