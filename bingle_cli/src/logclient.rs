@@ -10,6 +10,9 @@
 //! With `--maildir <dir> --from <address>` each message is written into a Maildir as an email
 //! (issue #65, see [`crate::maildir`]); otherwise it is written to stdout as a JSON line.
 //!
+//! With `--spam-limit <n>` at most `n` messages a UTC day from each sender are handed on (issue #66,
+//! see [`crate::spam_limit`]); the rest stay in the state-file history only.
+//!
 //! **Hand on, then save.** A message is handed to the sink *before* the state file is saved, so a
 //! crash can never leave a message in the saved history that the sink did not get: the sink side is
 //! at-least-once. (The real-time sender and the Mailbox both treat a message as delivered once this
@@ -29,6 +32,7 @@ use crate::chat::{ChatArgs, StoreForwardMode, parse_chat_args};
 use crate::chat_receive::accept_message;
 use crate::chat_state::ChatState;
 use crate::maildir::{Maildir, format_email, validate_from_address};
+use crate::spam_limit::{Admission, SPAM_LIMIT_RECORD, SpamLimiter};
 
 /// Chat flags `logclient` refuses: they only affect sending or the interactive prompt, so accepting
 /// them would suggest they do something.
@@ -52,12 +56,14 @@ pub struct LogClientArgs {
     pub maildir: Option<String>,
     /// `--from <address>`: the SES-verified address the emails are from.
     pub from: Option<String>,
+    /// `--spam-limit <n>`: hand on at most `n` messages per sender per UTC day; `None` for no limit.
+    pub spam_limit: Option<u32>,
 }
 
 /// Parse the arguments following `logclient` into a [`LogClientArgs`].
 ///
 /// `--state_file` is required: it holds the account and the history that drops duplicate copies.
-/// `--maildir` and `--from` go together.
+/// `--maildir` and `--from` go together. `--spam-limit` takes a whole number of at least 1.
 /// The store-and-forward receive gate is on by default (`--store-forward receive`), since a support
 /// inbox must pick up messages held while it was offline; pass `--store-forward none` to turn it off.
 /// Returns a human-readable error on any parse or validation failure; callers map it to a usage
@@ -74,12 +80,24 @@ pub fn parse_logclient_args(args: Vec<String>) -> Result<LogClientArgs, String> 
 
     let mut maildir: Option<String> = None;
     let mut from: Option<String> = None;
+    let mut spam_limit: Option<u32> = None;
     let mut rest: Vec<String> = Vec::with_capacity(args.len());
     let mut it = args.into_iter();
     while let Some(arg) = it.next() {
         match arg.as_str() {
             "--maildir" => maildir = Some(it.next().ok_or("--maildir requires a <dir> value")?),
             "--from" => from = Some(it.next().ok_or("--from requires an <address> value")?),
+            "--spam-limit" => {
+                let value = it.next().ok_or("--spam-limit requires an <n> value")?;
+                match value.parse::<u32>() {
+                    Ok(n) if n >= 1 => spam_limit = Some(n),
+                    _ => {
+                        return Err(format!(
+                            "--spam-limit must be a whole number of at least 1, got '{value}'"
+                        ));
+                    }
+                }
+            }
             _ => rest.push(arg),
         }
     }
@@ -110,6 +128,7 @@ pub fn parse_logclient_args(args: Vec<String>) -> Result<LogClientArgs, String> 
         chat,
         maildir,
         from,
+        spam_limit,
     })
 }
 
@@ -181,13 +200,18 @@ impl MessageSink for MaildirSink {
     }
 }
 
-/// The receive side of a `logclient` session: the account state and the sink messages go to.
+/// The receive side of a `logclient` session: the account state, the sink messages go to and the
+/// optional spam limit.
 ///
 /// Shared (behind a mutex) between the engine's `on_message` callback and the Mailbox poller.
 pub struct LogClient {
     state: ChatState,
     sink: Box<dyn MessageSink>,
     delivered: u64,
+    limiter: Option<SpamLimiter>,
+    suppressed: u64,
+    /// Whether a failure to store the limiter's counts has been logged, so it is logged once.
+    record_error_logged: bool,
 }
 
 impl LogClient {
@@ -197,7 +221,26 @@ impl LogClient {
             state,
             sink,
             delivered: 0,
+            limiter: None,
+            suppressed: 0,
+            record_error_logged: false,
         }
+    }
+
+    /// Apply `limiter` to every message, starting from the counts kept in the state file by an
+    /// earlier run. Unreadable counts are logged and start from zero.
+    pub fn with_spam_limit(mut self, mut limiter: SpamLimiter) -> Self {
+        match self.state.app_record(SPAM_LIMIT_RECORD) {
+            Ok(Some(record)) => {
+                if let Err(e) = limiter.restore(&record) {
+                    tracing::warn!("logclient: ignoring stored spam-limit counts ({e})");
+                }
+            }
+            Ok(None) => {}
+            Err(e) => tracing::warn!("logclient: could not read stored spam-limit counts: {e}"),
+        }
+        self.limiter = Some(limiter);
+        self
     }
 
     /// The account state.
@@ -208,6 +251,16 @@ impl LogClient {
     /// How many messages the sink has accepted this session.
     pub fn delivered(&self) -> u64 {
         self.delivered
+    }
+
+    /// How many messages the spam limit kept from the sink this session.
+    pub fn suppressed(&self) -> u64 {
+        self.suppressed
+    }
+
+    /// The spam limiter, when `--spam-limit` is set.
+    pub fn limiter(&self) -> Option<&SpamLimiter> {
+        self.limiter.as_ref()
     }
 
     /// Handle a message from the engine's `on_message` callback: accept it through the `chat`
@@ -251,6 +304,9 @@ impl LogClient {
     }
 
     fn deliver(&mut self, message: &Message, sender_id: Option<&str>) -> bool {
+        if !self.admit(message, sender_id) {
+            return false;
+        }
         match self.sink.deliver(message, sender_id) {
             Ok(()) => {
                 self.delivered += 1;
@@ -263,6 +319,34 @@ impl LogClient {
                     message.id,
                     message.sender_handle
                 );
+                false
+            }
+        }
+    }
+
+    /// Apply the spam limit to `message`, keyed by its sender's id (or handle, when the id isn't
+    /// known), and keep the counts in the state for the next save. Returns whether to hand it on.
+    fn admit(&mut self, message: &Message, sender_id: Option<&str>) -> bool {
+        let Some(limiter) = self.limiter.as_mut() else {
+            return true;
+        };
+        let admission = limiter.admit(sender_id.unwrap_or(&message.sender_handle));
+        let record = limiter.record();
+        if let Some(record) = record
+            && let Err(e) = self.state.set_app_record(SPAM_LIMIT_RECORD, record)
+            && !self.record_error_logged
+        {
+            // The counts still apply in memory; only a restart would reset them.
+            tracing::warn!("logclient: could not store spam-limit counts: {e}");
+            self.record_error_logged = true;
+        }
+        match admission {
+            Admission::Forward => true,
+            Admission::Suppress { log } => {
+                if let Some(line) = log {
+                    tracing::warn!("logclient: {line}");
+                }
+                self.suppressed += 1;
                 false
             }
         }

@@ -35,5 +35,7 @@ pub mod mailer;
 pub mod run_args;
 #[path = "shutdown.rs"]
 pub mod shutdown;
+#[path = "spam_limit.rs"]
+pub mod spam_limit;
 #[path = "version_help.rs"]
 pub mod version_help;
