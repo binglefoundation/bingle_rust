@@ -158,6 +158,35 @@ Both the sent line and the echoed reply are persisted to `tmp/<my-handle>_state.
 
 Both the sent line and the echoed reply are persisted to `echo-test-1.json`.
 
+## Receiving messages for a mailer (logclient)
+
+`bingle_cli logclient` runs as a registered account and writes every text message it receives to
+stdout, for another program to forward (epic #63: support messages forwarded by email). It is
+`chat` without the prompt: it takes the same connection flags and `--state_file`, receives the same
+way (real-time delivery, plus the Sidewinder Mailbox poll), and drops the same messages (protocol
+messages, blocked senders, and a second copy of a message already received). It never sends.
+
+```bash
+bingle_cli logclient --state_file tmp/support_state.json --node-file nodely_deployed_mainnet_node.json --stun-servers-file stunservers.txt
+```
+
+- **Output:** one JSON object per line on stdout, flushed as each message arrives:
+  `{"id": "...", "sender": "<handle>", "sent_time": <epoch ms>, "text": "..."}`. `id` is the stable
+  message id and `sender` falls back to the sender's id when its handle is unknown. JSON keeps a
+  message with line breaks on one line.
+- **stdout carries messages only.** All logging goes to stderr, at `INFO` by default.
+- `--state_file <file>` is required. On a first run, pass `--passphrase` (and `--handle` to register
+  a new account), exactly as for [chat](#first-run-registration-flow); afterwards the state file is
+  enough, so the phrase need not stay on the command line of a long-running process.
+- `--store-forward receive` is the default, so messages held while `logclient` was offline are
+  picked up on start and every `--poll-interval` seconds (default 20). `--store-forward none` takes
+  direct delivery only; `send` and `both` are refused.
+- Received messages are also kept in the state file's history.
+- Ctrl-C or SIGTERM stops the engine and saves the state file; a second signal exits at once.
+
+The chat flags that only affect sending or the prompt (`--to`, `--to-id`, `--no-retries`,
+`--notify`, `--plain`) are refused.
+
 ## Post-Checkout Setup
 
 To automate the resolution of merge conflicts in `.build_number` files, you must configure a custom merge driver locally. This only needs to be done once after cloning the repository:

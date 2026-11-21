@@ -30,4 +30,6 @@ pub mod chat_state;
 #[doc(hidden)]
 pub mod checkrelays;
 #[doc(hidden)]
+pub mod logclient;
+#[doc(hidden)]
 pub mod logging;

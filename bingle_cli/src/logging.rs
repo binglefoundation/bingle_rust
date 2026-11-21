@@ -24,6 +24,14 @@ pub fn default_log_level(subcommand: Option<&str>) -> LevelFilter {
     }
 }
 
+/// Whether a subcommand's log lines go to stderr rather than stdout.
+///
+/// `logclient` (issue #64) writes received messages to stdout for another program to read, so its
+/// stdout must carry nothing else; every other subcommand logs to stdout as before.
+pub fn logs_to_stderr(subcommand: Option<&str>) -> bool {
+    matches!(subcommand, Some("logclient"))
+}
+
 /// HTTP client stack targets (the hyper/h2 client under reqwest, used for the indexer and Sidewinder
 /// calls). Their per-request detail (connect, frames, connection pooling) is capped at WARN at every
 /// level, `--log-level trace` included: the HTTP path is stable and its detail drowned the engine
@@ -66,9 +74,18 @@ pub fn log_filter(level: LevelFilter, rust_log: Option<&str>) -> EnvFilter {
 #[derive(Clone, Default)]
 pub struct ConsoleLogSink {
     console: Arc<Mutex<Option<Arc<dyn ConsoleOut>>>>,
+    stderr: bool,
 }
 
 impl ConsoleLogSink {
+    /// A sink that writes log lines to stderr instead of stdout when no console is attached.
+    pub fn to_stderr() -> Self {
+        Self {
+            console: Arc::default(),
+            stderr: true,
+        }
+    }
+
     /// Send log lines above the prompt of `console` from now on.
     pub fn attach(&self, console: Arc<dyn ConsoleOut>) {
         if let Ok(mut current) = self.console.lock() {
@@ -87,15 +104,18 @@ impl<'a> MakeWriter<'a> for ConsoleLogSink {
     fn make_writer(&'a self) -> Self::Writer {
         LogLineWriter {
             console: self.console(),
+            stderr: self.stderr,
             buf: Vec::new(),
         }
     }
 }
 
 /// Collects one formatted log event and writes it out when dropped: above the chat prompt when a
-/// console is attached, to stdout otherwise.
+/// console is attached, otherwise to stdout (or stderr, for a sink made by
+/// [`ConsoleLogSink::to_stderr`]).
 pub struct LogLineWriter {
     console: Option<Arc<dyn ConsoleOut>>,
+    stderr: bool,
     buf: Vec<u8>,
 }
 
@@ -119,6 +139,11 @@ impl Drop for LogLineWriter {
             Some(console) => {
                 let text = String::from_utf8_lossy(&self.buf);
                 console.print_line(text.trim_end_matches(['\r', '\n']));
+            }
+            None if self.stderr => {
+                let mut stderr = std::io::stderr().lock();
+                let _ = stderr.write_all(&self.buf);
+                let _ = stderr.flush();
             }
             None => {
                 let mut stdout = std::io::stdout().lock();

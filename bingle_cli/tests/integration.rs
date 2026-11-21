@@ -428,6 +428,265 @@ mod localnet {
         );
     }
 
+    /// Issue #64: `logclient` over a real localnet. A first run registers "support" from
+    /// `--passphrase --handle` and keeps running; an in-process peer sends it a message, which must
+    /// appear exactly once on stdout as a JSON line, with stdout carrying nothing else. SIGTERM must
+    /// stop it cleanly with the message saved in the state file.
+    #[ntest::timeout(300_000)]
+    #[serial_test::serial(localnet_chat)]
+    #[test]
+    fn logclient_registers_and_writes_received_messages_to_stdout_over_localnet() {
+        if !provision::localnet_available() {
+            eprintln!(
+                "skipping localnet logclient e2e: algokit localnet not reachable at localhost:4001"
+            );
+            return;
+        }
+        test_util::init_test_logging();
+
+        let cfg = test_util::localnet_config();
+        setup_localnet::ensure_localnet_accounts_funded(
+            &cfg,
+            &[
+                test_util::ADDRESS_SPEND,
+                test_util::ADDRESS_RECEIVE,
+                test_util::ADDRESS_10MIL,
+                RECEIVER_ADDRESS,
+            ],
+        )
+        .expect("fund localnet accounts");
+
+        let creator = test_util::ops_from_mnemonic(
+            test_util::ADDRESS_SPEND,
+            test_util::PASSPHRASE_SPEND,
+            cfg.clone(),
+        );
+        let (app_id, asset_id) =
+            test_util::deploy_bingle_app_and_asset(&creator, "BINGLE$", 1_000_000);
+
+        let r1_port = test_util::find_unused_loopback_port();
+        let r2_port = test_util::find_unused_loopback_port();
+        let relay1_addr = std::net::SocketAddr::new(std::net::Ipv4Addr::LOCALHOST.into(), r1_port);
+        let relay2_addr = std::net::SocketAddr::new(std::net::Ipv4Addr::LOCALHOST.into(), r2_port);
+        provision::register_relays(app_id, asset_id, relay1_addr, relay2_addr);
+        let relay1 = test_util::start_root_relay(
+            "relay1",
+            relay1_addr,
+            test_util::PASSPHRASE_SPEND,
+            app_id,
+            cfg.clone(),
+        );
+        let relay2 = test_util::start_root_relay(
+            "relay2",
+            relay2_addr,
+            test_util::PASSPHRASE_RECEIVE,
+            app_id,
+            cfg.clone(),
+        );
+        let (mut s1, mut s2, stun_list) = provision::setup_stun_servers(false);
+        let stun_arg = format!("{},{}", stun_list[0], stun_list[1]);
+
+        // The in-process peer that writes to the support inbox.
+        test_util::register_client_on_blockchain(
+            RECEIVER_ADDRESS,
+            RECEIVER_PASSPHRASE,
+            "peer",
+            app_id,
+            asset_id,
+            &creator,
+            cfg.clone(),
+        );
+        let peer = provision::start_client(
+            "peer",
+            RECEIVER_PASSPHRASE,
+            stun_list.clone(),
+            app_id,
+            cfg.clone(),
+        );
+        assert!(
+            test_util::wait_for_registered(&peer, Duration::from_secs(180)),
+            "peer did not reach Registered state"
+        );
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let support_state = dir.path().join("support.state.json");
+        let support_state_s = support_state.to_string_lossy().into_owned();
+        let node_file = dir.path().join("localnet.node.json");
+        provision::write_localnet_node_file(&node_file, app_id, asset_id);
+        let node_file_s = node_file.to_string_lossy().into_owned();
+
+        // First run: register "support" and keep receiving. The Mailbox path needs a Sidewinder node
+        // (feature-gated suites), so take direct delivery only here.
+        let mut child = Command::new(env!("CARGO_BIN_EXE_bingle_cli"))
+            .args([
+                "logclient",
+                "--state_file",
+                &support_state_s,
+                "--node-file",
+                &node_file_s,
+                "--stun-servers",
+                &stun_arg,
+                "--store-forward",
+                "none",
+                "--passphrase",
+                test_util::PASSPHRASE_10MIL,
+                "--handle",
+                "support",
+            ])
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("spawn bingle_cli logclient");
+
+        let child_stdout = child.stdout.take().expect("child stdout");
+        let child_stderr = child.stderr.take().expect("child stderr");
+        let stdout_buf = Arc::new(Mutex::new(String::new()));
+        let stdout_reader = {
+            let stdout_buf = stdout_buf.clone();
+            std::thread::spawn(move || {
+                let mut reader = std::io::BufReader::new(child_stdout);
+                let mut line = String::new();
+                while matches!(reader.read_line(&mut line), Ok(n) if n > 0) {
+                    if let Ok(mut buf) = stdout_buf.lock() {
+                        buf.push_str(&line);
+                    }
+                    line.clear();
+                }
+            })
+        };
+        let listening = Arc::new(AtomicBool::new(false));
+        let stderr_buf = Arc::new(Mutex::new(String::new()));
+        let stderr_reader = {
+            let listening = listening.clone();
+            let stderr_buf = stderr_buf.clone();
+            std::thread::spawn(move || {
+                let mut reader = std::io::BufReader::new(child_stderr);
+                let mut line = String::new();
+                while matches!(reader.read_line(&mut line), Ok(n) if n > 0) {
+                    if line.contains("logclient: listening for messages") {
+                        listening.store(true, Ordering::SeqCst);
+                    }
+                    if let Ok(mut buf) = stderr_buf.lock() {
+                        buf.push_str(&line);
+                    }
+                    line.clear();
+                }
+            })
+        };
+
+        let start = Instant::now();
+        while start.elapsed() < Duration::from_secs(120) && !listening.load(Ordering::SeqCst) {
+            std::thread::sleep(Duration::from_millis(200));
+        }
+        let listened = listening.load(Ordering::SeqCst);
+        let handle_visible = listened
+            && relay_test_util::wait_for_handles_visible(
+                cfg.clone(),
+                app_id,
+                &["support"],
+                Duration::from_secs(60),
+            );
+
+        // Send until one send is reported delivered (the relay path can take a few tries to settle).
+        let mut delivered = false;
+        if handle_visible {
+            let send_start = Instant::now();
+            while send_start.elapsed() < Duration::from_secs(120) {
+                let message = serde_json::json!({ "text": "help please\nsecond line" });
+                if let Ok(true) = peer.send_message_to_handle(&"support".to_string(), message, None)
+                {
+                    delivered = true;
+                    break;
+                }
+                std::thread::sleep(Duration::from_secs(2));
+            }
+        }
+        // Give the line time to be written, then stop with SIGTERM.
+        std::thread::sleep(Duration::from_secs(3));
+        let _ = Command::new("kill")
+            .args(["-TERM", &child.id().to_string()])
+            .status();
+        // Poll for the exit, then always wait() (it returns the status try_wait already collected),
+        // killing first if SIGTERM did not stop it in time.
+        let exit_deadline = Instant::now();
+        let mut exited_in_time = false;
+        while exit_deadline.elapsed() < Duration::from_secs(30) {
+            if let Ok(Some(_)) = child.try_wait() {
+                exited_in_time = true;
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(200));
+        }
+        if !exited_in_time {
+            let _ = child.kill();
+        }
+        let status = child.wait().ok().filter(|_| exited_in_time);
+        let _ = stdout_reader.join();
+        let _ = stderr_reader.join();
+        let stdout = stdout_buf.lock().map(|b| b.clone()).unwrap_or_default();
+        let stderr = stderr_buf.lock().map(|b| b.clone()).unwrap_or_default();
+
+        relay1.access_unsafe_for_tests(|r: &mut BingleApiImpl| r.stop());
+        relay2.access_unsafe_for_tests(|r: &mut BingleApiImpl| r.stop());
+        peer.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.stop());
+        s1.stop();
+        s2.stop();
+
+        assert!(
+            listened,
+            "logclient did not report listening within 120s; stderr:\n{stderr}"
+        );
+        assert!(
+            handle_visible,
+            "support handle did not become visible via indexer within 60s"
+        );
+        assert!(
+            delivered,
+            "peer could not deliver to logclient within 120s; stderr:\n{stderr}"
+        );
+        assert!(
+            status.is_some_and(|s| s.success()),
+            "logclient should exit 0 on SIGTERM within 30s (status {status:?}); stderr:\n{stderr}"
+        );
+
+        // stdout carries exactly the one message, as a JSON line.
+        let lines: Vec<&str> = stdout.lines().collect();
+        assert_eq!(
+            lines.len(),
+            1,
+            "stdout should hold one line; was:\n{stdout}"
+        );
+        let line: serde_json::Value =
+            serde_json::from_str(lines[0]).expect("stdout line should be JSON");
+        assert_eq!(line["sender"], serde_json::json!("peer"), "{line}");
+        assert_eq!(
+            line["text"],
+            serde_json::json!("help please\nsecond line"),
+            "{line}"
+        );
+        assert!(
+            line["id"].as_str().is_some_and(|id| !id.is_empty()),
+            "{line}"
+        );
+
+        // The message is also durable in the state file.
+        let state_json = std::fs::read_to_string(&support_state).expect("read support state file");
+        let state: serde_json::Value =
+            serde_json::from_str(&state_json).expect("parse support state file as JSON");
+        let messages = state
+            .get("messages")
+            .and_then(|m| m.as_array())
+            .expect("state file should have a messages array");
+        assert!(
+            messages.iter().any(|m| {
+                m.get("sender_handle").and_then(|v| v.as_str()) == Some("peer")
+                    && m.get("text").and_then(|v| v.as_str()) == Some("help please\nsecond line")
+            }),
+            "the message should be stored in the --state_file; messages were:\n{messages:#?}"
+        );
+    }
+
     /// Run `bingle_cli checkrelays --once` (plus `extra` args) and return its exit code and combined
     /// stdout + stderr.
     fn run_checkrelays_once(
