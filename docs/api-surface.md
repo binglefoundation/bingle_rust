@@ -93,6 +93,10 @@ Supported surface:
   check_phrase, rekey_with_phrase}` and its slot-label constants, the `KeyStore` methods
   `holds_state_secret`, `state_secret` and `delete_state_secret`, `KeyStoreError::Locked`, and
   the `BingleError` variants `StateLocked` and `RecoveryPhraseRequired`.
+- App records (#471): the `BingleLocalApi` methods `app_record`, `set_app_record` and
+  `remove_app_record`, and `api::bingle_local_api_impl::{validate_app_record,
+  APP_RECORD_NAME_MAX, APP_RECORD_VALUE_MAX}`. bingle_jsi exposes them as `appRecord`,
+  `setAppRecord` and `removeAppRecord`, which save before returning.
 - Account deletion (#100): the `BingleLocalApi` method `delete_account`,
   `BingleApiLocalImpl::delete_account_with`, and `api::account_deletion::{AccountOptOut,
   ChainAccountOptOut}`. The module docs state what deletion removes and what stays.

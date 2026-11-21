@@ -267,6 +267,19 @@ export const BingleJsi = BingleJsiNative as {
    * longer holds the phrase with the Keychain store. Rejects with InvalidRequest when there is no
    * keypair. */
   exportKeypair(): Promise<{ id: string; passphrase: string }>;
+  /** One of the app's own records (issue #471): its JSON, or null when there is none. App records
+   * are named JSON values kept in the state file, sealed when it is sealed, which the engine never
+   * reads; they are deleted with the account. A name is 1 to 64 characters from a-z, 0-9, '_', '.'
+   * and '-'; another name rejects with InvalidRequest. */
+  appRecord(name: string): Promise<string | null>;
+  /** Store an app record, replacing any with the same name, and save the state before resolving
+   * (issue #471). The value isn't parsed and may be at most 256 KiB. An invalid name or an
+   * oversized value rejects with InvalidRequest and changes nothing. If the save fails (for
+   * example StateLocked while the device is locked), the record is kept in memory and the next save
+   * writes it. */
+  setAppRecord(name: string, json: string): Promise<void>;
+  /** Remove an app record and save the state (issue #471); resolves if there is none. */
+  removeAppRecord(name: string): Promise<void>;
   /** Ask the host to begin iOS push registration (bingle_notify #i). Invokes the registered
    * PushRegistrationCallback so the thin Swift bridge performs the platform calls; the token arrives
    * asynchronously via registerApnsToken. Rejects if no push-registration callback is set. */

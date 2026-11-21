@@ -417,6 +417,10 @@ export interface BingleJsiApi {
   openStateWithRecoveryPhrase(phrase: string): Keypair;
   // Key export (#466)
   exportKeypair(): Keypair;
+  // App records in the state file (#471)
+  appRecord(name: string): string | null;
+  setAppRecord(name: string, json: string): void;
+  removeAppRecord(name: string): void;
   requestPushRegistration(): void;
   registerApnsToken(token: Uint8Array): boolean;
   apnsRegistrationFailed(reason: string): void;

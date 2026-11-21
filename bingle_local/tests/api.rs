@@ -103,3 +103,6 @@ mod account_deletion;
 
 #[path = "api/sealed_state.rs"]
 mod sealed_state;
+
+#[path = "api/app_records.rs"]
+mod app_records;

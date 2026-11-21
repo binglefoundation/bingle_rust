@@ -352,6 +352,18 @@ impl BingleLocalApi for DummyLocal {
 
     fn forget_state_key(&self) {}
 
+    fn app_record(&self, _name: &str) -> Result<Option<String>, BingleError> {
+        Ok(None)
+    }
+
+    fn set_app_record(&mut self, _name: &str, _json: String) -> Result<(), BingleError> {
+        Ok(())
+    }
+
+    fn remove_app_record(&mut self, _name: &str) -> Result<(), BingleError> {
+        Ok(())
+    }
+
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
         self
     }

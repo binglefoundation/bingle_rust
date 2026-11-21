@@ -11,7 +11,7 @@ use crate::api::{
     ContactSource, KeySlot, KeyStore, Keypair, KeypairStatus, Message, StateFileStatus,
 };
 use algo_ops::AlgoOps;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, RwLock, RwLockReadGuard};
 
@@ -91,6 +91,9 @@ pub struct LocalState {
     // The state file last loaded and what the load found. A sealed file that didn't open (device
     // locked, or recovery phrase needed) isn't saved over until it does (issue #459).
     pub(super) state_file: Mutex<(Option<PathBuf>, StateFileStatus)>,
+    // The app's own records, by name (issue #471). Persisted with the state, which seals them when
+    // the state file is sealed; the engine never reads them.
+    pub(super) app_records: Mutex<BTreeMap<String, String>>,
 }
 
 impl LocalState {
@@ -120,6 +123,7 @@ impl LocalState {
             mailbox_identity_refusal_reason: Mutex::new(None),
             sealed: Mutex::new(SealedState::default()),
             state_file: Mutex::new((None, StateFileStatus::NotLoaded)),
+            app_records: Mutex::new(BTreeMap::new()),
         }
     }
 

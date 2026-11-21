@@ -389,6 +389,24 @@ impl BingleJsiApi for StubApi {
         })
     }
 
+    fn app_record(&self, _name: String) -> Result<Option<String>, BingleJsiError> {
+        Err(BingleJsiError::NotImplemented {
+            reason: "app_record".to_string(),
+        })
+    }
+
+    fn set_app_record(&self, _name: String, _json: String) -> Result<(), BingleJsiError> {
+        Err(BingleJsiError::NotImplemented {
+            reason: "set_app_record".to_string(),
+        })
+    }
+
+    fn remove_app_record(&self, _name: String) -> Result<(), BingleJsiError> {
+        Err(BingleJsiError::NotImplemented {
+            reason: "remove_app_record".to_string(),
+        })
+    }
+
     fn open_state_with_recovery_phrase(&self, _phrase: String) -> Result<Keypair, BingleJsiError> {
         Err(BingleJsiError::NotImplemented {
             reason: "open_state_with_recovery_phrase".to_string(),
