@@ -33,3 +33,5 @@ pub mod checkrelays;
 pub mod logclient;
 #[doc(hidden)]
 pub mod logging;
+#[doc(hidden)]
+pub mod maildir;

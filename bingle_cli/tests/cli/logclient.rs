@@ -4,7 +4,9 @@ use std::sync::{Arc, Mutex};
 use bingle_cli::chat::{StoreForwardMode, parse_chat_args};
 use bingle_cli::chat_receive::receive_message;
 use bingle_cli::chat_state::ChatState;
-use bingle_cli::logclient::{JsonLinesSink, LogClient, MessageSink, parse_logclient_args};
+use bingle_cli::logclient::{
+    JsonLinesSink, LogClient, MaildirSink, MessageSink, parse_logclient_args,
+};
 use bingle_local::api::bingle_local_api::{BingleLocalApi, Message};
 use bingle_local::api::bingle_local_api_impl::{BingleApiLocalImpl, LocalApiConfig};
 use serde_json::{Value, json};
@@ -29,19 +31,25 @@ fn state_registered_as(handle: &str) -> (ChatState, TempDir) {
     (state, dir)
 }
 
-/// A sink that records what it is given, and can be told to fail.
+/// Each message a [`RecordingSink`] was given, with its sender id.
+type Recorded = Arc<Mutex<Vec<(Message, Option<String>)>>>;
+
+/// A sink that records what it is given (with the sender id), and can be told to fail.
 #[derive(Clone, Default)]
 struct RecordingSink {
-    delivered: Arc<Mutex<Vec<Message>>>,
+    delivered: Recorded,
     fail: bool,
 }
 
 impl MessageSink for RecordingSink {
-    fn deliver(&mut self, message: &Message) -> Result<(), String> {
+    fn deliver(&mut self, message: &Message, sender_id: Option<&str>) -> Result<(), String> {
         if self.fail {
             return Err("sink unavailable".to_string());
         }
-        self.delivered.lock().expect("lock").push(message.clone());
+        self.delivered
+            .lock()
+            .expect("lock")
+            .push((message.clone(), sender_id.map(str::to_string)));
         Ok(())
     }
 }
@@ -52,7 +60,16 @@ impl RecordingSink {
             .lock()
             .expect("lock")
             .iter()
-            .map(|m| m.text.clone())
+            .map(|(m, _)| m.text.clone())
+            .collect()
+    }
+
+    fn sender_ids(&self) -> Vec<Option<String>> {
+        self.delivered
+            .lock()
+            .expect("lock")
+            .iter()
+            .map(|(_, id)| id.clone())
             .collect()
     }
 }
@@ -153,13 +170,14 @@ pub fn json_lines_sink_writes_one_line_per_message_even_with_line_breaks() {
     let stored = receive_message(&mut state, "PEER_BOB", "bob", &message).expect("accepted");
 
     let mut sink = JsonLinesSink::new(Vec::new());
-    sink.deliver(&stored).expect("deliver");
+    sink.deliver(&stored, Some("PEER_BOB")).expect("deliver");
     let written = String::from_utf8(sink.into_inner()).expect("utf8");
 
     assert_eq!(written.lines().count(), 1, "{written}");
     let line: Value = serde_json::from_str(written.trim_end()).expect("json");
     assert_eq!(line["id"], json!(stored.id));
     assert_eq!(line["sender"], json!("bob"));
+    assert_eq!(line["sender_id"], json!("PEER_BOB"));
     assert_eq!(line["sent_time"], json!(1_700_000_000_123i64));
     assert_eq!(line["text"], json!("first line\nsecond line"));
 }
@@ -286,5 +304,167 @@ pub fn logclient_usage_error_keeps_stdout_empty() {
     assert!(
         stderr.contains("Bingle CLI starting"),
         "the startup log line should be on stderr: {stderr}"
+    );
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn a_real_time_message_is_delivered_with_its_sender_id() {
+    let (state, _dir) = state_registered_as("support-desk");
+    let sink = RecordingSink::default();
+    let mut client = LogClient::new(state, Box::new(sink.clone()));
+
+    assert!(client.receive("PEER_BOB", "bob", &json!({ "text": "help please" })));
+
+    assert_eq!(sink.sender_ids(), vec![Some("PEER_BOB".to_string())]);
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn a_mailbox_message_gets_the_sender_id_only_for_a_known_contact() {
+    let (mut source, _source_dir) = state_registered_as("support-desk");
+    let from_contact =
+        receive_message(&mut source, "PEER_BOB", "bob", &json!({ "text": "one" })).expect("first");
+    let from_stranger = receive_message(
+        &mut source,
+        "PEER_CAROL",
+        "carol",
+        &json!({ "text": "two" }),
+    )
+    .expect("second");
+
+    let (state, _dir) = state_registered_as("support-desk");
+    let sink = RecordingSink::default();
+    let mut client = LogClient::new(state, Box::new(sink.clone()));
+    // bob becomes a contact by messaging in real time first.
+    assert!(client.receive("PEER_BOB", "bob", &json!({ "text": "earlier" })));
+
+    client.deliver_polled(&[from_contact, from_stranger]);
+
+    assert_eq!(
+        sink.sender_ids(),
+        vec![
+            Some("PEER_BOB".to_string()),
+            Some("PEER_BOB".to_string()),
+            None
+        ]
+    );
+}
+
+/// A sink that checks, at the moment it is called, whether the message is already in the saved
+/// state file.
+struct SavedYetSink {
+    state_file: String,
+    saved_before_delivery: Arc<Mutex<Vec<bool>>>,
+}
+
+impl MessageSink for SavedYetSink {
+    fn deliver(&mut self, message: &Message, _sender_id: Option<&str>) -> Result<(), String> {
+        let saved = std::fs::read_to_string(&self.state_file).unwrap_or_default();
+        self.saved_before_delivery
+            .lock()
+            .expect("lock")
+            .push(saved.contains(&message.text));
+        Ok(())
+    }
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn a_message_is_handed_on_before_the_state_file_is_saved() {
+    // Issue #65: a crash between saving and handing on would otherwise leave a message in the saved
+    // history that was never forwarded.
+    let (state, _dir) = state_registered_as("support-desk");
+    let state_file = state.state_file_path().expect("state file");
+    let saved_before_delivery = Arc::new(Mutex::new(Vec::new()));
+    let sink = SavedYetSink {
+        state_file: state_file.clone(),
+        saved_before_delivery: saved_before_delivery.clone(),
+    };
+    let mut client = LogClient::new(state, Box::new(sink));
+
+    assert!(client.receive(
+        "PEER_BOB",
+        "bob",
+        &json!({ "text": "a distinctive message" })
+    ));
+
+    assert_eq!(*saved_before_delivery.lock().expect("lock"), vec![false]);
+    let saved = std::fs::read_to_string(&state_file).expect("read state file");
+    assert!(
+        saved.contains("a distinctive message"),
+        "the message should be saved after delivery"
+    );
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn maildir_and_from_are_parsed_together() {
+    let parsed = parse_logclient_args(args(&[
+        "--state_file",
+        "support.json",
+        "--maildir",
+        "/var/spool/support",
+        "--from",
+        "support@example.com",
+    ]))
+    .expect("parse");
+    assert_eq!(parsed.maildir.as_deref(), Some("/var/spool/support"));
+    assert_eq!(parsed.from.as_deref(), Some("support@example.com"));
+
+    let plain = parse_logclient_args(args(&["--state_file", "support.json"])).expect("parse");
+    assert!(plain.maildir.is_none());
+    assert!(plain.from.is_none());
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn maildir_without_from_and_from_without_maildir_are_errors() {
+    let err = parse_logclient_args(args(&["--state_file", "s.json", "--maildir", "/tmp/m"]))
+        .expect_err("--maildir alone should fail");
+    assert!(err.contains("--from"), "{err}");
+    let err = parse_logclient_args(args(&["--state_file", "s.json", "--from", "a@example.com"]))
+        .expect_err("--from alone should fail");
+    assert!(err.contains("--maildir"), "{err}");
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn an_invalid_from_address_is_an_error() {
+    let err = parse_logclient_args(args(&[
+        "--state_file",
+        "s.json",
+        "--maildir",
+        "/tmp/m",
+        "--from",
+        "not an address",
+    ]))
+    .expect_err("bad address should fail");
+    assert!(err.contains("--from expects an email address"), "{err}");
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn a_received_message_lands_in_the_maildir_as_one_email() {
+    let (state, _dir) = state_registered_as("support-desk");
+    let maildir = tempfile::tempdir().expect("maildir");
+    let sink = MaildirSink::open(maildir.path(), "support@example.com").expect("open sink");
+    let mut client = LogClient::new(state, Box::new(sink));
+
+    assert!(client.receive("PEER_BOB", "bob", &json!({ "text": "help please" })));
+
+    let new: Vec<_> = std::fs::read_dir(maildir.path().join("new"))
+        .expect("read new/")
+        .collect();
+    assert_eq!(new.len(), 1);
+    let path = new[0].as_ref().expect("entry").path();
+    let email = std::fs::read_to_string(path).expect("read email");
+    assert!(email.contains("X-Bingle-Sender: PEER_BOB\r\n"), "{email}");
+    assert!(email.ends_with("\r\n\r\nhelp please\r\n"), "{email}");
+    assert_eq!(
+        std::fs::read_dir(maildir.path().join("tmp"))
+            .expect("read tmp/")
+            .count(),
+        0
     );
 }

@@ -27,6 +27,8 @@ pub mod echo_mode;
 pub mod logclient;
 #[path = "logging.rs"]
 pub mod logging;
+#[path = "maildir.rs"]
+pub mod maildir;
 #[path = "run_args.rs"]
 pub mod run_args;
 #[path = "shutdown.rs"]

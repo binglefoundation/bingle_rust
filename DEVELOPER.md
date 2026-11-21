@@ -160,28 +160,41 @@ Both the sent line and the echoed reply are persisted to `echo-test-1.json`.
 
 ## Receiving messages for a mailer (logclient)
 
-`bingle_cli logclient` runs as a registered account and writes every text message it receives to
-stdout, for another program to forward (epic #63: support messages forwarded by email). It is
-`chat` without the prompt: it takes the same connection flags and `--state_file`, receives the same
-way (real-time delivery, plus the Sidewinder Mailbox poll), and drops the same messages (protocol
-messages, blocked senders, and a second copy of a message already received). It never sends.
+`bingle_cli logclient` runs as a registered account and hands on every text message it receives, for
+a mailer to forward (epic #63: support messages forwarded by email). It is `chat` without the
+prompt: it takes the same connection flags and `--state_file`, receives the same way (real-time
+delivery, plus the Sidewinder Mailbox poll), and drops the same messages (protocol messages,
+blocked senders, and a second copy of a message already received). It never sends.
 
 ```bash
-bingle_cli logclient --state_file tmp/support_state.json --node-file nodely_deployed_mainnet_node.json --stun-servers-file stunservers.txt
+bingle_cli logclient --state_file tmp/support_state.json --maildir tmp/support_maildir --from support@example.com --node-file nodely_deployed_mainnet_node.json --stun-servers-file stunservers.txt
 ```
 
-- **Output:** one JSON object per line on stdout, flushed as each message arrives:
-  `{"id": "...", "sender": "<handle>", "sent_time": <epoch ms>, "text": "..."}`. `id` is the stable
-  message id and `sender` falls back to the sender's id when its handle is unknown. JSON keeps a
-  message with line breaks on one line.
+- **Maildir output** (`--maildir <dir> --from <address>`): each message becomes one email file in
+  `<dir>/new/`, for `scripts/mailer.sh` to send and delete. A file is written into `<dir>/tmp/`,
+  flushed to disk and renamed into `new/`, so `new/` never holds a partial file; the folders are
+  created if missing. `--from` is the address the emails come from, which must be a verified
+  Amazon Simple Email Service (SES) identity.
+- **The email** is a minimal RFC 5322 message with CRLF line endings, so it can be sent as-is:
+  `Date` (the sent time), `From: "<handle> (Bingle)" <from address>`,
+  `Subject: Bingle message from <handle>`, `Message-ID: <<message id>@bingle>`,
+  `X-Bingle-Sender` (the sender's Bingle id, or its handle when the id is not known),
+  `MIME-Version`, `Content-Type: text/plain; charset=utf-8` and `Content-Transfer-Encoding`
+  (`8bit`, or `quoted-printable` when a line is longer than 998 bytes). There is **no `To:`**: the
+  mailer adds the recipient. Control characters are removed from every header value that comes
+  from a sender, so a crafted handle cannot add a header.
+- **Without `--maildir`**, each message is written to stdout as one JSON line, flushed as it
+  arrives: `{"id": "...", "sender": "<handle>", "sender_id": "<id or null>", "sent_time": <epoch ms>, "text": "..."}`.
 - **stdout carries messages only.** All logging goes to stderr, at `INFO` by default.
+- **Hand on, then save.** Each message is written to the Maildir (or stdout) before the state file
+  is saved, so a crash cannot leave a message in the saved history that was never handed on. A
+  message whose write fails is logged as an error and kept in the history.
 - `--state_file <file>` is required. On a first run, pass `--passphrase` (and `--handle` to register
   a new account), exactly as for [chat](#first-run-registration-flow); afterwards the state file is
   enough, so the phrase need not stay on the command line of a long-running process.
 - `--store-forward receive` is the default, so messages held while `logclient` was offline are
   picked up on start and every `--poll-interval` seconds (default 20). `--store-forward none` takes
   direct delivery only; `send` and `both` are refused.
-- Received messages are also kept in the state file's history.
 - Ctrl-C or SIGTERM stops the engine and saves the state file; a second signal exits at once.
 
 The chat flags that only affect sending or the prompt (`--to`, `--to-id`, `--no-retries`,
