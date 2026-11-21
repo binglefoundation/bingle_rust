@@ -29,6 +29,8 @@ pub mod logclient;
 pub mod logging;
 #[path = "maildir.rs"]
 pub mod maildir;
+#[path = "mailer.rs"]
+pub mod mailer;
 #[path = "run_args.rs"]
 pub mod run_args;
 #[path = "shutdown.rs"]
