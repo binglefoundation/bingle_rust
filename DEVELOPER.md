@@ -171,7 +171,8 @@ bingle_cli logclient --state_file tmp/support_state.json --maildir tmp/support_m
 ```
 
 - **Maildir output** (`--maildir <dir> --from <address>`): each message becomes one email file in
-  `<dir>/new/`, for `scripts/mailer.sh` to send and delete. A file is written into `<dir>/tmp/`,
+  `<dir>/new/`, for `scripts/mailer.sh` to send and delete (see [SUPPORT_EMAIL.md](SUPPORT_EMAIL.md)
+  for the whole pipeline and the SES setup). A file is written into `<dir>/tmp/`,
   flushed to disk and renamed into `new/`, so `new/` never holds a partial file; the folders are
   created if missing. `--from` is the address the emails come from, which must be a verified
   Amazon Simple Email Service (SES) identity.
