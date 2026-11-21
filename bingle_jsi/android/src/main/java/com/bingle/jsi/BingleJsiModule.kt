@@ -687,6 +687,59 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
         }.start()
     }
 
+    // One of the app's own records in the state file (issue #471): its JSON, or null.
+    @ReactMethod
+    fun appRecord(name: String, promise: Promise) {
+        val api = apiInstance
+        if (api == null) {
+            promise.reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.")
+            return
+        }
+        Thread {
+            try {
+                promise.resolve(api.appRecord(name))
+            } catch (e: Exception) {
+                promise.reject("BINGLE_ERROR", e.message, e)
+            }
+        }.start()
+    }
+
+    // Store an app record and save the state before resolving (issue #471).
+    @ReactMethod
+    fun setAppRecord(name: String, json: String, promise: Promise) {
+        val api = apiInstance
+        if (api == null) {
+            promise.reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.")
+            return
+        }
+        Thread {
+            try {
+                api.setAppRecord(name, json)
+                promise.resolve(null)
+            } catch (e: Exception) {
+                promise.reject("BINGLE_ERROR", e.message, e)
+            }
+        }.start()
+    }
+
+    // Remove an app record and save the state (issue #471).
+    @ReactMethod
+    fun removeAppRecord(name: String, promise: Promise) {
+        val api = apiInstance
+        if (api == null) {
+            promise.reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.")
+            return
+        }
+        Thread {
+            try {
+                api.removeAppRecord(name)
+                promise.resolve(null)
+            } catch (e: Exception) {
+                promise.reject("BINGLE_ERROR", e.message, e)
+            }
+        }.start()
+    }
+
     @ReactMethod
     fun deleteAccount(promise: Promise) {
         val api = apiInstance

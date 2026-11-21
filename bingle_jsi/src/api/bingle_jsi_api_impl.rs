@@ -31,7 +31,9 @@ use bingle_core::util::config_utils::{
     resolve_app_asset_ids,
 };
 use bingle_local::api::bingle_local_api::BingleLocalApi;
-use bingle_local::api::bingle_local_api_impl::{BingleApiLocalImpl, LocalApiConfig};
+use bingle_local::api::bingle_local_api_impl::{
+    BingleApiLocalImpl, LocalApiConfig, validate_app_record,
+};
 use bingle_local::api::notify::{build_fresh_register_request, sign_register_envelope};
 use bingle_local::api::pending_sender::{
     LocalOutboundStore, MessageDelivery, PendingSender, PendingSenderOptions,
@@ -933,6 +935,18 @@ fn bingle_error_to_jsi(e: BingleError) -> BingleJsiError {
 }
 
 impl BingleJsiApiImpl {
+    /// Save the state now and report a failure, unlike [`save_if_configured`]: for a change the
+    /// caller must know has reached the disk (app records, issue #471). Nothing to do without a
+    /// state file.
+    fn save_reporting(&self, local: &dyn BingleLocalApi) -> Result<(), BingleJsiError> {
+        match &self.local_file {
+            Some(path) => local
+                .save(path.to_string_lossy().as_ref())
+                .map_err(bingle_error_to_jsi),
+            None => Ok(()),
+        }
+    }
+
     /// Initialize the Bingle JSI API from a typed configuration object.
     ///
     /// Each field on `BingleJsiConfig` corresponds to a command-line parameter
@@ -2236,6 +2250,33 @@ impl BingleJsiApi for BingleJsiApiImpl {
             id: kp.id,
             passphrase: kp.passphrase,
         })
+    }
+
+    fn app_record(&self, name: String) -> Result<Option<String>, BingleJsiError> {
+        validate_app_record(&name, None)
+            .map_err(|reason| BingleJsiError::InvalidRequest { reason })?;
+        let guard = local_api_guard(&self.local_api)?;
+        guard.app_record(&name).map_err(bingle_error_to_jsi)
+    }
+
+    fn set_app_record(&self, name: String, json: String) -> Result<(), BingleJsiError> {
+        validate_app_record(&name, Some(&json))
+            .map_err(|reason| BingleJsiError::InvalidRequest { reason })?;
+        let mut guard = local_api_guard(&self.local_api)?;
+        guard
+            .set_app_record(&name, json)
+            .map_err(bingle_error_to_jsi)?;
+        self.save_reporting(guard.as_ref())
+    }
+
+    fn remove_app_record(&self, name: String) -> Result<(), BingleJsiError> {
+        validate_app_record(&name, None)
+            .map_err(|reason| BingleJsiError::InvalidRequest { reason })?;
+        let mut guard = local_api_guard(&self.local_api)?;
+        guard
+            .remove_app_record(&name)
+            .map_err(bingle_error_to_jsi)?;
+        self.save_reporting(guard.as_ref())
     }
 
     fn request_push_registration(&self) -> Result<(), BingleJsiError> {

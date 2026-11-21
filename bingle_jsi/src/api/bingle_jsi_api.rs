@@ -282,6 +282,23 @@ pub trait BingleJsiApi: Send + Sync {
     /// a sealed state file. `InvalidRequest` when there is no keypair.
     fn export_keypair(&self) -> Result<Keypair, BingleJsiError>;
 
+    /// One of the app's own records (issue #471), or `None` when there is none. App records are
+    /// named JSON values kept in the state file, sealed when it is sealed, which the engine never
+    /// reads; they are deleted with the account. A name is 1 to 64 characters from `a-z`, `0-9`,
+    /// `_`, `.` and `-`; another name fails with `InvalidRequest`.
+    fn app_record(&self, name: String) -> Result<Option<String>, BingleJsiError>;
+
+    /// Store an app record (issue #471), replacing any with the same name, and save the state
+    /// before returning. The value isn't parsed, and may be at most 256 KiB. An invalid name or an
+    /// oversized value fails with `InvalidRequest` and changes nothing. If the save fails (for
+    /// example `StateLocked` while the device is locked), the record is kept in memory and the next
+    /// save writes it.
+    fn set_app_record(&self, name: String, json: String) -> Result<(), BingleJsiError>;
+
+    /// Remove an app record (issue #471) and save the state; nothing happens if there is none.
+    /// Fails like [`set_app_record`](Self::set_app_record).
+    fn remove_app_record(&self, name: String) -> Result<(), BingleJsiError>;
+
     /// Ask the host to begin iOS push registration (bingle_notify #i). Invokes the registered
     /// [`PushRegistrationCallback`] so the thin Swift bridge performs the platform calls
     /// (`requestAuthorization` + `registerForRemoteNotifications`). Returns once the callback has

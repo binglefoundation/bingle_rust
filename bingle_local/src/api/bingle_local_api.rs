@@ -449,6 +449,22 @@ pub trait BingleLocalApi: Send + Sync {
     /// device is unlocked. Does nothing for a plain file.
     fn forget_state_key(&self);
 
+    /// One of the app's own records in the state file (issue #471), or `None` when there is none.
+    /// App records are named JSON values that the engine keeps with the rest of the state, sealed
+    /// when the state file is sealed, but never reads. Errors if `name` isn't valid
+    /// ([`validate_app_record`](crate::api::validate_app_record)).
+    fn app_record(&self, name: &str) -> Result<Option<String>, BingleError>;
+
+    /// Store an app record (issue #471), replacing any with the same name. The value isn't parsed.
+    /// Like the other changes to the state, it is in memory until the state is next saved: save it
+    /// to make it last. Errors, changing nothing, if the name or the value's size isn't valid
+    /// ([`validate_app_record`](crate::api::validate_app_record)).
+    fn set_app_record(&mut self, name: &str, json: String) -> Result<(), BingleError>;
+
+    /// Remove an app record (issue #471); nothing happens if there is none. In memory until the
+    /// state is next saved. Errors if `name` isn't valid.
+    fn remove_app_record(&mut self, name: &str) -> Result<(), BingleError>;
+
     /// Register the current keypair with Bingle (requires credited funds).
     /// Returns Ok(()) on success, or Err(message) on failure.
     /// Parameter:

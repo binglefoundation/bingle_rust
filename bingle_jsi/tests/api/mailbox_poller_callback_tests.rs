@@ -116,6 +116,18 @@ impl BingleLocalApi for ScriptedMailboxLocal {
     fn forget_state_key(&self) {
         self.inner.forget_state_key()
     }
+
+    fn app_record(&self, name: &str) -> Result<Option<String>, BingleError> {
+        self.inner.app_record(name)
+    }
+
+    fn set_app_record(&mut self, name: &str, json: String) -> Result<(), BingleError> {
+        self.inner.set_app_record(name, json)
+    }
+
+    fn remove_app_record(&mut self, name: &str) -> Result<(), BingleError> {
+        self.inner.remove_app_record(name)
+    }
     fn register_keypair(&self, handle: String) -> Result<bool, BingleError> {
         self.inner.register_keypair(handle)
     }

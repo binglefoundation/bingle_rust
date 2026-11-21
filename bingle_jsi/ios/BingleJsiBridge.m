@@ -139,6 +139,19 @@ RCT_EXTERN_METHOD(openStateWithRecoveryPhrase:(NSString *)phrase
 RCT_EXTERN_METHOD(exportKeypair:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
+RCT_EXTERN_METHOD(appRecord:(NSString *)name
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+
+RCT_EXTERN_METHOD(setAppRecord:(NSString *)name
+                  json:(NSString *)json
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+
+RCT_EXTERN_METHOD(removeAppRecord:(NSString *)name
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+
 RCT_EXTERN_METHOD(addContact:(NSString *)handle
                   id:(NSString *)id
                   source:(NSString *)source

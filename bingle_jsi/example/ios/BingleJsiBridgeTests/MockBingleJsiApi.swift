@@ -421,4 +421,28 @@ class MockBingleJsiApi: BingleJsiApiProtocol {
         }
         return keypairResult
     }
+
+    var appRecords: [String: String] = [:]
+    var appRecordError: Error?
+
+    func appRecord(name: String) throws -> String? {
+        if let error = appRecordError {
+            throw error
+        }
+        return appRecords[name]
+    }
+
+    func setAppRecord(name: String, json: String) throws {
+        if let error = appRecordError {
+            throw error
+        }
+        appRecords[name] = json
+    }
+
+    func removeAppRecord(name: String) throws {
+        if let error = appRecordError {
+            throw error
+        }
+        appRecords[name] = nil
+    }
 }

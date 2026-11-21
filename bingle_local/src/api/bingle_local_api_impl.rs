@@ -19,7 +19,7 @@ use bingle_core::api::bingle_api::{BingleError, SendFailureKind};
 use bingle_core::blockchain::account_status::{StatusReadFailure, resolve_account_status};
 use bingle_core::blockchain::algo_bingle::AlgoBingle;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 use zeroize::Zeroizing;
 
@@ -33,6 +33,9 @@ pub use store_and_forward::ForwardOutcome;
 // restoring with the recovery phrase (issue #459).
 mod state_file;
 use state_file::write_atomically;
+// The app's own records in the state file (issue #471).
+mod app_records;
+pub use app_records::{APP_RECORD_NAME_MAX, APP_RECORD_VALUE_MAX, validate_app_record};
 
 #[doc(hidden)]
 pub use local_state::LocalState;
@@ -390,6 +393,9 @@ impl BingleApiLocalImpl {
             g.clear();
         }
         if let Ok(mut g) = self.forwarded_messages.lock() {
+            g.clear();
+        }
+        if let Ok(mut g) = self.app_records.lock() {
             g.clear();
         }
         if let Ok(mut g) = self.refused_forwards.lock() {
@@ -1362,6 +1368,18 @@ impl BingleLocalApi for BingleApiLocalImpl {
         }
     }
 
+    fn app_record(&self, name: &str) -> Result<Option<String>, BingleError> {
+        self.app_record_inner(name)
+    }
+
+    fn set_app_record(&mut self, name: &str, json: String) -> Result<(), BingleError> {
+        self.set_app_record_inner(name, json)
+    }
+
+    fn remove_app_record(&mut self, name: &str) -> Result<(), BingleError> {
+        self.remove_app_record_inner(name)
+    }
+
     fn register_keypair(&self, handle: String) -> Result<bool, BingleError> {
         tracing::info!(
             "[BingleLocalApi] Registering keypair with handle: {}",
@@ -1832,6 +1850,9 @@ impl BingleLocalApi for BingleApiLocalImpl {
             // store-and-forward does not re-post after a restart (store-and-forward epic #200, #214).
             #[serde(default)]
             forwarded_messages: Vec<ForwardedEntry>,
+            // The app's own records (issue #471); omitted when there are none.
+            #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+            app_records: BTreeMap<String, String>,
         }
 
         // Snapshot under locks (avoid holding multiple locks longer than needed)
@@ -1898,6 +1919,14 @@ impl BingleLocalApi for BingleApiLocalImpl {
                     .collect()
             })
             .unwrap_or_default();
+        let app_records = match self.app_records.lock() {
+            Ok(g) => g.clone(),
+            Err(e) => {
+                let msg = format!("mutex poisoned: {}", e);
+                tracing::error!("[save] Failed to lock app records: {}", msg);
+                return Err(BingleError::Other(msg));
+            }
+        };
 
         // The phrase goes in the file only while the key store doesn't hold it (issue #385).
         let persist = |slot: KeySlot, kp: Keypair| PersistedKeypair {
@@ -1912,6 +1941,7 @@ impl BingleLocalApi for BingleApiLocalImpl {
             own_handle,
             own_handle_app_id,
             forwarded_messages,
+            app_records,
         };
 
         let json = match serde_json::to_vec_pretty(&state) {
@@ -1962,6 +1992,8 @@ impl BingleLocalApi for BingleApiLocalImpl {
             own_handle_app_id: Option<u64>,
             #[serde(default)]
             forwarded_messages: Vec<ForwardedEntry>,
+            #[serde(default)]
+            app_records: BTreeMap<String, String>,
         }
 
         // A sealed file is opened with this device's key (issue #459); one that doesn't open is
@@ -2047,6 +2079,9 @@ impl BingleLocalApi for BingleApiLocalImpl {
                     Some((id, e.handle))
                 })
                 .collect();
+        }
+        if let Ok(mut records) = self.app_records.lock() {
+            *records = state.app_records;
         }
         if let Ok(mut ls) = self.last_status.lock() {
             *ls = None;

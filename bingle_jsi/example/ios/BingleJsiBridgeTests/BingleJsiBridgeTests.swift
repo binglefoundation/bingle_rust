@@ -1010,6 +1010,62 @@ final class KeyStorageBridgeTests: XCTestCase {
         waitForExpectations(timeout: 2.0)
     }
 
+    func testAppRecords_setReadAndRemove() {
+        let set = self.expectation(description: "setAppRecord resolved")
+        bridge.setAppRecord(
+            "read_state", json: "{\"since\":1}",
+            resolver: { _ in set.fulfill() },
+            rejecter: { _, _, _ in XCTFail("unexpected rejection") }
+        )
+        waitForExpectations(timeout: 2.0)
+        XCTAssertEqual(mockApi.appRecords["read_state"], "{\"since\":1}")
+
+        let read = self.expectation(description: "appRecord resolved")
+        bridge.appRecord(
+            "read_state",
+            resolver: { value in
+                XCTAssertEqual(value as? String, "{\"since\":1}")
+                read.fulfill()
+            },
+            rejecter: { _, _, _ in XCTFail("unexpected rejection") }
+        )
+        waitForExpectations(timeout: 2.0)
+
+        let removed = self.expectation(description: "removeAppRecord resolved")
+        bridge.removeAppRecord(
+            "read_state",
+            resolver: { _ in removed.fulfill() },
+            rejecter: { _, _, _ in XCTFail("unexpected rejection") }
+        )
+        waitForExpectations(timeout: 2.0)
+        XCTAssertNil(mockApi.appRecords["read_state"])
+
+        let missing = self.expectation(description: "appRecord resolved with nothing")
+        bridge.appRecord(
+            "read_state",
+            resolver: { value in
+                XCTAssertNil(value)
+                missing.fulfill()
+            },
+            rejecter: { _, _, _ in XCTFail("unexpected rejection") }
+        )
+        waitForExpectations(timeout: 2.0)
+    }
+
+    func testSetAppRecord_rejectsWhenTheApiFails() {
+        mockApi.appRecordError = NSError(domain: "test", code: 1)
+        let rejected = self.expectation(description: "setAppRecord rejected")
+        bridge.setAppRecord(
+            "Bad Name", json: "{}",
+            resolver: { _ in XCTFail("unexpected resolve") },
+            rejecter: { code, _, _ in
+                XCTAssertEqual(code, "BINGLE_ERROR")
+                rejected.fulfill()
+            }
+        )
+        waitForExpectations(timeout: 2.0)
+    }
+
     func testDeleteAccount_rejectsWhenTheApiFails() {
         mockApi.deleteAccountError = NSError(domain: "test", code: 1)
         let rejected = self.expectation(description: "deleteAccount rejected")
