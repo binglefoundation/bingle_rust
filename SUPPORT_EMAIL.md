@@ -114,6 +114,9 @@ builds the `gateway` image and deploys `aws/gateway_stack.yaml`, which adds:
 - **an encrypted Elastic File System (EFS) volume** at `/data` holding `state.json` and `maildir/`,
   so the account, its history, the spam counts and any unsent email survive redeploys and task
   replacement. Only the task's role can mount it, over TLS;
+- **direct delivery**: inbound UDP is open, so senders reach `logclient` directly over DTLS. It
+  reads its Sidewinder Mailbox only on start (`--poll-interval 0`), for messages sent while it was
+  down, such as during a redeploy; `deploy_gateway.sh --poll-interval <secs>` adds a regular read;
 - **a task role** that can send through SES only as `--from`. There are no SMTP credentials;
 - **a log group**, `/bingle/gateway/<stack>`, kept for 30 days.
 

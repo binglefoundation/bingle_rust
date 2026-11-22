@@ -31,24 +31,24 @@ fn alice_state_receive(receive_gate: bool) -> ChatState {
 pub fn resolve_poll_interval_defaults_when_unset() {
     assert_eq!(
         resolve_poll_interval(None),
-        Duration::from_secs(DEFAULT_MAILBOX_POLL_SECS)
+        Some(Duration::from_secs(DEFAULT_MAILBOX_POLL_SECS))
     );
 }
 
 #[test]
 #[cfg(not(target_os = "ios"))]
 pub fn resolve_poll_interval_honors_flag() {
-    assert_eq!(resolve_poll_interval(Some(45)), Duration::from_secs(45));
+    assert_eq!(
+        resolve_poll_interval(Some(45)),
+        Some(Duration::from_secs(45))
+    );
 }
 
 #[test]
 #[cfg(not(target_os = "ios"))]
-pub fn resolve_poll_interval_clamps_zero_to_default() {
-    // A zero-second cycle would busy-spin; fall back to the default instead.
-    assert_eq!(
-        resolve_poll_interval(Some(0)),
-        Duration::from_secs(DEFAULT_MAILBOX_POLL_SECS)
-    );
+pub fn resolve_poll_interval_zero_means_only_on_start() {
+    // 0 reads the Mailbox once on start and never again (issue #473).
+    assert_eq!(resolve_poll_interval(Some(0)), None);
 }
 
 #[test]

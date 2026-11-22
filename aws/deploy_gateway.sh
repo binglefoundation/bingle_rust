@@ -19,6 +19,7 @@
 #                              on the first start to import the account into the state file. A
 #                              new stack needs it; a later full deploy without it stops passing it.
 #   --spam-limit <n>           Per-sender daily limit on forwarded messages (default: 20)
+#   --poll-interval <secs>     Seconds between Sidewinder Mailbox reads (default: 0, only on start)
 #   --node-file <path>         Algorand node file in the image (default: the relay stack's)
 #   --stack-name <name>        Gateway stack name (default: bingle-gateway-<relay stack>)
 #   --region <region>          AWS region (default: from aws configure)
@@ -37,6 +38,7 @@ FROM_ADDRESS=""
 HANDLE=""
 PASSPHRASE_SECRET=""
 SPAM_LIMIT="20"
+POLL_INTERVAL="0"
 NODE_FILE=""
 REGION=$(aws configure get region || true)
 REPO_NAME="bingle-gateway"
@@ -61,6 +63,7 @@ usage() {
   echo "  --handle <handle>          The account handle, with --passphrase-secret"
   echo "  --passphrase-secret <arn>  Secret holding the account's recovery phrase, for the first start (a new stack needs it)"
   echo "  --spam-limit <n>           Per-sender daily limit (default: $SPAM_LIMIT)"
+  echo "  --poll-interval <secs>     Seconds between Sidewinder Mailbox reads (default: $POLL_INTERVAL, only on start)"
   echo "  --node-file <path>         Algorand node file in the image (default: the relay stack's)"
   echo "  --stack-name <name>        Gateway stack name (default: bingle-gateway-<relay stack>)"
   echo "  --region <region>          AWS region (default: $REGION)"
@@ -80,6 +83,7 @@ while [[ $# -gt 0 ]]; do
     --handle) HANDLE="$2"; shift 2 ;;
     --passphrase-secret) PASSPHRASE_SECRET="$2"; shift 2 ;;
     --spam-limit) SPAM_LIMIT="$2"; shift 2 ;;
+    --poll-interval) POLL_INTERVAL="$2"; shift 2 ;;
     --node-file) NODE_FILE="$2"; shift 2 ;;
     --stack-name) STACK_NAME="$2"; shift 2 ;;
     --region) REGION="$2"; shift 2 ;;
@@ -103,6 +107,7 @@ fail() {
 if [[ $REDEPLOY_ONLY -eq 0 ]]; then
   [[ -n "$TO_EMAIL" && -n "$FROM_ADDRESS" ]] || { echo "Error: --to and --from are required, except with --redeploy-only."; usage; }
   [[ "$SPAM_LIMIT" =~ ^[0-9]*$ ]] || fail "--spam-limit must be a whole number, got '$SPAM_LIMIT'"
+  [[ "$POLL_INTERVAL" =~ ^[0-9]+$ ]] || fail "--poll-interval must be a whole number of seconds, got '$POLL_INTERVAL'"
   if [[ -n "$PASSPHRASE_SECRET" && -z "$HANDLE" ]] || [[ -z "$PASSPHRASE_SECRET" && -n "$HANDLE" ]]; then
     fail "--handle and --passphrase-secret go together"
   fi
@@ -213,7 +218,7 @@ if [[ $REDEPLOY_ONLY -eq 1 ]]; then
   fi
 else
   echo "[gateway] Deploying CloudFormation stack '$STACK_NAME'..."
-  aws cloudformation deploy --stack-name "$STACK_NAME" --template-file aws/gateway_stack.yaml --capabilities CAPABILITY_IAM --region "$REGION" --tags CostCenter="$COST_TAG" --parameter-overrides ClusterName="$CLUSTER" VpcId="$VPC_ID" SubnetId="$SUBNET_ID" ImageUri="$IMAGE_REF" ToEmail="$TO_EMAIL" FromAddress="$FROM_ADDRESS" SpamLimit="$SPAM_LIMIT" Handle="$HANDLE" PassphraseSecretArn="$PASSPHRASE_SECRET" NodeFile="$NODE_FILE" CostTag="$COST_TAG" || { show_failure_logs; exit 1; }
+  aws cloudformation deploy --stack-name "$STACK_NAME" --template-file aws/gateway_stack.yaml --capabilities CAPABILITY_IAM --region "$REGION" --tags CostCenter="$COST_TAG" --parameter-overrides ClusterName="$CLUSTER" VpcId="$VPC_ID" SubnetId="$SUBNET_ID" ImageUri="$IMAGE_REF" ToEmail="$TO_EMAIL" FromAddress="$FROM_ADDRESS" SpamLimit="$SPAM_LIMIT" PollInterval="$POLL_INTERVAL" Handle="$HANDLE" PassphraseSecretArn="$PASSPHRASE_SECRET" NodeFile="$NODE_FILE" CostTag="$COST_TAG" || { show_failure_logs; exit 1; }
 fi
 
 # An unchanged stack leaves the old task running; restart it so a rebuild still takes effect.

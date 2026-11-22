@@ -14,6 +14,8 @@
 #     NODE_FILE      Algorand node file (default /app/nodely_deployed_mainnet_node.json)
 #     STUN_FILE      STUN servers file (default /app/stunservers.txt)
 #     SPAM_LIMIT     per-sender daily limit; empty for none
+#     POLL_INTERVAL  seconds between Sidewinder Mailbox reads; 0 (the default) reads it only on
+#                    start, for messages left while the gateway was down
 #     PASSPHRASE     the account's recovery phrase, only for the first start (with HANDLE), when
 #                    the state file has no account yet; never logged
 #     HANDLE         the account's handle, with PASSPHRASE
@@ -49,6 +51,7 @@ case "$1" in
     if [[ -n "${SPAM_LIMIT:-}" ]]; then
       args+=(--spam-limit "$SPAM_LIMIT")
     fi
+    args+=(--poll-interval "${POLL_INTERVAL:-0}")
     if [[ -n "${PASSPHRASE:-}" ]]; then
       [[ -n "${HANDLE:-}" ]] || die "PASSPHRASE needs HANDLE"
       echo "docker_gateway_start: importing the account for ${HANDLE} (first start)" >&2

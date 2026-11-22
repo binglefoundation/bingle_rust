@@ -32,6 +32,11 @@ Parameters:
     Default: '20'
     AllowedPattern: '^[0-9]*$'
     Description: 'Per-sender daily limit on forwarded messages; empty for none'
+  PollInterval:
+    Type: String
+    Default: '0'
+    AllowedPattern: '^[0-9]+$'
+    Description: 'Seconds between Sidewinder Mailbox reads; 0 reads it only on start, for messages left while the gateway was down'
   Handle:
     Type: String
     Default: ''
@@ -53,13 +58,19 @@ Conditions:
   ImportAccount: !Not [ !Equals [ !Ref PassphraseSecretArn, '' ] ]
 
 Resources:
-  # Network: outbound only. Peers and relays answer the task's own UDP flows, which the security
-  # group allows back in as it is stateful.
+  # Network: inbound UDP is open so peers reach logclient directly over DTLS, rather than through a
+  # relay. It binds one ephemeral port, which Fargate's public IP maps one to one, so the whole
+  # ephemeral range is opened; nothing else in the task listens.
   GatewaySecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: Bingle email gateway task (outbound only)
+      GroupDescription: Bingle email gateway task (direct DTLS in, all out)
       VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: udp
+          FromPort: 1024
+          ToPort: 65535
+          CidrIp: 0.0.0.0/0
       Tags:
         - Key: Name
           Value: !Sub "${AWS::StackName}-task"
@@ -237,6 +248,8 @@ Resources:
               Value: !Ref FromAddress
             - Name: SPAM_LIMIT
               Value: !Ref SpamLimit
+            - Name: POLL_INTERVAL
+              Value: !Ref PollInterval
             - Name: NODE_FILE
               Value: !Ref NodeFile
             - Name: HANDLE

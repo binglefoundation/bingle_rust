@@ -807,23 +807,29 @@ fn start_engine_or_exit(api: &Arc<BingleApiImpl>, opts: &StartOptions, label: &s
 }
 
 /// Spawn the background store-and-forward receive poller (issue #274): drain this account's Mailbox
-/// now and then every `poll_interval`, handing each non-empty batch to `on_read`. Polls run on the
-/// shared local store handle, off any session lock, so a poll's network wait (up to 120s) never
-/// blocks the caller or shutdown (issue #276).
+/// now and then every `poll_interval` (or only now when it is `None`, issue #473), handing each
+/// non-empty batch to `on_read`. Polls run on the shared local store handle, off any session lock,
+/// so a poll's network wait (up to 120s) never blocks the caller or shutdown (issue #276).
 fn spawn_mailbox_poller(
     local: Arc<BingleApiLocalImpl>,
     state_file: Option<String>,
-    poll_interval: Duration,
+    poll_interval: Option<Duration>,
     on_read: impl Fn(&[Message]) + Send + 'static,
 ) {
     std::thread::spawn(move || {
-        tracing::info!("mailbox poller started (every {:?})", poll_interval);
+        match poll_interval {
+            Some(interval) => tracing::info!("mailbox poller started (every {:?})", interval),
+            None => tracing::info!("mailbox: reading once on start (--poll-interval 0)"),
+        }
         loop {
             let read = bingle_cli::chat_poll::poll_shared(&local, state_file.as_deref());
             if !read.is_empty() {
                 on_read(&read);
             }
-            std::thread::sleep(poll_interval);
+            let Some(interval) = poll_interval else {
+                return;
+            };
+            std::thread::sleep(interval);
         }
     });
 }
@@ -860,13 +866,13 @@ fn print_flushed(line: &str) {
 /// with in-memory session history (issue #336). Mirrors `cmd_run`'s start loop.
 ///
 /// When the store-and-forward receive gate is on, a background poller drains this account's Sidewinder
-/// Mailbox on connect and then every `poll_interval`, surfacing messages held while offline (#274).
+/// Mailbox on connect and then every `poll_interval` (`None`: only on connect), surfacing messages held while offline (#274).
 fn run_chat_session(
     state: ChatState,
     to: Option<String>,
     to_id: Option<String>,
     retries_enabled: bool,
-    poll_interval: Duration,
+    poll_interval: Option<Duration>,
     output: ChatOutput,
 ) {
     let opts = state.opts.clone();
@@ -1186,7 +1192,7 @@ fn cmd_logclient(args: Vec<String>) {
         "  --maildir <dir> --from <address>: write each message into the Maildir <dir> as an email from <address> (an SES-verified address), for scripts/mailer.sh to send.\n",
         "  Without --maildir, each message is written to stdout as one JSON line: {\"id\", \"sender\", \"sender_id\", \"sent_time\", \"text\"}.\n",
         "  --handle/--passphrase: only needed on a first run, to import (and register) the account; afterwards the state file is enough.\n",
-        "  --store-forward: receive (default) also drains the Sidewinder Mailbox on start and every --poll-interval seconds; none takes direct delivery only.\n",
+        "  --store-forward: receive (default) also drains the Sidewinder Mailbox on start and every --poll-interval seconds (0: on start only); none takes direct delivery only.\n",
         "  --spam-limit <n>: hand on at most <n> messages per sender per UTC day; later ones are kept in the state file only.",
     );
 
@@ -1231,7 +1237,7 @@ fn cmd_logclient(args: Vec<String>) {
 /// applies any spam limit (issue #66) and hands each message to its sink before the state file is
 /// saved (issue #65), so every save happens under the client lock. On a signal it stops the engine and saves the state file; a second signal exits at
 /// once.
-fn run_logclient_session(client: LogClient, poll_interval: Duration) {
+fn run_logclient_session(client: LogClient, poll_interval: Option<Duration>) {
     let state = client.state();
     let opts = state.opts.clone();
     let receive_enabled = state.store_and_forward_receive_enabled();
