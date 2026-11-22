@@ -289,6 +289,13 @@ pub mod openssl_impl {
     /// How often a send waiting for a session being set up checks whether it is ready (issue #288).
     const SESSION_READY_POLL: std::time::Duration = std::time::Duration::from_millis(20);
 
+    /// How long a direct session may go without hearing from its peer before a send starts a new
+    /// one instead of reusing it (issue #483). A NAT drops an idle mapping, often after 30 seconds,
+    /// and the peer behind it then sends from a new port. The other side has no session for that
+    /// port and silently drops the old session's records, so writing into it loses the message. A
+    /// new handshake reaches the peer from wherever the NAT now maps it.
+    pub const DIRECT_SESSION_IDLE_LIMIT: std::time::Duration = std::time::Duration::from_secs(20);
+
     #[derive(Clone)]
     struct PeerState {
         writer: Option<PeerWriter>,
@@ -302,6 +309,9 @@ pub mod openssl_impl {
         writer_ready: bool,
         cipher_suite: Option<String>,
         generation: u64,
+        /// When this session last heard from its peer: set when it is created and when its
+        /// handshake completes, and refreshed by each datagram its read loop receives (issue #483).
+        last_received: std::time::Instant,
     }
     type PeerStates = Arc<Mutex<HashMap<crate::api::bingle_api::NetworkEndpointKey, PeerState>>>;
 
@@ -324,6 +334,7 @@ pub mod openssl_impl {
             writer_ready: false,
             cipher_suite: None,
             generation,
+            last_received: std::time::Instant::now(),
         }
     }
 
@@ -333,6 +344,14 @@ pub mod openssl_impl {
     /// public endpoint (not its bound socket), so both peers compare the same pair behind NAT.
     pub fn is_designated_client(own: SocketAddr, remote: SocketAddr) -> bool {
         (own.port(), own.ip()) < (remote.port(), remote.ip())
+    }
+
+    /// Whether `data` is a datagram whose first record is a DTLS `ClientHello`: a handshake record
+    /// (content type 22) at epoch 0 carrying handshake message type 1. Only a `ClientHello` can open
+    /// a session; any other record from a peer with no session belongs to a session this side
+    /// doesn't have (issue #483).
+    pub fn is_client_hello(data: &[u8]) -> bool {
+        data.len() >= 14 && data[0] == 0x16 && data[3] == 0 && data[4] == 0 && data[13] == 0x01
     }
 
     fn get_or_create_peer_state<'a>(
@@ -581,6 +600,7 @@ pub mod openssl_impl {
                 if ps.generation == owner_generation {
                     ps.writer = Some(PeerWriter::from_channel(writer_tx));
                     ps.writer_ready = true;
+                    ps.last_received = std::time::Instant::now();
                     tracing::debug!(
                         "[DtlsOpenSsl:::accept] installed real split writer for {}",
                         from
@@ -644,10 +664,15 @@ pub mod openssl_impl {
             owner_generation
         );
         let key_from = from.get_key().expect("direct endpoint key");
-        let get_issuer = || -> Option<String> {
-            let key = from.get_key().expect("direct endpoint key");
+        // Notes that the peer was heard from (issue #483) and returns its verified issuer.
+        let received_from_peer = || -> Option<String> {
             match peers.lock() {
-                Ok(m) => m.get(&key).map(|ps| ps.issuer.clone()),
+                Ok(mut m) => m.get_mut(&key_from).map(|ps| {
+                    if ps.generation == owner_generation {
+                        ps.last_received = std::time::Instant::now();
+                    }
+                    ps.issuer.clone()
+                }),
                 Err(_) => None,
             }
         };
@@ -744,7 +769,7 @@ pub mod openssl_impl {
             }
 
             // Gate application delivery on issuer being set (only when peer_cert_handler is configured)
-            let issuer_opt = get_issuer();
+            let issuer_opt = received_from_peer();
             if peer_cert_handler.is_some() && issuer_opt.as_deref().unwrap_or("").is_empty() {
                 tracing::warn!(
                     "[DtlsOpenSsl:{}][read-loop from {}] dropping application data until peer certificate validated",
@@ -1441,6 +1466,8 @@ pub mod openssl_impl {
         pub(crate) null_encryption: AtomicBool,
         pub(crate) app_layer_only_verification: AtomicBool,
         pub(crate) dangerous_debug: AtomicBool,
+        // How long a direct session may be silent before a send replaces it (issue #483).
+        direct_session_idle_limit: Mutex<std::time::Duration>,
 
         // State placeholders
         // Prepared DTLS server acceptor (DTLSv1.2), built on start()
@@ -1514,6 +1541,7 @@ pub mod openssl_impl {
                 null_encryption: AtomicBool::new(false),
                 app_layer_only_verification: AtomicBool::new(false),
                 dangerous_debug: AtomicBool::new(false),
+                direct_session_idle_limit: Mutex::new(DIRECT_SESSION_IDLE_LIMIT),
                 acceptor: Mutex::new(None),
                 peer_states: peers,
                 expected_peer_ids: ExpectedPeerIds::default(),
@@ -1613,6 +1641,23 @@ pub mod openssl_impl {
         fn app_layer_only_verification(&self) -> bool {
             self.app_layer_only_verification
                 .load(std::sync::atomic::Ordering::SeqCst)
+        }
+
+        /// How long a direct session may go without hearing from its peer before a send starts a
+        /// new one; [`DIRECT_SESSION_IDLE_LIMIT`] unless set (issue #483).
+        #[cfg_attr(not(feature = "test-hooks"), allow(dead_code))]
+        pub fn with_direct_session_idle_limit(self, limit: std::time::Duration) -> Self {
+            if let Ok(mut current) = self.direct_session_idle_limit.lock() {
+                *current = limit;
+            }
+            self
+        }
+
+        fn direct_session_idle_limit(&self) -> std::time::Duration {
+            self.direct_session_idle_limit
+                .lock()
+                .map(|limit| *limit)
+                .unwrap_or(DIRECT_SESSION_IDLE_LIMIT)
         }
 
         /// Enable NULL (no-encryption) ciphers for debugging. Strongly discouraged for production use.
@@ -1837,9 +1882,9 @@ pub mod openssl_impl {
         ///   - If no stream exists, it triggers the creation of a new `SslStream` (unless suppressed).
         /// - **Non-Handshake/Other**:
         ///   - These are enqueued for the existing `SslStream`.
-        ///   - If no stream exists yet, they will still trigger stream creation, which is necessary
-        ///     to handle cases where the initial `ClientHello` might have been processed or
-        ///     retransmitted.
+        ///   - If no stream exists, they are dropped: only a `ClientHello` can open a session, and a
+        ///     server handshake would discard them and time out. They are typically an established
+        ///     session's records arriving from the peer's new NAT port (issue #483).
         ///
         /// ### State-Based Processing
         /// 1. **No Existing State**: Creates a new async queue and `PeerState`, enqueues the
@@ -1928,11 +1973,20 @@ pub mod openssl_impl {
                 let mut pm = peers.lock().unwrap();
 
                 // Detect ClientHello on existing established peer to handle client restarts
-                let is_client_hello = data.len() >= 14
-                    && data[0] == 0x16       // Handshake
-                    && data[3] == 0          // Epoch high byte
-                    && data[4] == 0          // Epoch low byte
-                    && data[13] == 0x01; // ClientHello
+                let is_client_hello = is_client_hello(data);
+
+                // No session for this peer, and the datagram can't open one: it belongs to a
+                // session we don't have, typically the peer's old session arriving from a new NAT
+                // port. A server handshake would drop it silently and time out, so don't start one
+                // (issue #483). The peer's next send opens a new session.
+                if !is_client_hello && pm.get(&key).is_none_or(|ps| ps.writer.is_none()) {
+                    tracing::debug!(
+                        "[DtlsOpenSsl:::accept] dropping a {}-byte datagram from {}: no session, and it is not a ClientHello",
+                        data.len(),
+                        from
+                    );
+                    return;
+                }
 
                 // Simultaneous connect (issue #288): our own outbound handshake to this peer is
                 // still running. Decide which direction wins, the same way on both sides.
@@ -2249,11 +2303,32 @@ pub mod openssl_impl {
             // If there is an existing peer worker for `to`, enqueue directly through channel.
             // `accept_in_progress`: the peer dialled us and that handshake is still running, so its
             // worker only has a placeholder writer (issue #288).
+            let idle_limit = self.direct_session_idle_limit();
             let (peer_handle_to_use, accept_in_progress, peer_issuer) = {
                 let peers = &self.peer_states;
                 tracing::info!("[DtlsOpenSsl:::send] Locking peers");
-                if let Ok(map) = peers.lock() {
+                if let Ok(mut map) = peers.lock() {
                     tracing::info!("[DtlsOpenSsl:::send] locked peers");
+                    // A direct session silent past the idle limit may be riding a NAT mapping
+                    // that is gone, so the peer would drop what we write into it. Replace it
+                    // with a new handshake (issue #483). The new state takes the next generation,
+                    // so the old session's read loop no longer owns it and exits.
+                    if to.inet_socket_address().is_some()
+                        && let Some(ps) = map.get(&key_to)
+                        && ps.writer_ready
+                        && ps.last_received.elapsed() > idle_limit
+                        && let Some(old) = map.remove(&key_to)
+                    {
+                        tracing::info!(
+                            "[DtlsOpenSsl:::send] session to {} silent for {:?} (limit {:?}); starting a new one",
+                            to,
+                            old.last_received.elapsed(),
+                            idle_limit
+                        );
+                        let next_generation = next_peer_generation(old.generation);
+                        close_peer_state(old);
+                        map.insert(key_to.clone(), new_peer_state(next_generation));
+                    }
                     if let Some(ps) = map.get(&key_to) {
                         (
                             ps.peer_handle.clone(),
@@ -2661,6 +2736,7 @@ pub mod openssl_impl {
                             ps.is_connecting_peer = false;
                             ps.handshake_logged = true;
                             ps.writer_ready = true;
+                            ps.last_received = std::time::Instant::now();
                         } else {
                             tracing::debug!(
                                 "[DtlsOpenSsl:::send] skip post-connect state update for {} due to generation mismatch (owner={}, current={})",
