@@ -57,6 +57,23 @@ if ! command -v applesimutils >/dev/null 2>&1; then
   exit 1
 fi
 
+# The suites run on a simulator reserved for e2e (see .detoxrc.js), never a development one: they
+# reset its Keychain and install the harness app. Create it on first use, on the newest installed
+# iOS 18 runtime: Detox drives an iOS 26 simulator about 2.5 times slower (the engine itself is not slower), which pushes the
+# multi-launch suites (sealed_state) past their timeouts. Without an iOS 18 runtime it uses the
+# default one.
+E2E_SIMULATOR="${BINGLE_E2E_SIMULATOR:-Bingle E2E}"
+if ! xcrun simctl list devices available | grep -qF "    $E2E_SIMULATOR ("; then
+  E2E_RUNTIME="$(xcrun simctl list runtimes available | grep -oE 'com\.apple\.CoreSimulator\.SimRuntime\.iOS-18-[0-9]+' | sort -V | tail -1 || true)"
+  echo "==> Creating the e2e simulator \"$E2E_SIMULATOR\" (iPhone 16, ${E2E_RUNTIME:-default runtime})"
+  if [[ -n "$E2E_RUNTIME" ]]; then
+    xcrun simctl create "$E2E_SIMULATOR" "iPhone 16" "$E2E_RUNTIME" >/dev/null
+  else
+    xcrun simctl create "$E2E_SIMULATOR" "iPhone 16" >/dev/null
+  fi
+fi
+export BINGLE_E2E_SIMULATOR="$E2E_SIMULATOR"
+
 # Background processes we own; killed on exit via a single cleanup trap so neither the localnet
 # provisioner nor a headless Metro instance is left running after the suite finishes.
 PROVISIONER_PID=""
