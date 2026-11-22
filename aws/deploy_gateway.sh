@@ -130,8 +130,13 @@ fi
 echo "[gateway] Relay stack '$RELAY_STACK': cluster $CLUSTER, node file $NODE_FILE"
 
 STACK_EXISTS=0
-if aws cloudformation describe-stacks --stack-name "$STACK_NAME" --region "$REGION" >/dev/null 2>&1; then
+if STACK_STATUS=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --region "$REGION" --query "Stacks[0].StackStatus" --output text 2>/dev/null); then
   STACK_EXISTS=1
+fi
+# A first deploy that failed leaves a stack that can only be deleted. Its EFS volume is retained,
+# and is empty unless logclient got as far as saving the state file.
+if [[ "${STACK_STATUS:-}" == "ROLLBACK_COMPLETE" ]]; then
+  fail "stack '$STACK_NAME' is ROLLBACK_COMPLETE from a failed first deploy; delete it (aws cloudformation delete-stack --stack-name $STACK_NAME --region $REGION) and the EFS volume it retained, named $STACK_NAME-data, then deploy again"
 fi
 if [[ $REDEPLOY_ONLY -eq 1 && $STACK_EXISTS -eq 0 ]]; then
   fail "--redeploy-only needs an existing stack, and '$STACK_NAME' does not exist"
