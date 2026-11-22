@@ -290,11 +290,11 @@ pub mod openssl_impl {
     const SESSION_READY_POLL: std::time::Duration = std::time::Duration::from_millis(20);
 
     /// How long a direct session may go without hearing from its peer before a send starts a new
-    /// one instead of reusing it (issue #483). A NAT drops an idle mapping, often after 30 seconds,
-    /// and the peer behind it then sends from a new port. The other side has no session for that
+    /// one instead of reusing it (issue #483). A NAT drops an idle mapping, typically after one to
+    /// a few minutes, and the peer behind it then sends from a new port. The other side has no session for that
     /// port and silently drops the old session's records, so writing into it loses the message. A
     /// new handshake reaches the peer from wherever the NAT now maps it.
-    pub const DIRECT_SESSION_IDLE_LIMIT: std::time::Duration = std::time::Duration::from_secs(20);
+    pub const DIRECT_SESSION_IDLE_LIMIT: std::time::Duration = std::time::Duration::from_secs(60);
 
     #[derive(Clone)]
     struct PeerState {
