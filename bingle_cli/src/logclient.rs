@@ -24,6 +24,8 @@
 
 use std::io::Write;
 use std::path::Path;
+use std::sync::{Mutex, MutexGuard, TryLockError};
+use std::time::{Duration, Instant};
 
 use bingle_local::api::bingle_local_api::Message;
 use serde_json::{Value, json};
@@ -130,6 +132,54 @@ pub fn parse_logclient_args(args: Vec<String>) -> Result<LogClientArgs, String> 
         from,
         spam_limit,
     })
+}
+
+/// A wait or hold of the client lock at least this long is logged, so a stuck holder shows up in
+/// the log (issue #481).
+pub const SLOW_LOCK: Duration = Duration::from_secs(1);
+
+/// Lock `mutex`, waiting at most `wait`, for the shutdown path (issue #481): `None` when it is still
+/// held then, so shutdown can save without it rather than hang until it is killed. A poisoned lock
+/// is taken anyway, since shutdown only needs to save.
+pub fn lock_within<T>(mutex: &Mutex<T>, wait: Duration) -> Option<MutexGuard<'_, T>> {
+    let deadline = Instant::now() + wait;
+    loop {
+        match mutex.try_lock() {
+            Ok(guard) => return Some(guard),
+            Err(TryLockError::Poisoned(poisoned)) => return Some(poisoned.into_inner()),
+            Err(TryLockError::WouldBlock) => {
+                if Instant::now() >= deadline {
+                    return None;
+                }
+                std::thread::sleep(Duration::from_millis(20));
+            }
+        }
+    }
+}
+
+/// Run `f` on the client under its lock for `what` (the message callback or the Mailbox poller),
+/// logging a wait for the lock, or a hold of it, of at least [`SLOW_LOCK`] (issue #481). Returns
+/// `None`, logging it, when the lock is poisoned.
+pub fn with_client<T, R>(client: &Mutex<T>, what: &str, f: impl FnOnce(&mut T) -> R) -> Option<R> {
+    let asked = Instant::now();
+    let mut guard = match client.lock() {
+        Ok(guard) => guard,
+        Err(e) => {
+            tracing::error!("logclient: state lock poisoned; {what} dropped: {e}");
+            return None;
+        }
+    };
+    let waited = asked.elapsed();
+    if waited >= SLOW_LOCK {
+        tracing::warn!("logclient: {what} waited {waited:?} for the client lock");
+    }
+    let held = Instant::now();
+    let result = f(&mut guard);
+    let held = held.elapsed();
+    if held >= SLOW_LOCK {
+        tracing::warn!("logclient: {what} held the client lock for {held:?}");
+    }
+    Some(result)
 }
 
 /// Where `logclient` hands each received message.

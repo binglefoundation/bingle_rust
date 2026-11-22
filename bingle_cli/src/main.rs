@@ -809,11 +809,14 @@ fn start_engine_or_exit(api: &Arc<BingleApiImpl>, opts: &StartOptions, label: &s
 /// Spawn the background store-and-forward receive poller (issue #274): drain this account's Mailbox
 /// now and then every `poll_interval` (or only now when it is `None`, issue #473), handing each
 /// non-empty batch to `on_read`. Polls run on the shared local store handle, off any session lock,
-/// so a poll's network wait (up to 120s) never blocks the caller or shutdown (issue #276).
+/// so a poll's network wait (up to 120s) never blocks the caller or shutdown (issue #276). Setting
+/// `stop` ends it before its next poll (issue #481): a read takes messages off the node, so none
+/// may start once shutdown has begun. A batch already read is still handed to `on_read`.
 fn spawn_mailbox_poller(
     local: Arc<BingleApiLocalImpl>,
     state_file: Option<String>,
     poll_interval: Option<Duration>,
+    stop: Arc<AtomicBool>,
     on_read: impl Fn(&[Message]) + Send + 'static,
 ) {
     std::thread::spawn(move || {
@@ -822,6 +825,9 @@ fn spawn_mailbox_poller(
             None => tracing::info!("mailbox: reading once on start (--poll-interval 0)"),
         }
         loop {
+            if stop.load(Ordering::SeqCst) {
+                return;
+            }
             let read = bingle_cli::chat_poll::poll_shared(&local, state_file.as_deref());
             if !read.is_empty() {
                 on_read(&read);
@@ -829,7 +835,14 @@ fn spawn_mailbox_poller(
             let Some(interval) = poll_interval else {
                 return;
             };
-            std::thread::sleep(interval);
+            // Sleep in short steps, so a stop is seen within a second.
+            let wake = Instant::now() + interval;
+            while Instant::now() < wake {
+                if stop.load(Ordering::SeqCst) {
+                    return;
+                }
+                std::thread::sleep(Duration::from_secs(1).min(wake - Instant::now()));
+            }
         }
     });
 }
@@ -1075,15 +1088,23 @@ fn run_chat_session(
     if let (true, Some(poll_local)) = (receive_enabled, poll_local) {
         let poll_out = out.clone();
         let poll_sender = pending_sender.clone();
-        spawn_mailbox_poller(poll_local, poll_state_file, poll_interval, move |read| {
-            // Print each held message above the prompt — the same presentation as a real-time
-            // message.
-            for msg in read {
-                // A Mailbox message shows the sender is back online (issue #278).
-                poll_sender.peer_seen(&msg.sender_handle);
-                poll_out.print_line(&format!("{}: {}", msg.sender_handle, msg.text));
-            }
-        });
+        // chat exits the process on shutdown, which ends the poller with it.
+        let never_stop = Arc::new(AtomicBool::new(false));
+        spawn_mailbox_poller(
+            poll_local,
+            poll_state_file,
+            poll_interval,
+            never_stop,
+            move |read| {
+                // Print each held message above the prompt — the same presentation as a real-time
+                // message.
+                for msg in read {
+                    // A Mailbox message shows the sender is back online (issue #278).
+                    poll_sender.peer_seen(&msg.sender_handle);
+                    poll_out.print_line(&format!("{}: {}", msg.sender_handle, msg.text));
+                }
+            },
+        );
     }
 
     tracing::info!(
@@ -1251,16 +1272,12 @@ fn run_logclient_session(client: LogClient, poll_interval: Option<Duration>) {
         let client_for_msg = client.clone();
         let listening_now = Arc::new(AtomicBool::new(false));
         api.access(|api_mut| {
-            let on_message: Arc<OnMessageHandler> = Arc::new(
-                move |sender, sender_handle, message| match client_for_msg.lock() {
-                    Ok(mut c) => {
-                        c.receive(&sender, &sender_handle, &message);
-                    }
-                    Err(e) => {
-                        tracing::error!("logclient: state lock poisoned; dropping message: {e}")
-                    }
-                },
-            );
+            let on_message: Arc<OnMessageHandler> =
+                Arc::new(move |sender, sender_handle, message| {
+                    with_client(&client_for_msg, "a received message", |c| {
+                        c.receive(&sender, &sender_handle, &message)
+                    });
+                });
             api_mut.set_on_message(Some(on_message));
 
             // Log only changes, so a reconnect is visible in the log without repeating every call.
@@ -1280,6 +1297,7 @@ fn run_logclient_session(client: LogClient, poll_interval: Option<Duration>) {
 
     start_engine_or_exit(&api, &opts, "logclient");
 
+    let stop_polling = Arc::new(AtomicBool::new(false));
     if receive_enabled {
         let client_for_poll = client.clone();
         // No state file for the poll itself: deliver_polled saves after handing the batch on.
@@ -1287,14 +1305,11 @@ fn run_logclient_session(client: LogClient, poll_interval: Option<Duration>) {
             local.clone(),
             None,
             poll_interval,
-            move |read| match client_for_poll.lock() {
-                Ok(mut c) => {
-                    c.deliver_polled(read);
-                }
-                Err(e) => tracing::error!(
-                    "logclient: state lock poisoned; dropping {} mailbox message(s): {e}",
-                    read.len()
-                ),
+            stop_polling.clone(),
+            move |read| {
+                with_client(&client_for_poll, "a Mailbox batch", |c| {
+                    c.deliver_polled(read)
+                });
             },
         );
     }
@@ -1315,19 +1330,43 @@ fn run_logclient_session(client: LogClient, poll_interval: Option<Duration>) {
     let _ = rx.recv();
 
     tracing::info!("logclient: shutting down");
+    // No new Mailbox read from here on: a read takes messages off the node (issue #481).
+    stop_polling.store(true, Ordering::SeqCst);
+    // Save before stopping the engine as well as after, so a shutdown that is cut short still has
+    // the latest state.
+    save_for_shutdown(&client, &local, state_file.as_deref());
     api.access(|api_mut| api_mut.stop());
-    // Save under the client lock, so it cannot land between a message's acceptance and its delivery.
-    let delivered = match client.lock() {
-        Ok(c) => {
+    let delivered = save_for_shutdown(&client, &local, state_file.as_deref());
+    tracing::info!("logclient: stopped after delivering {delivered} message(s)");
+}
+
+/// How long shutdown waits for the client lock before saving without it (issue #481).
+const SHUTDOWN_LOCK_WAIT: Duration = Duration::from_secs(10);
+
+/// Save the state file for shutdown, under the client lock so the save cannot land between a
+/// message's acceptance and its delivery, and return how many messages were delivered. If the lock
+/// is still held after [`SHUTDOWN_LOCK_WAIT`], save through the shared store without it and return
+/// 0: a process about to be killed would lose that message anyway, and waiting longer only ends in
+/// the kill (issue #481).
+fn save_for_shutdown(
+    client: &Mutex<LogClient>,
+    local: &BingleApiLocalImpl,
+    state_file: Option<&str>,
+) -> u64 {
+    match lock_within(client, SHUTDOWN_LOCK_WAIT) {
+        Some(c) => {
             c.save();
             c.delivered()
         }
-        Err(_) => {
-            bingle_cli::chat_poll::save_shared(&local, state_file.as_deref());
+        None => {
+            warn!(
+                "logclient: client lock still held after {:?}; saving without it",
+                SHUTDOWN_LOCK_WAIT
+            );
+            bingle_cli::chat_poll::save_shared(local, state_file);
             0
         }
-    };
-    tracing::info!("logclient: stopped after delivering {delivered} message(s)");
+    }
 }
 
 /// Drive the first-run registration state machine to a ready account, or exit non-zero with a clear
@@ -1438,7 +1477,8 @@ use bingle_cli::chat_state::ChatState;
 use bingle_cli::chat_state::RegisterError;
 use bingle_cli::checkrelays;
 use bingle_cli::logclient::{
-    JsonLinesSink, LogClient, MaildirSink, MessageSink, parse_logclient_args,
+    JsonLinesSink, LogClient, MaildirSink, MessageSink, lock_within, parse_logclient_args,
+    with_client,
 };
 use bingle_cli::spam_limit::{SpamLimiter, SystemClock};
 use bingle_core::api::bingle_api::StartOptions;

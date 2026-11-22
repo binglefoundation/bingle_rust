@@ -1,11 +1,13 @@
 // Unit tests for the `logclient` subcommand (bingle_cli::logclient, issue #64).
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use bingle_cli::chat::{StoreForwardMode, parse_chat_args};
 use bingle_cli::chat_receive::receive_message;
 use bingle_cli::chat_state::ChatState;
 use bingle_cli::logclient::{
-    JsonLinesSink, LogClient, MaildirSink, MessageSink, parse_logclient_args,
+    JsonLinesSink, LogClient, MaildirSink, MessageSink, lock_within, parse_logclient_args,
+    with_client,
 };
 use bingle_cli::spam_limit::{SPAM_LIMIT_RECORD, SpamLimiter};
 use bingle_local::api::bingle_local_api::{BingleLocalApi, Message};
@@ -581,4 +583,102 @@ pub fn without_a_spam_limit_every_message_is_handed_on() {
     }
     assert_eq!(client.suppressed(), 0);
     assert!(client.limiter().is_none());
+}
+
+// --- Shutdown locking (issue #481) ---
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn lock_within_takes_a_free_lock_at_once() {
+    let lock = Mutex::new(7);
+    let started = std::time::Instant::now();
+    assert_eq!(
+        lock_within(&lock, Duration::from_secs(5)).map(|g| *g),
+        Some(7)
+    );
+    assert!(started.elapsed() < Duration::from_secs(1));
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn lock_within_gives_up_on_a_lock_held_past_the_wait() {
+    let lock = Arc::new(Mutex::new(0));
+    let held = lock.clone();
+    let (locked_tx, locked_rx) = std::sync::mpsc::channel();
+    let (release_tx, release_rx) = std::sync::mpsc::channel::<()>();
+    let holder = std::thread::spawn(move || {
+        let _guard = held.lock().expect("lock");
+        locked_tx.send(()).expect("signal");
+        let _ = release_rx.recv();
+    });
+    locked_rx.recv().expect("holder has the lock");
+
+    assert!(lock_within(&lock, Duration::from_millis(100)).is_none());
+
+    release_tx.send(()).expect("release");
+    holder.join().expect("holder");
+    assert!(lock_within(&lock, Duration::from_millis(100)).is_some());
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn lock_within_waits_for_a_lock_released_in_time() {
+    let lock = Arc::new(Mutex::new(0));
+    let held = lock.clone();
+    let (locked_tx, locked_rx) = std::sync::mpsc::channel();
+    let holder = std::thread::spawn(move || {
+        let mut guard = held.lock().expect("lock");
+        locked_tx.send(()).expect("signal");
+        std::thread::sleep(Duration::from_millis(100));
+        *guard = 1;
+    });
+    locked_rx.recv().expect("holder has the lock");
+
+    assert_eq!(
+        lock_within(&lock, Duration::from_secs(5)).map(|g| *g),
+        Some(1)
+    );
+    holder.join().expect("holder");
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn lock_within_takes_a_poisoned_lock_so_shutdown_can_still_save() {
+    let lock = Arc::new(Mutex::new(3));
+    let poisoner = lock.clone();
+    let _ = std::thread::spawn(move || {
+        let _guard = poisoner.lock().expect("lock");
+        panic!("poison the lock");
+    })
+    .join();
+    assert!(lock.is_poisoned());
+    assert_eq!(
+        lock_within(&lock, Duration::from_millis(100)).map(|g| *g),
+        Some(3)
+    );
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn with_client_runs_under_the_lock_and_returns_the_result() {
+    let lock = Mutex::new(vec![1]);
+    let len = with_client(&lock, "a test", |v| {
+        v.push(2);
+        v.len()
+    });
+    assert_eq!(len, Some(2));
+    assert_eq!(*lock.lock().expect("lock"), vec![1, 2]);
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn with_client_skips_a_poisoned_lock() {
+    let lock = Arc::new(Mutex::new(0));
+    let poisoner = lock.clone();
+    let _ = std::thread::spawn(move || {
+        let _guard = poisoner.lock().expect("lock");
+        panic!("poison the lock");
+    })
+    .join();
+    assert_eq!(with_client(&lock, "a test", |n| *n), None);
 }

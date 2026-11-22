@@ -205,7 +205,10 @@ bingle_cli logclient --state_file tmp/support_state.json --maildir tmp/support_m
   `logclient.spam_limit`), so a restart doesn't reset them. The first suppressed message from a
   sender each day logs `suppressed messages from <sender> (limit <n> reached)` to stderr, then a
   running count at most once an hour. Without the flag there is no limit.
-- Ctrl-C or SIGTERM stops the engine and saves the state file; a second signal exits at once.
+- Ctrl-C or SIGTERM stops any further Mailbox reads, saves the state file, stops the engine and
+  saves again; a second signal exits at once. If a message is still being handled after 10
+  seconds, the save goes ahead without waiting for it, so shutdown can't hang. A message handler
+  or Mailbox batch that waits for, or holds, the client lock for a second or more is logged.
 
 The chat flags that only affect sending or the prompt (`--to`, `--to-id`, `--no-retries`,
 `--notify`, `--plain`) are refused.
