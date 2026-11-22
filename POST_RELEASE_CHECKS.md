@@ -18,4 +18,12 @@ Checks that can only run once a change is released: on a device, in the app (bin
 
 ## Waiting for a release
 
-None.
+### #483 direct send after the sender's NAT moves it
+
+- **Merged in:** this PR; first shipped in 0.3.38.
+- **Needs:** the email gateway (`bingle_cli logclient`) rebuilt on 0.3.38, and the app (bingle_ux_rn) on `react-native-bingle-jsi` 0.3.38 on a phone behind NAT (mobile data).
+- **Steps:**
+  1. Send the gateway a message from the phone, and check it is delivered directly.
+  2. Leave the app open and idle for at least 5 minutes, then send another.
+  3. In the gateway's log, look for a second `run_accept_stream starting` from the phone's address, followed by `handshake complete`.
+- **Passes when:** the second message is delivered directly (`handshake complete`, then the message), not through the Mailbox, and the gateway logs no `DTLS accept handshake timeout`.

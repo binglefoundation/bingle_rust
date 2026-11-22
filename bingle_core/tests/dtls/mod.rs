@@ -93,3 +93,6 @@ pub mod dtls_forged_ca_rejection;
 
 #[path = "dtls_expected_peer_id.rs"]
 pub mod dtls_expected_peer_id;
+
+#[path = "dtls_nat_rebind.rs"]
+pub mod dtls_nat_rebind;
