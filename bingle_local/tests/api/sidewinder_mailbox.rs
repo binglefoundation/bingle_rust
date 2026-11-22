@@ -10,7 +10,7 @@ use bingle_local::api::sidewinder::{
     IDENTITY_REFUSED_BACKOFF, MAILBOX_POP_TYPE, MAILBOX_POST_TYPE, MAILBOX_TAKE_BATCH,
     MAILBOX_TAKE_TYPE, MailboxConfig, WatchProgress, build_pop_request, build_post_request,
     build_take_request, classify_watch, decode_take_batch, identity_refusal_holds,
-    identity_refusal_message, map_error, next_node_index,
+    identity_refusal_message, is_routine_read, map_error, next_node_index,
 };
 use sidewinder_ops::{
     Disposition, PendingTransaction, SidewinderError, Stage, SuggestedParams, TxnError,
@@ -84,6 +84,16 @@ fn the_removed_bearer_env_vars_have_no_effect() {
         without_app_id, None,
         "the old env vars do not configure a Mailbox without an app id"
     );
+}
+
+// --- Log level of a submitted transaction (issues #402, #482) ---
+
+#[test]
+fn reads_are_routine_and_posts_are_not() {
+    // pop and take run on every receive poll, so they log at trace; a post is a message sent.
+    assert!(is_routine_read("pop"));
+    assert!(is_routine_read("take"));
+    assert!(!is_routine_read("post"));
 }
 
 // --- Failover cursor (story #244, deliverable 3) ---

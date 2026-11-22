@@ -341,7 +341,8 @@ impl Mailbox {
         match self.current_client().operations(self.take_type) {
             Ok(schema) => {
                 let supported = schema.is_some_and(|schema| schema.return_type == "byte[]");
-                tracing::info!(
+                // Each receive poll opens a new Mailbox and so asks again: debug, not info (#482).
+                tracing::debug!(
                     "[mailbox] the node {} take (type {})",
                     if supported { "has" } else { "does not have" },
                     self.take_type
@@ -450,9 +451,10 @@ impl Mailbox {
             .submit_transaction(&request)
             .map_err(|e| map_error(operation, e))?;
         // Log the transaction id at submit so it can be tracked on the node while it finalises. A
-        // pop runs on every receive poll cycle, so it is logged at trace to keep the routine poll
-        // out of the debug log (issue #402); a post is a message being sent, so it stays at info.
-        if operation == "pop" {
+        // read runs on every receive poll cycle, so it is logged at trace to keep the routine poll
+        // out of the debug log (issues #402, #482); a post is a message being sent, so it stays at
+        // info.
+        if is_routine_read(operation) {
             tracing::trace!("[mailbox {operation}] submitted tx {txid}");
         } else {
             tracing::info!("[mailbox {operation}] submitted tx {txid}");
@@ -648,6 +650,13 @@ fn resolve_reachable(
         )));
     }
     Ok(reachable)
+}
+
+/// Whether `operation` is a Mailbox read (`pop` or `take`), which every receive poll runs, so its
+/// transaction is logged at trace rather than info (issues #402, #482). Pure, for the unit tests.
+#[doc(hidden)]
+pub fn is_routine_read(operation: &str) -> bool {
+    matches!(operation, "pop" | "take")
 }
 
 /// The next node index to try after `active` in a set of `count` nodes, or `None` when the set is
