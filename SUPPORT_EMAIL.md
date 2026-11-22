@@ -102,6 +102,90 @@ command-line interface.
    - `ses-api`: give the role the mailer runs under permission for `ses:SendRawEmail` on the
      verified identity. No password is needed. The production deployment (#473) uses this.
 
+## Deploying on AWS
+
+In production the pipeline runs as its own Amazon Elastic Container Service (ECS) service on
+Fargate, in an existing relay stack's cluster and network (issue #473). `aws/deploy_gateway.sh`
+builds the `gateway` image and deploys `aws/gateway_stack.yaml`, which adds:
+
+- **one task, two containers** from the same image: `logclient` and the mailer (with
+  `MAILER_SEND=ses-api`). The service never runs two tasks at once, since two `logclient`s as one
+  account would split its messages between them;
+- **an encrypted Elastic File System (EFS) volume** at `/data` holding `state.json` and `maildir/`,
+  so the account, its history, the spam counts and any unsent email survive redeploys and task
+  replacement. Only the task's role can mount it, over TLS;
+- **a task role** that can send through SES only as `--from`. There are no SMTP credentials;
+- **a log group**, `/bingle/gateway/<stack>`, kept for 30 days.
+
+It costs about $12 a month, almost all of it the always-on Fargate task and its public IPv4
+address. The relay stack is not changed, so relay redeploys don't restart the gateway.
+
+### Before the first deploy
+
+1. **SES**: verify the `--from` identity in the relay's region, as in [Setting up SES](#setting-up-ses).
+   While the account is in the sandbox, the destination must be verified too; an address in a
+   verified domain counts.
+2. **Stop reading the account elsewhere.** Once the gateway runs, it takes every message sent to
+   the account. A `bingle_cli chat` or app session signed in as the same account at the same time
+   would take some messages that are then never emailed. Signing in briefly to reply is fine.
+3. **Put the account's recovery phrase in Secrets Manager**, for the first start only. This reads
+   it without echoing it or keeping it in shell history, and prints the secret's Amazon Resource
+   Name (ARN):
+
+   ```bash
+   printf 'Recovery phrase: ' && read -rs P && echo && aws secretsmanager create-secret --name /bingle/gateway/first-start-phrase --secret-string "$P" --region <region> --query ARN --output text; unset P
+   ```
+
+### First deploy
+
+```bash
+aws/deploy_gateway.sh --relay-stack <relay stack> --to <inbox> --from <verified address> --handle <account handle> --passphrase-secret <secret ARN>
+```
+
+The stack is named `bingle-gateway-<relay stack>` unless `--stack-name` says otherwise.
+`--spam-limit` defaults to 20, and the Algorand node file to the relay stack's. Then:
+
+1. Follow the logs until `logclient: receiving as '<handle>'`:
+
+   ```bash
+   aws logs tail /bingle/gateway/bingle-gateway-<relay stack> --follow --region <region>
+   ```
+
+2. Send the account a message from the app, and check it arrives at the inbox.
+3. The account is now in the state file on EFS. Deploy again without the phrase, so the task no
+   longer reads it, then delete the secret:
+
+   ```bash
+   aws/deploy_gateway.sh --relay-stack <relay stack> --to <inbox> --from <verified address>
+   ```
+
+   ```bash
+   aws secretsmanager delete-secret --secret-id <secret ARN> --force-delete-without-recovery --region <region>
+   ```
+
+The state file on EFS holds the account's key, as a `bingle_cli` state file does. Anyone who can
+mount the volume or change the task can act as the account.
+
+### Redeploying
+
+After a code change, update only the image; every other setting is kept:
+
+```bash
+aws/deploy_gateway.sh --relay-stack <relay stack> --redeploy-only
+```
+
+To change `--to`, `--from` or `--spam-limit`, run a full deploy (without the phrase). The old task
+stops first, and `logclient` saves its state file on the way out, so nothing is lost or sent twice.
+While SES rejects sends (or is unreachable), messages wait in `/data/maildir/new/` and go out once
+it accepts them again.
+
+### Removing it
+
+`aws cloudformation delete-stack --stack-name bingle-gateway-<relay stack> --region <region>`
+deletes the service and roles but **keeps the EFS volume and the log group**, since the volume
+holds the account and any unsent email. A new stack makes a new, empty volume and needs the phrase
+again. Delete the old volume by hand once it is no longer needed.
+
 ## Testing against SES
 
 To check the SES setup and the mailer without a Bingle client, put a hand-made email in a test

@@ -12,6 +12,10 @@
 !scripts/docker_webserver_start.sh
 !scripts/docker_run_test.sh
 
+# The email gateway (gateway stage, issue #473)
+!scripts/docker_gateway_start.sh
+!scripts/mailer.sh
+
 # Prebuilt binaries, for any target triple (the build scripts take --target)
 !target/*/debug/bingle_cli
 !target/*/debug/bingle_webserver

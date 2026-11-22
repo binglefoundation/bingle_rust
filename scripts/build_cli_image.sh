@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # build_cli_image.sh
-# Purpose: Build the Docker 'cli' stage image that runs the bingle_cli binary.
+# Purpose: Build a Docker image that runs the bingle_cli binary: the 'cli' stage (relays), or with
+# --stage gateway the email gateway (issue #473).
 #
 # Usage:
-#   scripts/build_cli_image.sh [--tag <tag>] [--no-build] [--target <triple>] [--no-zig] [--platform <docker-platform>]
+#   scripts/build_cli_image.sh [--tag <tag>] [--stage <cli|gateway>] [--no-build] [--target <triple>] [--no-zig] [--platform <docker-platform>]
 
 set -euo pipefail
 
@@ -12,6 +13,7 @@ DO_CARGO_BUILD=1
 TARGET_TRIPLE="aarch64-unknown-linux-musl"
 USE_ZIG=1
 DOCKER_PLATFORM="linux/arm64"
+STAGE="cli"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -25,12 +27,19 @@ while [[ $# -gt 0 ]]; do
       USE_ZIG=0; shift;;
     --platform)
       DOCKER_PLATFORM="$2"; shift 2;;
+    --stage)
+      STAGE="$2"; shift 2;;
     -h|--help)
-      echo "Usage: $0 [--tag <tag>] [--no-build] [--target <triple>] [--no-zig] [--platform <docker-platform>]"; exit 0;;
+      echo "Usage: $0 [--tag <tag>] [--stage <cli|gateway>] [--no-build] [--target <triple>] [--no-zig] [--platform <docker-platform>]"; exit 0;;
     *)
       echo "Unknown argument: $1" >&2; exit 2;;
   esac
 done
+
+case "$STAGE" in
+  cli|gateway) ;;
+  *) echo "--stage must be cli or gateway, got '$STAGE'" >&2; exit 2;;
+esac
 
 # 1) Build the bingle_cli binary (unless skipped)
 if [[ $DO_CARGO_BUILD -eq 1 ]]; then
@@ -58,11 +67,11 @@ if [[ ! -f "$BIN_PATH" ]]; then
   exit 3
 fi
 
-echo "[build-cli-image] Building Docker cli image: $TAG for platform $DOCKER_PLATFORM"
+echo "[build-cli-image] Building Docker $STAGE image: $TAG for platform $DOCKER_PLATFORM"
 
-# 3) Build the Docker image using the 'cli' stage
+# 3) Build the Docker image using the chosen stage
 DOCKER_BUILDKIT=1 docker buildx build --platform "$DOCKER_PLATFORM" \
-  --target cli \
+  --target "$STAGE" \
   -t "$TAG" \
   --build-arg BIN_PATH="$BIN_PATH" \
   -f Dockerfile \

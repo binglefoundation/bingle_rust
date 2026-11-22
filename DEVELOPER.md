@@ -509,6 +509,14 @@ Options:
 - `--region`: AWS region.
 - `--delete-repo`: Also delete the ECR repository (useful for a complete cleanup).
 
+### Deploying the email gateway
+
+The gateway that forwards messages sent to one account (such as the app's report account) to an
+email address runs next to a relay, as its own stack in the relay's cluster:
+`aws/deploy_gateway.sh --relay-stack <relay stack> --to <inbox> --from <verified address>`. See
+[SUPPORT_EMAIL.md](SUPPORT_EMAIL.md#deploying-on-aws) for the first deploy, which imports the
+account, and for redeploying.
+
 ### Monitoring
 
 Logs are available in CloudWatch Logs under the group `/bingle/relay`. A dashboard named `<stack-name>-Dashboard` is also created in CloudWatch.
