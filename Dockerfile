@@ -2,6 +2,7 @@
 # - base: Common runtime dependencies and assets
 # - cli:  Runs the prebuilt bingle_cli binary with docker_start.sh
 # - webserver: package the prebuilt bingle_webserver and start script
+# - gateway: bingle_cli logclient + scripts/mailer.sh, for forwarding messages to email
 
 # Allow selecting target platform when building multi-arch images
 ARG TARGETPLATFORM=linux/arm64
@@ -84,6 +85,27 @@ ENV PORT=12121 \
 
 # ENTRYPOINT to the startup script which launches /app/bingle_webserver ...
 ENTRYPOINT ["/app/docker_webserver_start.sh"]
+
+# ------------------------
+# Gateway stage: forwards Bingle messages to email (epic #63, issue #473). One image, two roles:
+# `logclient` writes each message into a Maildir on the shared volume, and `mailer` sends it through
+# the SES API with the task role, which needs the AWS command-line tool.
+# ------------------------
+FROM base AS gateway
+
+RUN dnf install -y awscli-2 && dnf clean all
+
+ARG BIN_PATH=target/aarch64-unknown-linux-musl/debug/bingle_cli
+
+COPY --chmod=755 ${BIN_PATH} /app/bingle_cli
+COPY --chmod=755 scripts/mailer.sh /app/mailer.sh
+COPY --chmod=755 scripts/docker_gateway_start.sh /app/docker_gateway_start.sh
+
+ENV NODE_FILE="/app/nodely_deployed_mainnet_node.json" \
+    STUN_FILE="/app/stunservers.txt"
+
+# The role (logclient or mailer) is the container's command.
+ENTRYPOINT ["/app/docker_gateway_start.sh"]
 
 # ------------------------
 # Default final image is the CLI runtime, to preserve previous behavior

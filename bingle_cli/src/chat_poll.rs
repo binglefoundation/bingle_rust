@@ -35,12 +35,14 @@ pub fn save_shared(local: &BingleApiLocalImpl, state_file: Option<&str>) {
 }
 
 /// Resolve the backstop poll period from the optional `--poll-interval <secs>` (issue #274), falling
-/// back to [`DEFAULT_MAILBOX_POLL_SECS`]. A zero value is clamped to the default: a 0s cycle would
-/// busy-spin the poller thread.
-pub fn resolve_poll_interval(poll_interval_secs: Option<u64>) -> Duration {
+/// back to [`DEFAULT_MAILBOX_POLL_SECS`]. `--poll-interval 0` returns `None`: read the Mailbox once on
+/// start, for messages left while offline, and not again (issue #473), for a client that real-time
+/// delivery reliably reaches.
+pub fn resolve_poll_interval(poll_interval_secs: Option<u64>) -> Option<Duration> {
     match poll_interval_secs {
-        Some(secs) if secs > 0 => Duration::from_secs(secs),
-        _ => Duration::from_secs(DEFAULT_MAILBOX_POLL_SECS),
+        Some(0) => None,
+        Some(secs) => Some(Duration::from_secs(secs)),
+        None => Some(Duration::from_secs(DEFAULT_MAILBOX_POLL_SECS)),
     }
 }
 

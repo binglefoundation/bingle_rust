@@ -75,7 +75,8 @@ bingle_cli chat [--handle <handle>|<handle>] [--passphrase <text>] \
 - `--notify <url>` — bingle_notify gateway URL to nudge an offline recipient (a content-free push so
   their client wakes and picks up the message). Off when omitted.
 - `--poll-interval <secs>` — period of the receive-side backstop Mailbox poll. Only has effect with
-  the receive gate on (`--store-forward both|receive`); defaults to 20s when omitted.
+  the receive gate on (`--store-forward both|receive`); defaults to 20s when omitted. `0` reads the
+  Mailbox once on start, for messages left while offline, and not again.
 - `--no-retries` — send each message once and report failure immediately, instead of queuing it for
   background retry. Not needed with store-and-forward send — see
   [Store-and-forward](#store-and-forward-offline-delivery).
@@ -194,7 +195,8 @@ bingle_cli logclient --state_file tmp/support_state.json --maildir tmp/support_m
   a new account), exactly as for [chat](#first-run-registration-flow); afterwards the state file is
   enough, so the phrase need not stay on the command line of a long-running process.
 - `--store-forward receive` is the default, so messages held while `logclient` was offline are
-  picked up on start and every `--poll-interval` seconds (default 20). `--store-forward none` takes
+  picked up on start and every `--poll-interval` seconds (default 20; `0` reads it on start only,
+  for a client real-time delivery reliably reaches). `--store-forward none` takes
   direct delivery only; `send` and `both` are refused.
 - **Spam limit** (`--spam-limit <n>`): once a sender has had `n` messages handed on in a UTC day,
   its later messages that day are kept in the state-file history but not handed on, until the next
@@ -508,6 +510,14 @@ Options:
 - `--stack-name`: The name of the stack to delete (default: `bingle-relay`).
 - `--region`: AWS region.
 - `--delete-repo`: Also delete the ECR repository (useful for a complete cleanup).
+
+### Deploying the email gateway
+
+The gateway that forwards messages sent to one account (such as the app's report account) to an
+email address runs next to a relay, as its own stack in the relay's cluster:
+`aws/deploy_gateway.sh --relay-stack <relay stack> --to <inbox> --from <verified address>`. See
+[SUPPORT_EMAIL.md](SUPPORT_EMAIL.md#deploying-on-aws) for the first deploy, which imports the
+account, and for redeploying.
 
 ### Monitoring
 

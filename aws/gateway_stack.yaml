@@ -1,0 +1,337 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Bingle email gateway: logclient + mailer on a relay cluster (Fargate)'
+
+# Forwards Bingle messages sent to one account to an email address (epic #63, issue #473). One
+# Fargate task runs the gateway image twice: `logclient` receives as the account and writes each
+# message into a Maildir, and `mailer` sends the Maildir through the SES API with the task role.
+# Both share an encrypted EFS volume holding the state file and the Maildir, so a redeploy or task
+# replacement loses neither. Deployed by aws/deploy_gateway.sh into an existing relay stack's
+# cluster, VPC and subnet; the relay stack is not changed.
+
+Parameters:
+  ClusterName:
+    Type: String
+    Description: 'The relay stack''s ECS cluster'
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: 'The relay stack''s VPC'
+  SubnetId:
+    Type: AWS::EC2::Subnet::Id
+    Description: 'The relay stack''s public subnet'
+  ImageUri:
+    Type: String
+    Description: 'The gateway image, pinned by digest'
+  ToEmail:
+    Type: String
+    Description: 'Where the emails go'
+  FromAddress:
+    Type: String
+    Description: 'The verified SES address the emails come from; the task role can send only as this address'
+  SpamLimit:
+    Type: String
+    Default: '20'
+    AllowedPattern: '^[0-9]*$'
+    Description: 'Per-sender daily limit on forwarded messages; empty for none'
+  PollInterval:
+    Type: String
+    Default: '900'
+    AllowedPattern: '^[0-9]+$'
+    Description: 'Seconds between Sidewinder Mailbox reads, a backstop for messages whose direct delivery failed; 0 reads it only on start'
+  Handle:
+    Type: String
+    Default: ''
+    Description: 'The account handle, used with PassphraseSecretArn on the first start'
+  PassphraseSecretArn:
+    Type: String
+    Default: ''
+    Description: 'Secrets Manager secret with the account recovery phrase, for the first start only; empty once the account is in the state file'
+  NodeFile:
+    Type: String
+    Default: '/app/nodely_deployed_mainnet_node.json'
+    Description: 'Algorand node file inside the image'
+  CostTag:
+    Type: String
+    Default: 'bingle_dev'
+    Description: 'Cost allocation tag'
+
+Conditions:
+  ImportAccount: !Not [ !Equals [ !Ref PassphraseSecretArn, '' ] ]
+
+Resources:
+  # Network: inbound UDP is open so peers reach logclient directly over DTLS, rather than through a
+  # relay. It binds one ephemeral port, which Fargate's public IP maps one to one, so the whole
+  # ephemeral range is opened; nothing else in the task listens.
+  GatewaySecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Bingle email gateway task (direct DTLS in, all out)
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: udp
+          FromPort: 1024
+          ToPort: 65535
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-task"
+
+  StorageSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Bingle email gateway storage (NFS from the gateway task only)
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 2049
+          ToPort: 2049
+          SourceSecurityGroupId: !Ref GatewaySecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-storage"
+
+  # Storage: the state file (the account key, history and spam counts) and the Maildir. Retained
+  # when the stack is deleted, since it holds the account and any unsent email.
+  FileSystem:
+    Type: AWS::EFS::FileSystem
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Encrypted: true
+      PerformanceMode: generalPurpose
+      ThroughputMode: elastic
+      FileSystemTags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-data"
+        - Key: CostCenter
+          Value: !Ref CostTag
+      FileSystemPolicy:
+        Version: '2012-10-17'
+        Statement:
+          # Only the gateway task role may mount it, and only over TLS.
+          - Effect: Allow
+            Principal:
+              AWS: !GetAtt TaskRole.Arn
+            Action:
+              - elasticfilesystem:ClientMount
+              - elasticfilesystem:ClientWrite
+            Condition:
+              Bool:
+                elasticfilesystem:AccessedViaMountTarget: 'true'
+          - Effect: Deny
+            Principal:
+              AWS: '*'
+            Action: '*'
+            Condition:
+              Bool:
+                aws:SecureTransport: 'false'
+
+  MountTarget:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId: !Ref FileSystem
+      SubnetId: !Ref SubnetId
+      SecurityGroups:
+        - !Ref StorageSecurityGroup
+
+  # Every file operation through the access point runs as this user, whatever the container's user,
+  # so root squashing doesn't apply and the files are private to the gateway.
+  AccessPoint:
+    Type: AWS::EFS::AccessPoint
+    Properties:
+      FileSystemId: !Ref FileSystem
+      PosixUser:
+        Uid: '1000'
+        Gid: '1000'
+      RootDirectory:
+        Path: /gateway
+        CreationInfo:
+          OwnerUid: '1000'
+          OwnerGid: '1000'
+          Permissions: '0700'
+
+  # Roles
+  TaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: SendAsTheVerifiedAddress
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # SES checks the sender's identity and, while the account is in the sandbox, the
+              # recipient's too, so the resource is every identity; the condition limits the
+              # sender to FromAddress.
+              - Effect: Allow
+                Action:
+                  - ses:SendEmail
+                  - ses:SendRawEmail
+                Resource: !Sub 'arn:aws:ses:${AWS::Region}:${AWS::AccountId}:identity/*'
+                Condition:
+                  StringEquals:
+                    ses:FromAddress: !Ref FromAddress
+
+  TaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      Policies:
+        - !If
+          - ImportAccount
+          - PolicyName: ReadRecoveryPhrase
+            PolicyDocument:
+              Version: '2012-10-17'
+              Statement:
+                - Effect: Allow
+                  Action: secretsmanager:GetSecretValue
+                  Resource: !Ref PassphraseSecretArn
+          - !Ref AWS::NoValue
+
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      LogGroupName: !Sub "/bingle/gateway/${AWS::StackName}"
+      RetentionInDays: 30
+
+  TaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub "${AWS::StackName}-Task"
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      RuntimePlatform:
+        CpuArchitecture: ARM64
+        OperatingSystemFamily: LINUX
+      Cpu: '256'
+      Memory: '512'
+      ExecutionRoleArn: !GetAtt TaskExecutionRole.Arn
+      TaskRoleArn: !GetAtt TaskRole.Arn
+      Volumes:
+        - Name: data
+          EFSVolumeConfiguration:
+            FilesystemId: !Ref FileSystem
+            TransitEncryption: ENABLED
+            AuthorizationConfig:
+              AccessPointId: !Ref AccessPoint
+              IAM: ENABLED
+      ContainerDefinitions:
+        - Name: logclient
+          Image: !Ref ImageUri
+          Command: [ logclient ]
+          Essential: true
+          # logclient saves the state file on SIGTERM
+          StopTimeout: 60
+          LinuxParameters:
+            InitProcessEnabled: true
+          MountPoints:
+            - SourceVolume: data
+              ContainerPath: /data
+          Environment:
+            - Name: FROM_ADDRESS
+              Value: !Ref FromAddress
+            - Name: SPAM_LIMIT
+              Value: !Ref SpamLimit
+            - Name: POLL_INTERVAL
+              Value: !Ref PollInterval
+            - Name: NODE_FILE
+              Value: !Ref NodeFile
+            - Name: HANDLE
+              Value: !Ref Handle
+          Secrets: !If
+            - ImportAccount
+            - - Name: PASSPHRASE
+                ValueFrom: !Ref PassphraseSecretArn
+            - !Ref AWS::NoValue
+          HealthCheck:
+            Command: [ CMD-SHELL, "pgrep bingle_cli > /dev/null || exit 1" ]
+            Interval: 30
+            Timeout: 5
+            Retries: 3
+            StartPeriod: 120
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: logclient
+        - Name: mailer
+          Image: !Ref ImageUri
+          Command: [ mailer ]
+          Essential: true
+          StopTimeout: 30
+          LinuxParameters:
+            InitProcessEnabled: true
+          MountPoints:
+            - SourceVolume: data
+              ContainerPath: /data
+          Environment:
+            - Name: FROM_ADDRESS
+              Value: !Ref FromAddress
+            - Name: TO_EMAIL
+              Value: !Ref ToEmail
+            - Name: SES_REGION
+              Value: !Ref AWS::Region
+          HealthCheck:
+            Command: [ CMD-SHELL, "pgrep -f mailer.sh > /dev/null || exit 1" ]
+            Interval: 30
+            Timeout: 5
+            Retries: 3
+            StartPeriod: 30
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: mailer
+
+  Service:
+    Type: AWS::ECS::Service
+    DependsOn: MountTarget
+    Properties:
+      Cluster: !Ref ClusterName
+      TaskDefinition: !Ref TaskDefinition
+      DesiredCount: 1
+      LaunchType: FARGATE
+      DeploymentConfiguration:
+        # Never two tasks at once: two logclients as one account would split delivery between
+        # them and both write the state file. The old task stops (saving its state) first.
+        MinimumHealthyPercent: 0
+        MaximumPercent: 100
+        DeploymentCircuitBreaker:
+          Enable: true
+          Rollback: true
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          Subnets:
+            - !Ref SubnetId
+          SecurityGroups:
+            - !Ref GatewaySecurityGroup
+      Tags:
+        - Key: CostCenter
+          Value: !Ref CostTag
+
+Outputs:
+  ServiceName:
+    Value: !GetAtt Service.Name
+  FileSystemId:
+    Value: !Ref FileSystem
+  LogGroupName:
+    Value: !Ref LogGroup

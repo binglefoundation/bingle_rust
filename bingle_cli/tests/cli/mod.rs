@@ -23,6 +23,8 @@ pub mod chat_state;
 pub mod checkrelays;
 #[path = "echo_mode.rs"]
 pub mod echo_mode;
+#[path = "gateway_start.rs"]
+pub mod gateway_start;
 #[path = "logclient.rs"]
 pub mod logclient;
 #[path = "logging.rs"]
