@@ -35,3 +35,5 @@ pub mod logclient;
 pub mod logging;
 #[doc(hidden)]
 pub mod maildir;
+#[doc(hidden)]
+pub mod spam_limit;

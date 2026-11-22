@@ -7,10 +7,13 @@ use bingle_cli::chat_state::ChatState;
 use bingle_cli::logclient::{
     JsonLinesSink, LogClient, MaildirSink, MessageSink, parse_logclient_args,
 };
+use bingle_cli::spam_limit::{SPAM_LIMIT_RECORD, SpamLimiter};
 use bingle_local::api::bingle_local_api::{BingleLocalApi, Message};
 use bingle_local::api::bingle_local_api_impl::{BingleApiLocalImpl, LocalApiConfig};
 use serde_json::{Value, json};
 use tempfile::TempDir;
+
+use super::spam_limit::{TestClock, utc_millis};
 
 fn args(items: &[&str]) -> Vec<String> {
     items.iter().map(|s| s.to_string()).collect()
@@ -467,4 +470,115 @@ pub fn a_received_message_lands_in_the_maildir_as_one_email() {
             .count(),
         0
     );
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn spam_limit_is_parsed_and_off_by_default() {
+    let parsed = parse_logclient_args(args(&["--state_file", "s.json", "--spam-limit", "20"]))
+        .expect("parse");
+    assert_eq!(parsed.spam_limit, Some(20));
+    let parsed = parse_logclient_args(args(&["--state_file", "s.json"])).expect("parse");
+    assert_eq!(parsed.spam_limit, None);
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn a_spam_limit_that_is_not_a_positive_whole_number_is_an_error() {
+    for bad in ["0", "-1", "ten", "1.5"] {
+        let err = parse_logclient_args(args(&["--state_file", "s.json", "--spam-limit", bad]))
+            .expect_err(bad);
+        assert!(err.contains("--spam-limit"), "{err}");
+    }
+    let err = parse_logclient_args(args(&["--state_file", "s.json", "--spam-limit"]))
+        .expect_err("missing value");
+    assert!(err.contains("--spam-limit"), "{err}");
+}
+
+/// A client over a fresh registered state with a spam limit of `limit`, at a fixed time.
+fn limited_client(limit: u32, sink: &RecordingSink) -> (LogClient, TempDir) {
+    let (state, dir) = state_registered_as("support-desk");
+    let clock = TestClock::at(utc_millis(2026, 11, 21, 12, 0, 0));
+    let client = LogClient::new(state, Box::new(sink.clone()))
+        .with_spam_limit(SpamLimiter::new(limit, Box::new(clock)));
+    (client, dir)
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn a_message_over_the_spam_limit_is_kept_in_history_but_not_handed_on() {
+    let sink = RecordingSink::default();
+    let (mut client, _dir) = limited_client(2, &sink);
+
+    assert!(client.receive("PEER_BOB", "bob", &json!({ "text": "one" })));
+    assert!(client.receive("PEER_BOB", "bob", &json!({ "text": "two" })));
+    assert!(!client.receive("PEER_BOB", "bob", &json!({ "text": "three" })));
+    assert!(client.receive("PEER_CAROL", "carol", &json!({ "text": "hello" })));
+
+    assert_eq!(sink.texts(), vec!["one", "two", "hello"]);
+    assert_eq!(client.delivered(), 3);
+    assert_eq!(client.suppressed(), 1);
+    let history: Vec<String> = client
+        .state()
+        .messages()
+        .expect("messages")
+        .into_iter()
+        .map(|m| m.text)
+        .collect();
+    assert!(history.contains(&"three".to_string()), "{history:?}");
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn the_spam_limit_counts_survive_a_restart() {
+    let sink = RecordingSink::default();
+    let (mut client, dir) = limited_client(2, &sink);
+    assert!(client.receive("PEER_BOB", "bob", &json!({ "text": "one" })));
+    assert!(client.receive("PEER_BOB", "bob", &json!({ "text": "two" })));
+    drop(client);
+
+    // A new run over the same state file, later the same day.
+    let path = dir.path().join("state.json").to_string_lossy().into_owned();
+    let chat_args = parse_chat_args(args(&["--state_file", &path])).expect("parse");
+    let state = ChatState::from_chat_args(&chat_args).expect("bridge");
+    assert!(state.app_record(SPAM_LIMIT_RECORD).expect("read").is_some());
+    let clock = TestClock::at(utc_millis(2026, 11, 21, 18, 0, 0));
+    let mut client = LogClient::new(state, Box::new(sink.clone()))
+        .with_spam_limit(SpamLimiter::new(2, Box::new(clock)));
+
+    assert!(!client.receive("PEER_BOB", "bob", &json!({ "text": "three" })));
+    assert_eq!(sink.texts(), vec!["one", "two"]);
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn a_mailbox_sender_without_a_known_id_is_limited_by_handle() {
+    let (mut source, _source_dir) = state_registered_as("support-desk");
+    let read: Vec<Message> = ["one", "two"]
+        .iter()
+        .map(|text| {
+            receive_message(&mut source, "PEER_BOB", "bob", &json!({ "text": text }))
+                .expect("stored")
+        })
+        .collect();
+
+    let sink = RecordingSink::default();
+    let (mut client, _dir) = limited_client(1, &sink);
+
+    assert_eq!(client.deliver_polled(&read), 1);
+    assert_eq!(sink.texts(), vec!["one"]);
+    assert_eq!(client.limiter().expect("limiter").count("bob"), 1);
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn without_a_spam_limit_every_message_is_handed_on() {
+    let (state, _dir) = state_registered_as("support-desk");
+    let sink = RecordingSink::default();
+    let mut client = LogClient::new(state, Box::new(sink.clone()));
+    for text in ["one", "two", "three", "four"] {
+        assert!(client.receive("PEER_BOB", "bob", &json!({ "text": text })));
+    }
+    assert_eq!(client.suppressed(), 0);
+    assert!(client.limiter().is_none());
 }

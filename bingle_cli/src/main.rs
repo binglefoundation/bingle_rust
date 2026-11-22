@@ -1181,12 +1181,13 @@ fn run_chat_session(
 fn cmd_logclient(args: Vec<String>) {
     // One string literal per output line, as for `chat`.
     const USAGE: &str = concat!(
-        "Usage: bingle_cli logclient --state_file <file> [--maildir <dir> --from <address>] [--handle <handle>] [--passphrase <text>] [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--stun-servers <list>] [--stun-servers-file <file>] [--store-forward <receive|none>] [--poll-interval <secs>] [--auto-migrate]\n",
+        "Usage: bingle_cli logclient --state_file <file> [--maildir <dir> --from <address>] [--handle <handle>] [--passphrase <text>] [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--stun-servers <list>] [--stun-servers-file <file>] [--store-forward <receive|none>] [--poll-interval <secs>] [--spam-limit <n>] [--auto-migrate]\n",
         "  Runs as the account in --state_file and hands on each received text message. Logs go to stderr.\n",
         "  --maildir <dir> --from <address>: write each message into the Maildir <dir> as an email from <address> (an SES-verified address), for scripts/mailer.sh to send.\n",
         "  Without --maildir, each message is written to stdout as one JSON line: {\"id\", \"sender\", \"sender_id\", \"sent_time\", \"text\"}.\n",
         "  --handle/--passphrase: only needed on a first run, to import (and register) the account; afterwards the state file is enough.\n",
-        "  --store-forward: receive (default) also drains the Sidewinder Mailbox on start and every --poll-interval seconds; none takes direct delivery only.",
+        "  --store-forward: receive (default) also drains the Sidewinder Mailbox on start and every --poll-interval seconds; none takes direct delivery only.\n",
+        "  --spam-limit <n>: hand on at most <n> messages per sender per UTC day; later ones are kept in the state file only.",
     );
 
     // Subcommand help prints to stdout and exits 0, mirroring the other subcommands.
@@ -1216,22 +1217,28 @@ fn cmd_logclient(args: Vec<String>) {
     let chat_args = parsed.chat;
     let state = prepare_chat_state_or_exit(&chat_args, USAGE);
     let poll_interval = bingle_cli::chat_poll::resolve_poll_interval(chat_args.poll_interval_secs);
-    run_logclient_session(state, sink, poll_interval);
+    let mut client = LogClient::new(state, sink);
+    if let Some(limit) = parsed.spam_limit {
+        client = client.with_spam_limit(SpamLimiter::new(limit, Box::new(SystemClock)));
+        tracing::info!("logclient: handing on at most {limit} messages per sender per UTC day");
+    }
+    run_logclient_session(client, poll_interval);
 }
 
-/// Start the engine for a ready account and hand every received text message to `sink` until
+/// Start the engine for a ready account and hand every received text message to `client` until
 /// SIGINT/SIGTERM: real-time messages through the engine's `on_message` callback, and, when the
-/// store-and-forward receive gate is on, Mailbox messages from the background poller. Each message is
-/// handed to the sink before the state file is saved (issue #65), so every save happens under the
-/// client lock. On a signal it stops the engine and saves the state file; a second signal exits at
+/// store-and-forward receive gate is on, Mailbox messages from the background poller. The client
+/// applies any spam limit (issue #66) and hands each message to its sink before the state file is
+/// saved (issue #65), so every save happens under the client lock. On a signal it stops the engine and saves the state file; a second signal exits at
 /// once.
-fn run_logclient_session(state: ChatState, sink: Box<dyn MessageSink>, poll_interval: Duration) {
+fn run_logclient_session(client: LogClient, poll_interval: Duration) {
+    let state = client.state();
     let opts = state.opts.clone();
     let receive_enabled = state.store_and_forward_receive_enabled();
     let local = state.local_handle();
     let state_file = state.state_file_path();
     // Shared with the engine callback and the poller: both deliver through the one client.
-    let client = Arc::new(Mutex::new(LogClient::new(state, sink)));
+    let client = Arc::new(Mutex::new(client));
     let api = BingleApiImpl::new(&opts);
 
     {
@@ -1427,6 +1434,7 @@ use bingle_cli::checkrelays;
 use bingle_cli::logclient::{
     JsonLinesSink, LogClient, MaildirSink, MessageSink, parse_logclient_args,
 };
+use bingle_cli::spam_limit::{SpamLimiter, SystemClock};
 use bingle_core::api::bingle_api::StartOptions;
 use bingle_core::api::network_endpoint::NetworkEndpoint;
 use bingle_local::api::bingle_local_api::Message;

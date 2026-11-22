@@ -196,6 +196,13 @@ bingle_cli logclient --state_file tmp/support_state.json --maildir tmp/support_m
 - `--store-forward receive` is the default, so messages held while `logclient` was offline are
   picked up on start and every `--poll-interval` seconds (default 20). `--store-forward none` takes
   direct delivery only; `send` and `both` are refused.
+- **Spam limit** (`--spam-limit <n>`): once a sender has had `n` messages handed on in a UTC day,
+  its later messages that day are kept in the state-file history but not handed on, until the next
+  UTC midnight. A sender is counted by its Bingle id, or by its handle for a Mailbox message from
+  someone who isn't a contact yet. The day's counts are kept in the state file (app record
+  `logclient.spam_limit`), so a restart doesn't reset them. The first suppressed message from a
+  sender each day logs `suppressed messages from <sender> (limit <n> reached)` to stderr, then a
+  running count at most once an hour. Without the flag there is no limit.
 - Ctrl-C or SIGTERM stops the engine and saves the state file; a second signal exits at once.
 
 The chat flags that only affect sending or the prompt (`--to`, `--to-id`, `--no-retries`,

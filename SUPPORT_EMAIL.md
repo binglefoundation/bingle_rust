@@ -17,7 +17,7 @@ Email is one-way: replying to a forwarded email does not reach the sender. Reply
 Start both on the same Maildir, in two terminals or as two services:
 
 ```bash
-bingle_cli logclient --state_file support_state.json --maildir support_maildir --from relay@example.com --node-file nodely_deployed_mainnet_node.json --stun-servers-file stunservers.txt
+bingle_cli logclient --state_file support_state.json --maildir support_maildir --from relay@example.com --spam-limit 20 --node-file nodely_deployed_mainnet_node.json --stun-servers-file stunservers.txt
 ```
 
 ```bash
@@ -71,8 +71,12 @@ mv support_maildir/failed/* support_maildir/new/
 If `logclient` cannot write a message into the Maildir (a full disk, say), it logs an error and the
 message stays in its state file's history, from where it can be read with `bingle_cli chat`.
 
-**Spam limit.** A per-sender daily cap on forwarded messages (`logclient --spam-limit`) is tracked in
-#66.
+**Spam limit.** `logclient --spam-limit <n>` forwards at most `n` messages a UTC day from each
+sender; later ones that day stay in the state file's history only, and the first is logged. The
+counts survive a restart. See the
+[developer guide](DEVELOPER.md#receiving-messages-for-a-mailer-logclient) for details. The limit is
+per Bingle account, so one person with many registered accounts is not covered; registration cost
+limits that.
 
 ## Setting up SES
 

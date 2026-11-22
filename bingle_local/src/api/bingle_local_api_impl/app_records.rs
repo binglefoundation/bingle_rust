@@ -61,6 +61,13 @@ impl BingleApiLocalImpl {
         Ok(())
     }
 
+    /// `&self` core of [`BingleLocalApi::set_app_record`](crate::api::BingleLocalApi::set_app_record),
+    /// for a caller holding the store behind an `Arc`, like the other `*_shared` cores (bingle_cli's
+    /// `logclient` keeps its spam-limit counts this way, issue #66).
+    pub fn set_app_record_shared(&self, name: &str, json: String) -> Result<(), BingleError> {
+        self.set_app_record_inner(name, json)
+    }
+
     /// The core of
     /// [`BingleLocalApi::remove_app_record`](crate::api::BingleLocalApi::remove_app_record).
     pub(super) fn remove_app_record_inner(&self, name: &str) -> Result<(), BingleError> {

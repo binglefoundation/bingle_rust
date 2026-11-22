@@ -273,6 +273,20 @@ impl ChatState {
         Ok(())
     }
 
+    /// One of the account's app records in the state file (issue #471), or `None` when there is
+    /// none.
+    pub fn app_record(&self, name: &str) -> Result<Option<String>, String> {
+        self.local.app_record(name).map_err(|e| e.to_string())
+    }
+
+    /// Store an app record (issue #471), replacing any with the same name. The caller persists via
+    /// [`save_state`](ChatState::save_state).
+    pub fn set_app_record(&mut self, name: &str, json: String) -> Result<(), String> {
+        self.local
+            .set_app_record_shared(name, json)
+            .map_err(|e| e.to_string())
+    }
+
     /// The stored message history, in send-time order (issue #69).
     pub fn messages(&self) -> Result<Vec<Message>, String> {
         self.local.get_messages().map_err(|e| e.to_string())
