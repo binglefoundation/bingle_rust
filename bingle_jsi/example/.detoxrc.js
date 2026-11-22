@@ -45,9 +45,11 @@ module.exports = {
   devices: {
     simulator: {
       type: 'ios.simulator',
+      // A simulator reserved for e2e by name, never a development one: suites reset its Keychain
+      // (`device.clearKeychain()`, issue #478) and install the harness app. run_e2e_ios.sh creates
+      // it if it is missing; BINGLE_E2E_SIMULATOR picks another reserved simulator.
       device: {
-        // Adjust to any installed simulator (`xcrun simctl list devicetypes`).
-        type: 'iPhone 16',
+        name: process.env.BINGLE_E2E_SIMULATOR || 'Bingle E2E',
       },
     },
     emulator: {

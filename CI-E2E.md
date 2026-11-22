@@ -140,6 +140,34 @@ grows materially.
   against the shared sender too (`withSenderSelection` in `e2e/harness.ts`). Unset, they use the
   legacy loop, which is the default until the app switches over.
 
+### Sealed state file (issue #478)
+
+- **sealed_state** is iOS-simulator only, and local only like every iOS suite. It skips on Android,
+  which keeps a plain state file. It needs no network, so it runs without the backend variables:
+
+      bash bingle_jsi/example/scripts/run_e2e_ios.sh e2e/sealed_state.test.ts
+
+  It runs the sealed state file (#459) through the real Keychain store, the Swift bridge and the
+  engine:
+  - the file holds no readable account data;
+  - a file without its device secret opens only with the recovery phrase, and a wrong phrase leaves
+    it intact. `device.clearKeychain()` stands in for a restore to another device, since iOS never
+    restores the `ThisDeviceOnly` device secret elsewhere;
+  - a plain file is sealed on first load without losing anything;
+  - after a reinstall, the key the Keychain kept brings the account back;
+  - removing the key deletes the device secret, so a copy of the file needs the phrase.
+- **A reserved simulator:** the iOS suites run on a simulator named "Bingle E2E" (or
+  `BINGLE_E2E_SIMULATOR`), never a development one, because this suite resets the simulator's whole
+  Keychain. `run_e2e_ios.sh` creates it on first use on the newest iOS 18 runtime: Detox drives an
+  iOS 26 simulator about three times slower.
+- **Still manual, on a device**, because a simulator can't show them:
+  - Data Protection while the phone is locked: a save in the period after the lock, then the key
+    wiped (`forgetStateKey`), and a prewarmed launch while locked;
+  - iCloud Keychain sync between two devices;
+  - Apple's backup restore itself;
+  - delete account's on-chain opt-out; the suite covers its Keychain clean-up, which
+    `removeKeyFromDevice` shares.
+
 ## Run it manually
 
 Dispatch on any branch that has the workflow (add the branch to the `push` trigger, or use the
