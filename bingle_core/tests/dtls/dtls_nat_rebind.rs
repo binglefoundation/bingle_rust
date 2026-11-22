@@ -12,6 +12,7 @@ use std::time::{Duration, Instant};
 use bingle_core::api::bingle_api::NetworkEndpoint;
 use bingle_core::dtls::dtls_openssl::openssl_impl::is_client_hello;
 use bingle_core::dtls::{Dtls, DtlsOpenSsl, UdpNetworkMux};
+use bingle_core::packet_transport::{DtlsReliablePacketTransport, PacketTransport};
 
 use super::pki;
 
@@ -31,15 +32,25 @@ struct Node {
 }
 
 fn node(name: &str, idle_limit: Duration) -> Node {
-    let certs = pki::generate_ed25519_test_certs();
     let received: Arc<Mutex<Vec<Vec<u8>>>> = Arc::new(Mutex::new(Vec::new()));
-    let sink = received.clone();
-    let dtls = DtlsOpenSsl::new(name.to_string())
+    let dtls = unstarted(name, idle_limit, received.clone());
+    let addr = start(&dtls);
+    Node {
+        dtls,
+        addr,
+        received,
+    }
+}
+
+/// A DTLS node recording the payloads it receives in `received`, not yet started.
+fn unstarted(name: &str, idle_limit: Duration, received: Arc<Mutex<Vec<Vec<u8>>>>) -> DtlsOpenSsl {
+    let certs = pki::generate_ed25519_test_certs();
+    DtlsOpenSsl::new(name.to_string())
         .with_null_encryption()
         .with_direct_session_idle_limit(idle_limit)
         .with_handle_message(Arc::new(
             move |_d: &dyn Dtls, _from, _issuer, data: &[u8]| {
-                if let Ok(mut r) = sink.lock() {
+                if let Ok(mut r) = received.lock() {
                     r.push(data.to_vec());
                 }
             },
@@ -49,23 +60,26 @@ fn node(name: &str, idle_limit: Duration) -> Node {
         .with_server_signing_cert(certs.server_crt.clone())
         .with_server_signing_private_key(certs.server_key.clone())
         .with_ca_cert(certs.ca_crt.clone())
-        .with_handle_peer_certificate(accept_any_peer);
+        .with_handle_peer_certificate(accept_any_peer)
+}
+
+/// Starts `dtls` on a loopback socket and returns its address.
+fn start(dtls: &dyn Dtls) -> SocketAddr {
     let mux = Arc::new(UdpNetworkMux::bind(("127.0.0.1", 0)).expect("bind mux"));
     let addr = mux.local_addr().expect("mux addr");
     mux.start().expect("mux start");
     dtls.start(mux).expect("dtls start");
-    Node {
-        dtls,
-        addr,
-        received,
-    }
+    addr
 }
 
 fn wait_for_payload(node: &Node, payload: &[u8], timeout: Duration) -> bool {
+    wait_for(&node.received, payload, timeout)
+}
+
+fn wait_for(received: &Mutex<Vec<Vec<u8>>>, payload: &[u8], timeout: Duration) -> bool {
     let start = Instant::now();
     while start.elapsed() < timeout {
-        if node
-            .received
+        if received
             .lock()
             .map(|r| r.iter().any(|p| p == payload))
             .unwrap_or(false)
@@ -269,4 +283,64 @@ pub fn only_an_epoch_zero_client_hello_opens_a_session() {
     assert!(!is_client_hello(&record(21, 1, 1)));
     // Too short to hold a handshake header.
     assert!(!is_client_hello(&[22, 0xfe, 0xfd, 0, 0]));
+}
+
+/// A started DTLS node wrapped in the reliable packet transport, which acknowledges each block and
+/// retries a send that gets no acknowledgement. Returns the blocks it receives. The transport is
+/// installed before the node starts, as in the engine: the accept path keeps the handler it
+/// started with.
+fn reliable(
+    name: &str,
+    idle_limit: Duration,
+) -> (
+    DtlsReliablePacketTransport,
+    SocketAddr,
+    Arc<Mutex<Vec<Vec<u8>>>>,
+) {
+    let received: Arc<Mutex<Vec<Vec<u8>>>> = Arc::new(Mutex::new(Vec::new()));
+    let dtls = unstarted(name, idle_limit, received.clone());
+    let transport = DtlsReliablePacketTransport::new(Box::new(dtls), 1200);
+    let sink = received.clone();
+    transport.set_handle_message(Some(Arc::new(move |_d, _from, _issuer, block| {
+        if let Ok(mut r) = sink.lock() {
+            r.push(block.to_vec());
+        }
+        Ok(None)
+    })));
+    transport.set_retry_delays(vec![
+        Duration::from_millis(500),
+        Duration::from_secs(3),
+        Duration::from_secs(3),
+    ]);
+    let addr = start(transport.dtls());
+    (transport, addr, received)
+}
+
+#[ntest::timeout(20_000)]
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn a_retry_after_the_nat_moves_the_client_starts_a_new_session() {
+    // The NAT moves the client inside the idle limit, so the first attempt still goes out on the
+    // old session and is lost. The retry must start a new session, which reaches the server.
+    let limit = Duration::from_secs(60);
+    let (server, server_addr, server_received) = reliable("retry-server", limit);
+    let (client, _, _) = reliable("retry-client", limit);
+    let nat = Nat::new(server_addr);
+    let via_nat = NetworkEndpoint::new_direct(nat.inside_addr());
+
+    client.send(&via_nat, b"before").expect("first send");
+    assert!(wait_for(
+        &server_received,
+        b"before",
+        Duration::from_secs(5)
+    ));
+
+    nat.rebind();
+    client
+        .send(&via_nat, b"after")
+        .expect("the retry should be acknowledged over a new session");
+    assert!(wait_for(&server_received, b"after", Duration::from_secs(5)));
+
+    let _ = client.dtls().stop();
+    let _ = server.dtls().stop();
 }

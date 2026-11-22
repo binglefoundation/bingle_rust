@@ -427,7 +427,8 @@ pub fn send_waits_for_ack_complete_before_returning() {
 #[test]
 #[cfg(not(target_os = "ios"))]
 pub fn send_succeeds_when_ack_arrives_after_first_retry() {
-    let (transport, sent_packets) = new_transport_with_sent_packets_and_ack(1492, false);
+    let (transport, sent_packets, forgotten_peers) =
+        new_transport_with_sent_and_forgotten(1492, false);
     transport.set_retry_delays(vec![
         Duration::from_millis(30),
         Duration::from_millis(300),
@@ -483,6 +484,15 @@ pub fn send_succeeds_when_ack_arrives_after_first_retry() {
         packets
             .iter()
             .all(|(_, pkt)| pkt == &vec![0x11, 0x00, 0x00, 0x00, b'h', b'e', b'l', b'l', b'o'])
+    );
+    // The retry went out on a fresh session, and the session that carried the ACK is kept.
+    assert_eq!(
+        forgotten_peers
+            .lock()
+            .expect("forgotten_peers lock should not be poisoned")
+            .as_slice(),
+        &[to_addr],
+        "the retry should have dropped the session once"
     );
 }
 
@@ -616,10 +626,11 @@ pub fn ack_complete_is_consumed_and_not_forwarded_to_handler() {
 // issue #46: after a network change the DTLS session to a non-home root relay can be silently
 // dead — sends keep succeeding locally but no ACK_COMPLETE ever returns. When the reliable send
 // exhausts all its ACK retries it must forget the peer so the caller's next retry re-handshakes
-// instead of reusing the dead session forever.
+// instead of reusing the dead session forever. Each retry before that also starts on a fresh
+// session (issue #483).
 #[test]
 #[cfg(not(target_os = "ios"))]
-pub fn send_forgets_peer_after_all_retries_exhausted_with_no_ack() {
+pub fn send_starts_a_fresh_session_for_each_retry_and_forgets_the_peer_after_the_last() {
     let (transport, _sent_packets, forgotten_peers) =
         new_transport_with_sent_and_forgotten(1492, false);
     transport.set_retry_delays(vec![
@@ -642,8 +653,8 @@ pub fn send_forgets_peer_after_all_retries_exhausted_with_no_ack() {
         .expect("forgotten_peers lock should not be poisoned");
     assert_eq!(
         forgotten.as_slice(),
-        &[to_addr],
-        "the dead peer should be forgotten exactly once so the next retry re-handshakes"
+        &[to_addr, to_addr, to_addr],
+        "the peer should be forgotten before each of the two retries and after the last attempt"
     );
 }
 
