@@ -159,7 +159,7 @@ grows materially.
 - **A reserved simulator:** the iOS suites run on a simulator named "Bingle E2E" (or
   `BINGLE_E2E_SIMULATOR`), never a development one, because this suite resets the simulator's whole
   Keychain. `run_e2e_ios.sh` creates it on first use on the newest iOS 18 runtime: Detox drives an
-  iOS 26 simulator about three times slower.
+  iOS 26 simulator about 2.5 times slower (the engine itself is not slower).
 - **Still manual, on a device**, because a simulator can't show them:
   - Data Protection while the phone is locked: a save in the period after the lock, then the key
     wiped (`forgetStateKey`), and a prewarmed launch while locked;

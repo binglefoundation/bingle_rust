@@ -59,7 +59,7 @@ fi
 
 # The suites run on a simulator reserved for e2e (see .detoxrc.js), never a development one: they
 # reset its Keychain and install the harness app. Create it on first use, on the newest installed
-# iOS 18 runtime: Detox drives an iOS 26 simulator about three times slower, which pushes the
+# iOS 18 runtime: Detox drives an iOS 26 simulator about 2.5 times slower (the engine itself is not slower), which pushes the
 # multi-launch suites (sealed_state) past their timeouts. Without an iOS 18 runtime it uses the
 # default one.
 E2E_SIMULATOR="${BINGLE_E2E_SIMULATOR:-Bingle E2E}"
