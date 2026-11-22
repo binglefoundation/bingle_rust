@@ -107,7 +107,7 @@ pub fn logclient_runs_on_the_shared_volume_with_the_spam_limit() {
     );
     assert_eq!(value_of(&args, "--from"), Some(FROM));
     assert_eq!(value_of(&args, "--spam-limit"), Some("20"));
-    assert_eq!(value_of(&args, "--poll-interval"), Some("0"));
+    assert_eq!(value_of(&args, "--poll-interval"), Some("900"));
     assert_eq!(
         value_of(&args, "--node-file"),
         Some("/app/nodely_deployed_mainnet_node.json")

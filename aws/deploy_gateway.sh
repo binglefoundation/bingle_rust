@@ -19,7 +19,8 @@
 #                              on the first start to import the account into the state file. A
 #                              new stack needs it; a later full deploy without it stops passing it.
 #   --spam-limit <n>           Per-sender daily limit on forwarded messages (default: 20)
-#   --poll-interval <secs>     Seconds between Sidewinder Mailbox reads (default: 0, only on start)
+#   --poll-interval <secs>     Seconds between Sidewinder Mailbox reads (default: 900; 0 reads it
+#                              only on start)
 #   --node-file <path>         Algorand node file in the image (default: the relay stack's)
 #   --stack-name <name>        Gateway stack name (default: bingle-gateway-<relay stack>)
 #   --region <region>          AWS region (default: from aws configure)
@@ -38,7 +39,7 @@ FROM_ADDRESS=""
 HANDLE=""
 PASSPHRASE_SECRET=""
 SPAM_LIMIT="20"
-POLL_INTERVAL="0"
+POLL_INTERVAL="900"
 NODE_FILE=""
 REGION=$(aws configure get region || true)
 REPO_NAME="bingle-gateway"
@@ -63,7 +64,7 @@ usage() {
   echo "  --handle <handle>          The account handle, with --passphrase-secret"
   echo "  --passphrase-secret <arn>  Secret holding the account's recovery phrase, for the first start (a new stack needs it)"
   echo "  --spam-limit <n>           Per-sender daily limit (default: $SPAM_LIMIT)"
-  echo "  --poll-interval <secs>     Seconds between Sidewinder Mailbox reads (default: $POLL_INTERVAL, only on start)"
+  echo "  --poll-interval <secs>     Seconds between Sidewinder Mailbox reads (default: $POLL_INTERVAL; 0 only on start)"
   echo "  --node-file <path>         Algorand node file in the image (default: the relay stack's)"
   echo "  --stack-name <name>        Gateway stack name (default: bingle-gateway-<relay stack>)"
   echo "  --region <region>          AWS region (default: $REGION)"

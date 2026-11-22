@@ -34,9 +34,9 @@ Parameters:
     Description: 'Per-sender daily limit on forwarded messages; empty for none'
   PollInterval:
     Type: String
-    Default: '0'
+    Default: '900'
     AllowedPattern: '^[0-9]+$'
-    Description: 'Seconds between Sidewinder Mailbox reads; 0 reads it only on start, for messages left while the gateway was down'
+    Description: 'Seconds between Sidewinder Mailbox reads, a backstop for messages whose direct delivery failed; 0 reads it only on start'
   Handle:
     Type: String
     Default: ''
