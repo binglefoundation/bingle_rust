@@ -207,13 +207,15 @@ if [[ $STACK_EXISTS -eq 1 ]]; then
 fi
 
 if [[ $REDEPLOY_ONLY -eq 1 ]]; then
-  echo "[gateway] Updating the image of stack '$STACK_NAME'..."
   UPDATE_PARAMS=("ParameterKey=ImageUri,ParameterValue=$IMAGE_REF")
   for key in $(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --region "$REGION" --query "Stacks[0].Parameters[?ParameterKey!='ImageUri'].ParameterKey" --output text); do
     UPDATE_PARAMS+=("ParameterKey=$key,UsePreviousValue=true")
   done
   CURRENT_IMAGE=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --region "$REGION" --query "Stacks[0].Parameters[?ParameterKey=='ImageUri'] | [0].ParameterValue" --output text)
-  if [[ "$CURRENT_IMAGE" != "$IMAGE_REF" ]]; then
+  if [[ "$CURRENT_IMAGE" == "$IMAGE_REF" ]]; then
+    echo "[gateway] Stack '$STACK_NAME' already runs $IMAGE_REF."
+  else
+    echo "[gateway] Updating the image of stack '$STACK_NAME'..."
     aws cloudformation update-stack --stack-name "$STACK_NAME" --use-previous-template --capabilities CAPABILITY_IAM --region "$REGION" --parameters "${UPDATE_PARAMS[@]}" >/dev/null
     aws cloudformation wait stack-update-complete --stack-name "$STACK_NAME" --region "$REGION" || { show_failure_logs; exit 1; }
   fi
