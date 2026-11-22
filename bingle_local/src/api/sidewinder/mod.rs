@@ -15,5 +15,6 @@ pub use mailbox::{
 };
 #[doc(hidden)]
 pub use mailbox::{
-    build_pop_request, build_post_request, build_take_request, map_error, next_node_index,
+    build_pop_request, build_post_request, build_take_request, is_routine_read, map_error,
+    next_node_index,
 };
