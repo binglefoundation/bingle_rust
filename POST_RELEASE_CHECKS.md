@@ -2,7 +2,7 @@
 
 Checks that can only run once a change is released: on a device, in the app (bingle_ux_rn) after it picks up the new `react-native-bingle-jsi`, or on MainNet. CI can't cover them, so the issue stays open until someone runs the check.
 
-`scripts/release.sh` lists the checks below when a release finishes.
+When a release finishes, `scripts/release.sh` lists the checks below for changes that release ships.
 
 ## How to use this list
 
