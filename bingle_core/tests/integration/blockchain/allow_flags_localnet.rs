@@ -297,6 +297,14 @@ pub fn test_set_blocked_user_admin_only() {
         Some(true),
         "blocking leaves the other flags set"
     );
+    // Issue #95: the receive paths read the bit through account_standing, in the same read as the
+    // handle (none here: the target opted in without registering one).
+    let standing = admin
+        .account_standing(app_id, target_addr)
+        .unwrap()
+        .expect("opted in");
+    assert!(standing.blocked);
+    assert_eq!(standing.handle, None);
 
     // The app creator is not the app admin, so it may not block or unblock.
     let not_admin = AlgoBingle::new(ops_creator, app_id, 0);

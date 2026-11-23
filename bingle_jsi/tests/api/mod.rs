@@ -3,6 +3,7 @@ mod backgrounding_mailbox_tests;
 mod bingle_jsi_api_impl_tests;
 mod bingle_jsi_api_tests;
 mod error_tests;
+mod global_block_tests;
 mod key_storage_tests;
 mod log_bridge_tests;
 mod mailbox_poller_callback_tests;

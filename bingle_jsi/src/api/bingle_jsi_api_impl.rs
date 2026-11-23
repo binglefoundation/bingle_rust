@@ -1646,7 +1646,35 @@ impl BingleJsiApiImpl {
         api: Arc<dyn BingleApiBoth>,
         local_api: Option<Arc<Mutex<Box<dyn BingleLocalApi>>>>,
     ) -> Arc<Self> {
-        Self::build_for_tests(api, local_api, None, None, false, MailboxTiming::default())
+        Self::build_for_tests(
+            api,
+            local_api,
+            None,
+            None,
+            false,
+            MailboxTiming::default(),
+            None,
+        )
+    }
+
+    /// Test seam: as [`init_for_tests`](Self::init_for_tests), honouring the global blocklist
+    /// through `blocklist` (issue #95), which a test seeds with
+    /// [`GlobalBlocklist::record`] so no chain read is needed.
+    #[doc(hidden)]
+    pub fn init_for_tests_with_global_blocklist(
+        api: Arc<dyn BingleApiBoth>,
+        local_api: Option<Arc<Mutex<Box<dyn BingleLocalApi>>>>,
+        blocklist: Arc<GlobalBlocklist>,
+    ) -> Arc<Self> {
+        Self::build_for_tests(
+            api,
+            local_api,
+            None,
+            None,
+            false,
+            MailboxTiming::default(),
+            Some(blocklist),
+        )
     }
 
     /// Test seam: as [`init_for_tests`](Self::init_for_tests), with the backstop poll `interval`
@@ -1665,7 +1693,7 @@ impl BingleJsiApiImpl {
             interval,
             retry_initial,
         };
-        Self::build_for_tests(api, local_api, None, mailbox_reader, false, timing)
+        Self::build_for_tests(api, local_api, None, mailbox_reader, false, timing, None)
     }
 
     /// Test seam: as [`init_for_tests`](Self::init_for_tests) over `local`, with
@@ -1685,6 +1713,7 @@ impl BingleJsiApiImpl {
             Some(mailbox_reader),
             true,
             MailboxTiming::default(),
+            None,
         )
     }
 
@@ -1695,6 +1724,7 @@ impl BingleJsiApiImpl {
         mailbox_reader: Option<Arc<dyn BingleLocalApi>>,
         send_pending_messages: bool,
         timing: MailboxTiming,
+        global_blocklist: Option<Arc<GlobalBlocklist>>,
     ) -> Arc<Self> {
         let messages: Arc<Mutex<Vec<JsonValue>>> = Arc::new(Mutex::new(Vec::new()));
         let nat_type: Arc<Mutex<String>> = Arc::new(Mutex::new("Unknown".to_string()));
@@ -1732,7 +1762,7 @@ impl BingleJsiApiImpl {
             mailbox_reader,
             send_pending_messages,
             pending_sender: Arc::new(Mutex::new(None)),
-            global_blocklist: None,
+            global_blocklist,
         })
     }
 
