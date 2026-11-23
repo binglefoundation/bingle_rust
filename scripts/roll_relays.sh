@@ -26,21 +26,32 @@
 # roll, so the rest keep their old image. A relay already on this image is restarted on it, so
 # re-running is safe.
 #
+# On MainNet the inventory can also name the email gateway (GATEWAY lines, #489; there is no TestNet
+# gateway, so a TestNet inventory may not have one). After every relay has rolled, each gateway is
+# deployed onto the same commit: its image is built once, as bingle-gateway:<tag>, then deployed with
+# aws/deploy_gateway.sh --redeploy-only --no-build, which keeps its recipient, sender and other
+# settings, and health-gated the same way: logclient must log a start of this commit's build. A
+# gateway that fails fails the roll, but the relays already rolled keep the new image.
+#
 # The roll is recorded as a GitHub deployment in the `testnet` or `mainnet` environment, with its
 # outcome. That record says which commit each network runs, and the release reads it (#399). The
-# record holds only the commit, version, image tag and relay count: bingle_rust is public, so no AWS
-# account, stack name or relay handle goes into it.
+# record holds only the commit, version, image tag and relay and gateway counts: bingle_rust is
+# public, so no AWS account, stack name or relay handle goes into it.
 #
 # Env: START_TIMEOUT (300s), GH_REPO (binglefoundation/bingle_rust), BINGLE_NO_RECORD=1 (skip the
 # GitHub deployment record, e.g. when gh has no deployments permission).
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# An inventory path is relative to where the script was run, not the repository root.
+CALLER_DIR=$PWD
 cd "$REPO_ROOT"
 
 GH_REPO=${GH_REPO:-binglefoundation/bingle_rust}
 # The image repository deploy_relay.sh pushes to by default.
 IMAGE_REPO=bingle-relay
+# The image repository deploy_gateway.sh pushes to by default.
+GATEWAY_IMAGE_REPO=bingle-gateway
 START_TIMEOUT=${START_TIMEOUT:-300}
 
 info() { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
@@ -51,13 +62,16 @@ die()  { printf '\033[1;31merror:\033[0m %s\n' "$*" >&2; exit 1; }
 # ── inventory ─────────────────────────────────────────────────────────
 # The inventory is data, read line by line and never sourced: RELAY repeats, and its values hold
 # spaces. Sets INV_NETWORK, INV_ACCOUNT and the parallel arrays R_HANDLE, R_STACK, R_REGION, R_MODE,
-# R_NODE_FILE, one entry per RELAY line in file order.
+# R_NODE_FILE, one entry per RELAY line in file order, and G_STACK, G_RELAY_STACK, G_REGION, one per
+# GATEWAY line.
 parse_inventory() { # <file>
   local file=$1 line n=0 rest extra
-  local handle stack region mode node_file
+  [[ "$file" == /* ]] || file="$CALLER_DIR/$file"
+  local handle stack region mode node_file relay_stack
   [[ -f "$file" ]] || die "relay inventory '$file' not found"
   INV_NETWORK="" INV_ACCOUNT=""
   R_HANDLE=() R_STACK=() R_REGION=() R_MODE=() R_NODE_FILE=()
+  G_STACK=() G_RELAY_STACK=() G_REGION=()
   while IFS= read -r line || [[ -n "$line" ]]; do
     n=$((n + 1))
     line=${line%$'\r'}
@@ -79,18 +93,40 @@ parse_inventory() { # <file>
         [[ "$mode" == ec2 || "$mode" == express ]] || die "$file:$n: mode must be ec2 or express, not '$mode'"
         [[ "$node_file" == /app/* ]] || die "$file:$n: the node file is the path inside the container (/app/...), not '$node_file'"
         R_HANDLE+=("$handle") R_STACK+=("$stack") R_REGION+=("$region") R_MODE+=("$mode") R_NODE_FILE+=("$node_file") ;;
-      *) die "$file:$n: unrecognised line (expected NETWORK=, ACCOUNT_ID=, RELAY= or a # comment): $line" ;;
+      GATEWAY=*)
+        rest=${line#GATEWAY=}
+        extra=""
+        read -r stack relay_stack region extra <<< "$rest"
+        [[ -n "$region" && -z "$extra" ]] \
+          || die "$file:$n: a GATEWAY line has three fields: <gateway stack name> <relay stack name> <region>"
+        G_STACK+=("$stack") G_RELAY_STACK+=("$relay_stack") G_REGION+=("$region") ;;
+      *) die "$file:$n: unrecognised line (expected NETWORK=, ACCOUNT_ID=, RELAY=, GATEWAY= or a # comment): $line" ;;
     esac
   done < "$file"
   [[ "$INV_NETWORK" == testnet || "$INV_NETWORK" == mainnet ]] || die "$file: NETWORK must be testnet or mainnet (got '${INV_NETWORK}')"
   [[ -n "$INV_ACCOUNT" ]] || die "$file: ACCOUNT_ID is missing"
   [[ ${#R_HANDLE[@]} -gt 0 ]] || die "$file: no RELAY lines"
-  local i j
+  [[ ${#G_STACK[@]} -eq 0 || "$INV_NETWORK" == mainnet ]] \
+    || die "$file: GATEWAY lines are for MainNet only; there is no $INV_NETWORK gateway"
+  local i j found
   for ((i = 0; i < ${#R_STACK[@]}; i++)); do
     for ((j = i + 1; j < ${#R_STACK[@]}; j++)); do
       [[ "${R_STACK[i]}/${R_REGION[i]}" != "${R_STACK[j]}/${R_REGION[j]}" ]] || die "$file: stack ${R_STACK[i]} in ${R_REGION[i]} is listed twice"
       [[ "${R_HANDLE[i]}" != "${R_HANDLE[j]}" ]] \
         || die "$file: handle ${R_HANDLE[i]} is listed for two relays; one account runs one relay"
+    done
+  done
+  # A gateway runs in a relay stack's cluster, so that relay must be in this inventory, in the same
+  # region.
+  for ((i = 0; i < ${#G_STACK[@]}; i++)); do
+    found=0
+    for ((j = 0; j < ${#R_STACK[@]}; j++)); do
+      [[ "${R_STACK[j]}/${R_REGION[j]}" == "${G_RELAY_STACK[i]}/${G_REGION[i]}" ]] && found=1
+    done
+    [[ $found -eq 1 ]] \
+      || die "$file: gateway ${G_STACK[i]} runs on relay stack ${G_RELAY_STACK[i]} in ${G_REGION[i]}, which is not a RELAY in this inventory"
+    for ((j = i + 1; j < ${#G_STACK[@]}; j++)); do
+      [[ "${G_STACK[i]}/${G_REGION[i]}" != "${G_STACK[j]}/${G_REGION[j]}" ]] || die "$file: gateway ${G_STACK[i]} in ${G_REGION[i]} is listed twice"
     done
   done
 }
@@ -100,6 +136,11 @@ print_inventory() {
   echo "network $INV_NETWORK, AWS account $INV_ACCOUNT, ${#R_HANDLE[@]} relay(s):"
   for ((i = 0; i < ${#R_HANDLE[@]}; i++)); do
     printf '  %d. %-20s stack %-32s %-14s %-7s %s\n' $((i + 1)) "${R_HANDLE[i]}" "${R_STACK[i]}" "${R_REGION[i]}" "${R_MODE[i]}" "${R_NODE_FILE[i]}"
+  done
+  [[ ${#G_STACK[@]} -gt 0 ]] || return 0
+  echo "${#G_STACK[@]} gateway(s), deployed after the relays:"
+  for ((i = 0; i < ${#G_STACK[@]}; i++)); do
+    printf '  %d. stack %-32s on relay stack %-24s %s\n' $((i + 1)) "${G_STACK[i]}" "${G_RELAY_STACK[i]}" "${G_REGION[i]}"
   done
 }
 
@@ -113,7 +154,7 @@ while [[ $# -gt 0 ]]; do
     --check-inventory)
       [[ -n "${2:-}" ]] || die "--check-inventory needs a file"
       parse_inventory "$2"; print_inventory; exit 0 ;;
-    -h|--help) sed -n '2,34p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' "${BASH_SOURCE[0]}"; exit 0 ;;
     *) die "unknown argument: $1 (see --help)" ;;
   esac
 done
@@ -190,6 +231,12 @@ for ((i = 0; i < ${#R_HANDLE[@]}; i++)); do
   [[ "$live_node" == "${R_NODE_FILE[i]}" ]] || die "stack $stack reads node file '$live_node', but the inventory says '${R_NODE_FILE[i]}'"
   ok "$stack ($region): handle ${R_HANDLE[i]}, node file $live_node"
 done
+for ((i = 0; i < ${#G_STACK[@]}; i++)); do
+  stack=${G_STACK[i]} region=${G_REGION[i]}
+  aws cloudformation describe-stacks --stack-name "$stack" --region "$region" >/dev/null 2>&1 \
+    || die "gateway stack $stack is not in $region; deploy it first (aws/deploy_gateway.sh, SUPPORT_EMAIL.md) or fix the inventory"
+  ok "gateway $stack ($region) on relay stack ${G_RELAY_STACK[i]}"
+done
 
 if [[ -n "$CHECK_ACCOUNT" ]]; then
   [[ -n "${BINGLE_ACCOUNTS_DIR:-}" && -f "$BINGLE_ACCOUNTS_DIR/$CHECK_ACCOUNT.json" ]] \
@@ -203,6 +250,12 @@ if [[ $DRY_RUN -eq 1 ]]; then
   for ((i = 0; i < ${#R_HANDLE[@]}; i++)); do
     echo "    aws/deploy_relay.sh --redeploy-only --no-build --handle ${R_HANDLE[i]} --stack-name ${R_STACK[i]} --region ${R_REGION[i]} --tag $TAG$([[ ${R_MODE[i]} == express ]] && echo ' --express')"
   done
+  if [[ ${#G_STACK[@]} -gt 0 ]]; then
+    echo "    then build the gateway image: scripts/build_cli_image.sh --stage gateway --platform linux/arm64 --tag $GATEWAY_IMAGE_REPO:$TAG"
+    for ((i = 0; i < ${#G_STACK[@]}; i++)); do
+      echo "    aws/deploy_gateway.sh --redeploy-only --no-build --relay-stack ${G_RELAY_STACK[i]} --stack-name ${G_STACK[i]} --region ${G_REGION[i]} --tag $TAG"
+    done
+  fi
   [[ -n "$CHECK_ACCOUNT" ]] && echo "    then: bingle_cli checkrelays as $CHECK_ACCOUNT"
   [[ "${BINGLE_NO_RECORD:-0}" == 1 ]] || echo "    and record a $INV_NETWORK deployment of $SHORT in $GH_REPO"
   info "dry run: nothing changed"
@@ -215,6 +268,12 @@ info "building image $IMAGE_REPO:$TAG from $SHORT"
 bash scripts/build_cli_image.sh --platform linux/arm64 --tag "$IMAGE_REPO:$TAG" \
   || die "could not build image $IMAGE_REPO:$TAG"
 ok "built image $IMAGE_REPO:$TAG"
+if [[ ${#G_STACK[@]} -gt 0 ]]; then
+  info "building image $GATEWAY_IMAGE_REPO:$TAG from $SHORT"
+  bash scripts/build_cli_image.sh --stage gateway --platform linux/arm64 --tag "$GATEWAY_IMAGE_REPO:$TAG" \
+    || die "could not build image $GATEWAY_IMAGE_REPO:$TAG"
+  ok "built image $GATEWAY_IMAGE_REPO:$TAG"
+fi
 
 # ── the deployment record ─────────────────────────────────────────────
 DEPLOYMENT_ID=""
@@ -239,12 +298,12 @@ if [[ "${BINGLE_NO_RECORD:-0}" != 1 ]]; then
   [[ "$INV_NETWORK" == mainnet ]] && production=true
   DEPLOYMENT_ID=$(python3 -c '
 import json, sys
-sha, env, version, tag, n, prod = sys.argv[1:]
+sha, env, version, tag, n, g, prod = sys.argv[1:]
 print(json.dumps({"ref": sha, "environment": env, "auto_merge": False, "required_contexts": [],
   "transient_environment": False, "production_environment": prod == "true",
-  "description": "relays " + tag,
-  "payload": {"version": version, "image_tag": tag, "relays": int(n)}}))
-' "$SHA" "$INV_NETWORK" "$VERSION" "$TAG" "${#R_HANDLE[@]}" "$production" \
+  "description": ("relays and gateway " if int(g) else "relays ") + tag,
+  "payload": {"version": version, "image_tag": tag, "relays": int(n), "gateways": int(g)}}))
+' "$SHA" "$INV_NETWORK" "$VERSION" "$TAG" "${#R_HANDLE[@]}" "${#G_STACK[@]}" "$production" \
     | gh api -X POST "repos/$GH_REPO/deployments" --input - -q .id) \
     || die "could not record a $INV_NETWORK deployment in $GH_REPO (set BINGLE_NO_RECORD=1 to roll without one)"
   record_status in_progress "rolling $TAG"
@@ -252,13 +311,14 @@ print(json.dumps({"ref": sha, "environment": env, "auto_merge": False, "required
 fi
 
 # ── roll ──────────────────────────────────────────────────────────────
-# wait_for_start <stack> <region> <since ms>: the relay must log a start of this commit's build, and
-# must not log RELAY STARTUP ABORTED. Version lines read "Bingle CLI starting. Version: X (git <sha>, ...".
+# wait_for_start <stack> <region> <since ms> [log group]: the relay (or gateway) must log a start of
+# this commit's build, and must not log RELAY STARTUP ABORTED. Version lines read
+# "Bingle CLI starting. Version: X (git <sha>, ...". The log group defaults to the relay's.
 wait_for_start() {
-  local stack=$1 region=$2 since=$3 deadline events
+  local stack=$1 region=$2 since=$3 log_group=${4:-/bingle/relay/$1} deadline events
   deadline=$(( $(date +%s) + START_TIMEOUT ))
   while :; do
-    events=$(aws logs filter-log-events --log-group-name "/bingle/relay/$stack" --region "$region" \
+    events=$(aws logs filter-log-events --log-group-name "$log_group" --region "$region" \
       --start-time "$since" --query "events[].message" --output text 2>/dev/null || true)
     if grep -q "RELAY STARTUP ABORTED" <<< "$events"; then
       grep -A 8 "RELAY STARTUP ABORTED" <<< "$events" | head -n 20 >&2
@@ -294,6 +354,17 @@ if [[ -n "$CHECK_ACCOUNT" ]]; then
   ok "relay discovery passed"
 fi
 
+for ((i = 0; i < ${#G_STACK[@]}; i++)); do
+  stack=${G_STACK[i]} region=${G_REGION[i]}
+  info "deploying gateway $stack ($region) onto $TAG"
+  since=$(( $(date +%s) * 1000 ))
+  aws/deploy_gateway.sh --redeploy-only --no-build --relay-stack "${G_RELAY_STACK[i]}" --stack-name "$stack" --region "$region" --tag "$TAG" \
+    || die "gateway $stack failed to deploy; the relays keep $SHORT"
+  wait_for_start "$stack" "$region" "$since" "/bingle/gateway/$stack" \
+    || die "gateway $stack did not start cleanly on $SHORT; the relays keep $SHORT"
+  ok "gateway $stack is running $SHORT"
+done
+
 RUN_STATE=success
 record_status success "$TAG: success"
-info "rolled ${#R_HANDLE[@]} $INV_NETWORK relay(s) onto $SHORT ($TAG)"
+info "rolled ${#R_HANDLE[@]} $INV_NETWORK relay(s)$([[ ${#G_STACK[@]} -gt 0 ]] && echo " and ${#G_STACK[@]} gateway(s)") onto $SHORT ($TAG)"
