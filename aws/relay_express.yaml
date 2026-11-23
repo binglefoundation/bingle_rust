@@ -149,7 +149,11 @@ Resources:
               - Effect: Allow
                 Action:
                   - logs:CreateLogGroup
-                Resource: !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/bingle/relay/${AWS::StackName}:*'
+                # The log-group ARN, which CloudWatch Logs requires for log-group actions from
+                # 26 April 2027 (#376), and the old stream-format ARN for regions not yet switched.
+                Resource:
+                  - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/bingle/relay/${AWS::StackName}'
+                  - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/bingle/relay/${AWS::StackName}:*'
 
   # Secrets and Parameters
   RelayPassphraseSecret:
