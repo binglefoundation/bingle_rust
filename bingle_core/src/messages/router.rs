@@ -11,7 +11,6 @@ use crate::api::bingle_api::{
 };
 
 /// Check if a message type may only originate from a relay.
-#[cfg(feature = "test-hooks")]
 pub fn only_from_relay(msg: &Message) -> bool {
     match msg {
         Message::Relay(
@@ -41,6 +40,13 @@ pub fn only_from_relay(msg: &Message) -> bool {
         ) => true,
         _ => false,
     }
+}
+
+/// Whether a message from `sender_id` may be routed. A message type only a relay may send
+/// ([`only_from_relay`]) is accepted only when `is_relay` confirms the sender is a relay; any other
+/// message is accepted from any authenticated sender.
+pub fn origin_allowed(msg: &Message, sender_id: &str, is_relay: impl FnOnce(&str) -> bool) -> bool {
+    !only_from_relay(msg) || is_relay(sender_id)
 }
 
 #[derive(Default)]

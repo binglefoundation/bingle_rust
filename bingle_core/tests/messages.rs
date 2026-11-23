@@ -63,6 +63,9 @@ pub mod relay_call;
 #[path = "messages/relay_called_handler.rs"]
 pub mod relay_called_handler;
 
+#[path = "messages/message_origin.rs"]
+pub mod message_origin;
+
 #[path = "messages/ddb_messages_json.rs"]
 pub mod ddb_messages_json;
 
