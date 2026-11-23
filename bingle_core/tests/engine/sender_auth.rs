@@ -17,7 +17,7 @@ use bingle_core::dtls::network_mux_udp::UdpNetworkMux;
 use bingle_core::dtls::{Dtls, HandleMessage, HandlePeerCertificate};
 use bingle_core::engine::Engine;
 use bingle_core::messages::handlers::{FromStruct, MessageHandler};
-use bingle_core::messages::router::Router;
+use bingle_core::messages::router::{Router, only_from_relay};
 use bingle_core::messages::types::{
     DdbDeleteResolve, DdbDumpResolve, DdbGetRelaysStatus, DdbInitResolve, DdbQueryResolve,
     DdbRelaysStatusResponse, DdbSignon, DdbSignonResponse, DdbUpsertResolve, Fail, Message,
@@ -518,8 +518,8 @@ pub fn invalid_sender_message_not_routed() {
     }
 }
 
-/// When the sender's id IS found by `handle_lookup_by_id` (opted-in, registered),
-/// the Engine must pass every message type to the Router and the handler must be called.
+/// When the sender's id IS found by `handle_lookup_by_id` (opted-in, registered) and the sender is
+/// a relay, the Engine must pass every message type to the Router and the handler must be called.
 /// Mutex messages bypass the MessageHandler (they go directly to API mutex calls),
 /// so for those we verify only that `handle_lookup_by_id` was called (routing occurred).
 #[test]
@@ -529,7 +529,9 @@ pub fn valid_sender_message_routed() {
 
     for (label, msg) in all_message_samples() {
         let lookup_count = Arc::new(AtomicU32::new(0));
-        let (handler, called, router) = build_engine(AlwaysAuthApi::new(lookup_count.clone()));
+        let (engine, handler, called, router) =
+            build_engine_keeping_engine(AlwaysAuthApi::new(lookup_count.clone()));
+        engine.set_relay_origin_lookup(Arc::new(|_id: &str| Some(true)));
         fire_message(&handler, router, "KNOWN_SENDER.", &msg);
 
         assert!(
@@ -546,6 +548,67 @@ pub fn valid_sender_message_routed() {
                 "router / message handler must be called for opted-in sender (message type: {label})"
             );
         }
+    }
+}
+
+/// A registered sender that is not a relay may send every message type except the relay-only ones
+/// (`only_from_relay`), which the Engine drops before they reach the Router.
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn relay_only_message_from_non_relay_not_routed() {
+    init_test_logging();
+
+    for (label, msg) in all_message_samples() {
+        let lookup_count = Arc::new(AtomicU32::new(0));
+        let (engine, handler, called, router) =
+            build_engine_keeping_engine(AlwaysAuthApi::new(lookup_count.clone()));
+        let asked = Arc::new(Mutex::new(Vec::<String>::new()));
+        let a = asked.clone();
+        engine.set_relay_origin_lookup(Arc::new(move |id: &str| {
+            a.lock().unwrap().push(id.to_string());
+            Some(false)
+        }));
+        fire_message(&handler, router, "KNOWN_SENDER.", &msg);
+
+        if only_from_relay(&msg) {
+            assert!(
+                !called.load(Ordering::SeqCst),
+                "relay-only message from a non-relay must not be routed (message type: {label})"
+            );
+            assert_eq!(
+                *asked.lock().unwrap(),
+                vec!["KNOWN_SENDER".to_string()],
+                "the relay check is asked about the sender, without the issuer suffix ({label})"
+            );
+        } else if !is_mutex_message(&msg) {
+            assert!(
+                called.load(Ordering::SeqCst),
+                "non-relay sender's ordinary message must be routed (message type: {label})"
+            );
+        }
+    }
+}
+
+/// When the relay check can't be evaluated (chain unavailable), a relay-only message is dropped:
+/// the origin check fails closed.
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn relay_only_message_dropped_when_relay_check_unavailable() {
+    init_test_logging();
+
+    for (label, msg) in all_message_samples()
+        .into_iter()
+        .filter(|(_, m)| only_from_relay(m))
+    {
+        let lookup_count = Arc::new(AtomicU32::new(0));
+        let (engine, handler, called, router) =
+            build_engine_keeping_engine(AlwaysAuthApi::new(lookup_count.clone()));
+        engine.set_relay_origin_lookup(Arc::new(|_id: &str| None));
+        fire_message(&handler, router, "KNOWN_SENDER.", &msg);
+        assert!(
+            !called.load(Ordering::SeqCst),
+            "{label} routed without a relay answer"
+        );
     }
 }
 

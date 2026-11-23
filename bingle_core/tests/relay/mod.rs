@@ -18,6 +18,9 @@ pub mod relay_keep_alive_sender;
 #[path = "relay_permission_refresh.rs"]
 pub mod relay_permission_refresh;
 
+#[path = "relay_origin.rs"]
+pub mod relay_origin;
+
 #[path = "relay_updater.rs"]
 pub mod relay_updater;
 

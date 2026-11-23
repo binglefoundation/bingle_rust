@@ -306,6 +306,9 @@ pub struct Engine {
     // Refusals received from peers that could not authenticate us, latest per peer (issue #313).
     // Shared with the DTLS handler closure, which records them as they arrive.
     peer_refusals: Arc<Mutex<Vec<crate::api::bingle_api::PeerRefusal>>>,
+    // Whether a sender is a relay, for the relay-only message-origin check in the DTLS handler.
+    // Shared with the handler closure; caches the on-chain allow_relay answer per sender.
+    relay_origin: Arc<crate::relay::relay_origin::RelayOriginCache>,
     // On a relay: the loop that evicts relays whose on-chain allow_relay was withdrawn (#120).
     relay_permission_refresher:
         Mutex<Option<crate::relay::relay_permission_refresh::RelayPermissionRefresher>>,
@@ -707,6 +710,7 @@ impl Engine {
                 crate::relay::relay_keep_alive::RELAY_KEEP_ALIVE_INTERVAL,
             ),
             peer_refusals: Arc::new(Mutex::new(Vec::new())),
+            relay_origin: Arc::new(Self::new_relay_origin(api.clone())),
             relay_permission_refresher: Mutex::new(None),
             relay_permission_refresh_interval: Mutex::new(
                 crate::relay::relay_permission_refresh::RELAY_PERMISSION_REFRESH_INTERVAL,
@@ -791,6 +795,27 @@ impl Engine {
     /// during routing in `install_dtls_handler`.  Must be called before `install_dtls_handler`.
     pub fn set_custom_message_handler(&self, handler: Arc<dyn MessageHandler + Send + Sync>) {
         *self.custom_message_handler.lock().unwrap() = Some(handler);
+    }
+
+    /// The relay-origin cache, backed by the on-chain `allow_relay` flag read through `api`.
+    fn new_relay_origin(
+        api: crate::api::bingle_api::BingleApiBothType,
+    ) -> crate::relay::relay_origin::RelayOriginCache {
+        crate::relay::relay_origin::RelayOriginCache::new(Arc::new(move |id: &str| {
+            let api = api.upgrade()?;
+            crate::blockchain::algo_bingle::relay_permission(
+                api.as_ref(),
+                id,
+                "Engine::relay_origin",
+            )
+        }))
+    }
+
+    /// Test helper: replace how the relay-only message-origin check decides whether a sender is a
+    /// relay, instead of reading the chain.
+    #[cfg(feature = "test-hooks")]
+    pub fn set_relay_origin_lookup(&self, lookup: crate::relay::relay_origin::RelayLookup) {
+        self.relay_origin.set_lookup(lookup);
     }
 
     /// Test helper: arm the relay to drop (ignore) the next `n` incoming Listen requests, forcing
@@ -1345,6 +1370,7 @@ impl Engine {
         issuer: &str,
         from: &NetworkEndpoint,
         custom_handler: Option<&Arc<dyn MessageHandler + Send + Sync>>,
+        relay_origin: &crate::relay::relay_origin::RelayOriginCache,
     ) {
         match std::str::from_utf8(data) {
             Ok(s) => {
@@ -1366,6 +1392,17 @@ impl Engine {
                 };
                 match from_json_str(&s_with_cipher) {
                     Ok(msg) => {
+                        // A message type only a relay may send is dropped unless the sender is one.
+                        let sender_id = issuer.trim_end_matches(crate::protocol::ISSUER_SUFFIX);
+                        if !crate::messages::router::origin_allowed(&msg, sender_id, |id| {
+                            relay_origin.is_relay(id)
+                        }) {
+                            tracing::warn!(
+                                "[Engine::route_incoming] dropping relay-only message from non-relay id={}",
+                                sender_id
+                            );
+                            return;
+                        }
                         tracing::info!("[Engine::route_incoming] routing message {:?}", msg);
                         if let Some(h) = custom_handler {
                             router.route(h.as_ref(), &msg, issuer);
@@ -1406,6 +1443,7 @@ impl Engine {
         let span = self.span();
         let custom_handler = self.custom_message_handler.lock().unwrap().clone();
         let peer_refusals = self.peer_refusals.clone();
+        let relay_origin = self.relay_origin.clone();
 
         let router_arc = self.router();
 
@@ -1572,6 +1610,7 @@ impl Engine {
                         issuer,
                         from,
                         custom_handler.as_ref(),
+                        &relay_origin,
                     );
 
                     // Do not delegate to any previously-registered handler from API
