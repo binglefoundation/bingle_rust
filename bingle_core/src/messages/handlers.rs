@@ -12,13 +12,13 @@ use tracing::{error, warn};
 pub const TRIANGLE_TEST_1_DELAY: std::time::Duration = std::time::Duration::from_secs(10);
 
 /// Convert a peer-supplied endpoint to a socket address this node can send to, or `None` (logged at
-/// debug) when it can't be used. Endpoints in relay messages come from the network, so a bad one
+/// warn) when it can't be used. Endpoints in relay messages come from the network, so a bad one
 /// must never panic the handler.
 pub fn usable_endpoint(endpoint: &InetSocketAddress) -> Option<std::net::SocketAddr> {
     match std::net::SocketAddr::try_from(endpoint.clone()) {
         Ok(addr) => Some(addr),
         Err(e) => {
-            tracing::debug!("[handlers] ignoring unusable endpoint {}: {}", endpoint, e);
+            warn!("[handlers] ignoring unusable endpoint {}: {}", endpoint, e);
             None
         }
     }
