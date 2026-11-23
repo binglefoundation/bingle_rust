@@ -235,3 +235,35 @@ pub fn test_set_blocked_user_param_validation() {
             .contains("invalid target address")
     );
 }
+
+// Issue #95: one read of the local state gives the handle and the blocked bit.
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn test_standing_from_local_state() {
+    let blocked = (allow_flags::BIT_MIGRATED | allow_flags::BIT_BLOCKED_USER).to_string();
+    let standing = AlgoBingle::standing_from_local_state(&kv(&[
+        ("Handle", "alice"),
+        ("allow_static", &blocked),
+    ]));
+    assert_eq!(standing.handle.as_deref(), Some("alice"));
+    assert!(standing.blocked);
+
+    let clear = AlgoBingle::standing_from_local_state(&kv(&[("Handle", "bob")]));
+    assert_eq!(clear.handle.as_deref(), Some("bob"));
+    assert!(!clear.blocked);
+
+    let no_handle = AlgoBingle::standing_from_local_state(&kv(&[("allow_static", "1")]));
+    assert_eq!(no_handle.handle, None);
+    assert!(!no_handle.blocked, "a legacy scalar predates the bit");
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn test_account_standing_param_validation() {
+    let res = ab().account_standing(
+        0,
+        "P577PSTDICQ6PQFBR5YMDMJ2YVK7LT5V4GOPNVDLCEDJIL7XGRWC5BRFWA",
+    );
+    assert!(res.is_err());
+    assert!(res.unwrap_err().to_string().contains("app_id must be > 0"));
+}

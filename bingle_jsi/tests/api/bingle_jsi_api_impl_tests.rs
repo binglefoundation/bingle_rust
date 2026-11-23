@@ -1,7 +1,9 @@
 use std::sync::{Arc, Mutex};
 
 use bingle_jsi::api::bingle_jsi_api::BingleJsiApi;
-use bingle_jsi::api::bingle_jsi_api_impl::{BingleJsiApiImpl, is_sender_blocked};
+use bingle_jsi::api::bingle_jsi_api_impl::{
+    BingleJsiApiImpl, is_sender_blocked, is_sender_globally_blocked,
+};
 use bingle_jsi::api::callback::{ListeningCallback, MessageCallback};
 use bingle_jsi::api::error::BingleJsiError;
 use bingle_jsi::api::types::{
@@ -62,6 +64,7 @@ fn config_with_handle(handle: &str) -> BingleJsiConfig {
         send_pending_messages: None,
         key_storage: None,
         encrypt_state: None,
+        enable_global_block: None,
     }
 }
 
@@ -90,6 +93,7 @@ fn config_with_local(path: &str) -> BingleJsiConfig {
         send_pending_messages: None,
         key_storage: None,
         encrypt_state: None,
+        enable_global_block: None,
     }
 }
 
@@ -118,6 +122,7 @@ fn empty_config() -> BingleJsiConfig {
         send_pending_messages: None,
         key_storage: None,
         encrypt_state: None,
+        enable_global_block: None,
     }
 }
 
@@ -909,6 +914,7 @@ fn init_with_optional_fields() {
         send_pending_messages: None,
         key_storage: None,
         encrypt_state: None,
+        enable_global_block: None,
     };
     let api = BingleJsiApiImpl::init(config);
     assert!(
@@ -1340,4 +1346,39 @@ fn init_leaves_store_and_forward_unconfigured_without_app_id() {
         "no app id -> store-and-forward unconfigured"
     );
     let _ = std::fs::remove_file(&tmp);
+}
+
+// Issue #95: a live message is dropped when a moderator has blocked its sender, only with the
+// global blocklist on.
+#[test]
+fn a_sender_a_moderator_blocked_is_dropped_only_with_the_blocklist_on() {
+    use bingle_local::api::GlobalBlocklist;
+    let never = |_: &str| -> Result<Option<bool>, String> { panic!("no lookup expected") };
+
+    // Off: nothing is blocked and the chain is never read.
+    assert!(!is_sender_globally_blocked(None, "MALLORY_ID", never));
+
+    let blocklist = GlobalBlocklist::new(std::time::Duration::from_secs(600));
+    assert!(is_sender_globally_blocked(
+        Some(&blocklist),
+        "MALLORY_ID",
+        |_| Ok(Some(true))
+    ));
+    // Now cached: no second read.
+    assert!(is_sender_globally_blocked(
+        Some(&blocklist),
+        "MALLORY_ID",
+        never
+    ));
+    assert!(!is_sender_globally_blocked(
+        Some(&blocklist),
+        "ALICE_ID",
+        |_| Ok(Some(false))
+    ));
+    // A failed read lets the message through.
+    assert!(!is_sender_globally_blocked(
+        Some(&blocklist),
+        "BOB_ID",
+        |_| Err("node unreachable".to_string())
+    ));
 }

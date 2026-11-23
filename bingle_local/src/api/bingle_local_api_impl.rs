@@ -84,6 +84,11 @@ pub struct LocalApiConfig {
     /// device secret (the iOS Keychain). `false` (the default) writes plain JSON, as before; a
     /// sealed file still loads either way.
     pub encrypt_state: bool,
+    /// Honour the global blocklist (issue #95): drop received messages, live or from the Mailbox,
+    /// whose sender a moderator has blocked on-chain. `None` (the default) honours nothing. The
+    /// same [`GlobalBlocklist`](crate::api::GlobalBlocklist) is shared with the live receive path,
+    /// so both use one cache.
+    pub global_block: Option<std::sync::Arc<crate::api::GlobalBlocklist>>,
 }
 
 /// The APNs environment assumed when a caller does not specify one: `"sandbox"`, matching a dev /
@@ -109,6 +114,7 @@ impl Default for LocalApiConfig {
             store_and_forward_send: false,
             store_and_forward_receive: false,
             encrypt_state: false,
+            global_block: None,
         }
     }
 }
@@ -136,7 +142,18 @@ impl LocalApiConfig {
             store_and_forward_send: false,
             store_and_forward_receive: false,
             encrypt_state: false,
+            global_block: None,
         }
+    }
+
+    /// Honour the global blocklist through `blocklist` (issue #95); see
+    /// [`global_block`](Self::global_block).
+    pub fn with_global_block(
+        mut self,
+        blocklist: Option<std::sync::Arc<crate::api::GlobalBlocklist>>,
+    ) -> Self {
+        self.global_block = blocklist;
+        self
     }
 
     /// Seal the state file at rest (issue #459); see [`encrypt_state`](Self::encrypt_state).

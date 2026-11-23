@@ -265,6 +265,11 @@ export interface BingleJsiConfig {
    * still loads either way. With it on, check stateFileStatus() at start-up, call forgetStateKey()
    * when the device locks, and offer openStateWithRecoveryPhrase() for a restored file. Optional. */
   encrypt_state?: boolean | null;
+  /** Honour the global blocklist (issue #95, App Store guideline 1.2): drop received messages, live
+   * or from the Mailbox, whose sender a moderator has blocked on-chain. A block is remembered for
+   * good; "not blocked" is checked again after handle_cache_expiry_secs (600 by default).
+   * null/omitted defaults to false (off). Optional. */
+  enable_global_block?: boolean | null;
 }
 
 /**

@@ -375,6 +375,11 @@ pub struct BingleJsiConfig {
     /// start-up, call `forget_state_key` when the device locks, and offer
     /// `open_state_with_recovery_phrase` for a restored file.
     pub encrypt_state: Option<bool>,
+    /// Honour the global blocklist (issue #95, App Store guideline 1.2): drop received messages, live
+    /// or from the Mailbox, whose sender a moderator has blocked on-chain (the `blocked_user` bit,
+    /// #490). A block is remembered for good; "not blocked" is checked again after
+    /// `handle_cache_expiry_secs` (600 by default). `null` defaults to `false` (off).
+    pub enable_global_block: Option<bool>,
 }
 
 /// What the last load of the state file found (issue #459): read with

@@ -38,6 +38,10 @@ pub use registration::{ChainRegistrationOps, RegistrationOps, run_registration};
 
 // Sidewinder Mailbox (FIFO) client for store-and-forward (epic #200, foundation story #213).
 pub mod sidewinder;
+
+// Honouring the moderator-set blocked_user bit on received messages (issue #95).
+pub mod global_blocklist;
+pub use global_blocklist::{DEFAULT_GLOBAL_BLOCK_REFRESH, GlobalBlocklist};
 pub use sidewinder::{MAILBOX_POP_TYPE, MAILBOX_POST_TYPE, Mailbox, MailboxConfig};
 
 // Give-up nudge to the notify gateway (bingle_notify #11).

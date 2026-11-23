@@ -56,6 +56,15 @@ use algonaut::{
     },
 };
 
+/// What an opted-in account's local state on the Bingle DApp says about it as a sender (issue #95).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AccountStanding {
+    /// The handle it has registered, if any.
+    pub handle: Option<String>,
+    /// Whether a moderator has set its [`BIT_BLOCKED_USER`](allow_flags::BIT_BLOCKED_USER).
+    pub blocked: bool,
+}
+
 /// Lightweight helper around AlgoOps for calling the Bingle dApp.
 ///
 /// This module purposefully focuses only on building and submitting the minimal
@@ -920,16 +929,30 @@ impl AlgoBingle {
     /// The inverse of [`handle_lookup`](Self::handle_lookup) (handle → address); used to attribute a
     /// store-and-forward message to its sender's handle from the authenticated sender address (#215).
     pub fn handle_for_address(&self, app_id: u64, address: &str) -> Result<Option<String>> {
+        Ok(self
+            .account_standing(app_id, address)?
+            .and_then(|standing| standing.handle))
+    }
+
+    /// An account's registered handle and whether a moderator has blocked it (issue #95), from one
+    /// read of its local state for `app_id`. `Ok(None)` when the account is not opted in.
+    pub fn account_standing(&self, app_id: u64, address: &str) -> Result<Option<AccountStanding>> {
         if app_id == 0 {
             bail!("app_id must be > 0");
         }
         let kvs = self.ops.local_state_for_account(app_id, address)?;
-        Ok(kvs.and_then(|entries| {
-            entries
-                .into_iter()
+        Ok(kvs.map(|entries| Self::standing_from_local_state(&entries)))
+    }
+
+    /// The [`AccountStanding`] held in an account's local-state entries (pure, no network).
+    pub fn standing_from_local_state(entries: &[(String, String)]) -> AccountStanding {
+        AccountStanding {
+            handle: entries
+                .iter()
                 .find(|(k, _)| k == "Handle")
-                .map(|(_, v)| v)
-        }))
+                .map(|(_, v)| v.clone()),
+            blocked: Self::effective_allow_bits(entries) & allow_flags::BIT_BLOCKED_USER != 0,
+        }
     }
 
     /// Call register_endpoint(string)void for the caller.
