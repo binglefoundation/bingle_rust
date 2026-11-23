@@ -34,7 +34,11 @@ pub mod allow_flags {
     /// `enrol_sw_client`, migration) are refused until an admin enables it again (issue #239). Not a
     /// permission: readers of the client permission test [`BIT_SW_CLIENT`] only.
     pub const BIT_SW_CLIENT_REVOKED: u64 = 1 << 4;
-    // Bits 5..62 are reserved for future flags.
+    /// A moderator blocked the account, for App Store guideline 1.2 (issue #490); clients that honour
+    /// it hide the account's messages. A status bit, not a permission: nothing on-chain is refused to
+    /// a blocked account.
+    pub const BIT_BLOCKED_USER: u64 = 1 << 5;
+    // Bits 6..62 are reserved for future flags.
     /// Migration sentinel (bit 63): when set the value is the packed bitfield; when clear the account
     /// still holds the pre-bitfield legacy `allow_static` / `allow_relay` scalar encoding.
     pub const BIT_MIGRATED: u64 = 1 << 63;
@@ -449,6 +453,27 @@ impl AlgoBingle {
             target_address,
             "set_allow_sw_client(address,uint64)void",
             allow,
+        )
+    }
+
+    /// Block or unblock a specific address, for App Store guideline 1.2 (issue #490).
+    ///
+    /// Calls set_blocked_user on-chain for the provided target address, which sets or clears its
+    /// [`BIT_BLOCKED_USER`](allow_flags::BIT_BLOCKED_USER). The caller must be the app admin
+    /// (enforced by the contract). The target address must be opted-in to the app; it goes in the
+    /// call's foreign-accounts array, so the block transaction names it. Returns the submitted
+    /// transaction id on success.
+    pub fn set_blocked_user(
+        &self,
+        app_id: u64,
+        target_address: &str,
+        blocked: bool,
+    ) -> Result<String> {
+        self.set_allow_flag(
+            app_id,
+            target_address,
+            "set_blocked_user(address,uint64)void",
+            blocked,
         )
     }
 
@@ -879,6 +904,13 @@ impl AlgoBingle {
     /// [`check_allow_sw_client`](Self::check_allow_sw_client).
     pub fn check_sw_client_revoked(&self, app_id: u64, address: &str) -> Result<Option<bool>> {
         self.check_allow_bit(app_id, address, allow_flags::BIT_SW_CLIENT_REVOKED)
+    }
+
+    /// Whether a moderator has blocked `address` (issue #490). Same return convention as
+    /// [`check_allow_sw_client`](Self::check_allow_sw_client): `Ok(None)` when the account is not
+    /// opted in.
+    pub fn check_blocked_user(&self, app_id: u64, address: &str) -> Result<Option<bool>> {
+        self.check_allow_bit(app_id, address, allow_flags::BIT_BLOCKED_USER)
     }
 
     /// Resolve an account `address` to the handle it has registered on-chain, by reading the

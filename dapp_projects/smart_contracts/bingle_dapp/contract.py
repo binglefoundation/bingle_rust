@@ -21,7 +21,8 @@ BIT_RELAY = 1 << 1      # permitted to relay
 BIT_SW_NODE = 1 << 2    # permitted as a Sidewinder cluster node
 BIT_SW_CLIENT = 1 << 3  # permitted as a Sidewinder API client
 BIT_SW_CLIENT_REVOKED = 1 << 4  # an admin revoked the client bit: self-grants are refused (#239)
-# bits 5..62 are reserved for future flags.
+BIT_BLOCKED_USER = 1 << 5  # a moderator blocked the account: clients hide its messages (#490)
+# bits 6..62 are reserved for future flags.
 BIT_MIGRATED = 1 << 63  # sentinel: set => packed bitfield; clear => legacy allow_static/relay scalar
 
 
@@ -464,6 +465,19 @@ class BingleDapp(ARC4Contract):
             UInt64(BIT_SW_CLIENT_REVOKED),
             UInt64(1) if allow == UInt64(0) else UInt64(0),
         )
+
+    @abimethod()
+    def set_blocked_user(self, target_address: Account, blocked: UInt64) -> None:
+        """Block (`blocked != 0`) or unblock a target address, for App Store guideline 1.2 (#490).
+
+        Sets/clears the blocked_user bit in the packed allow field; clients that honour it hide the
+        account's messages (#95). A status bit, not a permission: nothing on-chain is refused to a
+        blocked account. The target address must be supplied as an argument and appear in the
+        transaction's foreign accounts array, so the block transaction names it. Only the application
+        admin may call this method (enforced in `_set_allow_bit`). The target account must be
+        opted-in to the application.
+        """
+        self._set_allow_bit(target_address, UInt64(BIT_BLOCKED_USER), blocked)
 
     @abimethod()
     def set_predecessor_app(self, predecessor: Application) -> None:

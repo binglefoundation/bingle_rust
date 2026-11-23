@@ -4,6 +4,7 @@ from algopy import Account, OnCompleteAction, String, UInt64, op
 from algopy_testing import AlgopyTestContext, algopy_testing_context
 
 from smart_contracts.bingle_dapp.contract import (
+    BIT_BLOCKED_USER,
     BIT_MIGRATED,
     BIT_RELAY,
     BIT_STATIC,
@@ -450,6 +451,42 @@ def test_set_allow_by_non_admin_fails(ctx: AlgopyTestContext) -> None:
     with pytest.raises(Exception):
         with ctx.txn.create_group(active_txn_overrides={"sender": non_admin}):
             contract.set_allow_sw_node(user, UInt64(1))
+
+
+def test_set_blocked_user_sets_and_clears_bit_keeping_others(ctx: AlgopyTestContext) -> None:
+    # Issue #490: block sets bit 5, unblock clears it, and other flags are untouched both ways.
+    assert BIT_BLOCKED_USER == 1 << 5
+    contract, admin, _ = _deploy(ctx)
+    user = ctx.any.account()
+    with ctx.txn.create_group(active_txn_overrides={"sender": admin}):
+        contract.set_allow_sw_client(user, UInt64(1))
+    with ctx.txn.create_group(active_txn_overrides={"sender": admin}):
+        contract.set_blocked_user(user, UInt64(1))
+    assert contract.config_bitfield[user] == UInt64(BIT_MIGRATED | BIT_SW_CLIENT | BIT_BLOCKED_USER)
+    with ctx.txn.create_group(active_txn_overrides={"sender": admin}):
+        contract.set_blocked_user(user, UInt64(0))
+    assert contract.config_bitfield[user] == UInt64(BIT_MIGRATED | BIT_SW_CLIENT)
+
+
+def test_set_blocked_user_by_non_admin_fails(ctx: AlgopyTestContext) -> None:
+    contract, _, _ = _deploy(ctx)
+    user = ctx.any.account()
+    non_admin = ctx.any.account()
+    with pytest.raises(Exception):
+        with ctx.txn.create_group(active_txn_overrides={"sender": non_admin}):
+            contract.set_blocked_user(user, UInt64(1))
+
+
+def test_blocked_user_survives_migrate_local(ctx: AlgopyTestContext) -> None:
+    # migrate_local copies the bitfield verbatim, so a blocked account stays blocked on the new app.
+    contract, _, _ = _deploy(ctx)
+    old_app = ctx.any.application()
+    contract.set_predecessor_app(old_app)
+    user = ctx.any.account()
+    ctx.ledger.set_local_state(old_app, user, b"allow_static", BIT_MIGRATED | BIT_BLOCKED_USER)
+    with ctx.txn.create_group(active_txn_overrides={"sender": user}):
+        contract.migrate_local(old_app)
+    assert contract.config_bitfield[user] == UInt64(BIT_MIGRATED | BIT_BLOCKED_USER)
 
 
 def test_set_allow_static_clear_deletes_endpoint(ctx: AlgopyTestContext) -> None:
