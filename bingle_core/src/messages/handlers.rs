@@ -11,6 +11,24 @@ use tracing::{error, warn};
 /// triangle test to complete before the initiator processes the response.
 pub const TRIANGLE_TEST_1_DELAY: std::time::Duration = std::time::Duration::from_secs(10);
 
+/// Convert a peer-supplied endpoint to a socket address this node can send to, or `None` (logged at
+/// debug) when it can't be used. Endpoints in relay messages come from the network, so a bad one
+/// must never panic the handler.
+pub fn usable_endpoint(endpoint: &InetSocketAddress) -> Option<std::net::SocketAddr> {
+    match std::net::SocketAddr::try_from(endpoint.clone()) {
+        Ok(addr) => Some(addr),
+        Err(e) => {
+            tracing::debug!("[handlers] ignoring unusable endpoint {}: {}", endpoint, e);
+            None
+        }
+    }
+}
+
+/// The usable endpoints in `endpoints`, in order, skipping any that `usable_endpoint` rejects.
+pub fn usable_endpoints(endpoints: &[InetSocketAddress]) -> Vec<std::net::SocketAddr> {
+    endpoints.iter().filter_map(usable_endpoint).collect()
+}
+
 /// Send a TriangleTest1Response to the originator after an optional delay.
 /// Called with `delay = TRIANGLE_TEST_1_DELAY` when a corner node was found, or `Duration::ZERO`
 /// when no corner node is available (can't validate full NAT config, so respond immediately).
@@ -1425,14 +1443,14 @@ impl MessageHandler for DefaultPrintingHandler {
         );
 
         let msg_tag = msg.tag.clone();
+        // The checking endpoint is forwarded to the corner relay in TriangleTest2; drop a message
+        // whose endpoint we can't use rather than pass it on.
+        if usable_endpoint(&msg.checking_endpoint).is_none() {
+            return;
+        }
         // Run in a thread per requirements
         let checking = msg.checking_endpoint.clone();
-        let exclusions: Vec<std::net::SocketAddr> = msg
-            .do_not_use_endpoints
-            .iter()
-            .cloned()
-            .map(|ie| ie.try_into().expect("valid doNotUseEndpoints"))
-            .collect();
+        let exclusions = usable_endpoints(&msg.do_not_use_endpoints);
         let api_for_thread = api.clone();
         // Clone sender context needed inside the spawned thread (avoid borrowing 'from')
         let from_nsk = from.network_source_key.clone();
@@ -1546,12 +1564,9 @@ impl MessageHandler for DefaultPrintingHandler {
     ) {
         // On T2: send T3 to checking_endpoint (acts as peer relay behavior).
         use crate::api::bingle_api::NetworkEndpoint;
-        use std::convert::TryInto;
-        let endpoint: std::net::SocketAddr = msg
-            .checking_endpoint
-            .clone()
-            .try_into()
-            .expect("valid checkingEndpoint");
+        let Some(endpoint) = usable_endpoint(&msg.checking_endpoint) else {
+            return;
+        };
         let t3 = RelayTriangleTest3 { app: None };
         let out = Message::Relay(RelayMessage::TriangleTest3(t3));
         let json_val = crate::messages::marshal::to_json_value(&out);
