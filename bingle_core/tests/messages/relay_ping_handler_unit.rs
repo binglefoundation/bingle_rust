@@ -311,3 +311,34 @@ pub fn relay_ping_handler_uses_sender_id_for_checking_id() {
         Some("FROM-OTHER-ID")
     );
 }
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn relay_ping_handler_drops_triangle_test2_with_unusable_checking_endpoint() {
+    let (mock_dtls, sends) = MockDtls::new();
+    let handler = RelayPingHandler::new(Arc::new(mock_dtls), None);
+    let api: Arc<dyn BingleApiBoth> = Arc::new(MockApi);
+    let router = Arc::new(bingle_core::messages::router::Router::new(Arc::downgrade(
+        &api,
+    )));
+    let from = bingle_core::messages::handlers::FromStruct::new(
+        "FROM-RELAY".to_string(),
+        NetworkEndpoint::new_direct("127.0.0.1:1".parse().unwrap()),
+        router,
+    );
+    let t2 = bingle_core::messages::types::RelayTriangleTest2 {
+        app: None,
+        checking_id: "CHECKED".to_string(),
+        checking_endpoint: bingle_core::messages::types::InetSocketAddress {
+            host: "2001:db8::1".to_string(),
+            port: 3478,
+        },
+    };
+
+    handler.on_triangle_test2(api, &from, &t2);
+
+    assert!(
+        sends.lock().unwrap().is_empty(),
+        "no TriangleTest3 for an unusable endpoint"
+    );
+}

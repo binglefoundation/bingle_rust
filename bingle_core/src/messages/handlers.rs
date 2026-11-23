@@ -11,6 +11,19 @@ use tracing::{error, warn};
 /// triangle test to complete before the initiator processes the response.
 pub const TRIANGLE_TEST_1_DELAY: std::time::Duration = std::time::Duration::from_secs(10);
 
+/// Convert a peer-supplied endpoint to a socket address this node can send to, or `None` when it
+/// can't be used. Endpoints in relay messages come from the network, so a bad one must never panic
+/// the handler. Doesn't log: the caller reports once per message, so a message carrying many bad
+/// endpoints can't multiply log volume.
+pub fn usable_endpoint(endpoint: &InetSocketAddress) -> Option<std::net::SocketAddr> {
+    std::net::SocketAddr::try_from(endpoint.clone()).ok()
+}
+
+/// The usable endpoints in `endpoints`, in order, skipping any that `usable_endpoint` rejects.
+pub fn usable_endpoints(endpoints: &[InetSocketAddress]) -> Vec<std::net::SocketAddr> {
+    endpoints.iter().filter_map(usable_endpoint).collect()
+}
+
 /// Send a TriangleTest1Response to the originator after an optional delay.
 /// Called with `delay = TRIANGLE_TEST_1_DELAY` when a corner node was found, or `Duration::ZERO`
 /// when no corner node is available (can't validate full NAT config, so respond immediately).
@@ -1425,14 +1438,23 @@ impl MessageHandler for DefaultPrintingHandler {
         );
 
         let msg_tag = msg.tag.clone();
+        // The checking endpoint is forwarded to the corner relay in TriangleTest2; drop a message
+        // whose endpoint we can't use rather than pass it on. Unusable entries are reported in one
+        // line per message, not one per endpoint, so a message can't multiply log volume.
+        let checking_usable = usable_endpoint(&msg.checking_endpoint).is_some();
+        let exclusions = usable_endpoints(&msg.do_not_use_endpoints);
+        let skipped_exclusions = msg.do_not_use_endpoints.len() - exclusions.len();
+        if !checking_usable || skipped_exclusions > 0 {
+            warn!(
+                "[handlers::on_triangle_test1] from {}: checkingEndpoint usable={}, {} unusable doNotUseEndpoints skipped",
+                from.id, checking_usable, skipped_exclusions
+            );
+        }
+        if !checking_usable {
+            return;
+        }
         // Run in a thread per requirements
         let checking = msg.checking_endpoint.clone();
-        let exclusions: Vec<std::net::SocketAddr> = msg
-            .do_not_use_endpoints
-            .iter()
-            .cloned()
-            .map(|ie| ie.try_into().expect("valid doNotUseEndpoints"))
-            .collect();
         let api_for_thread = api.clone();
         // Clone sender context needed inside the spawned thread (avoid borrowing 'from')
         let from_nsk = from.network_source_key.clone();
@@ -1541,17 +1563,18 @@ impl MessageHandler for DefaultPrintingHandler {
     fn on_triangle_test2(
         &self,
         api: Arc<dyn BingleApiBoth>,
-        _from: &FromStruct,
+        from: &FromStruct,
         msg: &RelayTriangleTest2,
     ) {
         // On T2: send T3 to checking_endpoint (acts as peer relay behavior).
         use crate::api::bingle_api::NetworkEndpoint;
-        use std::convert::TryInto;
-        let endpoint: std::net::SocketAddr = msg
-            .checking_endpoint
-            .clone()
-            .try_into()
-            .expect("valid checkingEndpoint");
+        let Some(endpoint) = usable_endpoint(&msg.checking_endpoint) else {
+            warn!(
+                "[handlers::on_triangle_test2] dropping message from {}: unusable checkingEndpoint",
+                from.id
+            );
+            return;
+        };
         let t3 = RelayTriangleTest3 { app: None };
         let out = Message::Relay(RelayMessage::TriangleTest3(t3));
         let json_val = crate::messages::marshal::to_json_value(&out);

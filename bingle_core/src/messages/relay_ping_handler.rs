@@ -90,12 +90,10 @@ impl MessageHandler for RelayPingHandler {
         msg: &RelayTriangleTest2,
     ) {
         // Send TriangleTest3 to the node at checking_endpoint
-        use std::convert::TryInto;
-        let to_addr: SocketAddr = msg
-            .checking_endpoint
-            .clone()
-            .try_into()
-            .expect("valid checkingEndpoint in T2");
+        let Some(to_addr) = crate::messages::handlers::usable_endpoint(&msg.checking_endpoint)
+        else {
+            return;
+        };
         let t3 = RelayTriangleTest3 { app: None };
         let out = Message::Relay(RelayMessage::TriangleTest3(t3));
         self.send_json_to(to_addr, &out);

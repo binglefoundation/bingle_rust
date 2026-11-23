@@ -75,6 +75,9 @@ pub mod listening_notifications;
 #[path = "messages/relay_triangle_test1_ext.rs"]
 pub mod relay_triangle_test1_ext;
 
+#[path = "messages/triangle_endpoint_conversion.rs"]
+pub mod triangle_endpoint_conversion;
+
 #[path = "messages/ping_response_handler.rs"]
 pub mod ping_response_handler;
 
