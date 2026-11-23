@@ -260,7 +260,11 @@ info "released $VERSION ($SHORT). Next:"
 echo "    roll MainNet: check out deployed (git worktree add tmp/deployed origin/deployed), bingle_env mainnet, then scripts/roll_relays.sh"
 echo "    bingle_ux_rn: move the app and react-native-bingle-jsi to $VERSION"
 # The checks that can only run after a release (POST_RELEASE_CHECKS.md): one line per entry heading.
-checks=$(git show "origin/staging:POST_RELEASE_CHECKS.md" 2>/dev/null | sed -n 's/^### //p')
+# A PR adds its entry along with the change, so the released commit's copy holds only entries for
+# changes this release ships; staging's copy drops the ones that have since passed. List the
+# entries in both, so a change merged after the released commit waits for the release that ships it.
+shipped=$(git show "$SHA:POST_RELEASE_CHECKS.md" 2>/dev/null | sed -n 's/^### //p')
+checks=$(git show "origin/staging:POST_RELEASE_CHECKS.md" 2>/dev/null | sed -n 's/^### //p' | grep -Fxf <(printf '%s\n' "$shipped") || true)
 if [[ -n "$checks" ]]; then
   echo "    run the post-release checks for the changes $VERSION ships (POST_RELEASE_CHECKS.md):"
   while IFS= read -r check; do echo "      - $check"; done <<<"$checks"

@@ -85,7 +85,7 @@ Move the app's version and its `react-native-bingle-jsi` dependency to the relea
 
 ### Run the post-release checks
 
-[`POST_RELEASE_CHECKS.md`](POST_RELEASE_CHECKS.md) lists the checks that can only run after a release: on a device, in the app, or on MainNet. `scripts/release.sh` prints them when it finishes. Run each one whose change this release ships, post the result on its issue, and remove the entry once it passes.
+[`POST_RELEASE_CHECKS.md`](POST_RELEASE_CHECKS.md) lists the checks that can only run after a release: on a device, in the app, or on MainNet. `scripts/release.sh` prints the ones for changes the release ships when it finishes (entries in both the released commit and staging, so a check for a change merged after the released commit waits for the next release). Run each one whose change this release ships, post the result on its issue, and remove the entry once it passes.
 
 ## What is published
 
