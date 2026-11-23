@@ -1,5 +1,5 @@
 // Localnet integration tests for the packed allow-flag bitfield (issue #232) and the Sidewinder
-// client self-grant (issue #239). The first drives the admin-only
+// client self-grant (issue #239), and the blocked_user bit (issue #490). The first drives the admin-only
 // set_allow_* setters against a real deployed contract and reads each flag back, verifying that
 // per-flag read-modify-write leaves the other flags intact and that revoking one bit keeps the rest.
 use crate::setup_localnet;
@@ -239,5 +239,88 @@ pub fn test_register_self_grants_sw_client_and_admin_revoke_sticks() {
             .check_allow_sw_client(app_id, unregistered_addr)
             .unwrap(),
         Some(false)
+    );
+}
+
+// Issue #490: the admin blocks and unblocks a user through set_blocked_user, the other flags are
+// untouched, and a caller other than the app admin is refused.
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn test_set_blocked_user_admin_only() {
+    test_util::init_test_logging();
+    test_util::assert_localnet_available();
+
+    let cfg = test_util::localnet_config();
+    let target_addr = test_util::ADDRESS_RECEIVE;
+
+    setup_localnet::ensure_localnet_accounts_funded(&cfg, &[test_util::ADDRESS_SPEND, target_addr])
+        .expect("Failed to fund localnet accounts");
+
+    let ops_creator = AlgoOps::new_for_algorand(
+        Some(test_util::PASSPHRASE_SPEND.to_string()),
+        None,
+        Some(cfg.clone()),
+    );
+    let ops_admin = AlgoOps::new_for_algorand(
+        Some(test_util::PASSPHRASE_APP_ADMIN.to_string()),
+        None,
+        Some(cfg.clone()),
+    );
+    let (app_id, _asset_id) =
+        test_util::deploy_bingle_app_and_asset(&ops_creator, "BINGLE$", 1_000_000);
+    let admin = AlgoBingle::new(ops_admin, app_id, 0);
+
+    assert_eq!(admin.check_blocked_user(app_id, target_addr).unwrap(), None);
+    let ops_target = AlgoOps::new_for_algorand(
+        Some(test_util::PASSPHRASE_RECEIVE.to_string()),
+        None,
+        Some(cfg.clone()),
+    );
+    ops_target.opt_in_app(app_id).expect("target opt-in app");
+    assert_eq!(
+        admin.check_blocked_user(app_id, target_addr).unwrap(),
+        Some(false)
+    );
+
+    admin
+        .set_allow_sw_client(app_id, target_addr, true)
+        .expect("set_allow_sw_client");
+    admin
+        .set_blocked_user(app_id, target_addr, true)
+        .expect("block");
+    assert_eq!(
+        admin.check_blocked_user(app_id, target_addr).unwrap(),
+        Some(true)
+    );
+    assert_eq!(
+        admin.check_allow_sw_client(app_id, target_addr).unwrap(),
+        Some(true),
+        "blocking leaves the other flags set"
+    );
+
+    // The app creator is not the app admin, so it may not block or unblock.
+    let not_admin = AlgoBingle::new(ops_creator, app_id, 0);
+    assert!(
+        not_admin
+            .set_blocked_user(app_id, target_addr, false)
+            .is_err(),
+        "a caller other than the app admin must be refused"
+    );
+    assert_eq!(
+        admin.check_blocked_user(app_id, target_addr).unwrap(),
+        Some(true)
+    );
+
+    admin
+        .set_blocked_user(app_id, target_addr, false)
+        .expect("unblock");
+    assert_eq!(
+        admin.check_blocked_user(app_id, target_addr).unwrap(),
+        Some(false)
+    );
+    assert_eq!(
+        admin.check_allow_sw_client(app_id, target_addr).unwrap(),
+        Some(true),
+        "unblocking leaves the other flags set"
     );
 }

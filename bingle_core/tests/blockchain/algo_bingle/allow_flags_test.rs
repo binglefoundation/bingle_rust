@@ -159,6 +159,10 @@ pub fn test_check_allow_sw_param_validation() {
             0,
             "P577PSTDICQ6PQFBR5YMDMJ2YVK7LT5V4GOPNVDLCEDJIL7XGRWC5BRFWA",
         ),
+        ab.check_blocked_user(
+            0,
+            "P577PSTDICQ6PQFBR5YMDMJ2YVK7LT5V4GOPNVDLCEDJIL7XGRWC5BRFWA",
+        ),
     ] {
         assert!(res.is_err());
         assert!(res.unwrap_err().to_string().contains("app_id must be > 0"));
@@ -185,4 +189,49 @@ pub fn test_enrol_sw_client_param_validation() {
     let res = ab().enrol_sw_client(0);
     assert!(res.is_err());
     assert!(res.unwrap_err().to_string().contains("app_id must be > 0"));
+}
+
+// Issue #490: the blocked marker is bit 5, matching the contract's BIT_BLOCKED_USER, and is not a
+// permission.
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn test_effective_allow_bits_blocked_user() {
+    assert_eq!(allow_flags::BIT_BLOCKED_USER, 1 << 5);
+    let packed = allow_flags::BIT_MIGRATED | allow_flags::BIT_BLOCKED_USER;
+    let bits = AlgoBingle::effective_allow_bits(&kv(&[("allow_static", &packed.to_string())]));
+    assert_eq!(
+        bits & allow_flags::BIT_BLOCKED_USER,
+        allow_flags::BIT_BLOCKED_USER
+    );
+    assert_eq!(
+        bits & (allow_flags::BIT_STATIC
+            | allow_flags::BIT_RELAY
+            | allow_flags::BIT_SW_NODE
+            | allow_flags::BIT_SW_CLIENT),
+        0
+    );
+    // An un-migrated legacy account predates the bit, so it is never blocked.
+    let legacy = AlgoBingle::effective_allow_bits(&kv(&[("allow_static", "1")]));
+    assert_eq!(legacy & allow_flags::BIT_BLOCKED_USER, 0);
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn test_set_blocked_user_param_validation() {
+    let ab = ab();
+    let res = ab.set_blocked_user(
+        0,
+        "P577PSTDICQ6PQFBR5YMDMJ2YVK7LT5V4GOPNVDLCEDJIL7XGRWC5BRFWA",
+        true,
+    );
+    assert!(res.is_err());
+    assert!(res.unwrap_err().to_string().contains("app_id must be > 0"));
+
+    let res = ab.set_blocked_user(1, "invalid_addr", true);
+    assert!(res.is_err());
+    assert!(
+        res.unwrap_err()
+            .to_string()
+            .contains("invalid target address")
+    );
 }
