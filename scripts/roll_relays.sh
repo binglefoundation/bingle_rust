@@ -43,6 +43,8 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# An inventory path is relative to where the script was run, not the repository root.
+CALLER_DIR=$PWD
 cd "$REPO_ROOT"
 
 GH_REPO=${GH_REPO:-binglefoundation/bingle_rust}
@@ -64,6 +66,7 @@ die()  { printf '\033[1;31merror:\033[0m %s\n' "$*" >&2; exit 1; }
 # GATEWAY line.
 parse_inventory() { # <file>
   local file=$1 line n=0 rest extra
+  [[ "$file" == /* ]] || file="$CALLER_DIR/$file"
   local handle stack region mode node_file relay_stack
   [[ -f "$file" ]] || die "relay inventory '$file' not found"
   INV_NETWORK="" INV_ACCOUNT=""
