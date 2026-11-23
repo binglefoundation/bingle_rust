@@ -151,3 +151,60 @@ pub fn triangle_test1_with_unusable_checking_endpoint_is_dropped() {
     std::thread::sleep(std::time::Duration::from_millis(200));
     assert!(capture.sent.lock().unwrap().is_empty());
 }
+
+/// Collects formatted log output so a test can count the lines a handler wrote.
+#[derive(Clone, Default)]
+struct LogCapture(Arc<Mutex<Vec<u8>>>);
+
+impl std::io::Write for LogCapture {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.0.lock().unwrap().extend_from_slice(buf);
+        Ok(buf.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+impl LogCapture {
+    fn warn_lines(&self) -> Vec<String> {
+        String::from_utf8_lossy(&self.0.lock().unwrap())
+            .lines()
+            .filter(|l| l.contains("WARN"))
+            .map(str::to_string)
+            .collect()
+    }
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn triangle_test1_reports_unusable_endpoints_in_one_line() {
+    let (capture, api, from) = setup();
+    let t1 = RelayTriangleTest1 {
+        app: None,
+        checking_endpoint: inet("2001:db8::1", 5555),
+        do_not_use_endpoints: (0..50).map(|i| inet("2001:db8::2", 6000 + i)).collect(),
+        tag: None,
+    };
+    let logs = LogCapture::default();
+    let writer = logs.clone();
+    let subscriber = tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::WARN)
+        .with_ansi(false)
+        .with_writer(move || writer.clone())
+        .finish();
+
+    // An unusable checking endpoint returns before the worker thread, so every line is on this thread.
+    tracing::subscriber::with_default(subscriber, || {
+        DefaultPrintingHandler.on_triangle_test1(api, &from, &t1);
+    });
+
+    let warns = logs.warn_lines();
+    assert_eq!(warns.len(), 1, "one warn line per message, got {:?}", warns);
+    assert!(
+        warns[0].contains("50 unusable doNotUseEndpoints"),
+        "{}",
+        warns[0]
+    );
+    assert!(capture.sent.lock().unwrap().is_empty());
+}
