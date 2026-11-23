@@ -538,8 +538,8 @@ impl BingleApiLocalImpl {
 
     /// Open one message read from the Mailbox, attribute it to its sender, and store it, returning it;
     /// `None` when it is dropped. The read already removed it from the node, so a message that cannot
-    /// be opened, comes from a blocked sender (bingle_ux_rn #34), or copies one already received
-    /// directly (issue #355) is gone.
+    /// be opened, comes from a blocked sender (bingle_ux_rn #34) or one a moderator blocked (#95), or
+    /// copies one already received directly (issue #355) is gone.
     fn open_mailbox_entry(
         &self,
         private_key: [u8; 32],
@@ -569,13 +569,28 @@ impl BingleApiLocalImpl {
             );
             return None;
         }
-        let sender_handle = sender_address
+        // One read of the sender's local state gives both its handle and whether a moderator has
+        // blocked it (#95).
+        let lookup = sender_address
             .as_deref()
-            .and_then(|addr| {
-                bgl.handle_for_address(self.config().app_id, addr)
-                    .ok()
-                    .flatten()
-            })
+            .map(|addr| bgl.account_standing(self.config().app_id, addr));
+        if let (Some(blocklist), Some(addr), Some(lookup)) =
+            (&self.config().global_block, &sender_address, &lookup)
+        {
+            let blocked = blocklist.is_blocked(addr, |_| match lookup {
+                Ok(standing) => Ok(standing.as_ref().map(|standing| standing.blocked)),
+                Err(e) => Err(e.to_string()),
+            });
+            if blocked {
+                tracing::info!(
+                    "[poll_mailbox] dropping a message from {addr}, which a moderator has blocked"
+                );
+                return None;
+            }
+        }
+        let sender_handle = lookup
+            .and_then(|lookup| lookup.ok().flatten())
+            .and_then(|standing| standing.handle)
             .or_else(|| sender_address.clone())
             .unwrap_or_else(|| "unknown".to_string());
         let recipient_handles = own_handle.map(|h| vec![h.to_string()]).unwrap_or_default();

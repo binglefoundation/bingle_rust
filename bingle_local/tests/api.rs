@@ -106,3 +106,6 @@ mod sealed_state;
 
 #[path = "api/app_records.rs"]
 mod app_records;
+
+#[path = "api/global_blocklist.rs"]
+mod global_blocklist;

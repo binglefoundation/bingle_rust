@@ -39,8 +39,8 @@ use bingle_local::api::pending_sender::{
     LocalOutboundStore, MessageDelivery, PendingSender, PendingSenderOptions,
 };
 use bingle_local::api::{
-    FileKeyStore, KeyStore, MailboxConfig, MailboxPoll, MailboxPollObserver, MailboxPollProgress,
-    MailboxPollStatus,
+    DEFAULT_GLOBAL_BLOCK_REFRESH, FileKeyStore, GlobalBlocklist, KeyStore, MailboxConfig,
+    MailboxPoll, MailboxPollObserver, MailboxPollProgress, MailboxPollStatus,
 };
 // Shared outbound-send retry policy (issue #82). Re-exported so existing
 // `bingle_jsi::api::bingle_jsi_api_impl::{is_transient_send_failure, pending_failure_reason}`
@@ -90,6 +90,9 @@ pub struct BingleJsiApiImpl {
     /// The running shared sender, while started with `send_pending_messages` on. Shared with the
     /// message callback and the Mailbox poller, which report peers heard from (issue #278).
     pending_sender: Arc<Mutex<Option<PendingSender>>>,
+    /// The global blocklist (issue #95), shared with the local store's Mailbox path; `Some` when
+    /// `enable_global_block` is on.
+    global_blocklist: Option<Arc<GlobalBlocklist>>,
 }
 
 /// Default period of the store-and-forward backstop Mailbox poll when the JSI config does not set
@@ -289,6 +292,20 @@ fn notify_mailbox_message(
         }
         Err(e) => tracing::warn!("[mailbox poller] could not lock message callback: {e}"),
     }
+}
+
+/// Whether a moderator has blocked `sender` (an Algorand address) on-chain, so its live message is
+/// dropped (issue #95). `lookup` reads the sender's `blocked_user` bit when `blocklist` has no
+/// current answer. Without a blocklist (the feature off), nothing is blocked.
+pub fn is_sender_globally_blocked<F>(
+    blocklist: Option<&GlobalBlocklist>,
+    sender: &str,
+    lookup: F,
+) -> bool
+where
+    F: FnOnce(&str) -> Result<Option<bool>, String>,
+{
+    blocklist.is_some_and(|blocklist| blocklist.is_blocked(sender, lookup))
 }
 
 /// Tell the shared pending-message sender, if running, that a peer (by id and/or handle; empty ones
@@ -719,6 +736,22 @@ impl BingleJsiApiImpl {
         true
     }
 
+    /// Read `address`'s `blocked_user` bit from the chain (issue #95): `Ok(None)` when it isn't
+    /// opted in, or when no Bingle app is configured.
+    fn read_blocked_user(&self, address: &str) -> Result<Option<bool>, String> {
+        let (algo_config, app_id) = {
+            let opts = self.opts.lock().map_err(|e| e.to_string())?;
+            (opts.algo_provider_config.clone(), opts.app_id.unwrap_or(0))
+        };
+        if app_id == 0 {
+            return Ok(None);
+        }
+        let ops = algo_ops::AlgoOps::new_for_algorand(None, None, algo_config);
+        bingle_core::AlgoBingle::new(ops, app_id, 0)
+            .check_blocked_user(app_id, address)
+            .map_err(|e| e.to_string())
+    }
+
     /// Handle a message received over a live session (the engine's `on_message`): drop it if the
     /// sender is blocked, store it, then tell the host. A copy of a message already read from the
     /// Mailbox is neither stored nor shown again (issue #355), so the store comes first.
@@ -728,6 +761,16 @@ impl BingleJsiApiImpl {
         if is_sender_blocked(&self.local_api, &sender) {
             tracing::info!(
                 "[BingleJsiApiImpl][init handler] Dropping a message from blocked sender {}",
+                sender_handle
+            );
+            return;
+        }
+        // And one a moderator has blocked (issue #95).
+        if is_sender_globally_blocked(self.global_blocklist.as_deref(), &sender, |addr| {
+            self.read_blocked_user(addr)
+        }) {
+            tracing::info!(
+                "[BingleJsiApiImpl][init handler] Dropping a message from {}, which a moderator has blocked",
                 sender_handle
             );
             return;
@@ -1032,6 +1075,13 @@ impl BingleJsiApiImpl {
         let handle_cache_expiry = config
             .handle_cache_expiry_secs
             .map(std::time::Duration::from_secs);
+        // Honour the global blocklist (issue #95), checking "not blocked" again on the handle
+        // cache's cadence.
+        let global_blocklist = config.enable_global_block.unwrap_or(false).then(|| {
+            Arc::new(GlobalBlocklist::new(
+                handle_cache_expiry.unwrap_or(DEFAULT_GLOBAL_BLOCK_REFRESH),
+            ))
+        });
 
         let opts = StartOptions {
             handle,
@@ -1109,6 +1159,8 @@ impl BingleJsiApiImpl {
                 });
             }
             cfg = cfg.with_encrypt_state(encrypt_state);
+            // The Mailbox path shares the live path's blocklist (issue #95).
+            cfg = cfg.with_global_block(global_blocklist.clone());
             let mut impl_api = BingleApiLocalImpl::with_key_store(cfg, key_store);
             if path.exists()
                 && let Err(e) = impl_api.load(path.to_string_lossy().as_ref())
@@ -1166,6 +1218,7 @@ impl BingleJsiApiImpl {
             mailbox_reader,
             send_pending_messages: config.send_pending_messages.unwrap_or(false),
             pending_sender: pending_sender.clone(),
+            global_blocklist,
         });
 
         // Output INFO with version information as early as possible
@@ -1679,6 +1732,7 @@ impl BingleJsiApiImpl {
             mailbox_reader,
             send_pending_messages,
             pending_sender: Arc::new(Mutex::new(None)),
+            global_blocklist: None,
         })
     }
 

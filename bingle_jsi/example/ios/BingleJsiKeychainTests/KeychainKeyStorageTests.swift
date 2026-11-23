@@ -54,7 +54,7 @@ final class KeychainKeyStorageTests: XCTestCase {
             notifyGatewayUrl: nil, notifyOnGiveup: nil, notifyEnv: nil,
             storeAndForwardSend: nil, storeAndForwardReceive: nil,
             storeAndForwardPollIntervalSecs: nil, sendPendingMessages: nil, keyStorage: keyStorage,
-            encryptState: encryptState
+            encryptState: encryptState, enableGlobalBlock: nil
         )
         let api = try createBingleApi(config: config)
         apis.append(api)
