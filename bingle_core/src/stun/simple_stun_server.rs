@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::net::{SocketAddr, UdpSocket};
+use std::net::{IpAddr, SocketAddr, UdpSocket};
 use std::sync::{
     Arc, Mutex,
     atomic::{AtomicBool, Ordering},
@@ -7,18 +7,19 @@ use std::sync::{
 use std::thread::{self, JoinHandle};
 
 /// Per-requestor obfuscated (port, address) pairs, shared with the server thread.
-type ObfuscationMap = Arc<Mutex<HashMap<SocketAddr, (u16, [u8; 4])>>>;
+type ObfuscationMap = Arc<Mutex<HashMap<SocketAddr, (u16, IpAddr)>>>;
 
 /// A very small STUN server used for integration tests.
 ///
 /// Features:
 /// - Listens on a UDP port and responds to STUN Binding Requests (type 0x0001)
-/// - Replies with a Binding Success (type 0x0101) containing XOR-MAPPED-ADDRESS (IPv4)
+/// - Replies with a Binding Success (type 0x0101) containing XOR-MAPPED-ADDRESS in the family of
+///   the request's source: 0x01 for IPv4, 0x02 for IPv6 (issue #495)
 /// - Optional broken_nat mode: obfuscate the reported address per requester deterministically
 /// - Optional `attach_to`: if set, use this address's IP in the reported mapping instead of the observed src IP
 ///
 /// Notes:
-/// - This is intentionally minimal and only supports IPv4 XOR-MAPPED-ADDRESS.
+/// - This is intentionally minimal: XOR-MAPPED-ADDRESS only, no other attributes.
 /// - It is designed strictly for tests; do not use in production.
 pub struct SimpleStunServer {
     running: Arc<AtomicBool>,
@@ -81,23 +82,20 @@ impl SimpleStunServer {
                             // Transaction ID (12 bytes)
                             resp.extend_from_slice(&data[8..20]);
 
-                            // Compute reported address
-                            let (ip_bytes, port): ([u8; 4], u16) = {
-                                // Source as seen by this socket
-                                let mut ip = match from.ip() {
-                                    std::net::IpAddr::V4(v4) => v4.octets(),
-                                    _ => [127, 0, 0, 1], // limit to IPv4 in tests
-                                };
-                                let mut port = from.port();
-                                // If attach_to set, override IP (keep port unless broken_nat wants to change)
+                            // Compute reported address: the source as seen by this socket, with an
+                            // IPv4-mapped source (from a dual-stack socket) reported as plain IPv4.
+                            let source = SocketAddr::new(from.ip().to_canonical(), from.port());
+                            let (ip, port): (IpAddr, u16) = {
+                                let mut ip = source.ip();
+                                let mut port = source.port();
+                                // If attach_to is set in the same family, report its IP instead.
                                 if let Some(att) = opts.attach_to
-                                    && let std::net::IpAddr::V4(v4) = att.ip()
+                                    && att.is_ipv4() == ip.is_ipv4()
                                 {
-                                    ip = v4.octets();
+                                    ip = att.ip();
                                 }
                                 if opts.broken_nat {
                                     // Derive a deterministic but different mapping per requester
-                                    // Simple hash: xor octets and ports into a small seed
                                     let seed = (from.port() as u32)
                                         ^ ((from
                                             .ip()
@@ -105,9 +103,20 @@ impl SimpleStunServer {
                                             .bytes()
                                             .fold(0u32, |a, b| a.wrapping_add(b as u32)))
                                             << 1);
-                                    // Perturb port and ip slightly but keep them in a sensible range
+                                    // Perturb port and the last address byte, in a sensible range
                                     port = 1024 + (((port as u32 ^ seed) % 50000) as u16);
-                                    ip[3] = 1 + (((ip[3] as u32 ^ seed) % 253) as u8); // 1..253
+                                    ip = match ip {
+                                        IpAddr::V4(v4) => {
+                                            let mut o = v4.octets();
+                                            o[3] = 1 + (((o[3] as u32 ^ seed) % 253) as u8); // 1..253
+                                            IpAddr::from(o)
+                                        }
+                                        IpAddr::V6(v6) => {
+                                            let mut o = v6.octets();
+                                            o[15] = 1 + (((o[15] as u32 ^ seed) % 253) as u8);
+                                            IpAddr::from(o)
+                                        }
+                                    };
                                     // Remember per-requestor so it's stable during the server lifetime
                                     if let Ok(mut m) = map_thread.lock() {
                                         m.entry(from).or_insert((port, ip));
@@ -120,23 +129,7 @@ impl SimpleStunServer {
                                 }
                                 (ip, port)
                             };
-
-                            // XOR-MAPPED-ADDRESS attribute (type 0x0020)
-                            let atype: [u8; 2] = [0x00, 0x20];
-                            let alen: [u8; 2] = [0x00, 0x08];
-                            let family: [u8; 2] = [0x00, 0x01]; // IPv4
-                            let xport = (port ^ 0x2112).to_be_bytes();
-                            let mut xip = ip_bytes;
-                            let cookie = [0x21u8, 0x12, 0xA4, 0x42];
-                            for i in 0..4 {
-                                xip[i] ^= cookie[i];
-                            }
-
-                            resp.extend_from_slice(&atype);
-                            resp.extend_from_slice(&alen);
-                            resp.extend_from_slice(&family);
-                            resp.extend_from_slice(&xport);
-                            resp.extend_from_slice(&xip);
+                            resp.extend_from_slice(&xor_mapped_address(ip, port, &data[8..20]));
 
                             // Fix length field
                             let msg_len = (resp.len() - 20) as u16;
@@ -186,4 +179,25 @@ impl Drop for SimpleStunServer {
     fn drop(&mut self) {
         self.stop();
     }
+}
+
+/// Encode an XOR-MAPPED-ADDRESS attribute (RFC 8489 §14.2) for `ip`:`port`: family 0x01 with the
+/// address masked by the magic cookie, or family 0x02 masked by the cookie then `transaction_id`.
+fn xor_mapped_address(ip: IpAddr, port: u16, transaction_id: &[u8]) -> Vec<u8> {
+    let cookie = crate::stun::stun_endpoint_finder_impl::STUN_MAGIC_COOKIE;
+    let (family, mut addr): (u8, Vec<u8>) = match ip {
+        IpAddr::V4(v4) => (0x01, v4.octets().to_vec()),
+        IpAddr::V6(v6) => (0x02, v6.octets().to_vec()),
+    };
+    for (b, m) in addr.iter_mut().zip(cookie.iter().chain(transaction_id)) {
+        *b ^= *m;
+    }
+    let value_len = 4 + addr.len() as u16;
+    let mut out = Vec::with_capacity(4 + value_len as usize);
+    out.extend_from_slice(&0x0020u16.to_be_bytes());
+    out.extend_from_slice(&value_len.to_be_bytes());
+    out.extend_from_slice(&[0x00, family]);
+    out.extend_from_slice(&(port ^ 0x2112).to_be_bytes());
+    out.extend_from_slice(&addr);
+    out
 }
