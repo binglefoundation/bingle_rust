@@ -10,13 +10,17 @@
 
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, ToSocketAddrs};
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::{Duration, Instant};
 
 /// The well-known name whose AAAA answer reveals the NAT64 prefix (RFC 7050).
 pub const IPV4ONLY_ARPA: &str = "ipv4only.arpa";
 /// The two IPv4 addresses `ipv4only.arpa` resolves to (RFC 7050 §2.2).
 const WELL_KNOWN_IPV4: [Ipv4Addr; 2] =
     [Ipv4Addr::new(192, 0, 0, 170), Ipv4Addr::new(192, 0, 0, 171)];
+/// How long a "no IPv4 route" finding holds before the next IPv4 send tries the native route again.
+/// Short enough that a brief Wi-Fi drop (which also gives "no route" errors) doesn't divert IPv4
+/// traffic for long; long enough that an IPv6-only network isn't re-probed on every send.
+pub const NO_IPV4_ROUTE_HOLD: Duration = Duration::from_secs(60);
 /// Prefix lengths RFC 6052 §2.2 allows.
 const PREFIX_LENGTHS: [u8; 6] = [32, 40, 48, 56, 64, 96];
 
@@ -220,7 +224,10 @@ pub struct Nat64 {
     resolver: Box<dyn Nat64Resolver>,
     configured: Option<Nat64Prefix>,
     prefixes: Mutex<Vec<Nat64Prefix>>,
-    no_ipv4_route: AtomicBool,
+    /// When a send last showed this network has no IPv4 route; `None` when it hasn't, or the
+    /// finding was cleared. It holds for `hold`, then IPv4 is tried natively again.
+    no_ipv4_route_since: Mutex<Option<Instant>>,
+    hold: Duration,
 }
 
 impl Nat64 {
@@ -231,15 +238,22 @@ impl Nat64 {
             resolver,
             configured,
             prefixes: Mutex::new(configured.into_iter().collect()),
-            no_ipv4_route: AtomicBool::new(false),
+            no_ipv4_route_since: Mutex::new(None),
+            hold: NO_IPV4_ROUTE_HOLD,
         }
+    }
+
+    /// As [`new`](Self::new), with a different hold for the "no IPv4 route" finding (tests).
+    pub fn with_no_route_hold(mut self, hold: Duration) -> Self {
+        self.hold = hold;
+        self
     }
 
     /// Discover the network's NAT64 prefixes (RFC 7050), replacing any earlier result, and forget
     /// whether IPv4 was routable. Blocking (a DNS lookup): run it off the hot path, at start and on
     /// a network change. Returns the prefixes now in use.
     pub fn rediscover(&self) -> Vec<Nat64Prefix> {
-        self.no_ipv4_route.store(false, Ordering::SeqCst);
+        self.clear_no_ipv4_route();
         let found = if let Some(p) = self.configured {
             vec![p]
         } else {
@@ -267,17 +281,45 @@ impl Nat64 {
         self.prefixes.lock().map(|p| p.clone()).unwrap_or_default()
     }
 
-    /// Note that a send to an IPv4 address failed for lack of a route, so later IPv4 sends on this
-    /// network go through NAT64 straight away.
-    pub fn mark_no_ipv4_route(&self) {
-        if !self.no_ipv4_route.swap(true, Ordering::SeqCst) {
-            tracing::info!("[nat64] no IPv4 route on this network; IPv4 peers go through NAT64");
+    /// Note that a send to an IPv4 address failed for lack of a route, so IPv4 sends go through
+    /// NAT64 for the next [`NO_IPV4_ROUTE_HOLD`]. Only recorded when a NAT64 prefix is known: on a
+    /// network without a translator a "no route" error (e.g. a brief Wi-Fi drop) is just a failed
+    /// send, and diverting IPv4 would make every later send fail too. Returns whether NAT64 is now
+    /// in use for IPv4.
+    pub fn mark_no_ipv4_route(&self) -> bool {
+        if self.prefixes().is_empty() {
+            return false;
+        }
+        if let Ok(mut since) = self.no_ipv4_route_since.lock() {
+            if since.is_none() {
+                tracing::info!(
+                    "[nat64] no IPv4 route; IPv4 peers go through NAT64 for {:?}",
+                    self.hold
+                );
+            }
+            *since = Some(Instant::now());
+        }
+        true
+    }
+
+    /// Forget a "no IPv4 route" finding, so the next IPv4 send tries the native route: on a network
+    /// change, or when the socket recovers from a network error.
+    pub fn clear_no_ipv4_route(&self) {
+        if let Ok(mut since) = self.no_ipv4_route_since.lock() {
+            *since = None;
         }
     }
 
-    /// Whether this network has shown it has no IPv4 route.
+    /// Whether IPv4 sends currently go through NAT64: a "no IPv4 route" finding within the hold
+    /// period, with a prefix still known.
     pub fn no_ipv4_route(&self) -> bool {
-        self.no_ipv4_route.load(Ordering::SeqCst)
+        let recent = self
+            .no_ipv4_route_since
+            .lock()
+            .ok()
+            .and_then(|since| *since)
+            .is_some_and(|at| at.elapsed() < self.hold);
+        recent && !self.prefixes().is_empty()
     }
 
     /// The synthesised IPv6 destination for IPv4 peer `to`, under the first prefix in use.
