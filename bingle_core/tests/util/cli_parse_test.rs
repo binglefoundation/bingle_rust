@@ -44,10 +44,13 @@ pub fn parse_stun_servers_list() {
         "1.2.3.4:3478, 5.6.7.8:3478".to_string(),
     ];
     let opts = parse_start_options_from_args(args).expect("parse ok");
-    let list = opts.stun_servers.expect("stun_servers present");
-    assert_eq!(list.len(), 2);
-    assert_eq!(list[0], "1.2.3.4:3478".parse::<SocketAddr>().unwrap());
-    assert_eq!(list[1], "5.6.7.8:3478".parse::<SocketAddr>().unwrap());
+    // Passed through unresolved so the engine can resolve again after a network change (#496).
+    assert_eq!(opts.stun_servers, None);
+    let list = opts.stun_hosts.expect("stun_hosts present");
+    assert_eq!(
+        list,
+        vec!["1.2.3.4:3478".to_string(), "5.6.7.8:3478".to_string()]
+    );
 }
 
 #[test]
@@ -63,10 +66,11 @@ pub fn parse_stun_servers_file() {
         path,
     ];
     let opts = parse_start_options_from_args(args).expect("parse ok");
-    let list = opts.stun_servers.expect("stun_servers present");
-    assert_eq!(list.len(), 2);
-    assert_eq!(list[0], "10.0.0.1:3478".parse::<SocketAddr>().unwrap());
-    assert_eq!(list[1], "10.0.0.2:3478".parse::<SocketAddr>().unwrap());
+    let list = opts.stun_hosts.expect("stun_hosts present");
+    assert_eq!(
+        list,
+        vec!["10.0.0.1:3478".to_string(), "10.0.0.2:3478".to_string()]
+    );
 }
 
 #[test]

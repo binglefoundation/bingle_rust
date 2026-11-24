@@ -172,6 +172,10 @@ pub struct UdpNetworkMux {
     /// The socket's address-family mode, kept so a rebind recreates the same kind of socket and
     /// so sends can map IPv4 destinations on a dual-stack socket.
     mode: SocketMode,
+    /// NAT64 translation (issue #496), set by the engine: sends to IPv4 peers go to their
+    /// synthesised IPv6 address when this network has no IPv4 route, and datagrams from a
+    /// synthesised address are reported as their IPv4 peer.
+    nat64: OnceLock<Arc<crate::util::nat64::Nat64>>,
     handle_dtls: Mutex<Option<HandleDtls>>,
     handle_stun: Mutex<Option<HandleStun>>,
     handle_turn: OnceLock<HandleTurn>,
@@ -237,6 +241,7 @@ impl UdpNetworkMux {
             socket: Mutex::new(Some(socket)),
             bind_addr,
             mode,
+            nat64: OnceLock::new(),
             handle_dtls: Mutex::new(None),
             handle_stun: Mutex::new(None),
             handle_turn: OnceLock::new(),
@@ -263,6 +268,66 @@ impl UdpNetworkMux {
         self.mode
     }
 
+    /// Use `nat64` to reach IPv4 peers when the network has no IPv4 route (issue #496). Has no
+    /// effect on an IPv4 socket. Set once, before the mux starts; a later call is ignored.
+    pub fn set_nat64(&self, nat64: Arc<crate::util::nat64::Nat64>) {
+        if self.mode != SocketMode::V4 && self.nat64.set(nat64).is_err() {
+            debug!("[UdpNetworkMux] NAT64 already set; ignoring");
+        }
+    }
+
+    /// The peer address as the layers above the socket know it: IPv4-mapped and NAT64-synthesised
+    /// sources are reported as their IPv4 peer.
+    fn peer_from(&self, from: SocketAddr) -> SocketAddr {
+        let from = canonical_peer(from);
+        match self.nat64.get() {
+            Some(n) => n.unsynthesise(from),
+            None => from,
+        }
+    }
+
+    /// Send one datagram to `to`, through NAT64 when `to` is IPv4 and this network has no IPv4
+    /// route (or the socket is IPv6-only). A first "no route" failure on a dual-stack socket marks
+    /// the network as IPv6-only and retries through NAT64.
+    fn send_datagram(&self, sock: &UdpSocket, buf: &[u8], to: SocketAddr) -> Result<()> {
+        let to = canonical_peer(to);
+        let nat64 = self.nat64.get();
+        if let Some(n) = nat64
+            && to.is_ipv4()
+            && (self.mode == SocketMode::V6Only || n.no_ipv4_route())
+        {
+            return Self::send_synthesised(sock, buf, to, n);
+        }
+        let target = socket_target(self.mode, to)?;
+        match sock.send_to(buf, target) {
+            Ok(_) => Ok(()),
+            Err(e) => {
+                if let Some(n) = nat64
+                    && to.is_ipv4()
+                    && crate::util::nat64::is_no_route_error(&e)
+                    && n.mark_no_ipv4_route()
+                {
+                    return Self::send_synthesised(sock, buf, to, n);
+                }
+                Err(format!("udp send_to {to} failed: {e}"))
+            }
+        }
+    }
+
+    fn send_synthesised(
+        sock: &UdpSocket,
+        buf: &[u8],
+        to: SocketAddr,
+        nat64: &crate::util::nat64::Nat64,
+    ) -> Result<()> {
+        let dest = nat64
+            .synthesise(to)
+            .ok_or_else(|| format!("no IPv4 route and no NAT64 prefix to reach {to}"))?;
+        sock.send_to(buf, dest)
+            .map(|_| ())
+            .map_err(|e| format!("udp send_to {to} via NAT64 {dest} failed: {e}"))
+    }
+
     /// Get only the bound IP address (for debug printing)
     pub fn bound_ip(&self) -> std::io::Result<std::net::IpAddr> {
         self.local_addr().map(|a| a.ip())
@@ -286,6 +351,11 @@ impl UdpNetworkMux {
         })?;
         socket.set_read_timeout(Some(Duration::from_millis(200)))?;
         let loop_clone = socket.try_clone()?;
+        // The socket recovered from a network error: the network may have changed, so try IPv4
+        // natively again rather than keep diverting it through NAT64.
+        if let Some(n) = self.nat64.get() {
+            n.clear_no_ipv4_route();
+        }
         // Install the live socket so write() and local_addr() use it again.
         let mut guard = self
             .socket
@@ -386,7 +456,7 @@ impl UdpNetworkMux {
                         if n == 0 {
                             continue;
                         }
-                        let from = canonical_peer(from);
+                        let from = this.peer_from(from);
                         let data = &buf[..n];
                         tracing::trace!(
                             "[UdpNetworkMux][receive][loop on {:?}] recv_from {}: {} bytes",
@@ -506,11 +576,9 @@ impl NetworkMux for UdpNetworkMux {
                 buf.len(),
                 wrapped.len()
             );
-            let relay_target = socket_target(self.mode, relay_addr)?;
-            return match sock.send_to(&wrapped, relay_target) {
-                Ok(_) => Ok(()),
-                Err(e) => Err(format!("udp send_to (relay) failed: {}", e)),
-            };
+            return self
+                .send_datagram(sock, &wrapped, relay_addr)
+                .map_err(|e| format!("relay: {e}"));
         }
         // Direct path: Extract destination inet address; panic if missing per design
         let to_addr = to
@@ -549,11 +617,7 @@ impl NetworkMux for UdpNetworkMux {
                 {}
             }
         }
-        let target = socket_target(self.mode, to_addr)?;
-        match sock.send_to(buf, target) {
-            Ok(_) => Ok(()),
-            Err(e) => Err(format!("udp send_to failed: {}", e)),
-        }
+        self.send_datagram(sock, buf, to_addr)
     }
 
     fn get_handle_dtls(&self) -> Option<HandleDtls> {

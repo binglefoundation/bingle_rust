@@ -89,6 +89,8 @@ pub fn testnet_user_reaches_endpoint_available() {
         wait_response_timeout: None,
         advert_ttl: None,
         ip_family: Default::default(),
+        stun_hosts: None,
+        nat64_prefix: None,
     };
 
     // Start the user and wait for EndpointAvailable

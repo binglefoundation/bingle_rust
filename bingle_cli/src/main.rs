@@ -1696,6 +1696,8 @@ fn cmd_checkrelays(mut args: Vec<String>) {
         wait_response_timeout: None,
         advert_ttl: None,
         ip_family: bingle_core::api::bingle_api::IpFamily::Auto,
+        stun_hosts: None,
+        nat64_prefix: None,
     };
 
     // Create API and start engine minimal

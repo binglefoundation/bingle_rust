@@ -43,6 +43,8 @@ fn make_read_only_api(passphrase: &str, app_id: u64) -> std::sync::Arc<BingleApi
         wait_response_timeout: None,
         advert_ttl: None,
         ip_family: Default::default(),
+        stun_hosts: None,
+        nat64_prefix: None,
     };
     BingleApiImpl::new(&opts)
 }

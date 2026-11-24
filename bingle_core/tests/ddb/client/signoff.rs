@@ -35,6 +35,8 @@ fn start_pair() -> (
         wait_response_timeout: None,
         advert_ttl: None,
         ip_family: Default::default(),
+        stun_hosts: None,
+        nat64_prefix: None,
     };
     let client_opts = StartOptions {
         handle: "client".into(),
@@ -53,6 +55,8 @@ fn start_pair() -> (
         wait_response_timeout: None,
         advert_ttl: None,
         ip_family: Default::default(),
+        stun_hosts: None,
+        nat64_prefix: None,
     };
 
     let relay = BingleApiImpl::new(&relay_opts);

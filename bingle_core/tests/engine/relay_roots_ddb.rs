@@ -289,6 +289,8 @@ pub fn engine_upserts_root_relays_into_backend() {
         wait_response_timeout: None,
         advert_ttl: None,
         ip_family: Default::default(),
+        stun_hosts: None,
+        nat64_prefix: None,
     };
     let eng = Engine::new_with_dtls(
         &opts,
