@@ -15,19 +15,8 @@ When a release finishes, `scripts/release.sh` lists the checks below for changes
   - **Needs:** the builds, devices or networks;
   - **Steps:** single-line commands where possible;
   - **Passes when:** the expected result.
+- **App log lines:** a Release build of the app (bingle_ux_rn) passes only errors from the engine to the device log. A check that relies on an `info` line needs a Debug build run from Xcode or Metro, so say so under **Needs**, or give another way to tell the result.
 
 ## Waiting for a release
 
-### #95 the app drops messages from a blocked sender
-
-- **Merged in:** #504; first shipped in 0.3.39.
-- **Needs:** the #490 check done on TestNet (the DApp has `set_blocked_user`), a TestNet build of the app (bingle_ux_rn) on `react-native-bingle-jsi` 0.3.39 that passes `enable_global_block: true` to `init`, and a second TestNet account to send from.
-- **Steps:**
-  1. From the second account, send the phone a message, and check it arrives.
-  2. Block the second account:
-
-         bingle_admin moderator_block <SENDER_ADDRESS> --block --accounts <TESTNET_ACCOUNTS_DIR> --node-file <TESTNET_NODE_FILE>
-
-  3. Wait 10 minutes (the "not blocked" refresh), or restart the app, then send another message from the second account, once directly and once while the phone is offline (so it goes through the Mailbox).
-  4. Unblock it (`--unblock`). The app still drops its messages until restarted, since a block is kept for good in the running app.
-- **Passes when:** neither message sent after the block appears on the phone, and the device log shows `which a moderator has blocked` for each.
+None.
