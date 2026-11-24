@@ -33,6 +33,7 @@ fn config(path: &str, key_storage: Option<&str>) -> BingleJsiConfig {
         key_storage: key_storage.map(str::to_string),
         encrypt_state: None,
         enable_global_block: None,
+        ip_family: None,
     }
 }
 

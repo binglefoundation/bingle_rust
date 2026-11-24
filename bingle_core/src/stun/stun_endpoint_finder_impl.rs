@@ -1,4 +1,7 @@
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
+
+/// The STUN magic cookie (RFC 8489 §5), also the mask for XOR-MAPPED-ADDRESS ports and addresses.
+pub const STUN_MAGIC_COOKIE: [u8; 4] = [0x21, 0x12, 0xA4, 0x42];
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread::{self, JoinHandle};
@@ -354,14 +357,20 @@ impl StunEndpointFinderImpl {
         self.inner.lock().unwrap().current_tick
     }
 
-    fn parse_xor_mapped_address(data: &[u8]) -> Option<SocketAddr> {
+    /// The mapped address in a STUN Binding response: XOR-MAPPED-ADDRESS (0x0020) or, from older
+    /// servers, MAPPED-ADDRESS (0x0001), in either address family (RFC 8489 §14.1–14.2). Family 0x01
+    /// is IPv4 (8-byte value); family 0x02 is IPv6 (20-byte value), whose XOR-MAPPED form is masked
+    /// with the magic cookie followed by the 12-byte transaction ID. Returns `None` for anything that
+    /// isn't a well-formed response carrying one of these attributes.
+    pub fn parse_xor_mapped_address(data: &[u8]) -> Option<SocketAddr> {
         if data.len() < 20 {
             return None;
         }
         // Verify magic cookie
-        if data[4..8] != [0x21, 0x12, 0xA4, 0x42] {
+        if data[4..8] != STUN_MAGIC_COOKIE {
             return None;
         }
+        let transaction_id = &data[8..20];
         let msg_len = u16::from_be_bytes([data[2], data[3]]) as usize;
         let mut idx = 20;
         let end = 20 + msg_len;
@@ -375,35 +384,54 @@ impl StunEndpointFinderImpl {
             if atype == 0x0020 /* XOR-MAPPED-ADDRESS */ || atype == 0x0001
             /* MAPPED-ADDRESS */
             {
-                if alen < 8 {
-                    return None;
-                }
-                let family = data[idx + 1];
-                if family == 0x01 && alen >= 8 {
-                    // IPv4
-                    let xport = u16::from_be_bytes([data[idx + 2], data[idx + 3]]);
-                    let port = if atype == 0x0020 {
-                        xport ^ 0x2112
-                    } else {
-                        xport
-                    };
-                    let mut addr = [0u8; 4];
-                    addr.copy_from_slice(&data[idx + 4..idx + 8]);
-                    if atype == 0x0020 {
-                        let cookie = [0x21u8, 0x12, 0xA4, 0x42];
-                        for i in 0..4 {
-                            addr[i] ^= cookie[i];
-                        }
-                    }
-                    let ip = IpAddr::V4(Ipv4Addr::new(addr[0], addr[1], addr[2], addr[3]));
-                    return Some(SocketAddr::new(ip, port));
-                }
+                return Self::decode_mapped_address(
+                    &data[idx..idx + alen],
+                    atype == 0x0020,
+                    transaction_id,
+                );
             }
             // Move to next attribute (4-byte alignment)
             let pad = (4 - (alen % 4)) % 4;
             idx += alen + pad;
         }
         None
+    }
+
+    /// Decode one (XOR-)MAPPED-ADDRESS attribute value. `None` for an unknown family or a value too
+    /// short for its family.
+    fn decode_mapped_address(
+        value: &[u8],
+        xored: bool,
+        transaction_id: &[u8],
+    ) -> Option<SocketAddr> {
+        if value.len() < 4 {
+            return None;
+        }
+        let family = value[1];
+        let raw_port = u16::from_be_bytes([value[2], value[3]]);
+        let port = if xored { raw_port ^ 0x2112 } else { raw_port };
+        match family {
+            0x01 => {
+                let mut addr: [u8; 4] = value.get(4..8)?.try_into().ok()?;
+                if xored {
+                    for (b, m) in addr.iter_mut().zip(STUN_MAGIC_COOKIE) {
+                        *b ^= m;
+                    }
+                }
+                Some(SocketAddr::new(IpAddr::V4(Ipv4Addr::from(addr)), port))
+            }
+            0x02 => {
+                let mut addr: [u8; 16] = value.get(4..20)?.try_into().ok()?;
+                if xored {
+                    let mask = STUN_MAGIC_COOKIE.iter().chain(transaction_id);
+                    for (b, m) in addr.iter_mut().zip(mask) {
+                        *b ^= *m;
+                    }
+                }
+                Some(SocketAddr::new(IpAddr::V6(Ipv6Addr::from(addr)), port))
+            }
+            _ => None,
+        }
     }
 }
 

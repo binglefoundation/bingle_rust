@@ -56,6 +56,8 @@ precis-profiles = "=0.1.13"
 precis-core = "0.1.11"
 uuid = { version = "1", features = ["v4"] }
 libc = "0.2"
+# Dual-stack UDP: bind [::] with IPV6_V6ONLY set explicitly (issue #494); std has no setter.
+socket2 = "0.6"
 ctrlc = { version = "3", features = ["termination"] }
 tracing = "0.1"
 # tracing-subscriber = { version = "0.3", features = ["env-filter"] } # Moving to dev-deps if only used there, or keep here if needed for lib

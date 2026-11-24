@@ -44,6 +44,9 @@ pub fn start_client(
         // retry gets multiple attempts within the registration wait.
         wait_response_timeout: Some(Duration::from_secs(20)),
         advert_ttl: None,
+        ip_family: bingle_core::api::bingle_api::IpFamily::Auto,
+        stun_hosts: None,
+        nat64_prefix: None,
     };
     let api = BingleApiImpl::new(&opts);
     api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.start(&opts))
@@ -169,6 +172,14 @@ pub fn setup_stun_servers(
     setup_stun_servers_advertised(broken_nat, IpAddr::V4(Ipv4Addr::LOCALHOST))
 }
 
+/// Like [`setup_stun_servers`] but on the IPv6 loopback `::1` (issue #494). The servers still
+/// report IPv4-only XOR-MAPPED-ADDRESS until #495 adds family 0x02.
+pub fn setup_stun_servers_v6(
+    broken_nat: bool,
+) -> (SimpleStunServer, SimpleStunServer, Vec<SocketAddr>) {
+    setup_stun_servers_advertised(broken_nat, IpAddr::V6(std::net::Ipv6Addr::LOCALHOST))
+}
+
 /// Like [`setup_stun_servers`] but advertises the servers at `advert_ip` (issue #137). For a
 /// non-loopback `advert_ip` (e.g. an Android emulator's `10.0.2.2` gateway) the servers bind all
 /// interfaces so both the emulator (via its qemu gateway → host loopback) and a host-side peer (via
@@ -179,10 +190,12 @@ pub fn setup_stun_servers_advertised(
 ) -> (SimpleStunServer, SimpleStunServer, Vec<SocketAddr>) {
     let p1 = test_util::find_unused_loopback_port();
     let p2 = test_util::find_unused_loopback_port();
-    let bind_ip = if advert_ip.is_loopback() {
-        IpAddr::V4(Ipv4Addr::LOCALHOST)
-    } else {
-        IpAddr::V4(Ipv4Addr::UNSPECIFIED)
+    // A loopback advert binds that same loopback (127.0.0.1 or ::1, so the family follows the
+    // advert); anything else binds every interface of the advert's family.
+    let bind_ip = match advert_ip {
+        ip if ip.is_loopback() => ip,
+        IpAddr::V4(_) => IpAddr::V4(Ipv4Addr::UNSPECIFIED),
+        IpAddr::V6(_) => IpAddr::V6(std::net::Ipv6Addr::UNSPECIFIED),
     };
 
     let s1 = SimpleStunServer::start(SimpleStunStartOptions {

@@ -180,6 +180,9 @@ pub fn engine_static_ip_triggers_on_listening_handler() {
         log_mode: bingle_core::util::logging::LogMode::Plain,
         wait_response_timeout: None,
         advert_ttl: None,
+        ip_family: Default::default(),
+        stun_hosts: None,
+        nat64_prefix: None,
     };
 
     // Start should cause Engine::start_with_addr to notify listening=true via EngineInternalPtr

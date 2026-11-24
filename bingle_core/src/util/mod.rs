@@ -15,10 +15,14 @@ pub mod cli;
 pub mod cli_utils;
 /// Helpers for loading and resolving Bingle configuration (node files, app/asset ids).
 pub mod config_utils;
+/// NAT64 prefix discovery and RFC 6052 address translation (issue #496).
+pub mod nat64;
 #[doc(hidden)]
 pub mod net_det;
 /// Background loop that runs a pass once per interval ([`periodic_task::PeriodicTask`]).
 pub mod periodic_task;
+/// The STUN server list: built-in default, configured override and resolution (issue #496).
+pub mod stun_servers;
 /// Wall-clock helpers ([`time::now_millis`]).
 pub mod time;
 /// Build and version metadata, [`version::VersionInfo`].
