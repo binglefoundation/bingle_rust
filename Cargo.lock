@@ -48,9 +48,8 @@ dependencies = [
 
 [[package]]
 name = "algo_ops"
-version = "0.9.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b8edeed89340d2aea141dcaa27176606e5676eba37a74bb177e128381321f34b"
+version = "0.10.0"
+source = "git+https://github.com/richdrich/blockchain_ops_rust?branch=feat%2F146-multi-address#727cd69cacc413e54df51ebbfa6d654e84e44365"
 dependencies = [
  "algonaut",
  "anyhow",
@@ -674,12 +673,15 @@ dependencies = [
  "blockchain_keystore",
  "core-foundation 0.10.1",
  "core-foundation-sys",
+ "ed25519-dalek",
  "getrandom 0.2.17",
  "reqwest 0.11.27",
+ "rustls",
  "security-framework-sys",
  "serde",
  "serde_json",
  "sidewinder_ops",
+ "sw_identity_tls",
  "tempfile",
  "tracing",
  "tracing-subscriber",
@@ -812,9 +814,8 @@ dependencies = [
 
 [[package]]
 name = "blockchain_ops"
-version = "0.9.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ef3fbc1acb01cd760d524e9ab6e1a15099ef4d0701fdc848fe17b2fc2459708f"
+version = "0.10.0"
+source = "git+https://github.com/richdrich/blockchain_ops_rust?branch=feat%2F146-multi-address#727cd69cacc413e54df51ebbfa6d654e84e44365"
 dependencies = [
  "anyhow",
  "serde",
@@ -3652,9 +3653,8 @@ checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
 
 [[package]]
 name = "sidewinder_ops"
-version = "0.9.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "32a71d3387c29c2f3848f59242698e90028688ebdff944efa929a981cfadc630"
+version = "0.10.0"
+source = "git+https://github.com/richdrich/blockchain_ops_rust?branch=feat%2F146-multi-address#727cd69cacc413e54df51ebbfa6d654e84e44365"
 dependencies = [
  "algo_ops",
  "anyhow",
@@ -3811,9 +3811,8 @@ checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 
 [[package]]
 name = "sw_identity_tls"
-version = "0.9.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d95b828b528d09c0ea9124e069c02c2a3f0f75e1cecd71e9905cffa77e8fbaf9"
+version = "0.10.0"
+source = "git+https://github.com/richdrich/blockchain_ops_rust?branch=feat%2F146-multi-address#727cd69cacc413e54df51ebbfa6d654e84e44365"
 dependencies = [
  "algo_ops",
  "anyhow",

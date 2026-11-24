@@ -30,3 +30,13 @@ opt-level = 3
 opt-level = 3
 [profile.dev.package.polyval]
 opt-level = 3
+
+# TEMPORARY (#497): sidewinder_ops 0.10.0 (every advertised node address, IPv6 first, NAT64) is not yet
+# published. Replace this git pin with the published 0.10.0 crates (richdrich/blockchain_ops_rust#148)
+# before the PR is marked ready. algo_ops, blockchain_ops and sw_identity_tls move with it, so the
+# AlgoOps handle the bingle crates pass to sidewinder_ops is one type.
+[patch.crates-io]
+blockchain_ops = { git = "https://github.com/richdrich/blockchain_ops_rust", branch = "feat/146-multi-address" }
+algo_ops = { git = "https://github.com/richdrich/blockchain_ops_rust", branch = "feat/146-multi-address" }
+sidewinder_ops = { git = "https://github.com/richdrich/blockchain_ops_rust", branch = "feat/146-multi-address" }
+sw_identity_tls = { git = "https://github.com/richdrich/blockchain_ops_rust", branch = "feat/146-multi-address" }
