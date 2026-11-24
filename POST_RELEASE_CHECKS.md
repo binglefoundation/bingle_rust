@@ -18,6 +18,30 @@ When a release finishes, `scripts/release.sh` lists the checks below for changes
 
 ## Waiting for a release
 
+### #376 MainNet relay roles allow CreateLogGroup on the log-group ARN
+
+- **Merged in:** #509; first shipped in 0.3.39. TestNet's two relays are done.
+- **Needs:** the MainNet AWS account (`bingle_env mainnet`), and the `tmp/deployed` checkout of the release tag (as for the MainNet roll). Both MainNet relays use the express template. AWS's deadline is 26 April 2027.
+- **Steps:**
+  1. Sign in and check the account is the MainNet inventory's `ACCOUNT_ID` (bingle_admin `relays/mainnet.env`):
+
+         source ~/.config/bingle/bingle_env.sh mainnet && aws sts get-caller-identity --query Account --output text
+
+  2. From `tmp/deployed`, create a change set for the first relay without running it. `deploy` applies the whole current template and keeps every parameter value:
+
+         aws cloudformation deploy --template-file aws/relay_express.yaml --stack-name relay-prod-1 --capabilities CAPABILITY_IAM --region ca-central-1 --no-execute-changeset
+
+  3. Review it with the `describe-change-set` command `deploy` prints. Expect only `ECSTaskExecutionRole` as Modify; if so, run the `execute-change-set` command it prints. If anything else would change (the task definition, the service, networking), stop and look first: the stack was last fully deployed some releases ago.
+  4. The same for the second relay, then review and run its change set:
+
+         aws cloudformation deploy --template-file aws/relay_express.yaml --stack-name relay-prod-2 --capabilities CAPABILITY_IAM --region eu-west-1 --no-execute-changeset
+
+  5. Check each role (then the same with `relay-prod-2` and `eu-west-1`):
+
+         aws iam get-role-policy --role-name $(aws cloudformation describe-stack-resource --stack-name relay-prod-1 --logical-resource-id ECSTaskExecutionRole --region ca-central-1 --query 'StackResourceDetail.PhysicalResourceId' --output text) --policy-name CreateLogGroup --query 'PolicyDocument.Statement[0].Resource'
+
+- **Passes when:** each role lists both `…:log-group:/bingle/relay/<stack>` and `…:log-group:/bingle/relay/<stack>:*`, and both relays keep logging to `/bingle/relay/<stack>`.
+
 ### #95 the app drops messages from a blocked sender
 
 - **Merged in:** #504; first shipped in 0.3.39.
@@ -61,13 +85,3 @@ When a release finishes, `scripts/release.sh` lists the checks below for changes
 
   5. Commit the `dapp_projects/smart_contracts/bingle_dapp/app_schema.json` that step 1 updated (its new `approval_sha256`) in a bingle_rust pull request, so the next build compares against the deployed program.
 - **Passes when:** both updates report `update complete` with the existing app and asset ids; on TestNet the read prints `blocked` after the block and `not blocked` after the unblock, and the rest of the printed word is the same before and after.
-
-### #483 direct send after the sender's NAT moves it
-
-- **Merged in:** #488; first shipped in 0.3.38.
-- **Needs:** the email gateway (`bingle_cli logclient`) rebuilt on 0.3.38, and the app (bingle_ux_rn) on `react-native-bingle-jsi` 0.3.38 on a phone behind NAT (mobile data).
-- **Steps:**
-  1. Send the gateway a message from the phone, and check it is delivered directly.
-  2. Leave the app open and idle for at least 5 minutes, then send another.
-  3. In the gateway's log, look for a second `run_accept_stream starting` from the phone's address, followed by `handshake complete`.
-- **Passes when:** the second message is delivered directly (`handshake complete`, then the message), not through the Mailbox, and the gateway logs no `DTLS accept handshake timeout`.

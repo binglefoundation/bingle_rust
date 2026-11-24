@@ -7,7 +7,7 @@ How a change gets from a pull request to TestNet, to crates.io and npm, and to M
 | `staging` | the default branch: every PR merges here; it carries the next, unreleased version | PR merge |
 | TestNet relays | the TestNet relays an operator runs | on demand, from a `staging` commit: `scripts/roll_relays.sh` |
 | `deployed`, crates.io, npm | the released commit and the packages built from it | only by a release: `scripts/release.sh` fast-forwards `deployed`, and `deploy.yml` publishes |
-| MainNet relays | the MainNet relays an operator runs | after a release: `scripts/roll_relays.sh` on MainNet, from the release tag |
+| MainNet relays and email gateway | the MainNet relays an operator runs, and the email gateway | after a release: `scripts/roll_relays.sh` on MainNet, from the release tag |
 
 **One version names one commit.** The crates, the npm module, the tag `vX.Y.Z` and the MainNet relays all come from the same `staging` commit, and it is the one TestNet ran.
 
@@ -77,7 +77,7 @@ git worktree add tmp/deployed origin/deployed
 cd tmp/deployed && source ~/.config/bingle/bingle_env.sh mainnet && scripts/roll_relays.sh --dry-run
 ```
 
-Then run `scripts/roll_relays.sh` there without `--dry-run`. MainNet rolls only the commit `deployed` points at, and only when its `vX.Y.Z` tag names it. Remove the worktree afterwards with `git worktree remove tmp/deployed`.
+Then run `scripts/roll_relays.sh` there without `--dry-run`. MainNet rolls only the commit `deployed` points at, and only when its `vX.Y.Z` tag names it. When the MainNet inventory has a `GATEWAY` line, the same roll deploys the email gateway onto the release after the relays (#489); the dry run lists it. Remove the worktree afterwards with `git worktree remove tmp/deployed`.
 
 ### Pick up the release in bingle_ux_rn
 
