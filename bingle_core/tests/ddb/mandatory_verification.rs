@@ -25,6 +25,8 @@ pub fn test_ddb_upsert_record_mandatory_verification() {
         wait_response_timeout: None,
         advert_ttl: None,
         ip_family: Default::default(),
+        stun_hosts: None,
+        nat64_prefix: None,
     };
     let api = BingleApiImpl::new(&opts);
     api.access_unsafe_for_tests(|a| a.start(&opts))

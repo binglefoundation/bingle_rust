@@ -17,6 +17,7 @@ use std::net::SocketAddr;
 ///  --stun-servers <list>
 ///  --stun-servers-file <file>
 ///  --ip-family <auto|v4|v6>
+///  --nat64-prefix <addr/len>
 ///  --node-file <file>
 ///  --auto-migrate
 /// ```
@@ -34,7 +35,8 @@ where
     let mut algo_passphrase: Option<String> = None;
     let mut am_relay = false;
     let mut static_ip: Option<SocketAddr> = None;
-    let mut stun_servers: Option<Vec<SocketAddr>> = None;
+    let mut stun_hosts: Option<Vec<String>> = None;
+    let mut nat64_prefix: Option<String> = None;
     let mut algo_provider_config: Option<AlgoChainConfig> = None;
     let mut algo_network: Option<String> = None;
     let mut cli_app_id: Option<u64> = None;
@@ -69,15 +71,13 @@ where
             }
             "--stun-servers" => {
                 let v = it.next().ok_or("--stun-servers requires a value")?;
-                let list = config_utils::parse_stun_list(&v)?;
-                stun_servers = Some(list);
+                stun_hosts = Some(config_utils::parse_stun_entries(&v)?);
             }
             "--stun-servers-file" => {
                 let v = it
                     .next()
                     .ok_or("--stun-servers-file requires a <file> value")?;
-                let list = config_utils::parse_stun_file(&v)?;
-                stun_servers = Some(list);
+                stun_hosts = Some(config_utils::parse_stun_entries_file(&v)?);
             }
             "--node-file" => {
                 let v = it.next().ok_or("--node-file requires a <file> value")?;
@@ -133,6 +133,14 @@ where
                     .map_err(|e| format!("Invalid --handle-cache-expiry-secs '{}': {}", v, e))?;
                 handle_cache_expiry = Some(std::time::Duration::from_secs(secs));
             }
+            "--nat64-prefix" => {
+                let v = it
+                    .next()
+                    .ok_or("--nat64-prefix requires an <addr/len> value, e.g. 64:ff9b::/96")?;
+                v.parse::<crate::util::nat64::Nat64Prefix>()
+                    .map_err(|e| format!("Invalid --nat64-prefix: {e}"))?;
+                nat64_prefix = Some(v);
+            }
             "--ip-family" => {
                 let v = it
                     .next()
@@ -187,7 +195,8 @@ where
         algo_passphrase,
         static_ip,
         am_relay,
-        stun_servers,
+        stun_servers: None,
+        stun_hosts,
         algo_provider_config,
         algo_network,
         app_id: app_id_opt,
@@ -199,6 +208,7 @@ where
         wait_response_timeout: None,
         advert_ttl: None,
         ip_family,
+        nat64_prefix,
     })
 }
 

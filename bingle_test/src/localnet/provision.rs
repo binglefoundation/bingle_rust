@@ -45,6 +45,8 @@ pub fn start_client(
         wait_response_timeout: Some(Duration::from_secs(20)),
         advert_ttl: None,
         ip_family: bingle_core::api::bingle_api::IpFamily::Auto,
+        stun_hosts: None,
+        nat64_prefix: None,
     };
     let api = BingleApiImpl::new(&opts);
     api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.start(&opts))

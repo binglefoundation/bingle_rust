@@ -39,6 +39,9 @@ pub mod network_mux_udp_tests;
 #[path = "network_mux_udp_dual_stack.rs"]
 pub mod network_mux_udp_dual_stack;
 
+#[path = "network_mux_nat64.rs"]
+pub mod network_mux_nat64;
+
 #[path = "dtls_ipv6_loopback_e2e.rs"]
 pub mod dtls_ipv6_loopback_e2e;
 

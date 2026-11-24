@@ -27,7 +27,7 @@ use bingle_core::api::network_endpoint::NetworkEndpoint;
 use bingle_core::blockchain::registration_group::{self, RegistrationGroupIds, SigningKey};
 use bingle_core::engine::BingleAccess;
 use bingle_core::util::config_utils::{
-    check_node_and_cli_ids, parse_node_file_with_ids, parse_stun_file, parse_stun_list,
+    check_node_and_cli_ids, parse_node_file_with_ids, parse_stun_entries, parse_stun_entries_file,
     resolve_app_asset_ids,
 };
 use bingle_local::api::bingle_local_api::BingleLocalApi;
@@ -1049,11 +1049,22 @@ impl BingleJsiApiImpl {
             })
             .transpose()?;
 
-        let stun_servers: Option<Vec<SocketAddr>> = if let Some(ref file) = config.stun_servers_file
-        {
-            Some(parse_stun_file(file).map_err(|e| BingleJsiError::InvalidRequest { reason: e })?)
+        // STUN servers stay unresolved so the engine can resolve them again after a network change
+        // (issue #496). A file that is missing, empty or unparseable falls back to the built-in list
+        // with a warning; an explicit list must parse.
+        let stun_hosts: Option<Vec<String>> = if let Some(ref file) = config.stun_servers_file {
+            match parse_stun_entries_file(file) {
+                Ok(entries) => Some(entries),
+                Err(e) => {
+                    tracing::warn!("[BingleJsi] {e}; using the built-in STUN servers");
+                    None
+                }
+            }
         } else if let Some(ref list) = config.stun_servers {
-            Some(parse_stun_list(list).map_err(|e| BingleJsiError::InvalidRequest { reason: e })?)
+            Some(
+                parse_stun_entries(list)
+                    .map_err(|e| BingleJsiError::InvalidRequest { reason: e })?,
+            )
         } else {
             None
         };
@@ -1098,7 +1109,8 @@ impl BingleJsiApiImpl {
             algo_passphrase: config.passphrase,
             static_ip,
             am_relay: config.relay,
-            stun_servers,
+            stun_servers: None,
+            stun_hosts,
             algo_provider_config,
             algo_network,
             app_id,
@@ -1110,6 +1122,7 @@ impl BingleJsiApiImpl {
             wait_response_timeout: None, // default to DEFAULT_WAIT_RESPONSE_TIMEOUT
             advert_ttl: None,
             ip_family,
+            nat64_prefix: None,
         };
 
         // Install the callback log bridge (no-op if already installed by a prior init call)
