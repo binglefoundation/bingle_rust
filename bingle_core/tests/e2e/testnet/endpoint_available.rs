@@ -88,6 +88,7 @@ pub fn testnet_user_reaches_endpoint_available() {
         log_mode: bingle_core::util::logging::LogMode::Plain,
         wait_response_timeout: None,
         advert_ttl: None,
+        ip_family: Default::default(),
     };
 
     // Start the user and wait for EndpointAvailable

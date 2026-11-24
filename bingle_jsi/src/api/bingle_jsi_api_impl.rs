@@ -1029,6 +1029,16 @@ impl BingleJsiApiImpl {
             }
         };
 
+        let ip_family: bingle_core::api::bingle_api::IpFamily = config
+            .ip_family
+            .as_deref()
+            .map(|v| {
+                v.parse()
+                    .map_err(|reason: String| BingleJsiError::InvalidRequest { reason })
+            })
+            .transpose()?
+            .unwrap_or_default();
+
         let static_ip: Option<SocketAddr> = config
             .static_ip
             .map(|v| {
@@ -1099,6 +1109,7 @@ impl BingleJsiApiImpl {
             log_mode: bingle_core::util::logging::LogMode::JS,
             wait_response_timeout: None, // default to DEFAULT_WAIT_RESPONSE_TIMEOUT
             advert_ttl: None,
+            ip_family,
         };
 
         // Install the callback log bridge (no-op if already installed by a prior init call)

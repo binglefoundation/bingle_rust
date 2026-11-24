@@ -35,6 +35,7 @@ fn config(path: &str) -> BingleJsiConfig {
         key_storage: None,
         encrypt_state: None,
         enable_global_block: None,
+        ip_family: None,
     }
 }
 

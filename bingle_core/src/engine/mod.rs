@@ -897,14 +897,11 @@ impl Engine {
     /// a real installed handler without network side-effects.
     pub fn start_with_addr_for_tests(
         &self,
-        _options: &StartOptions,
+        options: &StartOptions,
         bind_addr: SocketAddr,
     ) -> Result<(), BingleError> {
-        use std::net::{IpAddr, Ipv4Addr};
-        let port = bind_addr.port();
-        let bind_all = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), port);
         let mux = Arc::new(
-            UdpNetworkMux::bind(bind_all)
+            UdpNetworkMux::bind_all(bind_addr.port(), options.ip_family)
                 .map_err(|e| BingleError::Other(format!("Failed to bind UDP mux: {}", e)))?,
         );
         self.install_dtls_handler()?;
@@ -1668,8 +1665,8 @@ impl Engine {
         // STUN path
         self.set_state_field(EngineState::StunIdentify);
 
-        // Bind UDP on 0.0.0.0:0 and create mux (OS assigns an ephemeral port)
-        let mut mux0 = UdpNetworkMux::bind("0.0.0.0:0")
+        // Bind UDP on every local address of the configured family; the OS assigns an ephemeral port
+        let mut mux0 = UdpNetworkMux::bind_all(0, self.opts().ip_family)
             .map_err(|e| BingleError::Other(format!("Failed to bind UDP mux: {}", e)))?;
         let _local_addr: SocketAddr = mux0
             .local_addr()
@@ -1952,17 +1949,19 @@ impl Engine {
                 .expect("start_with_address when no static address"),
         ));
 
-        // Always bind UDP to 0.0.0.0:<port> so that we listen on all interfaces, even when a static external IP is configured.
-        // The static address is used for signaling and routing outside any firewall, not for local bind.
+        // Always bind UDP to every local address of the configured family at <port>, so that we
+        // listen on all interfaces even when a static external IP is configured. The static
+        // address is used for signaling and routing outside any firewall, not for local bind.
         let port = bind_addr.port();
-        let bind_all = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), port);
+        let family = self.opts().ip_family;
         tracing::info!(
-            "[Engine] start_with_addr: requested={:?} binding={:?}",
+            "[Engine] start_with_addr: requested={:?} binding port {} family {}",
             bind_addr,
-            bind_all
+            port,
+            family
         );
 
-        let mut mux0 = UdpNetworkMux::bind(bind_all)
+        let mut mux0 = UdpNetworkMux::bind_all(port, family)
             .map_err(|e| BingleError::Other(format!("Failed to bind UDP mux: {}", e)))?;
         // Determine the concrete local address after bind (handles port 0)
         let _local_addr: SocketAddr = mux0

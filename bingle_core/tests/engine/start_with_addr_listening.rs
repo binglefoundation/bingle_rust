@@ -288,6 +288,7 @@ pub fn start_with_addr_notifies_listening_true() {
         log_mode: bingle_core::util::logging::LogMode::Plain,
         wait_response_timeout: None,
         advert_ttl: None,
+        ip_family: Default::default(),
     };
 
     // Build Engine unbound and inject DTLS + Router with MockApi
