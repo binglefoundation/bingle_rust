@@ -28,6 +28,8 @@ pub fn start_succeeds() {
         wait_response_timeout: None,
         advert_ttl: None,
         ip_family: Default::default(),
+        stun_hosts: None,
+        nat64_prefix: None,
     };
     let res = api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.start(&opts));
     // Engine may fail to start depending on DTLS/PKI availability; we only require DTLS instance creation here.
@@ -170,6 +172,8 @@ pub fn relay_check_end_to_end_on_message_receives_response() {
         wait_response_timeout: None,
         advert_ttl: None,
         ip_family: Default::default(),
+        stun_hosts: None,
+        nat64_prefix: None,
     };
     let start_result = api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.start(&opts));
     assert!(

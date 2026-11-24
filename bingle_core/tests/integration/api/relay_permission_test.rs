@@ -55,6 +55,8 @@ pub fn test_relay_start_fails_if_not_allowed_on_chain() {
         wait_response_timeout: None,
         advert_ttl: None,
         ip_family: Default::default(),
+        stun_hosts: None,
+        nat64_prefix: None,
     };
 
     let relay = BingleApiImpl::new(&r_opts);
@@ -129,6 +131,8 @@ pub fn test_relay_start_fails_if_not_opted_in() {
         wait_response_timeout: None,
         advert_ttl: None,
         ip_family: Default::default(),
+        stun_hosts: None,
+        nat64_prefix: None,
     };
 
     let relay = BingleApiImpl::new(&r_opts);

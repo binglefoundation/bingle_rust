@@ -166,6 +166,8 @@ pub fn triangle_test3_sets_engine_state_via_internal_api() {
         wait_response_timeout: None,
         advert_ttl: None,
         ip_family: Default::default(),
+        stun_hosts: None,
+        nat64_prefix: None,
     };
     let _ = api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.start(&opts));
 

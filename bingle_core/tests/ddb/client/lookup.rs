@@ -29,6 +29,8 @@ pub fn ddb_client_lookup_returns_endpoint() {
         wait_response_timeout: None,
         advert_ttl: None,
         ip_family: Default::default(),
+        stun_hosts: None,
+        nat64_prefix: None,
     };
     let client_opts = StartOptions {
         handle: "client".into(),
@@ -47,6 +49,8 @@ pub fn ddb_client_lookup_returns_endpoint() {
         wait_response_timeout: None,
         advert_ttl: None,
         ip_family: Default::default(),
+        stun_hosts: None,
+        nat64_prefix: None,
     };
     let relay = BingleApiImpl::new(&relay_opts);
     let client = BingleApiImpl::new(&client_opts);
