@@ -178,6 +178,10 @@ After a code change, update only the image; every other setting is kept:
 aws/deploy_gateway.sh --relay-stack <relay stack> --redeploy-only
 ```
 
+A MainNet release does this for you: list the gateway in the MainNet relay inventory as
+`GATEWAY=<gateway stack> <relay stack> <region>`, and `scripts/roll_relays.sh` deploys it onto the
+release after the relays (#489, `RELEASING.md`).
+
 To change `--to`, `--from` or `--spam-limit`, run a full deploy (without the phrase). The old task
 stops first, and `logclient` saves its state file on the way out, so nothing is lost or sent twice.
 While SES rejects sends (or is unreachable), messages wait in `/data/maildir/new/` and go out once

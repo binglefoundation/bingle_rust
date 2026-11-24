@@ -21,6 +21,7 @@ needs a live localnet, so it runs **post-merge on `staging`**, not on every pull
 | Trigger | Event |
 | --- | --- |
 | Push to `staging` | `push` (post-merge run) |
+| Push to an `integration-*` branch (#491) | `push`: tests stories together before each releases to `staging` |
 | Manual | `workflow_dispatch` |
 | Release (`deploy.yml`, on a push to `deployed`) | `workflow_call`: the same gate re-run on the release commit (`RELEASING.md`) |
 
