@@ -54,4 +54,10 @@
 - *While still modifying a PR*, and if it is incomplete (doesn't yet meet requirements) keep it in draft.
 - When the PR is complete and meets all requirements, mark it ready for review/merge.
 - Any PR that is not a draft must target the repository's default branch. Keep stacked work in draft with its feature-branch base until that base merges, then retarget the PR to the default branch and mark it ready. A ready PR based on another feature branch merges into that branch — not the default branch — so the work shows as merged on GitHub yet silently never reaches it. Continuous integration can enforce this with a default-branch check.
+- **Integration branches (`integration-*`, #491)** test stories together before they release, e.g. `integration-ipv6` for bingle_admin #36. They are a test lane, not a release path: nothing merges from an integration branch into `staging`.
+  - A story branch starts from `staging`. Its PR into the integration branch may be marked ready (`pr-base-guard` allows `integration-*`) and is merged there, so the localnet integration suite runs on the combination.
+  - The same story releases through its own PR into `staging`: kept in draft, rebased on `staging`, and marked ready when it is its turn to ship. Stories that depend on each other release in order.
+  - A fix found on the integration branch goes on the story branch and is merged into the integration branch again. Never commit directly on the integration branch.
+  - Rebuild the integration branch from `staging` (re-merging the story branches not yet released) as stories land, instead of merging `staging` into it, so it doesn't collect rebased duplicates of released commits.
+  - Delete the integration branch when its last story has released.
 - Try to keep the IDE on the working branch, unless for instance you are using an agent in another worktree. Return to staging when the PR is merged and you are idle.
