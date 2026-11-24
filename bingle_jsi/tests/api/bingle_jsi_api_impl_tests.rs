@@ -65,6 +65,7 @@ fn config_with_handle(handle: &str) -> BingleJsiConfig {
         key_storage: None,
         encrypt_state: None,
         enable_global_block: None,
+        ip_family: None,
     }
 }
 
@@ -94,6 +95,7 @@ fn config_with_local(path: &str) -> BingleJsiConfig {
         key_storage: None,
         encrypt_state: None,
         enable_global_block: None,
+        ip_family: None,
     }
 }
 
@@ -123,6 +125,7 @@ fn empty_config() -> BingleJsiConfig {
         key_storage: None,
         encrypt_state: None,
         enable_global_block: None,
+        ip_family: None,
     }
 }
 
@@ -295,6 +298,18 @@ fn init_with_no_handle_and_no_local_fails() {
     assert!(result.is_err());
     match result {
         Err(BingleJsiError::InvalidRequest { .. }) => {}
+        other => panic!("Expected InvalidRequest, got {:?}", other.err()),
+    }
+}
+
+#[test]
+fn init_rejects_an_invalid_ip_family() {
+    let mut config = config_with_handle("alice");
+    config.ip_family = Some("both".to_string());
+    match BingleJsiApiImpl::init(config) {
+        Err(BingleJsiError::InvalidRequest { reason }) => {
+            assert!(reason.contains("IP family"), "{reason}")
+        }
         other => panic!("Expected InvalidRequest, got {:?}", other.err()),
     }
 }
@@ -915,6 +930,7 @@ fn init_with_optional_fields() {
         key_storage: None,
         encrypt_state: None,
         enable_global_block: None,
+        ip_family: None,
     };
     let api = BingleJsiApiImpl::init(config);
     assert!(

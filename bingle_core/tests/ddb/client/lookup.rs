@@ -28,6 +28,7 @@ pub fn ddb_client_lookup_returns_endpoint() {
         log_mode: bingle_core::util::logging::LogMode::Plain,
         wait_response_timeout: None,
         advert_ttl: None,
+        ip_family: Default::default(),
     };
     let client_opts = StartOptions {
         handle: "client".into(),
@@ -45,6 +46,7 @@ pub fn ddb_client_lookup_returns_endpoint() {
         log_mode: bingle_core::util::logging::LogMode::Plain,
         wait_response_timeout: None,
         advert_ttl: None,
+        ip_family: Default::default(),
     };
     let relay = BingleApiImpl::new(&relay_opts);
     let client = BingleApiImpl::new(&client_opts);

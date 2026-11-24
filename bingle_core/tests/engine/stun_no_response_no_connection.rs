@@ -341,6 +341,7 @@ pub fn no_stun_responses_sets_no_connection_and_calls_on_listening_false() {
         log_mode: bingle_core::util::logging::LogMode::Plain,
         wait_response_timeout: None,
         advert_ttl: None,
+        ip_family: Default::default(),
     };
     let null_api = NullApi::new();
     let engine_slot = null_api.engine.clone();

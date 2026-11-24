@@ -77,3 +77,34 @@ pub fn no_args_is_usage_error_on_stderr() {
         "usage error should be written to stderr; got: {stderr}"
     );
 }
+
+// Issue #484: `chat --help` lists --poll-interval and explains its default and 0, and the
+// top-level usage lists it on the chat line.
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn chat_help_lists_poll_interval() {
+    let out = run(&["chat", "--help"]);
+    assert!(out.status.success(), "chat --help should exit 0");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("[--poll-interval <secs>]"),
+        "chat usage should list --poll-interval; got: {stdout}"
+    );
+    assert!(
+        stdout.contains("--poll-interval <secs>: with --store-forward receive or both")
+            && stdout.contains("(default 20)")
+            && stdout.contains("0 reads it on start only"),
+        "chat help should explain --poll-interval; got: {stdout}"
+    );
+
+    let top = run(&["--help"]);
+    let top = String::from_utf8_lossy(&top.stdout);
+    let chat_line = top
+        .lines()
+        .find(|l| l.trim_start().starts_with("bingle_cli chat "))
+        .expect("top-level usage has a chat line");
+    assert!(
+        chat_line.contains("[--poll-interval <secs>]"),
+        "top-level chat line should list --poll-interval; got: {chat_line}"
+    );
+}

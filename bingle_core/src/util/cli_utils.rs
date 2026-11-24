@@ -16,6 +16,7 @@ use std::net::SocketAddr;
 ///  --static-ip <ip:port>
 ///  --stun-servers <list>
 ///  --stun-servers-file <file>
+///  --ip-family <auto|v4|v6>
 ///  --node-file <file>
 ///  --auto-migrate
 /// ```
@@ -43,6 +44,7 @@ where
     let mut log_level: Option<String> = None;
     let mut log_mode = LogMode::Plain;
     let mut handle_cache_expiry: Option<std::time::Duration> = None;
+    let mut ip_family = crate::api::bingle_api::IpFamily::Auto;
     let dangerous_debug = false;
 
     while let Some(arg) = it.next() {
@@ -131,6 +133,14 @@ where
                     .map_err(|e| format!("Invalid --handle-cache-expiry-secs '{}': {}", v, e))?;
                 handle_cache_expiry = Some(std::time::Duration::from_secs(secs));
             }
+            "--ip-family" => {
+                let v = it
+                    .next()
+                    .ok_or("--ip-family requires a value: auto|v4|v6")?;
+                ip_family = v
+                    .parse::<crate::api::bingle_api::IpFamily>()
+                    .map_err(|e| format!("Invalid --ip-family: {e}"))?;
+            }
             "--debug" => {
                 // Accept a --debug flag. The binary may use this to enable verbose output.
                 // Intentionally no-op here to keep StartOptions stable for existing tests.
@@ -188,6 +198,7 @@ where
         log_mode,
         wait_response_timeout: None,
         advert_ttl: None,
+        ip_family,
     })
 }
 

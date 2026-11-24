@@ -215,8 +215,8 @@ fn print_usage_and_exit(code: i32) -> ! {
         "  Common options (for all commands): -h|--help | -V|--version | --log-warn|--warn|-q | --log-info|--info | --log-debug|--debug|-v | --log-trace|--vv|-vv | --log-mode <Plain|ANSI|AWS|JS> | --stun-servers <list> | --stun-servers-file <file>\n",
         "  Note: chat and checkrelays default to WARN-level logs so their output isn't buried under engine tracing; use --info or --debug to see more (or --log-level error for just the result).\n",
         "  Note: HTTP client detail (h2, hyper, hyper_util, reqwest) is capped at WARN at every level; set RUST_LOG (which overrides the level flags) to see it.\n",
-        "  bingle_cli run [--handle <handle>|<handle>] [--passphrase <text>] [--relay] [--static-ip <ip:port>] [--stun-servers <list>] [--stun-servers-file <file>] [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--sentinel-file <path>] [--echo] [--auto-migrate] [--log-mode <Plain|ANSI|AWS|JS>]\n",
-        "  bingle_cli chat [--handle <handle>|<handle>] [--passphrase <text>] [--to <handle> | --to-id <id>] [--state_file <file>] [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--stun-servers <list>] [--stun-servers-file <file>] [--no-retries] [--store-forward <both|send|receive|none>] [--notify <url>] [--auto-migrate] [--plain] [--info|--debug]\n",
+        "  bingle_cli run [--handle <handle>|<handle>] [--passphrase <text>] [--relay] [--static-ip <ip:port>] [--ip-family <auto|v4|v6>] [--stun-servers <list>] [--stun-servers-file <file>] [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--sentinel-file <path>] [--echo] [--auto-migrate] [--log-mode <Plain|ANSI|AWS|JS>]\n",
+        "  bingle_cli chat [--handle <handle>|<handle>] [--passphrase <text>] [--to <handle> | --to-id <id>] [--state_file <file>] [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--stun-servers <list>] [--stun-servers-file <file>] [--no-retries] [--store-forward <both|send|receive|none>] [--poll-interval <secs>] [--notify <url>] [--auto-migrate] [--plain] [--info|--debug]\n",
         "  bingle_cli logclient --state_file <file> [--maildir <dir> --from <address>] [--handle <handle>] [--passphrase <text>] [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--stun-servers <list>] [--stun-servers-file <file>] [--store-forward <receive|none>] [--poll-interval <secs>] [--auto-migrate]  (receive messages into a Maildir as emails, or as JSON lines on stdout; logs on stderr)\n",
         "  bingle_cli register --handle <handle> --passphrase <text> --app-id <id> --asset-id <id> --price-units <n> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>] [--log-mode <Plain|ANSI|AWS|JS>]\n",
         "  bingle_cli migrate --passphrase <text> [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--log-mode <Plain|ANSI|AWS|JS>]  (opt-in + migrate local state to the app from a blessed ancestor; handle is copied on-chain)\n",
@@ -260,7 +260,7 @@ fn cmd_run(mut args: Vec<String>) {
     // Support subcommand help
     if args.iter().any(|a| a == "--help" || a == "-h") {
         println!(
-            "Usage: bingle_cli run [--handle <handle>|<handle>] [--passphrase <text>] [--relay] [--static-ip <ip:port>] [--stun-servers <list>] [--stun-servers-file <file>] [--node-file <file>] [--sentinel-file <path>] [--echo] [--auto-migrate]"
+            "Usage: bingle_cli run [--handle <handle>|<handle>] [--passphrase <text>] [--relay] [--static-ip <ip:port>] [--ip-family <auto|v4|v6>] [--stun-servers <list>] [--stun-servers-file <file>] [--node-file <file>] [--sentinel-file <path>] [--echo] [--auto-migrate]"
         );
         std::process::exit(0);
     }
@@ -299,7 +299,7 @@ fn cmd_run(mut args: Vec<String>) {
         Ok(o) => o,
         Err(e) => {
             warn!(
-                "Error: {}\nUsage: bingle_cli run [--handle <handle>|<handle>] [--passphrase <text>] [--relay] [--static-ip <ip:port>] [--stun-servers <list>] [--stun-servers-file <file>] [--node-file <file>] [--sentinel-file <path>] [--auto-migrate]",
+                "Error: {}\nUsage: bingle_cli run [--handle <handle>|<handle>] [--passphrase <text>] [--relay] [--static-ip <ip:port>] [--ip-family <auto|v4|v6>] [--stun-servers <list>] [--stun-servers-file <file>] [--node-file <file>] [--sentinel-file <path>] [--auto-migrate]",
                 e
             );
             std::process::exit(2);
@@ -693,9 +693,10 @@ fn cmd_chat(args: Vec<String>, log_sink: bingle_cli::logging::ConsoleLogSink) {
     // One string literal per output line (adjacent literals concatenate at compile time) for
     // readability in source; each keeps its trailing `\n` except the last.
     const USAGE: &str = concat!(
-        "Usage: bingle_cli chat [--handle <handle>|<handle>] [--passphrase <text>] [--to <handle> | --to-id <id>] [--state_file <file>] [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--stun-servers <list>] [--stun-servers-file <file>] [--no-retries] [--store-forward <both|send|receive|none>] [--notify <url>] [--auto-migrate] [--plain] [--info|--debug]\n",
+        "Usage: bingle_cli chat [--handle <handle>|<handle>] [--passphrase <text>] [--to <handle> | --to-id <id>] [--state_file <file>] [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--stun-servers <list>] [--stun-servers-file <file>] [--no-retries] [--store-forward <both|send|receive|none>] [--poll-interval <secs>] [--notify <url>] [--auto-migrate] [--plain] [--info|--debug]\n",
         "  --plain: no line editing; log lines print straight to the terminal instead of above the prompt.\n",
         "  --store-forward: enable Sidewinder Mailbox store-and-forward. The node is discovered on-chain from the Bingle app id and reached over mutual TLS. both=send+receive, send=post on give-up, receive=poll inbox, none=off (default).\n",
+        "  --poll-interval <secs>: with --store-forward receive or both, read the Mailbox on start and then every <secs> seconds (default 20); 0 reads it on start only.\n",
         "  --notify <url>: nudge the bingle_notify gateway at <url> when a direct send gives up.",
     );
 
@@ -1694,6 +1695,7 @@ fn cmd_checkrelays(mut args: Vec<String>) {
         log_mode: LogMode::Plain,
         wait_response_timeout: None,
         advert_ttl: None,
+        ip_family: bingle_core::api::bingle_api::IpFamily::Auto,
     };
 
     // Create API and start engine minimal
