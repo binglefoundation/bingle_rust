@@ -71,7 +71,8 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
                     sendPendingMessages = config.tryGetBoolean("send_pending_messages"),
                     keyStorage = config.tryGetString("key_storage"),
                     encryptState = config.tryGetBoolean("encrypt_state"),
-                    enableGlobalBlock = config.tryGetBoolean("enable_global_block")
+                    enableGlobalBlock = config.tryGetBoolean("enable_global_block"),
+                    ipFamily = config.tryGetString("ip_family")
                 )
                 // Initialize the platform TLS verifier before any HTTPS to an Algorand node (#135).
                 BingleJsiTls.ensureInitialized(reactApplicationContext)

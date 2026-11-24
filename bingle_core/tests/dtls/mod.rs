@@ -36,8 +36,11 @@ pub mod dtls_stun_interleave_handshake;
 #[path = "network_mux_udp_tests.rs"]
 pub mod network_mux_udp_tests;
 
-#[path = "network_mux_udp_ipv6_rejection_tests.rs"]
-pub mod network_mux_udp_ipv6_rejection_tests;
+#[path = "network_mux_udp_dual_stack.rs"]
+pub mod network_mux_udp_dual_stack;
+
+#[path = "dtls_ipv6_loopback_e2e.rs"]
+pub mod dtls_ipv6_loopback_e2e;
 
 #[path = "network_mux_udp_reprocess.rs"]
 pub mod network_mux_udp_reprocess;

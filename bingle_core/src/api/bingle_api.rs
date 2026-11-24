@@ -521,6 +521,9 @@ pub type OnListeningHandler = dyn Fn(bool, crate::engine::NatType) + Send + Sync
 pub type SendViaBingle =
     std::sync::Arc<dyn Fn(&NetworkEndpoint, &UserId, JsonValue) -> bool + Send + Sync + 'static>;
 
+/// Which IP address families the node's UDP socket uses; see [`StartOptions::ip_family`].
+pub use crate::dtls::network_mux_udp::IpFamily;
+
 /// Options used to start the Bingle node.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct StartOptions {
@@ -570,6 +573,10 @@ pub struct StartOptions {
     /// must not use a shorter value than its clients, or live clients lapse between refreshes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub advert_ttl: Option<Duration>,
+    /// IP address families the node's UDP socket uses (issue #494): `auto` (default) is dual-stack
+    /// where the host has IPv6, `v4` or `v6` restricts the node to one family.
+    #[serde(default)]
+    pub ip_family: IpFamily,
 }
 
 impl StartOptions {
@@ -591,6 +598,7 @@ impl StartOptions {
             log_mode: LogMode::Plain,
             wait_response_timeout: None,
             advert_ttl: None,
+            ip_family: IpFamily::Auto,
         }
     }
 }
@@ -601,7 +609,7 @@ impl std::fmt::Display for StartOptions {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "StartOptions {{ handle: {:?}, algo_passphrase: {}, static_ip: {:?}, am_relay: {}, stun_servers: {:?}, algo_provider_config: {:?}, algo_network: {:?}, app_id: {:?}, asset_id: {:?}, log_level: {:?}, handle_cache_expiry: {:?}, dangerous_debug: {}, log_mode: {:?}, wait_response_timeout: {:?}, advert_ttl: {:?} }}",
+            "StartOptions {{ handle: {:?}, algo_passphrase: {}, static_ip: {:?}, am_relay: {}, stun_servers: {:?}, algo_provider_config: {:?}, algo_network: {:?}, app_id: {:?}, asset_id: {:?}, log_level: {:?}, handle_cache_expiry: {:?}, dangerous_debug: {}, log_mode: {:?}, wait_response_timeout: {:?}, advert_ttl: {:?}, ip_family: {} }}",
             self.handle,
             if self.algo_passphrase.is_some() {
                 "<set>"
@@ -621,6 +629,7 @@ impl std::fmt::Display for StartOptions {
             self.log_mode,
             self.wait_response_timeout,
             self.advert_ttl,
+            self.ip_family,
         )
     }
 }

@@ -162,6 +162,11 @@ pub fn loopback_addr(port: u16) -> std::net::SocketAddr {
     std::net::SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port)
 }
 
+/// The IPv6 loopback `[::1]:port` (issue #494), for tests that run a node or STUN server over IPv6.
+pub fn loopback_addr_v6(port: u16) -> std::net::SocketAddr {
+    std::net::SocketAddr::new(std::net::IpAddr::V6(std::net::Ipv6Addr::LOCALHOST), port)
+}
+
 // The loopback address a started node is actually bound to. Use with a node started with
 // `static_ip: Some(loopback_addr(0))` to recover the OS-assigned port without the
 // allocate-then-bind race: the node's mux binds to 0.0.0.0:<port>, and this returns
@@ -670,6 +675,7 @@ pub fn start_root_relay(
         log_mode: bingle_core::util::logging::LogMode::Plain,
         wait_response_timeout: None,
         advert_ttl: None,
+        ip_family: bingle_core::api::bingle_api::IpFamily::Auto,
     };
     let api = BingleApiImpl::new(&opts);
     api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.start(&opts))

@@ -270,6 +270,10 @@ export interface BingleJsiConfig {
    * good; "not blocked" is checked again after handle_cache_expiry_secs (600 by default).
    * null/omitted defaults to false (off). Optional. */
   enable_global_block?: boolean | null;
+  /** IP address families the node's UDP socket uses (issue #494): "auto", "v4" or "v6". A developer
+   * setting, not a user one. null/omitted defaults to "auto" (dual-stack where the device has IPv6).
+   * Optional. */
+  ip_family?: string | null;
 }
 
 /**
