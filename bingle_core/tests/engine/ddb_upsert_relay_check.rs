@@ -315,3 +315,65 @@ pub fn test_evict_keeps_relay_when_blockchain_unreachable() {
         "the relay stays in the set while its permission cannot be read"
     );
 }
+
+fn engine_and_spend_key() -> (Engine, String, ed25519_dalek::SigningKey) {
+    let api = DummyApi {
+        app_id: None,
+        config: None,
+    };
+    let engine = Engine::new(
+        &StartOptions::new("".into()),
+        crate::util::mock_bingle_api::to_weak(api),
+    );
+    let id = crate::util::test_util::ADDRESS_SPEND.to_string();
+    let seed = algonaut::crypto::mnemonic::to_key(crate::util::test_util::PASSPHRASE_SPEND)
+        .expect("valid mnemonic");
+    (engine, id, ed25519_dalek::SigningKey::from_bytes(&seed))
+}
+
+fn record_with_endpoint6(
+    id: &str,
+    host: &str,
+    signing_key: &ed25519_dalek::SigningKey,
+) -> AdvertRecord {
+    AdvertRecord::new_unsigned(
+        id.to_string(),
+        None,
+        Some(false),
+        None,
+        None,
+        "2025-01-01T00:00:00Z".into(),
+    )
+    .with_endpoint6(Some(bingle_core::ddb::InetSocketAddress {
+        host: host.to_string(),
+        port: 3478,
+    }))
+    .signed(signing_key)
+}
+
+/// Issue #493: a relay stores a record with a global unicast endpoint6 and re-serves it verbatim.
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn test_ddb_upsert_keeps_global_endpoint6() {
+    let (engine, id, signing_key) = engine_and_spend_key();
+    let record = record_with_endpoint6(&id, "2606:4700::1111", &signing_key);
+    engine.ddb_upsert_record(record.clone());
+    let found = engine.ddb_backend_lookup_for_tests(&id);
+    assert_eq!(found, Some(record));
+}
+
+/// Issue #493: a relay refuses a record whose endpoint6 is not global unicast. It can't strip
+/// the field and keep the record, because the signature covers endpoint6.
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn test_ddb_upsert_refuses_non_global_endpoint6() {
+    for host in ["fe80::1", "fd00::1", "ff02::1", "::ffff:192.0.2.7"] {
+        let (engine, id, signing_key) = engine_and_spend_key();
+        engine.ddb_upsert_record(record_with_endpoint6(&id, host, &signing_key));
+        assert!(
+            engine.ddb_backend_lookup_for_tests(&id).is_none(),
+            "record with endpoint6 {:?} must not be stored",
+            host
+        );
+    }
+}
