@@ -23,3 +23,6 @@ pub mod blocked_then_recovery;
 
 #[path = "reset_state_after_blocked.rs"]
 pub mod reset_state_after_blocked;
+
+#[path = "mapped_address_families.rs"]
+pub mod mapped_address_families;
