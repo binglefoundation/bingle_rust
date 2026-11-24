@@ -117,3 +117,18 @@ pub fn ipv4_socket_ignores_nat64() {
         .expect_err("still IPv4-only");
     assert!(err.contains("IPv6"), "{err}");
 }
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn socket_recovery_clears_the_no_route_finding() {
+    let mux = UdpNetworkMux::bind_all(0, IpFamily::Auto).expect("bind");
+    let nat64 = loopback_nat64();
+    mux.set_nat64(nat64.clone());
+    assert!(nat64.mark_no_ipv4_route());
+    mux.drop_socket_for_tests();
+    mux.rebind_for_tests().expect("rebind");
+    assert!(
+        !nat64.no_ipv4_route(),
+        "a recovered socket tries IPv4 natively again"
+    );
+}

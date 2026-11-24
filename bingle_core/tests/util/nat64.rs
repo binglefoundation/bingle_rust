@@ -164,3 +164,49 @@ pub fn no_route_errors_are_recognised() {
         ErrorKind::ConnectionRefused
     )));
 }
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn no_route_is_only_recorded_when_a_translator_is_known() {
+    let n = Nat64::new(
+        Box::new(FakeResolver {
+            aaaa: vec![],
+            synthesised_prefix: None,
+        }),
+        None,
+    );
+    n.rediscover();
+    assert!(
+        !n.mark_no_ipv4_route(),
+        "no prefix: a 'no route' error is just a failed send"
+    );
+    assert!(
+        !n.no_ipv4_route(),
+        "IPv4 is not diverted on a network without NAT64"
+    );
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn no_route_finding_expires_and_can_be_cleared() {
+    let p: Nat64Prefix = "64:ff9b::/96".parse().unwrap();
+    let n = Nat64::new(
+        Box::new(FakeResolver {
+            aaaa: vec![],
+            synthesised_prefix: None,
+        }),
+        Some(p),
+    )
+    .with_no_route_hold(std::time::Duration::from_millis(50));
+    assert!(n.mark_no_ipv4_route());
+    assert!(n.no_ipv4_route());
+    std::thread::sleep(std::time::Duration::from_millis(80));
+    assert!(
+        !n.no_ipv4_route(),
+        "after the hold, IPv4 is tried natively again"
+    );
+
+    assert!(n.mark_no_ipv4_route());
+    n.clear_no_ipv4_route();
+    assert!(!n.no_ipv4_route(), "cleared on recovery");
+}

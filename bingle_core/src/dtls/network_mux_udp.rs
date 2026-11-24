@@ -305,8 +305,8 @@ impl UdpNetworkMux {
                 if let Some(n) = nat64
                     && to.is_ipv4()
                     && crate::util::nat64::is_no_route_error(&e)
+                    && n.mark_no_ipv4_route()
                 {
-                    n.mark_no_ipv4_route();
                     return Self::send_synthesised(sock, buf, to, n);
                 }
                 Err(format!("udp send_to {to} failed: {e}"))
@@ -351,6 +351,11 @@ impl UdpNetworkMux {
         })?;
         socket.set_read_timeout(Some(Duration::from_millis(200)))?;
         let loop_clone = socket.try_clone()?;
+        // The socket recovered from a network error: the network may have changed, so try IPv4
+        // natively again rather than keep diverting it through NAT64.
+        if let Some(n) = self.nat64.get() {
+            n.clear_no_ipv4_route();
+        }
         // Install the live socket so write() and local_addr() use it again.
         let mut guard = self
             .socket
