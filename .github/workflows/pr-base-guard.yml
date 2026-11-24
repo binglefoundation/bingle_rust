@@ -1,11 +1,13 @@
 name: pr-base-guard
 
 # Enforce the CLAUDE.md rule that a pull request which is NOT a draft must target `staging`, the
-# default branch (#399). Stacked work stays in draft with its feature-branch base until that base
+# default branch (#399), or an `integration-*` branch (#491). Stacked work stays in draft with its feature-branch base until that base
 # merges, then retargets to staging and is marked ready: a ready PR based on a feature branch merges
 # into that branch and silently never reaches staging. `deployed` is never a PR base; it only
-# fast-forwards to a staging commit (RELEASING.md). Require the "base-is-staging" check in branch
-# protection to block merge.
+# fast-forwards to a staging commit (RELEASING.md). An `integration-*` branch is a disposable test
+# lane: a story merges there to be tested with the others, and still releases to staging through its
+# own PR, so a ready PR into it is allowed. Require the "base-is-staging" check in branch protection
+# to block merge.
 on:
   pull_request:
     # `edited` catches a base-branch change and `ready_for_review` a draft being promoted;
@@ -23,12 +25,15 @@ jobs:
     # only ready PRs are constrained; a draft may target any base.
     if: github.event.pull_request.draft == false
     steps:
-      - name: Require base branch staging
+      - name: Require base branch staging or integration-*
         env:
           BASE: ${{ github.event.pull_request.base.ref }}
         run: |
-          if [ "$BASE" != "staging" ]; then
-            echo "::error::A ready-for-review PR must target 'staging', but this one targets '$BASE'. Keep stacked work in draft until its base merges, then retarget to staging and mark it ready."
-            exit 1
-          fi
-          echo "base branch is staging"
+          case "$BASE" in
+            staging) echo "base branch is staging" ;;
+            integration-*) echo "base branch is integration branch $BASE" ;;
+            *)
+              echo "::error::A ready-for-review PR must target 'staging' or an 'integration-*' branch, but this one targets '$BASE'. Keep stacked work in draft until its base merges, then retarget to staging and mark it ready."
+              exit 1
+              ;;
+          esac

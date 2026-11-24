@@ -10,7 +10,9 @@ name: integration-tests
 # CI-INTEGRATION.md.
 on:
   push:
-    branches: [staging]
+    # integration-* branches are test lanes for stories released together (#491): run the localnet
+    # suite on them too, so the combination is tested before each story releases to staging.
+    branches: [staging, 'integration-*']
   workflow_dispatch:
   # deploy.yml re-runs this gate on the release commit (#399).
   workflow_call:
