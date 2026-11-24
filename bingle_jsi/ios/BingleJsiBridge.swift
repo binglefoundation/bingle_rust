@@ -120,7 +120,8 @@ class BingleJsiBridge: RCTEventEmitter {
                     sendPendingMessages: config["send_pending_messages"] as? Bool,
                     keyStorage: config["key_storage"] as? String,
                     encryptState: config["encrypt_state"] as? Bool,
-                    enableGlobalBlock: config["enable_global_block"] as? Bool
+                    enableGlobalBlock: config["enable_global_block"] as? Bool,
+                    ipFamily: config["ip_family"] as? String
                 )
                 let api = try createBingleApi(config: jsiConfig)
                 // A second initialize on this module replaces its engine: stop the old one (#455).

@@ -380,6 +380,10 @@ pub struct BingleJsiConfig {
     /// #490). A block is remembered for good; "not blocked" is checked again after
     /// `handle_cache_expiry_secs` (600 by default). `null` defaults to `false` (off).
     pub enable_global_block: Option<bool>,
+    /// IP address families the node's UDP socket uses (issue #494): `"auto"`, `"v4"` or `"v6"`. A
+    /// developer setting, not a user one: it reproduces single-stack problems and can switch IPv6
+    /// off in the field. `null` defaults to `"auto"` (dual-stack where the device has IPv6).
+    pub ip_family: Option<String>,
 }
 
 /// What the last load of the state file found (issue #459): read with

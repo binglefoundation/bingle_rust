@@ -31,6 +31,7 @@ pub fn start_returns_err_on_invalid_passphrase() {
         log_mode: bingle_core::util::logging::LogMode::Plain,
         wait_response_timeout: None,
         advert_ttl: None,
+        ip_family: Default::default(),
     };
 
     let err = api

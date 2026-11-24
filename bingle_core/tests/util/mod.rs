@@ -23,6 +23,9 @@ pub mod cli_parse_test;
 #[path = "cli/debug_flag.rs"]
 pub mod cli_debug_flag;
 
+#[path = "cli/ip_family_flag.rs"]
+pub mod cli_ip_family_flag;
+
 #[path = "cli/auto_migrate_flag.rs"]
 pub mod cli_auto_migrate_flag;
 
