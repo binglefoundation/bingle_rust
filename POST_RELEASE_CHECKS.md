@@ -18,30 +18,6 @@ When a release finishes, `scripts/release.sh` lists the checks below for changes
 
 ## Waiting for a release
 
-### #376 MainNet relay roles allow CreateLogGroup on the log-group ARN
-
-- **Merged in:** #509; first shipped in 0.3.39. TestNet's two relays are done.
-- **Needs:** the MainNet AWS account (`bingle_env mainnet`), and the `tmp/deployed` checkout of the release tag (as for the MainNet roll). Both MainNet relays use the express template. AWS's deadline is 26 April 2027.
-- **Steps:**
-  1. Sign in and check the account is the MainNet inventory's `ACCOUNT_ID` (bingle_admin `relays/mainnet.env`):
-
-         source ~/.config/bingle/bingle_env.sh mainnet && aws sts get-caller-identity --query Account --output text
-
-  2. From `tmp/deployed`, create a change set for the first relay without running it. `deploy` applies the whole current template and keeps every parameter value:
-
-         aws cloudformation deploy --template-file aws/relay_express.yaml --stack-name relay-prod-1 --capabilities CAPABILITY_IAM --region ca-central-1 --no-execute-changeset
-
-  3. Review it with the `describe-change-set` command `deploy` prints. Expect only `ECSTaskExecutionRole` as Modify; if so, run the `execute-change-set` command it prints. If anything else would change (the task definition, the service, networking), stop and look first: the stack was last fully deployed some releases ago.
-  4. The same for the second relay, then review and run its change set:
-
-         aws cloudformation deploy --template-file aws/relay_express.yaml --stack-name relay-prod-2 --capabilities CAPABILITY_IAM --region eu-west-1 --no-execute-changeset
-
-  5. Check each role (then the same with `relay-prod-2` and `eu-west-1`):
-
-         aws iam get-role-policy --role-name $(aws cloudformation describe-stack-resource --stack-name relay-prod-1 --logical-resource-id ECSTaskExecutionRole --region ca-central-1 --query 'StackResourceDetail.PhysicalResourceId' --output text) --policy-name CreateLogGroup --query 'PolicyDocument.Statement[0].Resource'
-
-- **Passes when:** each role lists both `…:log-group:/bingle/relay/<stack>` and `…:log-group:/bingle/relay/<stack>:*`, and both relays keep logging to `/bingle/relay/<stack>`.
-
 ### #95 the app drops messages from a blocked sender
 
 - **Merged in:** #504; first shipped in 0.3.39.
@@ -55,33 +31,3 @@ When a release finishes, `scripts/release.sh` lists the checks below for changes
   3. Wait 10 minutes (the "not blocked" refresh), or restart the app, then send another message from the second account, once directly and once while the phone is offline (so it goes through the Mailbox).
   4. Unblock it (`--unblock`). The app still drops its messages until restarted, since a block is kept for good in the running app.
 - **Passes when:** neither message sent after the block appears on the phone, and the device log shows `which a moderator has blocked` for each.
-
-### #490 blocked_user bit on the DApps
-
-- **Merged in:** #503; first shipped in 0.3.39.
-- **Needs:** the TestNet and MainNet accounts directories (`APP_CREATOR` signs the update, `APP_ADMIN` the block) and node files, and a TestNet account that is opted in to the DApp to block and unblock. The new approval program is 2,340 bytes; the deployed apps already need one extra program page (the current one is 2,309 bytes), so it fits.
-- **Steps** (from a checkout of the release tag; the `bingle_admin` runbook is `admin_docs/UPGRADE_APP.md`, Path A):
-  1. Build the contract and check the change is an in-place update. Expect `approval/clear program differs from staging, but the state schema is unchanged`:
-
-         scripts/build_dapp.sh
-
-  2. Update the TestNet DApp. Expect `update complete: app_id=<APP_ID>, asset_id=<ASSET_ID>`:
-
-         bingle_admin deploy dapp_projects/smart_contracts/artifacts/bingle_dapp --accounts <TESTNET_ACCOUNTS_DIR> --node-file <TESTNET_NODE_FILE>
-
-  3. Block, then unblock, a TestNet account with the admin tool's `moderator_block` (bingle_admin issue 40), which reads the bit back after each write:
-
-         bingle_admin moderator_block <ADDRESS> --block --accounts <TESTNET_ACCOUNTS_DIR> --node-file <TESTNET_NODE_FILE>
-
-         bingle_admin moderator_block <ADDRESS> --unblock --accounts <TESTNET_ACCOUNTS_DIR> --node-file <TESTNET_NODE_FILE>
-
-     To read the bit independently after each, decode the account's flags word (key `allow_static`; bit 5 is the block). Python, not jq, since the word's top bit is beyond a float's precision:
-
-         curl -s https://testnet-api.4160.nodely.dev/v2/accounts/<ADDRESS>/applications/<APP_ID> | python3 -c "import json,sys; kv=json.load(sys.stdin)['app-local-state'].get('key-value', []); v=next((x['value']['uint'] for x in kv if x['key'] == 'YWxsb3dfc3RhdGlj'), 0); print('blocked' if v & 32 else 'not blocked', hex(v))"
-
-  4. Update the MainNet DApp the same way:
-
-         bingle_admin deploy dapp_projects/smart_contracts/artifacts/bingle_dapp --accounts <MAINNET_ACCOUNTS_DIR> --node-file <MAINNET_NODE_FILE>
-
-  5. Commit the `dapp_projects/smart_contracts/bingle_dapp/app_schema.json` that step 1 updated (its new `approval_sha256`) in a bingle_rust pull request, so the next build compares against the deployed program.
-- **Passes when:** both updates report `update complete` with the existing app and asset ids; on TestNet the read prints `blocked` after the block and `not blocked` after the unblock, and the rest of the printed word is the same before and after.
