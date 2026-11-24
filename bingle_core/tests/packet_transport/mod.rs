@@ -1,2 +1,12 @@
 #[path = "dtls_reliable_packet_transport.rs"]
 pub mod dtls_reliable_packet_transport;
+#[path = "fragmented_send.rs"]
+pub mod fragmented_send;
+#[path = "frame.rs"]
+pub mod frame;
+#[path = "frpt_block_sizes.rs"]
+pub mod frpt_block_sizes;
+#[path = "reassembly.rs"]
+pub mod reassembly;
+#[path = "send_window.rs"]
+pub mod send_window;

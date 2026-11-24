@@ -21,25 +21,22 @@ Constants:
 
 - `PACKET_MAX = 64 * 1024 * 1024` bytes (64 MiB).
 
-## Implementation status in this branch
+## Implementation status
 
-Implemented now:
+Implemented (issue #518, first release):
 
-- `DATA_SINGLE` framing for blocks that fit in one packet (`block.len() <= mtu - 4`).
-- `ACK_COMPLETE` handling for single-packet sends.
-- Duplicate suppression for `DATA_SINGLE` by `(peer, tx_id)`.
+- `DATA_SINGLE` framing for blocks that fit in one packet (`block.len() <= mtu - 4`), with `ACK_COMPLETE` and retry on the `2s`/`4s`/`8s` schedule, each retry on a fresh DTLS session.
+- Duplicate suppression by `(peer, session generation, tx_id)` for both single and fragmented blocks.
+- `DATA_FRAG` send path (§5.3): fragments of `mtu - 12` bytes, a 64-fragment in-flight window, retransmission of unacknowledged fragments on timeout, failure after the third consecutive timeout.
+- `ACK_WINDOW` generation (§6.3, §7.2) and processing.
+- Fragment reassembly with consistency checks, per-fragment allocation, a 30 s timeout and per-peer and global byte budgets (§6.4).
 
-To implement:
-- retry after trimeout for single packets
+First-release sending policy: a block that fits one packet always goes as `DATA_SINGLE`. Only a block larger than `mtu - 4` is fragmented. Receivers that predate `DATA_FRAG` drop it without acknowledgement, but they could not receive such a block before either, so mixed versions do not regress. Roll relays first, then the app.
 
-Not yet implemented (large-packet path):
+Not yet implemented (second release of issue #518):
 
-- `DATA_FRAG` send path for multi-packet blocks.
-- `ACK_WINDOW` generation/processing.
-- Fragment reassembly state machine and completion for large blocks.
-- Fragment retransmit/windowed retry behavior for large blocks.
-
-This document includes the full target protocol; sections describing fragmented large-packet behavior remain the intended next implementation stage.
+- Lowering the sending `mtu` to about 1,200 so every packet fits the 1,232-byte IPv6 minimum path.
+- The legacy fallback: resend a fragmented block that would fit one legacy packet as `DATA_SINGLE` when no `ACK_WINDOW` arrives within the first timeout, and remember that peer as legacy for the session.
 
 ---
 
@@ -201,7 +198,7 @@ If `block.len() <= mtu - 4`:
 3. Retry same `DATA_SINGLE` after `2s`, `4s`, `8s` if no terminal ACK.
 4. Fail after 3 timeouts.
 
-### 5.3 Fragmented send (planned, not yet implemented)
+### 5.3 Fragmented send
 
 If block needs fragmentation:
 
@@ -209,9 +206,9 @@ If block needs fragmentation:
 2. Send fragments using a fixed in-flight window of `64` fragments.
 3. Track ACKed fragments from incoming `ACK_WINDOW` packets.
 4. Advance window as fragments become ACKed.
-5. On timeout (`2s`, `4s`, `8s`): retransmit all currently unacked fragments in in-flight window.
+5. On timeout (`2s`, `4s`, `8s`): retransmit all currently unacked fragments in in-flight window. If nothing at all has been acknowledged for the transfer yet, the retransmission starts a fresh DTLS session first, as a `DATA_SINGLE` retry does (the session is presumed dead).
 6. Complete only when `ACK_COMPLETE` received.
-7. Fail after third timeout without completion.
+7. Fail after third timeout without completion. Any new acknowledgement restarts the retry schedule, so the three timeouts are consecutive timeouts without progress; a large block on a slow but working path does not fail just because it takes longer than 14 s.
 
 Rationale:
 
@@ -240,7 +237,7 @@ Duplicate `DATA_SINGLE` handling:
 - Do not re-deliver block.
 - Rationale: duplicate `DATA_SINGLE` usually means prior terminal ACK was lost; re-sending terminal ACK stops sender retries without duplicating delivery.
 
-### 6.3 `DATA_FRAG` (planned, not yet implemented)
+### 6.3 `DATA_FRAG`
 
 1. Upsert reassembly context keyed by `(peer, tx_id)`.
 2. Validate `frag_count`, `frag_index`, `block_len`, and metadata consistency across fragments.
@@ -259,12 +256,16 @@ Duplicate fragment handling:
 
 ### 6.4 Expiry and resource protection
 
-- Reassembly context timeout: `30s` since first fragment (configurable).
+- Reassembly context timeout: `30s` since first fragment (configurable). Expired contexts are swept when the next fragment from any peer arrives.
 - On timeout: drop partial context.
-- Enforce caps:
-  - max in-progress transfers per peer,
-  - max global reassembly bytes,
+- Memory is allocated per fragment as fragments arrive, never up front from the announced `block_len`.
+- Enforce caps (defaults, configurable with `set_reassembly_limits`):
+  - max in-progress transfers per peer: `8`; a new transfer beyond it drops that peer's oldest,
+  - max reassembly bytes per peer: `16 MiB`; exceeding it drops that peer's oldest other transfer,
+  - max global reassembly bytes: `64 MiB`; exceeding it drops the largest other transfer,
+  - a transfer whose `block_len` exceeds either byte budget is refused at its first fragment, so the per-peer budget is also the largest block a receiver accepts until it is raised,
   - reject any transfer metadata implying `> PACKET_MAX`.
+- Consistency: `frag_count >= 2`, `frag_index < frag_count`, `block_len >= frag_count`, every fragment but the last has the same length `L`, `(frag_count - 1) * L < block_len <= frag_count * L`, and the last fragment is `block_len - (frag_count - 1) * L` bytes. A fragment that breaks a rule drops its transfer.
 
 ---
 
@@ -280,7 +281,7 @@ Duplicate fragment handling:
 ### 7.2 Receiver ACK timing
 
 - `DATA_SINGLE`: send `ACK_COMPLETE` immediately.
-- `DATA_FRAG`: send `ACK_WINDOW` immediately or coalesced up to `25ms` max.
+- `DATA_FRAG`: send `ACK_WINDOW` immediately or coalesced up to `25ms` max. The implementation acknowledges the first fragment at once, then when a fragment arrives `25ms` or more after the previous `ACK_WINDOW` or after every 16 new fragments, and at once for a duplicate fragment. It has no timer: fragments that trail a burst are covered by `ACK_COMPLETE`, or, if a hole remains, by the immediate reply to the sender's retransmission.
 - `ACK_COMPLETE`: send immediately upon full reassembly.
 
 ---
@@ -400,6 +401,7 @@ Decision:
 - [x] Add test coverage for single packet terminal ACK (`ACK_COMPLETE`).
 - [x] Add test coverage for duplicate suppression.
 - [x] Add test coverage for timeout failure path.
-- [ ] Implement fragment out-of-order reassembly.
-- [ ] Implement selective ACK (`ACK_WINDOW`) + retransmit for fragmented transfers.
-- [ ] Add explicit `PACKET_MAX` boundary coverage.
+- [x] Implement fragment out-of-order reassembly.
+- [x] Implement selective ACK (`ACK_WINDOW`) + retransmit for fragmented transfers.
+- [x] Add explicit `PACKET_MAX` boundary coverage.
+- [ ] Lower the sending `mtu` to fit IPv6 and add the legacy `DATA_SINGLE` fallback (issue #518, second release).

@@ -11,7 +11,11 @@ use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-struct MockDtls {
+/// Called with each packet a `MockDtls` sends, after it is recorded; lets a test link two
+/// transports or drop packets (issue #518).
+pub type SendHook = Arc<dyn Fn(&NetworkEndpoint, &[u8]) + Send + Sync>;
+
+pub struct MockDtls {
     handle_message: Mutex<Option<HandleMessage>>,
     sent_packets: CapturedPackets,
     forgotten_peers: Arc<Mutex<Vec<SocketAddr>>>,
@@ -19,6 +23,7 @@ struct MockDtls {
     // Captures the forwarder the transport installs for outbound-session events, so a test can
     // simulate a DTLS rebuild by invoking it (issue #50).
     outbound_session_handler: Arc<Mutex<Option<HandleNewSession>>>,
+    send_hook: Option<SendHook>,
 }
 
 impl MockDtls {
@@ -33,6 +38,24 @@ impl MockDtls {
             forgotten_peers: Arc::new(Mutex::new(vec![])),
             auto_ack_on_send,
             outbound_session_handler: Arc::new(Mutex::new(None)),
+            send_hook: None,
+        }
+    }
+
+    /// A mock that records sent packets in `sent_packets` and forgotten peers in
+    /// `forgotten_peers`, then passes each sent packet to `send_hook`.
+    pub fn with_send_hook(
+        sent_packets: CapturedPackets,
+        forgotten_peers: Arc<Mutex<Vec<SocketAddr>>>,
+        send_hook: SendHook,
+    ) -> Self {
+        Self {
+            handle_message: Mutex::new(None),
+            sent_packets,
+            forgotten_peers,
+            auto_ack_on_send: false,
+            outbound_session_handler: Arc::new(Mutex::new(None)),
+            send_hook: Some(send_hook),
         }
     }
 }
@@ -66,6 +89,7 @@ fn new_transport_with_sent_and_forgotten(
         forgotten_peers: forgotten_peers.clone(),
         auto_ack_on_send,
         outbound_session_handler: Arc::new(Mutex::new(None)),
+        send_hook: None,
     };
     (
         DtlsReliablePacketTransport::new(Box::new(dtls), mtu),
@@ -100,6 +124,10 @@ impl Dtls for MockDtls {
                 let ack_complete_packet = vec![0x14, 0x00, data[2], data[3]];
                 handler(self, to, "mock-auto-ack", &ack_complete_packet);
             }
+        }
+
+        if let Some(hook) = self.send_hook.as_ref() {
+            hook(to, data);
         }
 
         Ok(())
@@ -362,15 +390,16 @@ pub fn send_wraps_payload_as_data_single_and_increments_tx_id() {
 
 #[test]
 #[cfg(not(target_os = "ios"))]
-pub fn send_rejects_payload_that_requires_fragmentation() {
-    let (transport, _sent_packets) = new_transport_with_sent_packets(8);
+pub fn send_rejects_block_when_mtu_is_too_small_to_fragment() {
+    let (transport, sent_packets) = new_transport_with_sent_packets(8);
     let to_addr: SocketAddr = "127.0.0.1:7002".parse().expect("valid socket address");
     let to = NetworkEndpoint::new_direct(to_addr);
 
     let err = transport
         .send(&to, b"12345")
-        .expect_err("payload larger than mtu-4 should fail until fragmentation is implemented");
-    assert!(err.contains("exceeds DATA_SINGLE capacity"));
+        .expect_err("a block over mtu-4 needs DATA_FRAG, which an 8-byte mtu cannot carry");
+    assert!(err.contains("too small to fragment"), "got: {err}");
+    assert!(sent_packets.lock().expect("sent_packets lock").is_empty());
 }
 
 #[test]
@@ -692,6 +721,7 @@ pub fn outbound_session_forwarded_to_installed_observer() {
         forgotten_peers: Arc::new(Mutex::new(vec![])),
         auto_ack_on_send: false,
         outbound_session_handler: outbound_session_handler.clone(),
+        send_hook: None,
     };
     let transport = DtlsReliablePacketTransport::new(Box::new(dtls), 1492);
 
@@ -734,6 +764,7 @@ pub fn outbound_session_without_observer_is_noop() {
         forgotten_peers: Arc::new(Mutex::new(vec![])),
         auto_ack_on_send: false,
         outbound_session_handler: outbound_session_handler.clone(),
+        send_hook: None,
     };
     let _transport = DtlsReliablePacketTransport::new(Box::new(dtls), 1492);
 
