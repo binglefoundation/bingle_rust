@@ -115,6 +115,18 @@ if [[ -n "${RELAY:-}" ]] && [[ -z "${EXTERNAL_IP:-}" ]] && [[ -z "${STUN_ONLY:-}
   fi
 fi
 
+# Report the external IPv6 address (#502). On a dual-stack AWS subnet it is the public address of
+# the instance's or task's network interface, with no NAT. Logged only: publishing it in the static
+# endpoint next to the IPv4 address is #500, so the relay's arguments are unchanged.
+if [[ -n "${RELAY:-}" ]] && command -v ip >/dev/null 2>&1; then
+  EXTERNAL_IP6=$(ip -o -6 route get 2606:4700:4700::1111 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src"){print $(i+1); exit}}') || true
+  if [[ -n "${EXTERNAL_IP6:-}" ]]; then
+    echo "Detected external IPv6 address ${EXTERNAL_IP6} (not yet published)"
+  else
+    echo "No external IPv6 address (IPv4-only host or subnet)"
+  fi
+fi
+
 if [[ ! -s "$STUN_FILE" ]]; then
   echo "STUN servers file not found or empty: $STUN_FILE" >&2
   exit 2

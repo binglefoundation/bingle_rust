@@ -463,6 +463,16 @@ The script will:
 3. Deploy a CloudFormation stack containing a VPC, ECS Cluster, IAM roles, Secrets Manager secret, SSM parameters, and the ECS Service.
 4. Create a CloudWatch Dashboard for monitoring CPU and Memory.
 
+### IPv6 (dual stack)
+
+Both relay templates and the email gateway template are dual stack (issue #502): the VPC has an Amazon-provided IPv6 block, the subnet assigns IPv6 addresses, a `::/0` route goes through the internet gateway, and every IPv4 security group rule has an IPv6 twin. IPv4 is unchanged. IPv6 addresses are public (no NAT) and free, while a public IPv4 address costs $0.005 an hour, which is kept for IPv4-only clients.
+
+- **Express and the email gateway (Fargate, `awsvpc` networking):** a task gets an IPv6 address only when the Elastic Container Service (ECS) account setting `dualStackIPv6` is enabled in the region. It is a one-off per account and region, which the templates do not change. Check it with `aws ecs list-account-settings --effective-settings --name dualStackIPv6 --region <region>`, and if it is not `enabled`, an account administrator turns it on with `aws ecs put-account-setting-default --name dualStackIPv6 --value enabled --region <region>`.
+- **EC2 mode (host networking):** the container shares the instance's network interface, which gets its IPv6 address from the subnet when the instance launches. No account setting is needed, but an instance launched before the stack became dual stack has no IPv6 address until it is replaced: `aws autoscaling start-instance-refresh --auto-scaling-group-name <asg> --region <region>` (the relay is down while the single instance is replaced).
+- **Existing stacks** become dual stack only on a full deploy (`aws/deploy_relay.sh` without `--redeploy-only`, or `aws/deploy_gateway.sh` with its settings). `--redeploy-only`, and so `scripts/roll_relays.sh`, keeps the stack's previous template.
+- **Address lifecycle:** a task's IPv6 address belongs to its network interface for the task's lifetime and changes only when the task is replaced, the same lifecycle as the relay's on-chain static endpoint (issue #500): published at start and cleared on SIGTERM. The relay containers' `StopTimeout` is 120 seconds, far longer than the 3-5 seconds the clear transaction takes to confirm, and the service stops the old task before it starts the new one. So no IPv6 Elastic IP or load balancer is needed.
+- `scripts/docker_start.sh` logs the external IPv6 address it detects; publishing it next to the IPv4 address is issue #500. The relay listens on IPv6 once the dual-stack socket (issue #494) is in its build.
+
 ### Redeploying after a change
 
 If you have made changes to the code and want to redeploy the relay:
