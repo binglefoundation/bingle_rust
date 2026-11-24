@@ -1,4 +1,3 @@
-use std::net::SocketAddr;
 use std::path::PathBuf;
 
 use crate::util::test_util::write_project_tmp_file;
@@ -25,15 +24,15 @@ pub fn parse_stun_file_ignores_hash_comments_and_blank_lines() {
 
     let opts = parse_start_options_from_args(args).expect("should parse args");
     let list = opts
-        .stun_servers
+        .stun_hosts
         .as_ref()
         .expect("stun servers should be present");
 
-    // Validate exact set and order of parsed addresses
-    let expected: Vec<SocketAddr> = vec![
-        "192.0.2.1:3478".parse().unwrap(),
-        "198.51.100.2:3478".parse().unwrap(),
-        "203.0.113.3:3478".parse().unwrap(),
+    // Validate exact set and order of parsed entries
+    let expected: Vec<String> = vec![
+        "192.0.2.1:3478".to_string(),
+        "198.51.100.2:3478".to_string(),
+        "203.0.113.3:3478".to_string(),
     ];
     assert_eq!(list, &expected);
 }

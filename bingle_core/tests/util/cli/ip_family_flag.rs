@@ -33,3 +33,17 @@ pub fn ip_family_flag_rejects_bad_values() {
     assert!(err.contains("--ip-family"), "{err}");
     assert!(parse(&["--ip-family"]).is_err(), "a value is required");
 }
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn nat64_prefix_flag_is_validated() {
+    assert_eq!(parse(&[]).unwrap().nat64_prefix, None);
+    assert_eq!(
+        parse(&["--nat64-prefix", "64:ff9b::/96"])
+            .unwrap()
+            .nat64_prefix
+            .as_deref(),
+        Some("64:ff9b::/96")
+    );
+    assert!(parse(&["--nat64-prefix", "64:ff9b::/80"]).is_err());
+}

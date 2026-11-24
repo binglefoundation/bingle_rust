@@ -66,6 +66,8 @@ pub fn engine_basic_bingle_dtls_layer() {
         wait_response_timeout: None,
         advert_ttl: None,
         ip_family: Default::default(),
+        stun_hosts: None,
+        nat64_prefix: None,
     };
     let client_opts = StartOptions {
         handle: "client".into(),
@@ -84,6 +86,8 @@ pub fn engine_basic_bingle_dtls_layer() {
         wait_response_timeout: None,
         advert_ttl: None,
         ip_family: Default::default(),
+        stun_hosts: None,
+        nat64_prefix: None,
     };
 
     // Start both nodes (bound to OS-assigned loopback ports).

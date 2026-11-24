@@ -396,6 +396,8 @@ fn make_opts(app_id: u64) -> StartOptions {
         wait_response_timeout: None,
         advert_ttl: None,
         ip_family: Default::default(),
+        stun_hosts: None,
+        nat64_prefix: None,
     }
 }
 

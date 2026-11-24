@@ -1,11 +1,9 @@
-# Default STUN servers used by docker_start.sh and CLI when provided via --stun-servers-file
-# These mirror the servers referenced in tests/stun/stun_live_udp_mux.rs
-# You can replace or extend this list as needed. Hostnames are supported.
+# STUN servers for --stun-servers-file (and docker_start.sh). Optional: without a file, bingle_cli
+# and the app use the same built-in list (bingle_core util::stun_servers::DEFAULT_STUN_SERVERS).
+# Hostnames are resolved by the node at start and after a network change, in both IPv4 and IPv6,
+# so DNS64 networks work (issue #496). Literal IPv4 addresses still work; on an IPv6-only network
+# the node reaches them through NAT64.
 
-# stun.l.google.com:19302
-74.125.250.129:19302
-# stun.freeswitch.org:3478
-143.198.60.79:3478
-# stun.2talk.co.nz:3478
-27.111.14.93:3478
-
+stun.cloudflare.com:3478
+stun.l.google.com:19302
+global.stun.twilio.com:3478

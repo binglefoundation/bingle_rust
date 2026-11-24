@@ -942,7 +942,9 @@ impl BingleApi for BingleApiImpl {
 
     fn network_change(&self) {
         tracing::info!("[BingleApiImpl::network_change][enter]");
-        // Placeholder: in a full implementation, we would rescan STUN/static IP and update listeners.
+        // NAT64 prefix and STUN addresses depend on the network (issue #496); static IP and
+        // listener rescans are not done yet.
+        self.engine.network_change();
         tracing::info!("[BingleApiImpl::network_change][exit]");
     }
 

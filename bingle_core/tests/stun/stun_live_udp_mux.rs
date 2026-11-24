@@ -27,14 +27,14 @@ fn resolve(host: &str, port: u16) -> Option<SocketAddr> {
 fn live_stun_endpoint_finder_with_udp_mux() {
     init_test_logging();
 
-    // Choose three public STUN servers (widely used and generally responsive)
-    let servers = [
-        ("stun.l.google.com", 19302u16),
-        ("stun.freeswitch.org", 3478u16),
-        ("stun.2talk.co.nz", 3478u16),
-    ];
-
-    let addrs: Vec<SocketAddr> = servers.iter().filter_map(|(h, p)| resolve(h, *p)).collect();
+    // The built-in STUN list (issue #496): three operators, so one slow server can't fail the test.
+    let addrs: Vec<SocketAddr> = bingle_core::util::stun_servers::DEFAULT_STUN_SERVERS
+        .iter()
+        .filter_map(|entry| {
+            let (h, p) = entry.rsplit_once(':')?;
+            resolve(h, p.parse().ok()?)
+        })
+        .collect();
 
     assert!(
         addrs.len() >= 2,
