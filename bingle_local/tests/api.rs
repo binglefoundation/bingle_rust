@@ -72,6 +72,9 @@ mod register;
 #[path = "api/sidewinder_mailbox.rs"]
 mod sidewinder_mailbox;
 
+#[path = "api/support/sidewinder_tls_node.rs"]
+mod sidewinder_tls_node;
+
 #[path = "api/store_and_forward_toggles.rs"]
 mod store_and_forward_toggles;
 
