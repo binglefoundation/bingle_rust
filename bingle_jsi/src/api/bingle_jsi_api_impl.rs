@@ -1422,30 +1422,27 @@ impl BingleJsiApiImpl {
     }
 
     /// The engine's on-listening handler: records the listening flag and both NAT states, then
-    /// tells the host. The IPv4 state reads "Unknown" while not listening, as before; the IPv6
-    /// state is passed as the engine classified it (issue #498).
+    /// tells the host. Both states read "Unknown" while not listening: the IPv4 state as before,
+    /// and the IPv6 state because it can't be final until the IPv6 triangle test, which needs a
+    /// relay (issue #498). The host is told only when what it would see changes, so a repeated
+    /// notification, or an IPv6 change while not listening, raises no event.
     fn listening_handler(
         nat_type: Arc<Mutex<String>>,
         nat_type_v6: Arc<Mutex<String>>,
         listening: Arc<AtomicBool>,
         listening_callback: Arc<Mutex<Option<Box<dyn ListeningCallback>>>>,
     ) -> Arc<bingle_core::api::bingle_api::OnListeningHandler> {
+        // The (listening, nat_type, nat_type_v6) last passed to the host; None before the first.
+        let last_told: Mutex<Option<(bool, String, String)>> = Mutex::new(None);
         Arc::new(
             move |listening_val: bool,
                   nt: bingle_core::engine::NatType,
                   nt6: bingle_core::engine::NatTypeV6| {
-                let type_str = if listening_val {
-                    format!("{:?}", nt)
+                let (type_str, type_v6_str) = if listening_val {
+                    (format!("{:?}", nt), nt6.as_str().to_string())
                 } else {
-                    "Unknown".to_string()
+                    ("Unknown".to_string(), "Unknown".to_string())
                 };
-                let type_v6_str = nt6.as_str().to_string();
-                tracing::info!(
-                    "on_listening: listening={} nat_type={} nat_type_v6={}",
-                    listening_val,
-                    type_str,
-                    type_v6_str
-                );
                 listening.store(listening_val, Ordering::SeqCst);
                 if let Ok(mut guard) = nat_type.lock() {
                     *guard = type_str.clone();
@@ -1453,6 +1450,25 @@ impl BingleJsiApiImpl {
                 if let Ok(mut guard) = nat_type_v6.lock() {
                     *guard = type_v6_str.clone();
                 }
+                let report = (listening_val, type_str, type_v6_str);
+                match last_told.lock() {
+                    Ok(mut last) => {
+                        if last.as_ref() == Some(&report) {
+                            return;
+                        }
+                        *last = Some(report.clone());
+                    }
+                    Err(_) => {
+                        tracing::error!("on_listening: last-told lock poisoned; reporting anyway");
+                    }
+                }
+                let (listening_val, type_str, type_v6_str) = report;
+                tracing::info!(
+                    "on_listening: listening={} nat_type={} nat_type_v6={}",
+                    listening_val,
+                    type_str,
+                    type_v6_str
+                );
                 if let Ok(guard) = listening_callback.lock()
                     && let Some(ref callback) = *guard
                 {

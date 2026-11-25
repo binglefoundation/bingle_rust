@@ -574,11 +574,11 @@ fn listening_reports_ipv4_and_ipv6_states_separately() {
     assert_eq!(nat.nat_type, NatType::FullCone);
     assert_eq!(nat.nat_type_v6, NatTypeV6::OpenFirewalled);
 
-    // Not listening: IPv4 reads Unknown as before; IPv6 is reported as classified.
+    // Not listening: both read Unknown (#498), since IPv6 can't be final without a relay.
     mock_api.notify_listening_both(false, CoreNat::NoConnection, CoreV6::None);
     let nat = jsi.get_nat_type().expect("get_nat_type");
     assert_eq!(nat.nat_type, NatType::Unknown);
-    assert_eq!(nat.nat_type_v6, NatTypeV6::None);
+    assert_eq!(nat.nat_type_v6, NatTypeV6::Unknown);
 
     let got = events.lock().expect("events").clone();
     assert_eq!(
@@ -586,7 +586,45 @@ fn listening_reports_ipv4_and_ipv6_states_separately() {
         vec![
             (true, "Restricted".to_string(), "Open".to_string()),
             (true, "FullCone".to_string(), "OpenFirewalled".to_string()),
-            (false, "Unknown".to_string(), "None".to_string()),
+            (false, "Unknown".to_string(), "Unknown".to_string()),
+        ]
+    );
+}
+
+#[test]
+fn listening_tells_the_host_only_when_what_it_sees_changes() {
+    use bingle_core::engine::{NatType as CoreNat, NatTypeV6 as CoreV6};
+
+    let mock_api = Arc::new(MockBingleApi {
+        progress_steps: vec![],
+        on_listening: Mutex::new(None),
+        send_fail_count: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+        payloads: Mutex::new(Vec::new()),
+        hold_sends: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+    });
+    let jsi = BingleJsiApiImpl::init_for_tests(mock_api.clone(), None);
+    let events = Arc::new(Mutex::new(Vec::new()));
+    jsi.set_listening_callback(Box::new(RecordingListening {
+        events: events.clone(),
+    }));
+
+    // Before the first registration, IPv6 changes are masked, so only the first event is raised.
+    mock_api.notify_listening_both(false, CoreNat::Unknown, CoreV6::Unknown);
+    mock_api.notify_listening_both(false, CoreNat::Unknown, CoreV6::OpenFirewalled);
+    mock_api.notify_listening_both(false, CoreNat::NoConnection, CoreV6::None);
+    // Listening: a repeat is suppressed; an IPv6-only change is reported.
+    mock_api.notify_listening_both(true, CoreNat::Restricted, CoreV6::OpenFirewalled);
+    mock_api.notify_listening_both(true, CoreNat::Restricted, CoreV6::OpenFirewalled);
+    mock_api.notify_listening_both(true, CoreNat::Restricted, CoreV6::Open);
+    mock_api.notify_listening_both(true, CoreNat::Restricted, CoreV6::Open);
+
+    let got = events.lock().expect("events").clone();
+    assert_eq!(
+        got,
+        vec![
+            (false, "Unknown".to_string(), "Unknown".to_string()),
+            (true, "Restricted".to_string(), "OpenFirewalled".to_string()),
+            (true, "Restricted".to_string(), "Open".to_string()),
         ]
     );
 }
