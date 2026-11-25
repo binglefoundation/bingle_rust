@@ -311,14 +311,51 @@ where
         .is_some_and(|blocklist| blocklist.is_blocked(sender, lookup))
 }
 
-/// How many contacts [`moderator_blocked_contacts`] reads from the chain at once (issue #533).
+/// How many addresses [`partition_moderator_blocked`] reads from the chain at once (issue #533).
 const MODERATOR_BLOCK_READS_AT_ONCE: usize = 4;
 
-/// The `contacts` a moderator has blocked on-chain (issue #533). `blocklist` answers from its cache,
-/// and `lookup` reads the `blocked_user` bit of each contact it has no current answer for, up to
-/// [`MODERATOR_BLOCK_READS_AT_ONCE`] at a time, recording the result. A contact whose read fails is
-/// not treated as blocked. Without a blocklist, or with it switched off (issue #531), nobody is
-/// blocked.
+/// Split `items` into those a moderator has blocked on-chain and the rest, keeping their order
+/// (issues #533, #539). `address_of` gives an item's Algorand address. `blocklist` answers from its
+/// cache, and `lookup` reads the `blocked_user` bit of each address it has no current answer for, up
+/// to [`MODERATOR_BLOCK_READS_AT_ONCE`] at a time, recording the result. An item whose read fails is
+/// not treated as blocked. Without a blocklist, or with it switched off (issue #531), nothing is
+/// blocked and the chain is not read.
+pub fn partition_moderator_blocked<T, A, F>(
+    blocklist: Option<&GlobalBlocklist>,
+    items: Vec<T>,
+    address_of: A,
+    lookup: F,
+) -> (Vec<T>, Vec<T>)
+where
+    A: Fn(&T) -> &str,
+    F: Fn(&str) -> Result<Option<bool>, String> + Sync,
+{
+    let Some(blocklist) = blocklist.and_then(GlobalBlocklist::when_enabled) else {
+        return (Vec::new(), items);
+    };
+    let mut unknown: Vec<&str> = items
+        .iter()
+        .map(&address_of)
+        .filter(|address| blocklist.cached(address).is_none())
+        .collect();
+    unknown.sort_unstable();
+    unknown.dedup();
+    for batch in unknown.chunks(MODERATOR_BLOCK_READS_AT_ONCE) {
+        std::thread::scope(|scope| {
+            for address in batch {
+                let lookup = &lookup;
+                scope.spawn(move || blocklist.is_blocked(address, |a| lookup(a)));
+            }
+        });
+    }
+    items
+        .into_iter()
+        .partition(|item| blocklist.cached(address_of(item)) == Some(true))
+}
+
+/// The `contacts` a moderator has blocked on-chain (issue #533), read as
+/// [`partition_moderator_blocked`] does. Without a blocklist, or with it switched off (issue #531),
+/// nobody is blocked.
 pub fn moderator_blocked_contacts<F>(
     blocklist: Option<&GlobalBlocklist>,
     contacts: Vec<Contact>,
@@ -327,28 +364,20 @@ pub fn moderator_blocked_contacts<F>(
 where
     F: Fn(&str) -> Result<Option<bool>, String> + Sync,
 {
-    let Some(blocklist) = blocklist.and_then(GlobalBlocklist::when_enabled) else {
-        return Vec::new();
-    };
-    let mut unknown: Vec<&str> = contacts
-        .iter()
-        .map(|c| c.id.as_str())
-        .filter(|id| blocklist.cached(id).is_none())
-        .collect();
-    unknown.sort_unstable();
-    unknown.dedup();
-    for batch in unknown.chunks(MODERATOR_BLOCK_READS_AT_ONCE) {
-        std::thread::scope(|scope| {
-            for id in batch {
-                let lookup = &lookup;
-                scope.spawn(move || blocklist.is_blocked(id, |address| lookup(address)));
-            }
-        });
-    }
-    contacts
-        .into_iter()
-        .filter(|c| blocklist.cached(&c.id) == Some(true))
-        .collect()
+    partition_moderator_blocked(blocklist, contacts, |c| c.id.as_str(), lookup).0
+}
+
+/// Handle search results without the accounts a moderator has blocked on-chain (issue #539), read
+/// as [`partition_moderator_blocked`] does, so a banned user can't be found and messaged.
+pub fn without_moderator_blocked_matches<F>(
+    blocklist: Option<&GlobalBlocklist>,
+    matches: Vec<HandleLookupMatch>,
+    lookup: F,
+) -> Vec<HandleLookupMatch>
+where
+    F: Fn(&str) -> Result<Option<bool>, String> + Sync,
+{
+    partition_moderator_blocked(blocklist, matches, |m| m.id.as_str(), lookup).1
 }
 
 /// Tell the shared pending-message sender, if running, that a peer (by id and/or handle; empty ones
@@ -793,6 +822,40 @@ impl BingleJsiApiImpl {
         bingle_core::AlgoBingle::new(ops, app_id, 0)
             .check_blocked_user(app_id, address)
             .map_err(|e| e.to_string())
+    }
+
+    /// The global blocklist while it is switched on (issues #95, #531), `None` while it is off or
+    /// absent.
+    fn active_global_blocklist(&self) -> Option<&GlobalBlocklist> {
+        self.global_blocklist
+            .as_deref()
+            .and_then(GlobalBlocklist::when_enabled)
+    }
+
+    /// Refuse a send to `handle` when a moderator has blocked its account (issue #539), so a client
+    /// that skips the lookup still can't reach a banned user. The handle is resolved through the
+    /// engine's handle lookup, as the send itself does. With the blocklist off or absent nothing is
+    /// looked up. A handle that can't be resolved here is let through: the send reports that itself.
+    fn refuse_moderator_blocked_recipient(&self, handle: &str) -> Result<(), BingleJsiError> {
+        let Some(blocklist) = self.active_global_blocklist() else {
+            return Ok(());
+        };
+        let address = match self.api.handle_lookup(&handle.to_string()) {
+            Ok(Some(address)) => address,
+            Ok(None) => return Ok(()),
+            Err(e) => {
+                tracing::warn!(
+                    "[BingleJsiApiImpl] could not resolve {handle} to check the global blocklist ({e})"
+                );
+                return Ok(());
+            }
+        };
+        if blocklist.is_blocked(&address, |a| self.read_blocked_user(a)) {
+            return Err(BingleJsiError::InvalidRequest {
+                reason: format!("{handle} has been blocked by a moderator"),
+            });
+        }
+        Ok(())
     }
 
     /// Handle a message received over a live session (the engine's `on_message`): drop it if the
@@ -1874,8 +1937,15 @@ fn local_api_guard(
 impl BingleJsiApi for BingleJsiApiImpl {
     fn handle_lookup(&self, handle: String) -> Result<String, BingleJsiError> {
         match self.api.handle_lookup(&handle) {
-            Ok(Some(id)) => Ok(id),
-            Ok(None) => Err(BingleJsiError::NotFound {
+            // A moderator-blocked account isn't found (issue #539).
+            Ok(Some(id))
+                if !is_sender_globally_blocked(self.global_blocklist.as_deref(), &id, |a| {
+                    self.read_blocked_user(a)
+                }) =>
+            {
+                Ok(id)
+            }
+            Ok(_) => Err(BingleJsiError::NotFound {
                 reason: format!("Handle '{}' not found", handle),
             }),
             Err(e) => Err(bingle_error_to_jsi(e)),
@@ -1887,11 +1957,18 @@ impl BingleJsiApi for BingleJsiApiImpl {
         handle: String,
     ) -> Result<HandleLookupPartialResult, BingleJsiError> {
         match self.api.handle_lookup_partial(&handle) {
-            Ok(Some((id, canonical_handle))) => Ok(HandleLookupPartialResult {
-                id,
-                canonical_handle,
-            }),
-            Ok(None) => Err(BingleJsiError::NotFound {
+            // A moderator-blocked account isn't found (issue #539).
+            Ok(Some((id, canonical_handle)))
+                if !is_sender_globally_blocked(self.global_blocklist.as_deref(), &id, |a| {
+                    self.read_blocked_user(a)
+                }) =>
+            {
+                Ok(HandleLookupPartialResult {
+                    id,
+                    canonical_handle,
+                })
+            }
+            Ok(_) => Err(BingleJsiError::NotFound {
                 reason: format!("No handle matching '{}' found", handle),
             }),
             Err(e) => Err(bingle_error_to_jsi(e)),
@@ -1906,15 +1983,20 @@ impl BingleJsiApi for BingleJsiApiImpl {
         let matches = self
             .api
             .handle_lookup_matches(&prefix, limit as usize)
-            .map_err(bingle_error_to_jsi)?;
-        Ok(matches
+            .map_err(bingle_error_to_jsi)?
             .into_iter()
             .map(|m| HandleLookupMatch {
                 id: m.id,
                 canonical_handle: m.canonical_handle,
                 exact: m.exact,
             })
-            .collect())
+            .collect();
+        // Leave out the accounts a moderator has blocked (issue #539).
+        Ok(without_moderator_blocked_matches(
+            self.global_blocklist.as_deref(),
+            matches,
+            |address| self.read_blocked_user(address),
+        ))
     }
 
     fn send_message_to_id(
@@ -1933,6 +2015,7 @@ impl BingleJsiApi for BingleJsiApiImpl {
         handle: String,
         message: BingleMessage,
     ) -> Result<bool, BingleJsiError> {
+        self.refuse_moderator_blocked_recipient(&handle)?;
         let json = message_to_json(&message);
         self.api
             .send_message_to_handle(&handle, json, None)
@@ -1972,6 +2055,7 @@ impl BingleJsiApi for BingleJsiApiImpl {
         handle: String,
         message: BingleMessage,
     ) -> Result<BingleMessage, BingleJsiError> {
+        self.refuse_moderator_blocked_recipient(&handle)?;
         let json = message_to_json(&message);
         match self
             .api
@@ -2617,6 +2701,10 @@ impl BingleJsiApi for BingleJsiApiImpl {
         recipient_handles: Vec<String>,
         text: String,
     ) -> Result<(), BingleJsiError> {
+        // Checked before the store's lock is taken, as it may read the chain (issue #539).
+        for handle in &recipient_handles {
+            self.refuse_moderator_blocked_recipient(handle)?;
+        }
         let mut guard = local_api_guard(&self.local_api)?;
         guard
             .queue_message(recipient_handles, text)

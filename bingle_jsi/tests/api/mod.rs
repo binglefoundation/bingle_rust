@@ -8,6 +8,7 @@ mod key_storage_tests;
 mod log_bridge_tests;
 mod mailbox_poller_callback_tests;
 mod message_queue_integration_tests;
+mod moderator_block_lookup_tests;
 mod receive_dedup_tests;
 mod registration_group_tests;
 mod sealed_state_tests;

@@ -67,3 +67,18 @@ When a release finishes, `scripts/release.sh` lists the checks below for changes
   4. Restart the app and check the switch is still off; then turn it back on and send a third message.
   5. Unblock the account (`--unblock`).
 - **Passes when:** the first and third messages never appear, the second does, and the switch keeps its setting across the restart.
+
+### #539 a moderator-blocked user who isn't a contact can't be found or messaged
+
+- **Merged in:** the PR for #539; first ships in the next release.
+- **Needs:** a TestNet build of the app (bingle_ux_rn) with this release of bingle_jsi and the moderator blocklist on, and a second registered TestNet account, with handle `<BLOCKED_HANDLE>`, that isn't one of the phone's contacts.
+- **Steps:**
+  1. Check the handle is found: search for `<BLOCKED_HANDLE>` in New Message.
+  2. Block the second account:
+
+         bingle_admin moderator_block <SENDER_ADDRESS> --block --accounts <TESTNET_ACCOUNTS_DIR> --node-file <TESTNET_NODE_FILE>
+
+  3. Restart the app, or wait 10 minutes (the "not blocked" refresh), and search for `<BLOCKED_HANDLE>` again.
+  4. If the app can still address the handle (for example from a link or by typing it in full), try to send it a message.
+  5. Unblock it (`--unblock`) and restart the app.
+- **Passes when:** before the block the handle is found; after it, the search doesn't return it and any send to it is refused, with nothing delivered to the second account; after the unblock and restart, it is found again.
