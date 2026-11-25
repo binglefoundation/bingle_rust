@@ -16,6 +16,7 @@ set -euo pipefail
 #   NAT_MODE    - Direct|Full|Restricted (default Direct)
 #   AUTO_MIGRATE - set to 1 to pass --auto-migrate: at start, migrate the account from a blessed
 #                  ancestor app when it is not yet registered on the configured app
+#   BINGLE_CLI  - path of the bingle_cli binary (default /app/bingle_cli), for tests
 
 : "${PASSPHRASE:?Environment variable PASSPHRASE must be set}"
 : "${PORT:?Environment variable PORT must be set}"
@@ -25,6 +26,7 @@ STUN_FILE=${STUN_FILE:-/app/stunservers.txt}
 NODE_FILE=${NODE_FILE:-/app/nodely_staging_testnet_node.json}
 SENTINEL_FILE=${SENTINEL_FILE:-}
 NAT_MODE=${NAT_MODE:-Direct}
+BINGLE_CLI=${BINGLE_CLI:-/app/bingle_cli}
 
 # Configure NAT/iptables rules inside the container to emulate NAT types
 configure_nat() {
@@ -128,7 +130,7 @@ fi
 # Apply NAT emulation (if any) before starting CLI
 configure_nat "$NAT_MODE" || true
 
-CMD=("/app/bingle_cli" \
+CMD=("$BINGLE_CLI" \
   "run" \
   "--handle" "$HANDLE" \
   "--passphrase" "$PASSPHRASE"
@@ -205,7 +207,20 @@ fi
 
 openssl --version
 
-echo "Starting: ${CMD[*]}"
+# Log the command with the value after --passphrase replaced, so the recovery phrase never
+# reaches the container log.
+SHOWN=()
+HIDE_NEXT=0
+for arg in "${CMD[@]}"; do
+  if [[ $HIDE_NEXT -eq 1 ]]; then
+    SHOWN+=("<set>")
+    HIDE_NEXT=0
+  else
+    SHOWN+=("$arg")
+    [[ "$arg" == "--passphrase" ]] && HIDE_NEXT=1
+  fi
+done
+echo "Starting: ${SHOWN[*]}"
 
 if [[ "${MEASURE_MEMORY:-0}" == "1" ]]; then
   echo "[docker_start] measure memory, starting in background"
