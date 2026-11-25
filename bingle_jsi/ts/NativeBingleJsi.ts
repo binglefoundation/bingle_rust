@@ -62,9 +62,10 @@ export interface Contact {
 }
 
 /**
- * Runtime-adjustable messaging settings — store-and-forward gates + give-up notify (issue #242).
- * Read via `messagingSettings()` and changed on a running session via `setStoreAndForward` /
- * `setNotify`, so a Settings screen can toggle these privacy-sensitive options without a re-init.
+ * Runtime-adjustable messaging settings — store-and-forward gates, give-up notify (issue #242) and
+ * the moderator blocklist (issue #531). Read via `messagingSettings()` and changed on a running
+ * session via `setStoreAndForward` / `setNotify` / `setGlobalBlock`, so a Settings screen can
+ * toggle these privacy-sensitive options without a re-init.
  * The Sidewinder endpoint stays init-only (build/deploy config), so it is not represented here.
  */
 export interface MessagingSettings {
@@ -72,6 +73,9 @@ export interface MessagingSettings {
   store_and_forward_receive: boolean;
   notify_on_giveup: boolean;
   notify_gateway_url: string | null;
+  /** Whether the moderator blocklist is switched on (issue #531); null when init built none
+   * (enable_global_block not set), so setGlobalBlock() is unavailable. */
+  global_block: boolean | null;
 }
 
 /**
@@ -268,7 +272,9 @@ export interface BingleJsiConfig {
   /** Honour the global blocklist (issue #95, App Store guideline 1.2): drop received messages, live
    * or from the Mailbox, whose sender a moderator has blocked on-chain. A block is remembered for
    * good; "not blocked" is checked again after handle_cache_expiry_secs (600 by default).
-   * null/omitted defaults to false (off). Optional. */
+   * true or false builds the blocklist switched on or off, and setGlobalBlock() can change it later
+   * (issue #531). null/omitted builds none: nothing is blocked, no chain reads, and setGlobalBlock()
+   * fails. Optional. */
   enable_global_block?: boolean | null;
   /** IP address families the node's UDP socket uses (issue #494): "auto", "v4" or "v6". A developer
    * setting, not a user one. null/omitted defaults to "auto" (dual-stack where the device has IPv6).
@@ -478,6 +484,13 @@ export interface BingleJsiApi {
    * `gatewayUrl` sets the notify gateway base URL (null leaves the nudge dormant even when enabled).
    */
   setNotify(enabled: boolean, gatewayUrl: string | null): void;
+  /**
+   * Switch the moderator blocklist on or off on the running session (issue #531). While it is off,
+   * messages from a sender a moderator blocked are kept, live and from the Mailbox, with no chain
+   * reads; switching it on again reuses the cached answers. Fails (InvalidRequest) when init built
+   * no blocklist (enable_global_block not set).
+   */
+  setGlobalBlock(enabled: boolean): void;
   /** Current effective messaging settings, for the Settings screen to render live state (#242). */
   messagingSettings(): MessagingSettings;
   /**

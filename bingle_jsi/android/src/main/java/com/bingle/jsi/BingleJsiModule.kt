@@ -1101,6 +1101,24 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
         }.start()
     }
 
+    /** Switch the moderator blocklist on or off on the running session (issue #531). */
+    @ReactMethod
+    fun setGlobalBlock(enabled: Boolean, promise: Promise) {
+        val api = apiInstance
+        if (api == null) {
+            promise.reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.")
+            return
+        }
+        Thread {
+            try {
+                api.setGlobalBlock(enabled)
+                promise.resolve(null)
+            } catch (e: Exception) {
+                promise.reject("BINGLE_ERROR", e.message, e)
+            }
+        }.start()
+    }
+
     /** The current effective messaging settings, for the Settings screen (issue #242, bridged in #301). */
     @ReactMethod
     fun messagingSettings(promise: Promise) {
@@ -1117,6 +1135,8 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
                 map.putBoolean("store_and_forward_receive", settings.storeAndForwardReceive)
                 map.putBoolean("notify_on_giveup", settings.notifyOnGiveup)
                 if (settings.notifyGatewayUrl != null) map.putString("notify_gateway_url", settings.notifyGatewayUrl) else map.putNull("notify_gateway_url")
+                val globalBlock = settings.globalBlock
+                if (globalBlock != null) map.putBoolean("global_block", globalBlock) else map.putNull("global_block")
                 promise.resolve(map)
             } catch (e: Exception) {
                 promise.reject("BINGLE_ERROR", e.message, e)

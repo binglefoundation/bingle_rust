@@ -358,6 +358,11 @@ export const BingleJsi = BingleJsiNative as {
   /** Set the give-up notify nudge on the running session (issue #242): `enabled` toggles it and
    * `gatewayUrl` sets the notify gateway base URL (null leaves the nudge dormant even when enabled). */
   setNotify(enabled: boolean, gatewayUrl: string | null): Promise<void>;
+  /** Switch the moderator blocklist on or off on the running session (issue #531). While it is off,
+   * messages from a sender a moderator blocked are kept, live and from the Mailbox, with no chain
+   * reads; switching it on again reuses the cached answers. Rejects when init built no blocklist
+   * (enable_global_block not set). */
+  setGlobalBlock(enabled: boolean): Promise<void>;
   /** Current effective messaging settings, for the Settings screen to render live state (#242). */
   messagingSettings(): Promise<MessagingSettings>;
   networkAvailable(forceRecheck: boolean): Promise<boolean>;

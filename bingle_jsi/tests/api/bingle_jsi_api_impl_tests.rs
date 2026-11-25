@@ -510,6 +510,45 @@ fn runtime_messaging_settings_toggle_preserves_session() {
     );
 }
 
+// Issue #531: any `enable_global_block` setting builds the blocklist, switched on or off, so
+// `set_global_block` can change it; none builds no blocklist.
+fn init_with_global_block(enable_global_block: Option<bool>) -> std::sync::Arc<BingleJsiApiImpl> {
+    let tmp = project_tmp_file_path("bingle-jsi-test", ".json");
+    let mut config = config_with_local(&tmp.to_string_lossy());
+    config.enable_global_block = enable_global_block;
+    BingleJsiApiImpl::init(config).expect("init with local should succeed")
+}
+
+#[test]
+fn init_with_global_block_false_builds_it_switched_off() {
+    let api = init_with_global_block(Some(false));
+    let settings = api.messaging_settings().expect("messaging_settings");
+    assert_eq!(settings.global_block, Some(false));
+
+    api.set_global_block(true).expect("set_global_block");
+    let settings = api.messaging_settings().expect("messaging_settings");
+    assert_eq!(settings.global_block, Some(true));
+}
+
+#[test]
+fn init_with_global_block_true_builds_it_switched_on() {
+    let api = init_with_global_block(Some(true));
+    let settings = api.messaging_settings().expect("messaging_settings");
+    assert_eq!(settings.global_block, Some(true));
+}
+
+#[test]
+fn init_without_global_block_builds_none() {
+    let api = init_with_global_block(None);
+    let settings = api.messaging_settings().expect("messaging_settings");
+    assert_eq!(settings.global_block, None);
+    let result = api.set_global_block(true);
+    assert!(
+        matches!(result, Err(BingleJsiError::InvalidRequest { .. })),
+        "got {result:?}"
+    );
+}
+
 /// The committed parity vector's account (bingle_notify/test/fixtures/verify-vector.json), imported
 /// so the JSI primitive signs with its key.
 fn api_with_vector_keypair() -> std::sync::Arc<BingleJsiApiImpl> {
