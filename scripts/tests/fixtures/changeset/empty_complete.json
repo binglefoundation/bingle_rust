@@ -1,0 +1,11 @@
+{
+  "Changes": [],
+  "ChangeSetName": "roll-20261126120000",
+  "ChangeSetId": "arn:aws:cloudformation:us-east-1:111111111111:changeSet/roll-20261126120000/00000000-0000-0000-0000-000000000000",
+  "StackName": "example-relay-stack",
+  "ExecutionStatus": "AVAILABLE",
+  "Status": "CREATE_COMPLETE",
+  "Capabilities": [
+    "CAPABILITY_IAM"
+  ]
+}

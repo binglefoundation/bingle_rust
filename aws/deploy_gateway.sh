@@ -25,7 +25,14 @@
 #   --stack-name <name>        Gateway stack name (default: bingle-gateway-<relay stack>)
 #   --region <region>          AWS region (default: from aws configure)
 #   --repo-name <name>         ECR repository name (default: bingle-gateway)
-#   --redeploy-only            Update only the stack's image, keeping every other parameter
+#   --redeploy-only            Apply the checked-out template and the new image to the existing
+#                              stack, keeping every other parameter's value. It goes through a
+#                              change set (aws/lib/changeset.sh, #528): printed, then executed
+#                              without asking when it only replaces the task definition and updates
+#                              the service, and otherwise only after a y/N prompt
+#   --yes                      With --redeploy-only, execute the change set without asking
+#   --dry-run                  With --redeploy-only, create and print the change set, then delete
+#                              it: nothing is built, pushed or changed
 #   --tag <tag>                Image tag (default: latest, or from .build_number if it exists)
 #   --no-build                 Deploy the local image <repo-name>:<tag> as built
 #   --cost-tag <tag>           Cost allocation tag (default: bingle_dev)
@@ -47,6 +54,8 @@ COST_TAG="bingle_dev"
 REDEPLOY_ONLY=0
 NO_BUILD=0
 TAG="latest"
+YES=0
+DRY_RUN=0
 # Seconds verify_service_image waits for the ECS rollout to finish after CloudFormation does.
 ROLLOUT_TIMEOUT=600
 
@@ -69,7 +78,9 @@ usage() {
   echo "  --stack-name <name>        Gateway stack name (default: bingle-gateway-<relay stack>)"
   echo "  --region <region>          AWS region (default: $REGION)"
   echo "  --repo-name <name>         ECR repository name (default: $REPO_NAME)"
-  echo "  --redeploy-only            Update only the stack's image, keeping every other parameter"
+  echo "  --redeploy-only            Apply the checked-out template and the new image, keeping every other parameter"
+  echo "  --yes                      With --redeploy-only, execute the change set without asking, even outside the expected changes"
+  echo "  --dry-run                  With --redeploy-only, print the change set and delete it; build, push and change nothing"
   echo "  --tag <tag>                Image tag (default: $TAG)"
   echo "  --no-build                 Deploy the local image <repo-name>:<tag> instead of building it"
   echo "  --cost-tag <tag>           Cost allocation tag (default: $COST_TAG)"
@@ -93,6 +104,8 @@ while [[ $# -gt 0 ]]; do
     --tag) TAG="$2"; shift 2 ;;
     --no-build) NO_BUILD=1; shift ;;
     --cost-tag) COST_TAG="$2"; shift 2 ;;
+    --yes) YES=1; shift ;;
+    --dry-run) DRY_RUN=1; shift ;;
     -h|--help) usage ;;
     *) echo "Unknown argument: $1"; usage ;;
   esac
@@ -113,8 +126,15 @@ if [[ $REDEPLOY_ONLY -eq 0 ]]; then
     fail "--handle and --passphrase-secret go together"
   fi
 elif [[ -n "$TO_EMAIL$FROM_ADDRESS$HANDLE$PASSPHRASE_SECRET$NODE_FILE" ]]; then
-  fail "--redeploy-only changes only the image; drop the other settings or do a full deploy"
+  fail "--redeploy-only keeps every setting but the image; drop the other settings or do a full deploy"
 fi
+if [[ $REDEPLOY_ONLY -eq 0 && ( $DRY_RUN -eq 1 || $YES -eq 1 ) ]]; then
+  fail "--dry-run and --yes go with --redeploy-only"
+fi
+
+# shellcheck source=aws/lib/changeset.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/changeset.sh"
+CS_PREFIX="[gateway]"
 STACK_NAME="${STACK_NAME:-bingle-gateway-${RELAY_STACK}}"
 
 relay_resource() {
@@ -152,7 +172,9 @@ if [[ $STACK_EXISTS -eq 0 && -z "$PASSPHRASE_SECRET" ]]; then
 fi
 
 # 1) Build the image, unless the caller already built it
-if [[ $NO_BUILD -eq 1 ]]; then
+if [[ $DRY_RUN -eq 1 ]]; then
+  echo "[gateway] Dry run: not building or pushing the image"
+elif [[ $NO_BUILD -eq 1 ]]; then
   docker image inspect "$REPO_NAME:$TAG" >/dev/null 2>&1 || fail "--no-build needs the local image '$REPO_NAME:$TAG'; build it with scripts/build_cli_image.sh --stage gateway --platform linux/arm64 --tag $REPO_NAME:$TAG"
   echo "[gateway] Using the local image $REPO_NAME:$TAG (--no-build)"
 else
@@ -163,6 +185,13 @@ fi
 # 2) Push it to ECR and pin it by digest, so any new image is a stack change (as for relays, #312)
 ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 ECR_URL="${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com"
+# A dry run pushes nothing: show the change set the redeploy would make, then stop.
+if [[ $DRY_RUN -eq 1 ]]; then
+  IMAGE_REF=$(changeset_preview_image_ref "$ECR_URL" "$REPO_NAME" "$TAG" "$REGION")
+  echo "[gateway] Dry run: the change set uses image $IMAGE_REF"
+  changeset_apply "$STACK_NAME" "$REGION" aws/gateway_stack.yaml ImageUri "$IMAGE_REF" "$YES" 1 || exit 1
+  exit 0
+fi
 echo "[gateway] Ensuring ECR repository '$REPO_NAME' exists..."
 aws ecr describe-repositories --repository-names "$REPO_NAME" --region "$REGION" >/dev/null 2>&1 || aws ecr create-repository --repository-name "$REPO_NAME" --region "$REGION" >/dev/null
 aws ecr get-login-password --region "$REGION" | docker login --username AWS --password-stdin "$ECR_URL"
@@ -207,17 +236,11 @@ if [[ $STACK_EXISTS -eq 1 ]]; then
 fi
 
 if [[ $REDEPLOY_ONLY -eq 1 ]]; then
-  UPDATE_PARAMS=("ParameterKey=ImageUri,ParameterValue=$IMAGE_REF")
-  for key in $(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --region "$REGION" --query "Stacks[0].Parameters[?ParameterKey!='ImageUri'].ParameterKey" --output text); do
-    UPDATE_PARAMS+=("ParameterKey=$key,UsePreviousValue=true")
-  done
-  CURRENT_IMAGE=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --region "$REGION" --query "Stacks[0].Parameters[?ParameterKey=='ImageUri'] | [0].ParameterValue" --output text)
-  if [[ "$CURRENT_IMAGE" == "$IMAGE_REF" ]]; then
-    echo "[gateway] Stack '$STACK_NAME' already runs $IMAGE_REF."
-  else
-    echo "[gateway] Updating the image of stack '$STACK_NAME'..."
-    aws cloudformation update-stack --stack-name "$STACK_NAME" --use-previous-template --capabilities CAPABILITY_IAM --region "$REGION" --parameters "${UPDATE_PARAMS[@]}" >/dev/null
-    aws cloudformation wait stack-update-complete --stack-name "$STACK_NAME" --region "$REGION" || { show_failure_logs; exit 1; }
+  # Apply the checked-out template with the new image through a change set, keeping every other
+  # parameter (#528). An empty change set leaves the service as it is; the restart below covers it.
+  if ! changeset_apply "$STACK_NAME" "$REGION" aws/gateway_stack.yaml ImageUri "$IMAGE_REF" "$YES" 0; then
+    [[ "$CS_RESULT" == update-failed ]] && show_failure_logs
+    exit 1
   fi
 else
   echo "[gateway] Deploying CloudFormation stack '$STACK_NAME'..."

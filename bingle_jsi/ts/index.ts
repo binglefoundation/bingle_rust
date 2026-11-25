@@ -53,6 +53,7 @@ export {
   ContactSource,
   KeypairStatus,
   NatType,
+  NatTypeV6,
 } from "./NativeBingleJsi";
 
 /**
@@ -153,7 +154,9 @@ export const BingleJsi = BingleJsiNative as {
    *  version(). */
   getVersions(): Promise<Record<string, VersionInfo>>;
   queued(): Promise<Record<string, unknown>[]>;
-  getNatType(): Promise<{ nat_type: string }>;
+  /** `nat_type` is the IPv4 NAT type (values unchanged); `nat_type_v6` the IPv6 reachability
+   * (bingle_rust #498). */
+  getNatType(): Promise<{ nat_type: string; nat_type_v6: string }>;
   /** Generate a keypair and make it current. With the Keychain store, a different key the user
    * syncs through iCloud Keychain isn't replaced, as that removes the account from every device on
    * their Apple Account: the call rejects with a message naming SyncedKeyWouldBeReplaced and the
@@ -301,6 +304,9 @@ export const BingleJsi = BingleJsiNative as {
   getBlockedContacts(): Promise<
     { handle: string; id: string; fields: Record<string, string> }[]
   >;
+  getModeratorBlockedContacts(): Promise<
+    { handle: string; id: string; fields: Record<string, string> }[]
+  >;
   addMessage(
     senderHandle: string,
     recipientHandles: string[],
@@ -355,6 +361,11 @@ export const BingleJsi = BingleJsiNative as {
   /** Set the give-up notify nudge on the running session (issue #242): `enabled` toggles it and
    * `gatewayUrl` sets the notify gateway base URL (null leaves the nudge dormant even when enabled). */
   setNotify(enabled: boolean, gatewayUrl: string | null): Promise<void>;
+  /** Switch the moderator blocklist on or off on the running session (issue #531). While it is off,
+   * messages from a sender a moderator blocked are kept, live and from the Mailbox, with no chain
+   * reads; switching it on again reuses the cached answers. Rejects when init built no blocklist
+   * (enable_global_block not set). */
+  setGlobalBlock(enabled: boolean): Promise<void>;
   /** Current effective messaging settings, for the Settings screen to render live state (#242). */
   messagingSettings(): Promise<MessagingSettings>;
   networkAvailable(forceRecheck: boolean): Promise<boolean>;

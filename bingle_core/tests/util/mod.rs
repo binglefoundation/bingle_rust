@@ -60,3 +60,6 @@ pub mod nat64;
 
 #[path = "stun_servers.rs"]
 pub mod stun_servers;
+
+#[path = "local_addrs.rs"]
+pub mod local_addrs;

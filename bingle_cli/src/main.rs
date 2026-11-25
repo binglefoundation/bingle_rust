@@ -522,7 +522,7 @@ fn cmd_run(mut args: Vec<String>) {
             if let Some(path) = sentinel_file.clone() {
                 let p = path.clone();
                 let on_listening: Arc<OnListeningHandler> = Arc::new(
-                    move |listening: bool, _nat_type: bingle_core::engine::NatType| {
+                    move |listening: bool, _nat_type: bingle_core::engine::NatType, _nat6| {
                         if listening {
                             match fs::OpenOptions::new()
                                 .create(true)
@@ -997,27 +997,28 @@ fn run_chat_session(
             });
             api_mut.set_on_connect(Some(on_connect));
 
-            let on_listening: Arc<OnListeningHandler> = Arc::new(move |listening, _nat_type| {
-                tracing::debug!("chat: listening={}", listening);
-                let was = listening_now_cb.swap(listening, std::sync::atomic::Ordering::SeqCst);
-                // Say when the connection drops or comes back, so a queued message is explained
-                // without --debug (issue #400).
-                let connected_before = listening_gate_cb.0.lock().map(|g| *g).unwrap_or(false);
-                if let Some(line) =
-                    bingle_cli::chat_send::listening_line(was, listening, connected_before)
-                {
-                    out_for_listening.print_line(line);
-                }
-                // Signal the readiness gate once (and only once) the node is listening, so the REPL
-                // can stop waiting and show the prompt (issue #91).
-                if listening
-                    && let Ok(mut ready) = listening_gate_cb.0.lock()
-                    && !*ready
-                {
-                    *ready = true;
-                    listening_gate_cb.1.notify_all();
-                }
-            });
+            let on_listening: Arc<OnListeningHandler> =
+                Arc::new(move |listening, _nat_type, _nat6| {
+                    tracing::debug!("chat: listening={}", listening);
+                    let was = listening_now_cb.swap(listening, std::sync::atomic::Ordering::SeqCst);
+                    // Say when the connection drops or comes back, so a queued message is explained
+                    // without --debug (issue #400).
+                    let connected_before = listening_gate_cb.0.lock().map(|g| *g).unwrap_or(false);
+                    if let Some(line) =
+                        bingle_cli::chat_send::listening_line(was, listening, connected_before)
+                    {
+                        out_for_listening.print_line(line);
+                    }
+                    // Signal the readiness gate once (and only once) the node is listening, so the REPL
+                    // can stop waiting and show the prompt (issue #91).
+                    if listening
+                        && let Ok(mut ready) = listening_gate_cb.0.lock()
+                        && !*ready
+                    {
+                        *ready = true;
+                        listening_gate_cb.1.notify_all();
+                    }
+                });
             api_mut.set_on_listening(Some(on_listening));
         });
     }
@@ -1282,16 +1283,17 @@ fn run_logclient_session(client: LogClient, poll_interval: Option<Duration>) {
             api_mut.set_on_message(Some(on_message));
 
             // Log only changes, so a reconnect is visible in the log without repeating every call.
-            let on_listening: Arc<OnListeningHandler> = Arc::new(move |listening, _nat_type| {
-                if listening_now.swap(listening, Ordering::SeqCst) == listening {
-                    return;
-                }
-                if listening {
-                    tracing::info!("logclient: listening for messages");
-                } else {
-                    warn!("logclient: connection lost; reconnecting");
-                }
-            });
+            let on_listening: Arc<OnListeningHandler> =
+                Arc::new(move |listening, _nat_type, _nat6| {
+                    if listening_now.swap(listening, Ordering::SeqCst) == listening {
+                        return;
+                    }
+                    if listening {
+                        tracing::info!("logclient: listening for messages");
+                    } else {
+                        warn!("logclient: connection lost; reconnecting");
+                    }
+                });
             api_mut.set_on_listening(Some(on_listening));
         });
     }

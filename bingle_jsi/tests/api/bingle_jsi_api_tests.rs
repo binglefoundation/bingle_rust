@@ -222,6 +222,12 @@ impl BingleJsiApi for StubApi {
         })
     }
 
+    fn get_moderator_blocked_contacts(&self) -> Result<Vec<Contact>, BingleJsiError> {
+        Err(BingleJsiError::NotImplemented {
+            reason: "get_moderator_blocked_contacts".to_string(),
+        })
+    }
+
     fn add_message(
         &self,
         _sender_handle: String,
@@ -438,6 +444,12 @@ impl BingleJsiApi for StubApi {
     ) -> Result<(), BingleJsiError> {
         Err(BingleJsiError::NotImplemented {
             reason: "set_notify".to_string(),
+        })
+    }
+
+    fn set_global_block(&self, _enabled: bool) -> Result<(), BingleJsiError> {
+        Err(BingleJsiError::NotImplemented {
+            reason: "set_global_block".to_string(),
         })
     }
 
@@ -709,7 +721,7 @@ fn stub_set_listening_callback_does_not_panic() {
         called: Arc<AtomicBool>,
     }
     impl ListeningCallback for TestListeningCallback {
-        fn on_listening(&self, _listening: bool, _nat_type: String) {
+        fn on_listening(&self, _listening: bool, _nat_type: String, _nat_type_v6: String) {
             self.called.store(true, Ordering::SeqCst);
         }
     }

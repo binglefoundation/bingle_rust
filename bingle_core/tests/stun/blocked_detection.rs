@@ -13,7 +13,7 @@ pub fn test_stun_blocked_detection() {
     let seen_states = Arc::new(Mutex::new(Vec::new()));
     let seen_states_clone = seen_states.clone();
 
-    finder.set_state_change_handler(Some(Arc::new(move |st, _ep| {
+    finder.set_state_change_handler(Some(Arc::new(move |_family, st, _ep| {
         seen_states_clone.lock().unwrap().push(st);
     })));
 

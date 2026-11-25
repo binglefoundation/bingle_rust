@@ -773,17 +773,14 @@ impl DdbClient for DdbClientImpl {
                     });
                 }
             };
-            let ip: IpAddr = match host.parse::<IpAddr>() {
-                Ok(ip) if ip.is_ipv4() => ip,
-                Ok(_) => {
-                    let err = format!("invalid host '{}': IPv6 addresses are not supported", host);
-                    tracing::error!("[DdbClientImpl::lookup] {}", err);
-                    return Err(BingleError::Send {
-                        kind: SendFailureKind::MalformedAdvert,
-                        detail: err,
-                    });
-                }
-                Err(_) => {
+            // IPv4, or IPv6 bracketed or not; IPv4-mapped IPv6 is reduced to IPv4 (#493).
+            let candidate = InetSocketAddress {
+                host: host.to_string(),
+                port,
+            };
+            let ip: IpAddr = match candidate.ip() {
+                Some(ip) => ip,
+                None => {
                     let err = format!("invalid host '{}': not an IP address", host);
                     tracing::error!("[DdbClientImpl::lookup] {}", err);
                     return Err(BingleError::Send {

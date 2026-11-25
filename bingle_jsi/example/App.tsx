@@ -142,8 +142,8 @@ function registerNativeListeners(): void {
   );
   emitter.addListener(
     'onListening',
-    (e: {listening: boolean; nat_type: string}) => {
-      pushEvent(`onListening ${e.listening} ${e.nat_type}`);
+    (e: {listening: boolean; nat_type: string; nat_type_v6?: string}) => {
+      pushEvent(`onListening ${e.listening} ${e.nat_type} v6=${e.nat_type_v6}`);
     },
   );
   emitter.addListener('onMailboxChecked', (e: {read: number}) => {

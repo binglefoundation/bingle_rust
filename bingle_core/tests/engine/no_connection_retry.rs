@@ -64,7 +64,7 @@ fn test_no_relay_then_relay_on_listening_callback() {
     let count_true = listening_true_count.clone();
 
     let eng = Engine::new(&options, crate::util::mock_bingle_api::mock_api_weak());
-    eng.set_on_listening_handler(Some(Arc::new(move |listening, _nat| {
+    eng.set_on_listening_handler(Some(Arc::new(move |listening, _nat, _nat6| {
         if listening {
             count_true.fetch_add(1, Ordering::SeqCst);
         } else {

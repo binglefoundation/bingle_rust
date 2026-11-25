@@ -86,3 +86,9 @@ pub mod relay_reregister_triggers;
 
 #[path = "stun_inconsistent_relay.rs"]
 pub mod stun_inconsistent_relay;
+
+#[path = "nat_v6.rs"]
+pub mod nat_v6;
+
+#[path = "stun_per_family.rs"]
+pub mod stun_per_family;

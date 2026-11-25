@@ -62,9 +62,10 @@ export interface Contact {
 }
 
 /**
- * Runtime-adjustable messaging settings — store-and-forward gates + give-up notify (issue #242).
- * Read via `messagingSettings()` and changed on a running session via `setStoreAndForward` /
- * `setNotify`, so a Settings screen can toggle these privacy-sensitive options without a re-init.
+ * Runtime-adjustable messaging settings — store-and-forward gates, give-up notify (issue #242) and
+ * the moderator blocklist (issue #531). Read via `messagingSettings()` and changed on a running
+ * session via `setStoreAndForward` / `setNotify` / `setGlobalBlock`, so a Settings screen can
+ * toggle these privacy-sensitive options without a re-init.
  * The Sidewinder endpoint stays init-only (build/deploy config), so it is not represented here.
  */
 export interface MessagingSettings {
@@ -72,6 +73,9 @@ export interface MessagingSettings {
   store_and_forward_receive: boolean;
   notify_on_giveup: boolean;
   notify_gateway_url: string | null;
+  /** Whether the moderator blocklist is switched on (issue #531); null when init built none
+   * (enable_global_block not set), so setGlobalBlock() is unavailable. */
+  global_block: boolean | null;
 }
 
 /**
@@ -204,8 +208,11 @@ export interface KeypairStatusResponse {
   stale: boolean;
 }
 
+/** The IPv4 NAT type in `nat_type` (values unchanged) and the IPv6 reachability in `nat_type_v6`,
+ * classified independently (bingle_rust #498). Combining them into one indicator is the app's job. */
 export interface NatTypeResponse {
   nat_type: NatType;
+  nat_type_v6: NatTypeV6;
 }
 
 export interface BingleJsiConfig {
@@ -268,7 +275,9 @@ export interface BingleJsiConfig {
   /** Honour the global blocklist (issue #95, App Store guideline 1.2): drop received messages, live
    * or from the Mailbox, whose sender a moderator has blocked on-chain. A block is remembered for
    * good; "not blocked" is checked again after handle_cache_expiry_secs (600 by default).
-   * null/omitted defaults to false (off). Optional. */
+   * true or false builds the blocklist switched on or off, and setGlobalBlock() can change it later
+   * (issue #531). null/omitted builds none: nothing is blocked, no chain reads, and setGlobalBlock()
+   * fails. Optional. */
   enable_global_block?: boolean | null;
   /** IP address families the node's UDP socket uses (issue #494): "auto", "v4" or "v6". A developer
    * setting, not a user one. null/omitted defaults to "auto" (dual-stack where the device has IPv6).
@@ -318,6 +327,21 @@ export enum NatType {
   FullCone = "FullCone",
 }
 
+/** IPv6 reachability (bingle_rust #498). Kept apart from the IPv4 `NatType`, whose `FullCone` some
+ * apps already show as "Open". */
+export enum NatTypeV6 {
+  /** Not yet determined. */
+  Unknown = "Unknown",
+  /** No IPv6 route. */
+  None = "None",
+  /** An IPv6 route, but no STUN server answered over UDP. */
+  NoConnection = "NoConnection",
+  /** No NAT, but unsolicited inbound is dropped (a stateful firewall) or not yet shown to work. */
+  OpenFirewalled = "OpenFirewalled",
+  /** No NAT and reachable unsolicited at its own address. */
+  Open = "Open",
+}
+
 // ── Callback interface ───────────────────────────────────────────────
 
 export interface MessageCallback {
@@ -329,7 +353,10 @@ export interface LogCallback {
 }
 
 export interface ListeningCallback {
-  onListening(listening: boolean, natType: string): void;
+  /** `natType` is the IPv4 NAT type ("Unknown" while not listening); `natTypeV6` the IPv6
+   * reachability (a `NatTypeV6` value). An IPv6-only change is reported with `listening`
+   * unchanged (bingle_rust #498). */
+  onListening(listening: boolean, natType: string, natTypeV6: string): void;
 }
 
 /** How far a store-and-forward Mailbox check has got (bingle_rust #447). */
@@ -440,6 +467,9 @@ export interface BingleJsiApi {
   isBlocked(id: string): boolean;
   getContacts(): Contact[];
   getBlockedContacts(): Contact[];
+  /** Contacts a moderator has blocked on-chain (issue #533); empty when the global blocklist is
+   * off. Hide their stored messages as for getBlockedContacts. */
+  getModeratorBlockedContacts(): Contact[];
   addMessage(
     senderHandle: string,
     recipientHandles: string[],
@@ -475,6 +505,13 @@ export interface BingleJsiApi {
    * `gatewayUrl` sets the notify gateway base URL (null leaves the nudge dormant even when enabled).
    */
   setNotify(enabled: boolean, gatewayUrl: string | null): void;
+  /**
+   * Switch the moderator blocklist on or off on the running session (issue #531). While it is off,
+   * messages from a sender a moderator blocked are kept, live and from the Mailbox, with no chain
+   * reads; switching it on again reuses the cached answers. Fails (InvalidRequest) when init built
+   * no blocklist (enable_global_block not set).
+   */
+  setGlobalBlock(enabled: boolean): void;
   /** Current effective messaging settings, for the Settings screen to render live state (#242). */
   messagingSettings(): MessagingSettings;
   /**
@@ -497,7 +534,7 @@ export interface BingleJsiApi {
   // Events (emitted by the native bridge)
   // onMessage: { sender_id: string; sender_handle: string; message: BingleMessage }
   // onLog: { timestamp: number; level: string; message: string }
-  // onListening: { listening: boolean; nat_type: string }
+  // onListening: { listening: boolean; nat_type: string; nat_type_v6: string }
   // onMailboxChecked: { read: number }
   // onMailboxProgress: { stage: MailboxCheckStage; read: number; retry_in_secs?: number }
 

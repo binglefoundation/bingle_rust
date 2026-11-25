@@ -159,8 +159,8 @@ async fn main() -> anyhow::Result<()> {
     {
         let nat_type_for_closure = nat_type.clone();
         api.access(|api_mut| {
-            let on_listening: Arc<bingle_core::api::bingle_api::OnListeningHandler> =
-                Arc::new(move |listening: bool, nt: bingle_core::engine::NatType| {
+            let on_listening: Arc<bingle_core::api::bingle_api::OnListeningHandler> = Arc::new(
+                move |listening: bool, nt: bingle_core::engine::NatType, _nat6| {
                     let type_str = if listening {
                         format!("{:?}", nt)
                     } else {
@@ -174,7 +174,8 @@ async fn main() -> anyhow::Result<()> {
                     if let Ok(mut guard) = nat_type_for_closure.lock() {
                         *guard = type_str;
                     }
-                });
+                },
+            );
             api_mut.set_on_listening(Some(on_listening));
         });
     }

@@ -5,6 +5,7 @@
 //! state (the keypair, config, and the persisted posted-set).
 
 use super::{BingleApiLocalImpl, holds_received_copy};
+use crate::api::GlobalBlocklist;
 use crate::api::bingle_local_api::{
     BingleLocalApi, MailboxPoll, MailboxPollObserver, MailboxPollProgress, MailboxPollStatus,
     Message,
@@ -574,9 +575,12 @@ impl BingleApiLocalImpl {
         let lookup = sender_address
             .as_deref()
             .map(|addr| bgl.account_standing(self.config().app_id, addr));
-        if let (Some(blocklist), Some(addr), Some(lookup)) =
-            (&self.config().global_block, &sender_address, &lookup)
-        {
+        // A blocklist switched off (#531) passes every message.
+        let global_block = self.config().global_block.clone();
+        let blocklist = global_block
+            .as_deref()
+            .and_then(GlobalBlocklist::when_enabled);
+        if let (Some(blocklist), Some(addr), Some(lookup)) = (blocklist, &sender_address, &lookup) {
             let blocked = blocklist.is_blocked(addr, |_| match lookup {
                 Ok(standing) => Ok(standing.as_ref().map(|standing| standing.blocked)),
                 Err(e) => Err(e.to_string()),

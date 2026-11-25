@@ -14,12 +14,20 @@
 #   --nat-mode <mode>      Direct|Full|Restricted (default: Direct)
 #   --region <region>      AWS region (default: from aws configure)
 #   --repo-name <name>     ECR repository name (default: bingle-relay)
-#   --redeploy-only        Update only the stack's image (all other parameters keep their
-#                          previous values) instead of a full CloudFormation deploy
+#   --redeploy-only        Apply the checked-out template and the new image to the existing stack,
+#                          keeping every other parameter's value, instead of a full deploy. It goes
+#                          through a change set (aws/lib/changeset.sh, #528): printed, then executed
+#                          without asking when it only replaces the task definition and updates the
+#                          service, and otherwise only after a y/N prompt
+#   --yes                  With --redeploy-only, execute the change set without asking
+#   --dry-run              With --redeploy-only, create and print the change set, then delete it:
+#                          nothing is built, pushed or changed
 #   --tag <tag>            Image tag (default: latest, or from .build_number if exists)
 #   --no-build             Deploy the local image <repo-name>:<tag> as built, instead of building it
 #                          (scripts/roll_relays.sh builds once and deploys to every relay)
-#   --express              Use simplified Fargate-based deployment (faster, cheaper for small loads)
+#   --express              Use simplified Fargate-based deployment (faster, cheaper for small loads).
+#                          With --redeploy-only the template is chosen from the stack (an ec2 stack
+#                          has an InstanceType parameter), and --express must agree with it
 #   --auto-migrate         At start, migrate the relay account from a blessed ancestor app when it
 #                          is not yet registered on the configured app (no manual `bingle_cli migrate`)
 
@@ -56,6 +64,8 @@ TAG="latest"
 EXPRESS=0
 AUTO_MIGRATE=0
 NO_BUILD=0
+YES=0
+DRY_RUN=0
 
 if [[ -f .build_number ]]; then
   TAG=$(cat .build_number)
@@ -73,7 +83,9 @@ usage() {
   echo "  --node-file <path>     Path to node configuration file (default: $NODE_FILE)"
   echo "  --region <region>      AWS region (default: $REGION)"
   echo "  --repo-name <name>     ECR repository name (default: $REPO_NAME)"
-  echo "  --redeploy-only        Update only the stack's image, keeping all other parameters (requires existing stack)"
+  echo "  --redeploy-only        Apply the checked-out template and the new image to the existing stack, keeping its other parameters"
+  echo "  --yes                  With --redeploy-only, execute the change set without asking, even outside the expected changes"
+  echo "  --dry-run              With --redeploy-only, print the change set and delete it; build, push and change nothing"
   echo "  --tag <tag>            Image tag (default: $TAG)"
   echo "  --no-build             Deploy the local image <repo-name>:<tag> instead of building it"
   echo "  --express              Use simplified Fargate-based deployment (faster)"
@@ -99,6 +111,8 @@ while [[ $# -gt 0 ]]; do
     --express) EXPRESS=1; shift ;;
     --auto-migrate) AUTO_MIGRATE=1; shift ;;
     --cost-tag) COST_TAG="$2"; shift 2 ;;
+    --yes) YES=1; shift ;;
+    --dry-run) DRY_RUN=1; shift ;;
     *) echo "Unknown argument: $1"; usage ;;
   esac
 done
@@ -110,6 +124,14 @@ if [[ -z "$HANDLE" ]] || [[ -z "$PASSPHRASE" && $REDEPLOY_ONLY -eq 0 ]]; then
   echo "Error: --handle is required, and --passphrase unless --redeploy-only."
   usage
 fi
+if [[ $REDEPLOY_ONLY -eq 0 && ( $DRY_RUN -eq 1 || $YES -eq 1 ) ]]; then
+  echo "Error: --dry-run and --yes go with --redeploy-only."
+  usage
+fi
+
+# shellcheck source=aws/lib/changeset.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/changeset.sh"
+CS_PREFIX="[deploy]"
 
 # Derive the stack name from the handle unless the caller pinned one with --stack-name. Same handle
 # => same stack => in-place update rather than a new parallel stack (and VPC) each deploy.
@@ -128,8 +150,25 @@ if [[ $REDEPLOY_ONLY -eq 1 && $STACK_EXISTS -eq 0 ]]; then
   exit 1
 fi
 
+# A redeploy applies the template the stack was created from, which its parameters tell apart: only
+# the ec2 template (aws/relay_stack.yaml) has InstanceType.
+if [[ $REDEPLOY_ONLY -eq 1 ]]; then
+  STACK_INSTANCE_TYPE=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --region "$REGION" --query "Stacks[0].Parameters[?ParameterKey=='InstanceType'] | [0].ParameterValue" --output text)
+  if [[ "$STACK_INSTANCE_TYPE" == "None" || -z "$STACK_INSTANCE_TYPE" ]]; then
+    REDEPLOY_TEMPLATE="aws/relay_express.yaml"
+  elif [[ $EXPRESS -eq 1 ]]; then
+    echo "[deploy] ✗ --express was given, but stack '$STACK_NAME' is an ec2 stack (aws/relay_stack.yaml)." >&2
+    exit 1
+  else
+    REDEPLOY_TEMPLATE="aws/relay_stack.yaml"
+  fi
+  echo "[deploy] Stack '$STACK_NAME' was made from $REDEPLOY_TEMPLATE"
+fi
+
 # 1) Build the Docker image, unless the caller already built it
-if [[ $NO_BUILD -eq 1 ]]; then
+if [[ $DRY_RUN -eq 1 ]]; then
+  echo "[deploy] Dry run: not building or pushing the image"
+elif [[ $NO_BUILD -eq 1 ]]; then
   if ! docker image inspect "$REPO_NAME:$TAG" >/dev/null 2>&1; then
     echo "[deploy] ✗ --no-build needs the local image '$REPO_NAME:$TAG'; build it with scripts/build_cli_image.sh --platform linux/arm64 --tag $REPO_NAME:$TAG" >&2
     exit 1
@@ -146,6 +185,14 @@ fi
 ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 ECR_URL="${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com"
 FULL_IMAGE_URI="${ECR_URL}/${REPO_NAME}:${TAG}"
+
+# A dry run pushes nothing: show the change set the redeploy would make, then stop.
+if [[ $DRY_RUN -eq 1 ]]; then
+  IMAGE_REF=$(changeset_preview_image_ref "$ECR_URL" "$REPO_NAME" "$TAG" "$REGION")
+  echo "[deploy] Dry run: the change set uses image $IMAGE_REF"
+  changeset_apply "$STACK_NAME" "$REGION" "$REDEPLOY_TEMPLATE" ImageUri "$IMAGE_REF" "$YES" 1 || exit 1
+  exit 0
+fi
 
 echo "[deploy] Ensuring ECR repository '$REPO_NAME' exists..."
 aws ecr describe-repositories --repository-names "$REPO_NAME" --region "$REGION" >/dev/null 2>&1 || \
@@ -283,23 +330,18 @@ verify_service_image() {
 }
 
 if [[ $REDEPLOY_ONLY -eq 1 ]]; then
-  # The task definition is pinned to an image digest, so restarting the service alone would rerun
-  # the old image. Update just ImageUri on the stack, keeping every other parameter and the template.
-  CURRENT_IMAGE=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --region "$REGION" --query "Stacks[0].Parameters[?ParameterKey=='ImageUri'] | [0].ParameterValue" --output text)
-  if [[ "$CURRENT_IMAGE" == "$IMAGE_REF" ]]; then
-    echo "[deploy] Stack '$STACK_NAME' already references $IMAGE_REF; restarting the service on it."
+  # Apply the checked-out template with the new image through a change set, keeping every other
+  # parameter (#528). The task definition is pinned to an image digest, so a new image replaces it
+  # and the service redeploys once. When nothing changes (same image, same template), or the change
+  # does not touch the task definition, restart the service so the relay still restarts once.
+  DEPLOYMENT_BEFORE=$(primary_deployment_id)
+  if ! changeset_apply "$STACK_NAME" "$REGION" "$REDEPLOY_TEMPLATE" ImageUri "$IMAGE_REF" "$YES" 0; then
+    [[ "$CS_RESULT" == update-failed ]] && show_relay_failure_logs
+    exit 1
+  fi
+  if [[ "$(primary_deployment_id)" == "$DEPLOYMENT_BEFORE" ]]; then
+    echo "[deploy] The update did not redeploy the service; restarting it on $IMAGE_REF."
     force_new_deployment
-  else
-    echo "[deploy] Updating the image of stack '$STACK_NAME'..."
-    UPDATE_PARAMS=("ParameterKey=ImageUri,ParameterValue=$IMAGE_REF")
-    for key in $(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --region "$REGION" --query "Stacks[0].Parameters[?ParameterKey!='ImageUri'].ParameterKey" --output text); do
-      UPDATE_PARAMS+=("ParameterKey=$key,UsePreviousValue=true")
-    done
-    aws cloudformation update-stack --stack-name "$STACK_NAME" --use-previous-template --capabilities CAPABILITY_IAM --region "$REGION" --parameters "${UPDATE_PARAMS[@]}" >/dev/null
-    if ! aws cloudformation wait stack-update-complete --stack-name "$STACK_NAME" --region "$REGION"; then
-      show_relay_failure_logs
-      exit 1
-    fi
   fi
 else
   DEPLOYMENT_BEFORE=""

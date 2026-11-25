@@ -15,8 +15,8 @@ use crate::api::types::{
     BingleJsiConfig, BingleMessage, Contact, ContactSource, DeliveryRoute, FailureKind,
     HandleLookupMatch, HandleLookupPartialResult, InetSocketAddress, KeyStorageBackend,
     KeyStorageStatus, Keypair, KeypairStatus, KeypairStatusResponse, MailboxCheckStage, Message,
-    MessagingSettings, NatType, NatTypeResponse, NetworkSourceKey, NotifyRegisterRequest,
-    StateFileStatus, VersionInfo,
+    MessagingSettings, NatType, NatTypeResponse, NatTypeV6, NetworkSourceKey,
+    NotifyRegisterRequest, StateFileStatus, VersionInfo,
 };
 use algo_ops::error::AlgoErrorKind;
 use bingle_core::api::bingle_api::{
@@ -57,6 +57,8 @@ pub struct BingleJsiApiImpl {
     local_api: Option<Arc<Mutex<Box<dyn BingleLocalApi>>>>,
     local_file: Option<PathBuf>,
     nat_type: Arc<Mutex<String>>,
+    /// The IPv6 reachability last reported by the engine (issue #498), as its JSI name.
+    nat_type_v6: Arc<Mutex<String>>,
     message_callback: Arc<Mutex<Option<Box<dyn MessageCallback>>>>,
     listening_callback: Arc<Mutex<Option<Box<dyn ListeningCallback>>>>,
     push_registration_callback: Arc<Mutex<Option<Box<dyn PushRegistrationCallback>>>>,
@@ -296,7 +298,8 @@ fn notify_mailbox_message(
 
 /// Whether a moderator has blocked `sender` (an Algorand address) on-chain, so its live message is
 /// dropped (issue #95). `lookup` reads the sender's `blocked_user` bit when `blocklist` has no
-/// current answer. Without a blocklist (the feature off), nothing is blocked.
+/// current answer. Without a blocklist, or with it switched off (issue #531), nothing is blocked and
+/// the chain is not read.
 pub fn is_sender_globally_blocked<F>(
     blocklist: Option<&GlobalBlocklist>,
     sender: &str,
@@ -305,7 +308,78 @@ pub fn is_sender_globally_blocked<F>(
 where
     F: FnOnce(&str) -> Result<Option<bool>, String>,
 {
-    blocklist.is_some_and(|blocklist| blocklist.is_blocked(sender, lookup))
+    blocklist
+        .and_then(GlobalBlocklist::when_enabled)
+        .is_some_and(|blocklist| blocklist.is_blocked(sender, lookup))
+}
+
+/// How many addresses [`partition_moderator_blocked`] reads from the chain at once (issue #533).
+const MODERATOR_BLOCK_READS_AT_ONCE: usize = 4;
+
+/// Split `items` into those a moderator has blocked on-chain and the rest, keeping their order
+/// (issues #533, #539). `address_of` gives an item's Algorand address. `blocklist` answers from its
+/// cache, and `lookup` reads the `blocked_user` bit of each address it has no current answer for, up
+/// to [`MODERATOR_BLOCK_READS_AT_ONCE`] at a time, recording the result. An item whose read fails is
+/// not treated as blocked. Without a blocklist, or with it switched off (issue #531), nothing is
+/// blocked and the chain is not read.
+pub fn partition_moderator_blocked<T, A, F>(
+    blocklist: Option<&GlobalBlocklist>,
+    items: Vec<T>,
+    address_of: A,
+    lookup: F,
+) -> (Vec<T>, Vec<T>)
+where
+    A: Fn(&T) -> &str,
+    F: Fn(&str) -> Result<Option<bool>, String> + Sync,
+{
+    let Some(blocklist) = blocklist.and_then(GlobalBlocklist::when_enabled) else {
+        return (Vec::new(), items);
+    };
+    let mut unknown: Vec<&str> = items
+        .iter()
+        .map(&address_of)
+        .filter(|address| blocklist.cached(address).is_none())
+        .collect();
+    unknown.sort_unstable();
+    unknown.dedup();
+    for batch in unknown.chunks(MODERATOR_BLOCK_READS_AT_ONCE) {
+        std::thread::scope(|scope| {
+            for address in batch {
+                let lookup = &lookup;
+                scope.spawn(move || blocklist.is_blocked(address, |a| lookup(a)));
+            }
+        });
+    }
+    items
+        .into_iter()
+        .partition(|item| blocklist.cached(address_of(item)) == Some(true))
+}
+
+/// The `contacts` a moderator has blocked on-chain (issue #533), read as
+/// [`partition_moderator_blocked`] does. Without a blocklist, or with it switched off (issue #531),
+/// nobody is blocked.
+pub fn moderator_blocked_contacts<F>(
+    blocklist: Option<&GlobalBlocklist>,
+    contacts: Vec<Contact>,
+    lookup: F,
+) -> Vec<Contact>
+where
+    F: Fn(&str) -> Result<Option<bool>, String> + Sync,
+{
+    partition_moderator_blocked(blocklist, contacts, |c| c.id.as_str(), lookup).0
+}
+
+/// Handle search results without the accounts a moderator has blocked on-chain (issue #539), read
+/// as [`partition_moderator_blocked`] does, so a banned user can't be found and messaged.
+pub fn without_moderator_blocked_matches<F>(
+    blocklist: Option<&GlobalBlocklist>,
+    matches: Vec<HandleLookupMatch>,
+    lookup: F,
+) -> Vec<HandleLookupMatch>
+where
+    F: Fn(&str) -> Result<Option<bool>, String> + Sync,
+{
+    partition_moderator_blocked(blocklist, matches, |m| m.id.as_str(), lookup).1
 }
 
 /// Tell the shared pending-message sender, if running, that a peer (by id and/or handle; empty ones
@@ -752,6 +826,40 @@ impl BingleJsiApiImpl {
             .map_err(|e| e.to_string())
     }
 
+    /// The global blocklist while it is switched on (issues #95, #531), `None` while it is off or
+    /// absent.
+    fn active_global_blocklist(&self) -> Option<&GlobalBlocklist> {
+        self.global_blocklist
+            .as_deref()
+            .and_then(GlobalBlocklist::when_enabled)
+    }
+
+    /// Refuse a send to `handle` when a moderator has blocked its account (issue #539), so a client
+    /// that skips the lookup still can't reach a banned user. The handle is resolved through the
+    /// engine's handle lookup, as the send itself does. With the blocklist off or absent nothing is
+    /// looked up. A handle that can't be resolved here is let through: the send reports that itself.
+    fn refuse_moderator_blocked_recipient(&self, handle: &str) -> Result<(), BingleJsiError> {
+        let Some(blocklist) = self.active_global_blocklist() else {
+            return Ok(());
+        };
+        let address = match self.api.handle_lookup(&handle.to_string()) {
+            Ok(Some(address)) => address,
+            Ok(None) => return Ok(()),
+            Err(e) => {
+                tracing::warn!(
+                    "[BingleJsiApiImpl] could not resolve {handle} to check the global blocklist ({e})"
+                );
+                return Ok(());
+            }
+        };
+        if blocklist.is_blocked(&address, |a| self.read_blocked_user(a)) {
+            return Err(BingleJsiError::InvalidRequest {
+                reason: format!("{handle} has been blocked by a moderator"),
+            });
+        }
+        Ok(())
+    }
+
     /// Handle a message received over a live session (the engine's `on_message`): drop it if the
     /// sender is blocked, store it, then tell the host. A copy of a message already read from the
     /// Mailbox is neither stored nor shown again (issue #355), so the store comes first.
@@ -953,6 +1061,17 @@ fn parse_nat_type(nat: &str) -> NatType {
     }
 }
 
+/// Parse an IPv6 reachability name (`NatTypeV6::as_str`) into a NatTypeV6 enum.
+fn parse_nat_type_v6(nat: &str) -> NatTypeV6 {
+    match nat {
+        "None" => NatTypeV6::None,
+        "NoConnection" => NatTypeV6::NoConnection,
+        "OpenFirewalled" => NatTypeV6::OpenFirewalled,
+        "Open" => NatTypeV6::Open,
+        _ => NatTypeV6::Unknown,
+    }
+}
+
 fn bingle_error_to_jsi(e: BingleError) -> BingleJsiError {
     match e {
         BingleError::Algo(ae) if ae.kind == AlgoErrorKind::HostUnreachable => {
@@ -1097,10 +1216,12 @@ impl BingleJsiApiImpl {
             .handle_cache_expiry_secs
             .map(std::time::Duration::from_secs);
         // Honour the global blocklist (issue #95), checking "not blocked" again on the handle
-        // cache's cadence.
-        let global_blocklist = config.enable_global_block.unwrap_or(false).then(|| {
-            Arc::new(GlobalBlocklist::new(
+        // cache's cadence. Any setting builds it, switched on or off, so `set_global_block` can
+        // change it later (issue #531); none builds no blocklist and makes no chain reads.
+        let global_blocklist = config.enable_global_block.map(|enabled| {
+            Arc::new(GlobalBlocklist::with_enabled(
                 handle_cache_expiry.unwrap_or(DEFAULT_GLOBAL_BLOCK_REFRESH),
+                enabled,
             ))
         });
 
@@ -1140,6 +1261,7 @@ impl BingleJsiApiImpl {
         let api = BingleApiImpl::new(&opts);
         let messages: Arc<Mutex<Vec<JsonValue>>> = Arc::new(Mutex::new(Vec::new()));
         let nat_type: Arc<Mutex<String>> = Arc::new(Mutex::new("Unknown".to_string()));
+        let nat_type_v6: Arc<Mutex<String>> = Arc::new(Mutex::new("Unknown".to_string()));
 
         // Initialize local API if --local was provided
         let mut local_api: Option<Arc<Mutex<Box<dyn BingleLocalApi>>>> = None;
@@ -1227,6 +1349,7 @@ impl BingleJsiApiImpl {
             local_api: local_api.clone(),
             local_file: local_file.clone(),
             nat_type: nat_type.clone(),
+            nat_type_v6: nat_type_v6.clone(),
             message_callback: message_callback.clone(),
             listening_callback: listening_callback.clone(),
             push_registration_callback: Arc::new(Mutex::new(None)),
@@ -1252,36 +1375,13 @@ impl BingleJsiApiImpl {
 
         // Setup on-listening handler to update nat_type and invoke user callback
         {
-            let nat_type_for_closure = nat_type.clone();
-            let lcb = listening_callback.clone();
-            let listening_atomic = listening.clone();
-            api.access(|api_mut| {
-                let on_listening: Arc<bingle_core::api::bingle_api::OnListeningHandler> = Arc::new(
-                    move |listening_val: bool, nt: bingle_core::engine::NatType| {
-                        let type_str = if listening_val {
-                            format!("{:?}", nt)
-                        } else {
-                            "Unknown".to_string()
-                        };
-                        tracing::info!(
-                            "on_listening: listening={} nat_type={}",
-                            listening_val,
-                            type_str
-                        );
-                        listening_atomic.store(listening_val, Ordering::SeqCst);
-                        if let Ok(mut guard) = nat_type_for_closure.lock() {
-                            *guard = type_str.clone();
-                        }
-                        // Invoke user listening callback if registered
-                        if let Ok(guard) = lcb.lock()
-                            && let Some(ref callback) = *guard
-                        {
-                            callback.on_listening(listening_val, type_str);
-                        }
-                    },
-                );
-                api_mut.set_on_listening(Some(on_listening));
-            });
+            let on_listening = Self::listening_handler(
+                nat_type.clone(),
+                nat_type_v6.clone(),
+                listening.clone(),
+                listening_callback.clone(),
+            );
+            api.access(|api_mut| api_mut.set_on_listening(Some(on_listening)));
         }
 
         // Setup on-message handler to queue received messages. The handler holds a weak reference,
@@ -1382,6 +1482,63 @@ impl BingleJsiApiImpl {
         }
 
         Ok(api_instance)
+    }
+
+    /// The engine's on-listening handler: records the listening flag and both NAT states, then
+    /// tells the host. Both states read "Unknown" while not listening: the IPv4 state as before,
+    /// and the IPv6 state because it can't be final until the IPv6 triangle test, which needs a
+    /// relay (issue #498). The host is told only when what it would see changes, so a repeated
+    /// notification, or an IPv6 change while not listening, raises no event.
+    fn listening_handler(
+        nat_type: Arc<Mutex<String>>,
+        nat_type_v6: Arc<Mutex<String>>,
+        listening: Arc<AtomicBool>,
+        listening_callback: Arc<Mutex<Option<Box<dyn ListeningCallback>>>>,
+    ) -> Arc<bingle_core::api::bingle_api::OnListeningHandler> {
+        // The (listening, nat_type, nat_type_v6) last passed to the host; None before the first.
+        let last_told: Mutex<Option<(bool, String, String)>> = Mutex::new(None);
+        Arc::new(
+            move |listening_val: bool,
+                  nt: bingle_core::engine::NatType,
+                  nt6: bingle_core::engine::NatTypeV6| {
+                let (type_str, type_v6_str) = if listening_val {
+                    (format!("{:?}", nt), nt6.as_str().to_string())
+                } else {
+                    ("Unknown".to_string(), "Unknown".to_string())
+                };
+                listening.store(listening_val, Ordering::SeqCst);
+                if let Ok(mut guard) = nat_type.lock() {
+                    *guard = type_str.clone();
+                }
+                if let Ok(mut guard) = nat_type_v6.lock() {
+                    *guard = type_v6_str.clone();
+                }
+                let report = (listening_val, type_str, type_v6_str);
+                match last_told.lock() {
+                    Ok(mut last) => {
+                        if last.as_ref() == Some(&report) {
+                            return;
+                        }
+                        *last = Some(report.clone());
+                    }
+                    Err(_) => {
+                        tracing::error!("on_listening: last-told lock poisoned; reporting anyway");
+                    }
+                }
+                let (listening_val, type_str, type_v6_str) = report;
+                tracing::info!(
+                    "on_listening: listening={} nat_type={} nat_type_v6={}",
+                    listening_val,
+                    type_str,
+                    type_v6_str
+                );
+                if let Ok(guard) = listening_callback.lock()
+                    && let Some(ref callback) = *guard
+                {
+                    callback.on_listening(listening_val, type_str, type_v6_str);
+                }
+            },
+        )
     }
 
     fn run_processing_loop(
@@ -1752,18 +1909,22 @@ impl BingleJsiApiImpl {
     ) -> Arc<Self> {
         let messages: Arc<Mutex<Vec<JsonValue>>> = Arc::new(Mutex::new(Vec::new()));
         let nat_type: Arc<Mutex<String>> = Arc::new(Mutex::new("Unknown".to_string()));
+        let nat_type_v6: Arc<Mutex<String>> = Arc::new(Mutex::new("Unknown".to_string()));
         let listening = Arc::new(AtomicBool::new(false));
+        let listening_callback: Arc<Mutex<Option<Box<dyn ListeningCallback>>>> =
+            Arc::new(Mutex::new(None));
         let started = Arc::new(Mutex::new(false));
         let mut opts_obj = StartOptions::new("test".to_string());
         opts_obj.dangerous_debug = true;
         let opts = Arc::new(Mutex::new(opts_obj));
 
-        let listening_atomic = listening.clone();
-        api.access(|api_mut| {
-            api_mut.set_on_listening(Some(Arc::new(move |listening_val, _nat| {
-                listening_atomic.store(listening_val, Ordering::SeqCst);
-            })));
-        });
+        let on_listening = Self::listening_handler(
+            nat_type.clone(),
+            nat_type_v6.clone(),
+            listening.clone(),
+            listening_callback.clone(),
+        );
+        api.access(|api_mut| api_mut.set_on_listening(Some(on_listening)));
 
         Arc::new(Self {
             api,
@@ -1771,8 +1932,9 @@ impl BingleJsiApiImpl {
             local_api,
             local_file: None,
             nat_type,
+            nat_type_v6,
             message_callback: Arc::new(Mutex::new(None)),
-            listening_callback: Arc::new(Mutex::new(None)),
+            listening_callback,
             push_registration_callback: Arc::new(Mutex::new(None)),
             listening,
             processing_thread: Arc::new(Mutex::new(None)),
@@ -1829,8 +1991,15 @@ fn local_api_guard(
 impl BingleJsiApi for BingleJsiApiImpl {
     fn handle_lookup(&self, handle: String) -> Result<String, BingleJsiError> {
         match self.api.handle_lookup(&handle) {
-            Ok(Some(id)) => Ok(id),
-            Ok(None) => Err(BingleJsiError::NotFound {
+            // A moderator-blocked account isn't found (issue #539).
+            Ok(Some(id))
+                if !is_sender_globally_blocked(self.global_blocklist.as_deref(), &id, |a| {
+                    self.read_blocked_user(a)
+                }) =>
+            {
+                Ok(id)
+            }
+            Ok(_) => Err(BingleJsiError::NotFound {
                 reason: format!("Handle '{}' not found", handle),
             }),
             Err(e) => Err(bingle_error_to_jsi(e)),
@@ -1842,11 +2011,18 @@ impl BingleJsiApi for BingleJsiApiImpl {
         handle: String,
     ) -> Result<HandleLookupPartialResult, BingleJsiError> {
         match self.api.handle_lookup_partial(&handle) {
-            Ok(Some((id, canonical_handle))) => Ok(HandleLookupPartialResult {
-                id,
-                canonical_handle,
-            }),
-            Ok(None) => Err(BingleJsiError::NotFound {
+            // A moderator-blocked account isn't found (issue #539).
+            Ok(Some((id, canonical_handle)))
+                if !is_sender_globally_blocked(self.global_blocklist.as_deref(), &id, |a| {
+                    self.read_blocked_user(a)
+                }) =>
+            {
+                Ok(HandleLookupPartialResult {
+                    id,
+                    canonical_handle,
+                })
+            }
+            Ok(_) => Err(BingleJsiError::NotFound {
                 reason: format!("No handle matching '{}' found", handle),
             }),
             Err(e) => Err(bingle_error_to_jsi(e)),
@@ -1861,15 +2037,20 @@ impl BingleJsiApi for BingleJsiApiImpl {
         let matches = self
             .api
             .handle_lookup_matches(&prefix, limit as usize)
-            .map_err(bingle_error_to_jsi)?;
-        Ok(matches
+            .map_err(bingle_error_to_jsi)?
             .into_iter()
             .map(|m| HandleLookupMatch {
                 id: m.id,
                 canonical_handle: m.canonical_handle,
                 exact: m.exact,
             })
-            .collect())
+            .collect();
+        // Leave out the accounts a moderator has blocked (issue #539).
+        Ok(without_moderator_blocked_matches(
+            self.global_blocklist.as_deref(),
+            matches,
+            |address| self.read_blocked_user(address),
+        ))
     }
 
     fn send_message_to_id(
@@ -1888,6 +2069,7 @@ impl BingleJsiApi for BingleJsiApiImpl {
         handle: String,
         message: BingleMessage,
     ) -> Result<bool, BingleJsiError> {
+        self.refuse_moderator_blocked_recipient(&handle)?;
         let json = message_to_json(&message);
         self.api
             .send_message_to_handle(&handle, json, None)
@@ -1927,6 +2109,7 @@ impl BingleJsiApi for BingleJsiApiImpl {
         handle: String,
         message: BingleMessage,
     ) -> Result<BingleMessage, BingleJsiError> {
+        self.refuse_moderator_blocked_recipient(&handle)?;
         let json = message_to_json(&message);
         match self
             .api
@@ -2011,8 +2194,17 @@ impl BingleJsiApi for BingleJsiApiImpl {
             .map_err(|_| BingleJsiError::InternalError {
                 reason: "NAT type lock poisoned".to_string(),
             })?;
+        let nat_type = parse_nat_type(&guard);
+        drop(guard);
+        let guard_v6 = self
+            .nat_type_v6
+            .lock()
+            .map_err(|_| BingleJsiError::InternalError {
+                reason: "IPv6 NAT type lock poisoned".to_string(),
+            })?;
         Ok(NatTypeResponse {
-            nat_type: parse_nat_type(&guard),
+            nat_type,
+            nat_type_v6: parse_nat_type_v6(&guard_v6),
         })
     }
 
@@ -2480,9 +2672,26 @@ impl BingleJsiApi for BingleJsiApiImpl {
         Ok(())
     }
 
+    fn set_global_block(&self, enabled: bool) -> Result<(), BingleJsiError> {
+        // The blocklist is shared with the local store's Mailbox path, so one switch covers live and
+        // Mailbox messages; its cache is kept (issue #531).
+        let Some(blocklist) = self.global_blocklist.as_deref() else {
+            return Err(BingleJsiError::InvalidRequest {
+                reason: "the global blocklist is not available: init was called without enable_global_block".to_string(),
+            });
+        };
+        blocklist.set_enabled(enabled);
+        Ok(())
+    }
+
     fn messaging_settings(&self) -> Result<MessagingSettings, BingleJsiError> {
         let guard = local_api_guard(&self.local_api)?;
-        Ok(guard.messaging_settings().into())
+        Ok(MessagingSettings::from_local(
+            guard.messaging_settings(),
+            self.global_blocklist
+                .as_deref()
+                .map(GlobalBlocklist::is_enabled),
+        ))
     }
 
     fn get_contacts(&self) -> Result<Vec<Contact>, BingleJsiError> {
@@ -2509,6 +2718,16 @@ impl BingleJsiApi for BingleJsiApiImpl {
                 fields: c.fields,
             })
             .collect())
+    }
+
+    fn get_moderator_blocked_contacts(&self) -> Result<Vec<Contact>, BingleJsiError> {
+        // The contact list is read first, so the store's lock isn't held during chain reads.
+        let contacts = self.get_contacts()?;
+        Ok(moderator_blocked_contacts(
+            self.global_blocklist.as_deref(),
+            contacts,
+            |address| self.read_blocked_user(address),
+        ))
     }
 
     fn add_message(
@@ -2545,6 +2764,10 @@ impl BingleJsiApi for BingleJsiApiImpl {
         recipient_handles: Vec<String>,
         text: String,
     ) -> Result<(), BingleJsiError> {
+        // Checked before the store's lock is taken, as it may read the chain (issue #539).
+        for handle in &recipient_handles {
+            self.refuse_moderator_blocked_recipient(handle)?;
+        }
         let mut guard = local_api_guard(&self.local_api)?;
         guard
             .queue_message(recipient_handles, text)

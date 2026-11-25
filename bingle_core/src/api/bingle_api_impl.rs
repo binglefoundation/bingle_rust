@@ -920,7 +920,11 @@ impl BingleApi for BingleApiImpl {
         // Notify listeners that we are no longer listening
         let on_listening = self.on_listening.lock().expect("on_listening lock").clone();
         if let Some(cb) = on_listening {
-            cb(false, crate::engine::NatType::Unknown);
+            cb(
+                false,
+                crate::engine::NatType::Unknown,
+                crate::engine::NatTypeV6::Unknown,
+            );
         }
         // Remove our advert from the DDB before the transport goes down, so peers stop resolving a
         // stopped node (#279). A relay does not sign off: its membership of the relay set follows
@@ -1895,9 +1899,11 @@ impl crate::api::bingle_api::BingleApiInternal for BingleApiImpl {
             listening,
             nat_type
         );
+        self.engine.note_listening(listening);
+        let nat_type_v6 = self.engine.nat_type_v6();
         let on_listening = self.on_listening.lock().expect("on_listening lock").clone();
         if let Some(cb) = on_listening {
-            cb(listening, nat_type);
+            cb(listening, nat_type, nat_type_v6);
         }
     }
     fn turn_handle_called(&self, source: SocketAddr, dest: SocketAddr, channel: u16) {

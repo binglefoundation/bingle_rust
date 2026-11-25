@@ -41,3 +41,6 @@ pub mod inet_socket_address_ipv6_tests;
 
 #[path = "ddb/client/lookup_ipv6_tests.rs"]
 pub mod ddb_client_lookup_ipv6_tests;
+
+#[path = "ddb/advert_record_endpoint6.rs"]
+pub mod advert_record_endpoint6;

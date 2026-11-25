@@ -306,7 +306,10 @@ class BingleJsiBridge: RCTEventEmitter {
         DispatchQueue.global(qos: .userInitiated).async {
             do {
                 let resp = try api.getNatType()
-                resolve(["nat_type": self.natTypeToString(resp.natType)])
+                resolve([
+                    "nat_type": self.natTypeToString(resp.natType),
+                    "nat_type_v6": self.natTypeV6ToString(resp.natTypeV6),
+                ])
             } catch {
                 reject("BINGLE_ERROR", "\(error)", error)
             }
@@ -942,6 +945,24 @@ class BingleJsiBridge: RCTEventEmitter {
         }
     }
 
+    // Contacts a moderator has blocked on-chain (issue #533). May read the chain, so off the main
+    // queue.
+    @objc
+    func getModeratorBlockedContacts(_ resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {
+        guard let api = apiInstance else {
+            reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.", nil)
+            return
+        }
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                let contacts = try api.getModeratorBlockedContacts()
+                resolve(contacts.map { ["handle": $0.handle, "id": $0.id, "fields": $0.fields] })
+            } catch {
+                reject("BINGLE_ERROR", "\(error)", error)
+            }
+        }
+    }
+
     @objc
     func addMessage(_ senderHandle: String, recipientHandles: [String], timestamp: Double, text: String, cipherSuite: String?, resolver resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {
         guard let api = apiInstance else {
@@ -1129,6 +1150,23 @@ class BingleJsiBridge: RCTEventEmitter {
         }
     }
 
+    /// Switch the moderator blocklist on or off on the running session (issue #531).
+    @objc
+    func setGlobalBlock(_ enabled: Bool, resolver resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {
+        guard let api = apiInstance else {
+            reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.", nil)
+            return
+        }
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                try api.setGlobalBlock(enabled: enabled)
+                resolve(nil)
+            } catch {
+                reject("BINGLE_ERROR", "\(error)", error)
+            }
+        }
+    }
+
     /// The current effective messaging settings, for the Settings screen to render live state
     /// (issue #242). Bridged to JS in issue #301.
     @objc
@@ -1145,6 +1183,7 @@ class BingleJsiBridge: RCTEventEmitter {
                     "store_and_forward_receive": settings.storeAndForwardReceive,
                     "notify_on_giveup": settings.notifyOnGiveup,
                     "notify_gateway_url": settings.notifyGatewayUrl as Any,
+                    "global_block": settings.globalBlock as Any,
                 ])
             } catch {
                 reject("BINGLE_ERROR", "\(error)", error)
@@ -1360,6 +1399,17 @@ class BingleJsiBridge: RCTEventEmitter {
         }
     }
 
+    /// IPv6 reachability, reported beside the IPv4 NAT type (bingle_rust #498).
+    private func natTypeV6ToString(_ natTypeV6: NatTypeV6) -> String {
+        switch natTypeV6 {
+        case NatTypeV6.unknown: return "Unknown"
+        case NatTypeV6.none: return "None"
+        case NatTypeV6.noConnection: return "NoConnection"
+        case NatTypeV6.openFirewalled: return "OpenFirewalled"
+        case NatTypeV6.open: return "Open"
+        }
+    }
+
     /// The dictionary `keypairStatus` and `inspectPassphrase` resolve with (KeypairStatusResponse in
     /// ts/NativeBingleJsi.ts).
     private func keypairStatusToDict(_ status: KeypairStatusResponse) -> [String: Any] {
@@ -1468,8 +1518,8 @@ class MessageCallbackBridge: MessageCallback {
 /// Bridges uniffi's ListeningCallback to RCTEventEmitter events.
 ///
 /// Each `onListening` invocation sends an "onListening" event with listening
-/// state and NAT type to the JS layer via React Native's event emitter
-/// infrastructure.
+/// state, the IPv4 NAT type and the IPv6 reachability (bingle_rust #498) to the
+/// JS layer via React Native's event emitter infrastructure.
 class ListeningCallbackBridge: ListeningCallback {
     private weak var emitter: RCTEventEmitter?
 
@@ -1477,10 +1527,11 @@ class ListeningCallbackBridge: ListeningCallback {
         self.emitter = emitter
     }
 
-    func onListening(listening: Bool, natType: String) {
+    func onListening(listening: Bool, natType: String, natTypeV6: String) {
         emitter?.sendEvent(withName: "onListening", body: [
             "listening": listening,
             "nat_type": natType,
+            "nat_type_v6": natTypeV6,
         ])
     }
 }

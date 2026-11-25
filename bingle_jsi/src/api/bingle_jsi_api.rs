@@ -16,7 +16,8 @@ use crate::api::types::{
 pub trait BingleJsiApi: Send + Sync {
     // ── Core messaging ───────────────────────────────────────────────
 
-    /// Lookup an id by handle.
+    /// Lookup an id by handle. With the global blocklist on, an account a moderator has blocked is
+    /// not found (issue #539).
     fn handle_lookup(&self, handle: String) -> Result<String, BingleJsiError>;
 
     /// Partial (prefix) handle lookup.
@@ -25,7 +26,8 @@ pub trait BingleJsiApi: Send + Sync {
     /// of registered handles, so "abc" matches a registered "ab_cd". Returns the first
     /// (oldest) hit as an (id, canonical_handle) pair, where canonical_handle is the handle
     /// exactly as written in the blockchain local state. Errors with NotFound if no handle
-    /// starts with the given prefix.
+    /// starts with the given prefix, or, with the global blocklist on, if a moderator has blocked
+    /// the account found (issue #539).
     fn handle_lookup_partial(
         &self,
         handle: String,
@@ -33,7 +35,9 @@ pub trait BingleJsiApi: Send + Sync {
 
     /// Handle search (issue #390): up to `limit` registered handles starting with `prefix` (both
     /// normalised by the handle matching rules), exact matches first, then the rest, each group
-    /// oldest first. Returns an empty list when nothing matches.
+    /// oldest first. Returns an empty list when nothing matches. With the global blocklist on,
+    /// accounts a moderator has blocked are left out (issue #539), so fewer than `limit` may be
+    /// returned.
     fn handle_lookup_matches(
         &self,
         prefix: String,
@@ -47,7 +51,8 @@ pub trait BingleJsiApi: Send + Sync {
         message: BingleMessage,
     ) -> Result<bool, BingleJsiError>;
 
-    /// Send a message to a handle.
+    /// Send a message to a handle. With the global blocklist on, fails with `InvalidRequest`, sending
+    /// nothing, when a moderator has blocked the recipient (issue #539).
     fn send_message_to_handle(
         &self,
         handle: String,
@@ -69,7 +74,8 @@ pub trait BingleJsiApi: Send + Sync {
         message: BingleMessage,
     ) -> Result<BingleMessage, BingleJsiError>;
 
-    /// Send a message to a handle and wait for response.
+    /// Send a message to a handle and wait for response. Refuses a moderator-blocked recipient as
+    /// [`send_message_to_handle`](Self::send_message_to_handle) does (issue #539).
     fn send_message_to_handle_with_response(
         &self,
         handle: String,
@@ -343,6 +349,12 @@ pub trait BingleJsiApi: Send + Sync {
     /// Get the list of blocked contacts.
     fn get_blocked_contacts(&self) -> Result<Vec<Contact>, BingleJsiError>;
 
+    /// Get the contacts a moderator has blocked on-chain (issue #533), so the app can hide their
+    /// stored messages as it does for contacts the user blocked. Answers come from the global
+    /// blocklist's cache, and a contact it has no current answer for is read from the chain. Empty
+    /// when the global blocklist is off (`enable_global_block` not set, or switched off).
+    fn get_moderator_blocked_contacts(&self) -> Result<Vec<Contact>, BingleJsiError>;
+
     /// Add a message to the local store.
     fn add_message(
         &self,
@@ -357,7 +369,9 @@ pub trait BingleJsiApi: Send + Sync {
     /// else the Mailbox `delivered_time`, else `timestamp`. Equal times keep their stored order.
     fn get_messages(&self) -> Result<Vec<Message>, BingleJsiError>;
 
-    /// Queue a message to be sent by the background processor.
+    /// Queue a message to be sent by the background processor. With the global blocklist on, fails
+    /// with `InvalidRequest`, queuing nothing, when a moderator has blocked any recipient
+    /// (issue #539).
     fn queue_message(
         &self,
         recipient_handles: Vec<String>,
@@ -407,8 +421,15 @@ pub trait BingleJsiApi: Send + Sync {
     /// effect immediately without a re-init. Errors if local mode is not enabled.
     fn set_notify(&self, enabled: bool, gateway_url: Option<String>) -> Result<(), BingleJsiError>;
 
-    /// The current effective messaging settings (store-and-forward gates + notify), so the Settings
-    /// screen can render live state. Errors if local mode is not enabled.
+    /// Switch the moderator blocklist (issue #95) on or off on the **running** session (issue #531),
+    /// so an app can offer it as a user setting. While it is off, messages from a sender a moderator
+    /// blocked are kept, live and from the Mailbox, and no chain reads are made for it; switching it
+    /// on again uses the answers already cached. Fails with `InvalidRequest` when `init` built no
+    /// blocklist (`enable_global_block` not set).
+    fn set_global_block(&self, enabled: bool) -> Result<(), BingleJsiError>;
+
+    /// The current effective messaging settings (store-and-forward gates, notify and the moderator
+    /// blocklist), so the Settings screen can render live state. Errors if local mode is not enabled.
     fn messaging_settings(&self) -> Result<MessagingSettings, BingleJsiError>;
 
     /// Save all local state to a JSON file.

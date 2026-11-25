@@ -292,7 +292,7 @@ pub fn stun_port_only_change_does_not_reset_or_drop_listening() {
 
     let listening_false = Arc::new(AtomicBool::new(false));
     let flag = listening_false.clone();
-    eng.set_on_listening_handler(Some(Arc::new(move |listening, _nat: NatType| {
+    eng.set_on_listening_handler(Some(Arc::new(move |listening, _nat: NatType, _nat6| {
         if !listening {
             flag.store(true, Ordering::SeqCst);
         }
@@ -340,7 +340,7 @@ pub fn stun_ip_change_debounced_over_polls_then_resets() {
 
     let listening_false = Arc::new(AtomicBool::new(false));
     let flag = listening_false.clone();
-    eng.set_on_listening_handler(Some(Arc::new(move |listening, _nat: NatType| {
+    eng.set_on_listening_handler(Some(Arc::new(move |listening, _nat: NatType, _nat6| {
         if !listening {
             flag.store(true, Ordering::SeqCst);
         }
@@ -418,7 +418,7 @@ pub fn stun_same_address_does_not_reset_peers() {
     // This is the "address lost" case which should also reset.
     let listening_false_called = Arc::new(AtomicBool::new(false));
     let flag = listening_false_called.clone();
-    eng.set_on_listening_handler(Some(Arc::new(move |listening, _nat: NatType| {
+    eng.set_on_listening_handler(Some(Arc::new(move |listening, _nat: NatType, _nat6| {
         if !listening {
             flag.store(true, Ordering::SeqCst);
         }
@@ -452,7 +452,7 @@ pub fn stun_address_change_resets_peers_and_calls_on_listening_false() {
     // Track on_listening calls
     let listening_false_called = Arc::new(AtomicBool::new(false));
     let flag = listening_false_called.clone();
-    eng.set_on_listening_handler(Some(Arc::new(move |listening, _nat: NatType| {
+    eng.set_on_listening_handler(Some(Arc::new(move |listening, _nat: NatType, _nat6| {
         if !listening {
             flag.store(true, Ordering::SeqCst);
         }
