@@ -45,11 +45,11 @@ fn parse_host_ip(host: &str) -> Option<IpAddr> {
     Some(ip)
 }
 
-/// True when `ip` is an IPv6 address a node may advertise as `endpoint6` and a relay may store
-/// and re-serve (issue #493): global unicast (`2000::/3`), which excludes link-local
-/// (`fe80::/10`), unique local (`fc00::/7`), multicast (`ff00::/8`), IPv4-mapped
-/// (`::ffff:0:0/96`) and the unspecified address. Loopback (`::1`) is accepted so the loopback
-/// test topologies can exercise the path; emission (bingle_rust #499) refuses it separately.
+/// True when `ip` is an IPv6 address a node may advertise as `endpoint6` and a peer may use
+/// (issue #493): global unicast (`2000::/3`), which excludes link-local (`fe80::/10`), unique
+/// local (`fc00::/7`), multicast (`ff00::/8`), IPv4-mapped (`::ffff:0:0/96`) and the unspecified
+/// address. Loopback (`::1`) is accepted so the loopback test topologies can exercise the path;
+/// emission (bingle_rust #499) refuses it separately.
 pub fn is_advertisable_ipv6(ip: &Ipv6Addr) -> bool {
     if ip.is_loopback() {
         return true;
@@ -215,32 +215,17 @@ impl AdvertRecord {
         self
     }
 
-    /// True when `endpoint6` is absent, or is an IPv6 address a relay may store and re-serve:
-    /// see [`is_advertisable_ipv6`]. An IPv4 or non-IP `endpoint6` is refused.
-    pub fn endpoint6_acceptable(&self) -> bool {
-        let Some(endpoint6) = &self.endpoint6 else {
-            return true;
-        };
-        match endpoint6.ip() {
-            Some(IpAddr::V6(v6)) => is_advertisable_ipv6(&v6),
-            _ => false,
+    /// The IPv6 endpoint as an address a peer may use, or `None` when it is absent or not usable:
+    /// not an IPv6 address, or not one [`is_advertisable_ipv6`] accepts. Relays store and re-serve
+    /// a record whatever its `endpoint6` holds (the signature covers the field, so it can't be
+    /// stripped, and refusing the record would also lose its IPv4 endpoint); every consumer that
+    /// would send to `endpoint6` must read it through this method instead.
+    pub fn usable_endpoint6(&self) -> Option<SocketAddr> {
+        let addr = SocketAddr::try_from(self.endpoint6.clone()?).ok()?;
+        match addr.ip() {
+            IpAddr::V6(v6) if is_advertisable_ipv6(&v6) => Some(addr),
+            _ => None,
         }
-    }
-
-    /// The ingest gate a relay applies before storing a received record: the signature must
-    /// verify and `endpoint6` must be acceptable. A relay can't strip a bad `endpoint6` and keep
-    /// the record, because the signature covers it, so it refuses the whole record instead.
-    pub fn check_ingest(&self) -> Result<(), String> {
-        if !self.verify() {
-            return Err("signature verification failed".to_string());
-        }
-        if !self.endpoint6_acceptable() {
-            return Err(format!(
-                "endpoint6 {:?} is not a global unicast IPv6 address",
-                self.endpoint6.as_ref().map(|e| e.to_string())
-            ));
-        }
-        Ok(())
     }
 
     /// Calculate the signature over all fields except sig.

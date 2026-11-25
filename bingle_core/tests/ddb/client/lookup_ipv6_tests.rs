@@ -179,7 +179,7 @@ fn ddb_client_lookup_verifies_endpoint6_record_after_relay_store_and_reserve() {
         Ok(Message::Ddb(DdbMessage::UpsertResolve(up))) => up.record,
         other => panic!("expected an UpsertResolve, got {:?}", other),
     };
-    assert_eq!(received.check_ingest(), Ok(()));
+    assert!(received.verify());
     let mut backend = InMemoryDdbBackend::new();
     backend.upsert(received);
 

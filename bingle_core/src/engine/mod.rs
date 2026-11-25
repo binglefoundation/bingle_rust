@@ -3212,11 +3212,10 @@ impl Engine {
     }
 
     pub fn ddb_upsert_record(&self, record: AdvertRecord) {
-        if let Err(reason) = record.check_ingest() {
+        if !record.verify() {
             tracing::warn!(
-                "[Engine::ddb_upsert_record] rejecting record id={}: {}",
-                record.id,
-                reason
+                "[Engine::ddb_upsert_record] signature verification failed for record id={}",
+                record.id
             );
             return;
         }

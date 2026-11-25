@@ -362,17 +362,33 @@ pub fn test_ddb_upsert_keeps_global_endpoint6() {
     assert_eq!(found, Some(record));
 }
 
-/// Issue #493: a relay refuses a record whose endpoint6 is not global unicast. It can't strip
-/// the field and keep the record, because the signature covers endpoint6.
+/// Issue #493: a relay stores and re-serves a record whose endpoint6 is not global unicast, so the
+/// peer stays reachable on its IPv4 endpoint. The signature covers endpoint6, so the relay can't
+/// strip it; it is left unusable instead (`usable_endpoint6` returns `None`).
 #[test]
 #[cfg(not(target_os = "ios"))]
-pub fn test_ddb_upsert_refuses_non_global_endpoint6() {
+pub fn test_ddb_upsert_keeps_record_with_unusable_endpoint6() {
     for host in ["fe80::1", "fd00::1", "ff02::1", "::ffff:192.0.2.7"] {
         let (engine, id, signing_key) = engine_and_spend_key();
-        engine.ddb_upsert_record(record_with_endpoint6(&id, host, &signing_key));
+        let record = record_with_endpoint6(&id, host, &signing_key);
+        engine.ddb_upsert_record(record.clone());
+        let found = engine.ddb_backend_lookup_for_tests(&id);
+        assert_eq!(
+            found.as_ref(),
+            Some(&record),
+            "record with endpoint6 {:?} is stored",
+            host
+        );
+        let found = found.expect("stored");
         assert!(
-            engine.ddb_backend_lookup_for_tests(&id).is_none(),
-            "record with endpoint6 {:?} must not be stored",
+            found.verify(),
+            "re-served record still verifies for {:?}",
+            host
+        );
+        assert_eq!(
+            found.usable_endpoint6(),
+            None,
+            "endpoint6 {:?} is not usable",
             host
         );
     }

@@ -1,5 +1,5 @@
-//! AdvertRecord `endpoint6` (issue #493): canonical serialisation, signing, the relay ingest
-//! gate and the on-chain CSV form.
+//! AdvertRecord `endpoint6` (issue #493): canonical serialisation, signing, which endpoint6
+//! values are usable, and the on-chain CSV form.
 
 use bingle_core::ddb::{AdvertRecord, InetSocketAddress, is_advertisable_ipv6};
 use ed25519_dalek::SigningKey;
@@ -42,7 +42,7 @@ fn old_format_golden_record_still_verifies() {
     let rec: AdvertRecord = serde_json::from_str(GOLDEN_JSON).expect("golden parses");
     assert_eq!(rec.endpoint6, None);
     assert!(rec.verify(), "pre-#493 record must still verify");
-    assert_eq!(rec.check_ingest(), Ok(()));
+    assert_eq!(rec.usable_endpoint6(), None);
 }
 
 #[test]
@@ -89,22 +89,27 @@ fn with_endpoint6_clears_a_stale_signature() {
 
 #[test]
 #[cfg(not(target_os = "ios"))]
-fn ingest_accepts_global_unicast_and_loopback_endpoint6() {
-    for host in [
-        "2001:db8::1",
-        "2606:4700::1111",
-        "3fff::1",
-        "::1",
-        "[2001:db8::1]",
+fn global_unicast_and_loopback_endpoint6_are_usable() {
+    for (host, expected) in [
+        ("2001:db8::1", "[2001:db8::1]:3478"),
+        ("2606:4700::1111", "[2606:4700::1111]:3478"),
+        ("3fff::1", "[3fff::1]:3478"),
+        ("::1", "[::1]:3478"),
+        ("[2001:db8::1]", "[2001:db8::1]:3478"),
     ] {
         let rec = base_record(Some(inet(host, 3478)));
-        assert_eq!(rec.check_ingest(), Ok(()), "host {:?}", host);
+        assert_eq!(
+            rec.usable_endpoint6(),
+            Some(expected.parse().unwrap()),
+            "host {:?}",
+            host
+        );
     }
 }
 
 #[test]
 #[cfg(not(target_os = "ios"))]
-fn ingest_rejects_non_global_endpoint6() {
+fn non_global_endpoint6_verifies_but_is_not_usable() {
     for host in [
         "fe80::1",          // link-local
         "febf::1",          // link-local, top of fe80::/10
@@ -118,17 +123,10 @@ fn ingest_rejects_non_global_endpoint6() {
     ] {
         let rec = base_record(Some(inet(host, 3478)));
         assert!(rec.verify(), "signature is fine for {:?}", host);
-        assert!(!rec.endpoint6_acceptable(), "host {:?}", host);
-        assert!(rec.check_ingest().is_err(), "host {:?}", host);
+        assert_eq!(rec.usable_endpoint6(), None, "host {:?}", host);
+        // The IPv4 endpoint is unaffected.
+        assert!(rec.endpoint.is_some(), "host {:?}", host);
     }
-}
-
-#[test]
-#[cfg(not(target_os = "ios"))]
-fn ingest_rejects_a_bad_signature() {
-    let mut rec = base_record(None);
-    rec.date = "2026-06-17T00:00:00Z".to_string();
-    assert!(rec.check_ingest().is_err());
 }
 
 #[test]

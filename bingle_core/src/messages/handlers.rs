@@ -16,9 +16,9 @@ pub const TRIANGLE_TEST_1_DELAY: std::time::Duration = std::time::Duration::from
 /// the handler. Doesn't log: the caller reports once per message, so a message carrying many bad
 /// endpoints can't multiply log volume.
 ///
-/// IPv6 endpoints parse since issue #493, but are still refused here: this node's socket is
-/// IPv4-only until the dual-stack socket (bingle_rust #494) ships, and the triangle test isn't
-/// IPv6-aware until bingle_rust #499. An IPv4-mapped IPv6 endpoint is reduced to IPv4 and used.
+/// IPv6 endpoints parse since issue #493, but are still refused here: the triangle test isn't
+/// IPv6-aware until bingle_rust #499, and this node may run with `ip_family` v4 (bingle_rust #494).
+/// An IPv4-mapped IPv6 endpoint is reduced to IPv4 and used.
 pub fn usable_endpoint(endpoint: &InetSocketAddress) -> Option<std::net::SocketAddr> {
     std::net::SocketAddr::try_from(endpoint.clone())
         .ok()
@@ -1058,13 +1058,11 @@ impl MessageHandler for DefaultPrintingHandler {
             );
             return;
         }
-        // Check the record (signature, and endpoint6 per #493) before taking the backend lock or
-        // doing any network I/O.
-        if let Err(reason) = up.record.check_ingest() {
+        // Verify the record signature before taking the backend lock or doing any network I/O.
+        if !up.record.verify() {
             tracing::warn!(
-                "[handlers::on_ddb_upsert_resolve] rejecting record id={}: {}",
-                up.record.id,
-                reason
+                "[handlers::on_ddb_upsert_resolve] signature verification failed for record id={}",
+                up.record.id
             );
             return;
         }
