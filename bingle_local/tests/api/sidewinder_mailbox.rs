@@ -3,18 +3,27 @@
 //! These exercise the parts that need no live node: the config defaults and the app-id rule, and
 //! the transaction the two Mailbox operations build. The append-then-remove-head round-trip against a
 //! running node lives in the separate, skip-clean `sidewinder_mailbox_e2e` target.
+//!
+//! The failover tests (#497) post through a real Mailbox to loopback mutual-TLS nodes
+//! ([`crate::sidewinder_tls_node`]): one node's dead IPv4 address next to its live `[::1]` address is
+//! handled inside that node's client, and only a node none of whose addresses answer is failed over.
 
+use crate::sidewinder_tls_node::{TlsSidewinderNode, dead_addr, identity_of, node_record};
 use algo_ops::AlgoOps;
 use bingle_core::api::bingle_api::BingleError;
 use bingle_local::api::sidewinder::{
     IDENTITY_REFUSED_BACKOFF, MAILBOX_POP_TYPE, MAILBOX_POST_TYPE, MAILBOX_TAKE_BATCH,
-    MAILBOX_TAKE_TYPE, MailboxConfig, WatchProgress, build_pop_request, build_post_request,
-    build_take_request, classify_watch, decode_take_batch, identity_refusal_holds,
-    identity_refusal_message, is_routine_read, map_error, next_node_index,
+    MAILBOX_TAKE_TYPE, Mailbox, MailboxConfig, WatchProgress, build_pop_request,
+    build_post_request, build_take_request, classify_watch, decode_take_batch,
+    identity_refusal_holds, identity_refusal_message, is_routine_read, map_error, next_node_index,
 };
+use ed25519_dalek::SigningKey;
+use sidewinder_ops::nat64::Nat64Resolver;
 use sidewinder_ops::{
     Disposition, PendingTransaction, SidewinderError, Stage, SuggestedParams, TxnError,
 };
+use std::net::IpAddr;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 /// Suggested params with recognisable values, so a built request can be asserted against them.
@@ -378,6 +387,28 @@ fn map_error_still_retries_an_unreachable_or_transient_node() {
 }
 
 #[test]
+fn map_error_retries_a_family_or_route_the_network_lacks() {
+    // #497: an IPv4 address dialled on an IPv6-only network (or the reverse) fails with one of these;
+    // sidewinder_ops reports it as unreachable, so the Mailbox fails over rather than giving up.
+    for cause in [
+        "tcp connect error: Network is unreachable (os error 51)",
+        "tcp connect error: No route to host (os error 65)",
+        "tcp connect error: Can't assign requested address: address not available",
+        "tcp connect error: Address family not supported by protocol family (os error 47)",
+    ] {
+        assert!(
+            SidewinderError::looks_unreachable(cause),
+            "sidewinder_ops classifies {cause:?} as unreachable"
+        );
+        let error: anyhow::Error = SidewinderError::unreachable("params", cause).into();
+        assert!(
+            matches!(map_error("params", error), BingleError::Retryable(_)),
+            "{cause:?} is retryable"
+        );
+    }
+}
+
+#[test]
 fn identity_refusal_holds_for_the_backoff_window_only() {
     let refused_at = Instant::now();
     assert!(!identity_refusal_holds(None, refused_at), "no refusal seen");
@@ -390,4 +421,111 @@ fn identity_refusal_holds_for_the_backoff_window_only() {
         !identity_refusal_holds(Some(refused_at), refused_at + IDENTITY_REFUSED_BACKOFF),
         "the hold-off ends after the back-off window"
     );
+}
+
+// --- Every address of a node before the next node (#497) ---
+
+/// A NAT64 resolver that reports no NAT64, so the failover tests never query the network's DNS.
+struct NoNat64;
+
+impl Nat64Resolver for NoNat64 {
+    fn lookup_ipv4only(&self) -> std::io::Result<Vec<IpAddr>> {
+        Ok(Vec::new())
+    }
+}
+
+/// A fresh client account and its Algorand address (also its mutual-TLS identity).
+fn client_account() -> (AlgoOps, String) {
+    let (address, mnemonic) = AlgoOps::generate_keypair();
+    (
+        AlgoOps::new_for_algorand(Some(mnemonic), None, None),
+        address,
+    )
+}
+
+/// A Mailbox over the given resolved nodes, with a short finality timeout (the mock finalises at once).
+fn mailbox_over(algo: AlgoOps, nodes: Vec<sidewinder_ops::DiscoveredNode>) -> Mailbox {
+    let mut config = MailboxConfig::discovered(1234);
+    config.finality_timeout = Duration::from_secs(10);
+    Mailbox::with_nodes(algo, config, nodes, Arc::new(NoNat64)).expect("connect the first node")
+}
+
+#[test]
+fn a_dead_ipv4_and_live_ipv6_endpoint_delivers_without_cross_node_failover() {
+    let (algo, client) = client_account();
+    let dual =
+        TlsSidewinderNode::start_v6(&SigningKey::from_bytes(&[210u8; 32]), vec![client.clone()]);
+    let spare = TlsSidewinderNode::start_v4(&SigningKey::from_bytes(&[211u8; 32]), vec![client]);
+    let nodes = vec![
+        node_record(
+            dual.identity(),
+            Some(dead_addr("127.0.0.1")),
+            Some(dual.addr()),
+        ),
+        node_record(spare.identity(), Some(spare.addr()), None),
+    ];
+
+    let mut mailbox = mailbox_over(algo, nodes);
+    mailbox
+        .post("RECIPIENT", b"sealed")
+        .expect("the live IPv6 address of the first node takes the post");
+
+    assert_eq!(dual.submits(), 1, "the post landed on the dual-stack node");
+    assert_eq!(
+        spare.connections(),
+        0,
+        "the dead IPv4 address is handled inside the node's client, not by failing over"
+    );
+}
+
+#[test]
+fn a_node_with_only_a_dead_ipv4_endpoint_fails_over_to_the_next_node() {
+    let (algo, client) = client_account();
+    let next = TlsSidewinderNode::start_v4(&SigningKey::from_bytes(&[212u8; 32]), vec![client]);
+    let nodes = vec![
+        node_record(
+            &identity_of(&SigningKey::from_bytes(&[213u8; 32])),
+            Some(dead_addr("127.0.0.1")),
+            None,
+        ),
+        node_record(next.identity(), Some(next.addr()), None),
+    ];
+
+    let mut mailbox = mailbox_over(algo, nodes);
+    mailbox
+        .post("RECIPIENT", b"sealed")
+        .expect("the next node takes the post once the first is unreachable");
+
+    assert_eq!(next.submits(), 1, "the post failed over to the next node");
+}
+
+#[test]
+fn an_identity_refusal_is_final_and_does_not_fail_over() {
+    let (algo, client) = client_account();
+    // the first node is reachable on IPv6 but does not permit this client.
+    let refusing = TlsSidewinderNode::start_v6(&SigningKey::from_bytes(&[214u8; 32]), Vec::new());
+    let spare = TlsSidewinderNode::start_v4(&SigningKey::from_bytes(&[215u8; 32]), vec![client]);
+    let nodes = vec![
+        node_record(
+            refusing.identity(),
+            Some(dead_addr("127.0.0.1")),
+            Some(refusing.addr()),
+        ),
+        node_record(spare.identity(), Some(spare.addr()), None),
+    ];
+
+    let mut mailbox = mailbox_over(algo, nodes);
+    let error = mailbox
+        .post("RECIPIENT", b"sealed")
+        .expect_err("a refused identity fails the post");
+
+    assert!(
+        !matches!(error, BingleError::Retryable(_)),
+        "an identity refusal is not retryable: {error}"
+    );
+    assert!(
+        mailbox.identity_refusal().is_some(),
+        "the refusal is reported for the hold-off"
+    );
+    assert_eq!(spare.connections(), 0, "a refusal does not fail over");
 }

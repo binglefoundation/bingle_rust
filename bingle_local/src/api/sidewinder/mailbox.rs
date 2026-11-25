@@ -17,10 +17,12 @@
 
 use algo_ops::AlgoOps;
 use bingle_core::api::bingle_api::BingleError;
+use sidewinder_ops::nat64::{Nat64Resolver, SystemNat64Resolver};
 use sidewinder_ops::{
     AppArg, DiscoveredNode, DiscoveryConfig, PendingTransaction, SidewinderClient, SidewinderError,
     SidewinderErrorKind, SidewinderOps, Stage, SuggestedParams, TransactionRequest, resolve_nodes,
 };
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 /// The transaction type the tier-1 Mailbox configuration binds `post` (`FIFO.append`) to. The node's
@@ -212,6 +214,9 @@ pub struct Mailbox {
 /// The live node connection: the parameters to re-resolve with, the reachable node set (retained so
 /// a dead node can be failed over to, and re-resolved, cheaply), and the client bound to the
 /// currently active node over identity-pinned mutual TLS.
+///
+/// One client covers every address its node advertises (native IPv6, NAT64-synthesised IPv6, native
+/// IPv4; sidewinder_ops 0.10, #497), so a node is only failed over once none of its addresses answer.
 struct DiscoveredTransport {
     /// Discovery parameters (Bingle app id + membership schema), reused to re-resolve on exhaustion.
     discovery: DiscoveryConfig,
@@ -221,6 +226,8 @@ struct DiscoveredTransport {
     active: usize,
     /// Client bound (identity-pinned mutual TLS) to `nodes[active]`.
     client: SidewinderClient,
+    /// Discovers the network's NAT64 prefix for each client this transport connects.
+    nat64: Arc<dyn Nat64Resolver>,
 }
 
 impl Mailbox {
@@ -230,7 +237,37 @@ impl Mailbox {
     /// identity-pinned mutual TLS, retaining the rest for failover. A discovery/connect failure is a
     /// surfaced (retryable) [`BingleError`], never a panic.
     pub fn new(algo: AlgoOps, config: MailboxConfig) -> Result<Self, BingleError> {
-        let transport = connect_discovered(&algo, config.app_id)?;
+        let discovery = DiscoveryConfig::bingle(config.app_id);
+        let nodes = resolve_reachable(&algo, &discovery)?;
+        Self::with_nodes(algo, config, nodes, Arc::new(SystemNat64Resolver))
+    }
+
+    /// Build a Mailbox client over an already-resolved node set, connecting to the first node, with
+    /// `nat64` discovering the network's NAT64 prefix. [`new`](Self::new) resolves the set on-chain;
+    /// this lets the failover tests (#497) hand in loopback nodes and a resolver that never queries
+    /// DNS. Re-resolution on exhaustion still scans the chain for `config.app_id`. Errors (retryable)
+    /// when `nodes` is empty.
+    #[doc(hidden)]
+    pub fn with_nodes(
+        algo: AlgoOps,
+        config: MailboxConfig,
+        nodes: Vec<DiscoveredNode>,
+        nat64: Arc<dyn Nat64Resolver>,
+    ) -> Result<Self, BingleError> {
+        let Some(first) = nodes.first() else {
+            return Err(BingleError::Retryable(format!(
+                "no reachable cluster node of Bingle app {} to connect to",
+                config.app_id
+            )));
+        };
+        let client = connect_node(&algo, first, &nat64)?;
+        let transport = DiscoveredTransport {
+            discovery: DiscoveryConfig::bingle(config.app_id),
+            nodes,
+            active: 0,
+            client,
+            nat64,
+        };
         Ok(Self {
             algo,
             transport,
@@ -376,6 +413,10 @@ impl Mailbox {
     /// chain once on exhaustion (story #244, deliverable 3). Failover is
     /// confined to this probe, **before** any transaction is submitted, so a finality timeout partway
     /// through an operation never re-submits on a second node (which could double-post).
+    ///
+    /// The client has already tried every address of the node (#497) before it reports the node
+    /// unreachable, so failover here is between nodes, never between one node's addresses. An identity
+    /// refusal is final: the node answered, and every node reads the same membership.
     fn params_with_failover(&mut self, operation: &str) -> Result<SuggestedParams, BingleError> {
         let mut reresolved = false;
         self.identity_refusal = None;
@@ -421,8 +462,7 @@ impl Mailbox {
         let d = &mut self.transport;
         if let Some(next) = next_node_index(d.active, d.nodes.len()) {
             d.active = next;
-            d.client =
-                SidewinderClient::connect(algo, &d.nodes[next]).map_err(map_connect_error)?;
+            d.client = connect_node(&algo, &d.nodes[next], &d.nat64)?;
             return Ok(true);
         }
         if *reresolved {
@@ -433,7 +473,7 @@ impl Mailbox {
         let reachable = resolve_reachable(&algo, &d.discovery)?;
         d.nodes = reachable;
         d.active = 0;
-        d.client = SidewinderClient::connect(algo, &d.nodes[0]).map_err(map_connect_error)?;
+        d.client = connect_node(&algo, &d.nodes[0], &d.nat64)?;
         Ok(true)
     }
 
@@ -610,24 +650,21 @@ pub fn decode_take_batch(result: &[u8]) -> Option<(bool, Vec<Vec<u8>>)> {
     Some((more, messages))
 }
 
-/// Connect the discovered transport: resolve the app's reachable cluster nodes on-chain and connect to
-/// the first over identity-pinned mutual TLS, retaining the rest for failover.
-fn connect_discovered(algo: &AlgoOps, app_id: u64) -> Result<DiscoveredTransport, BingleError> {
-    let discovery = DiscoveryConfig::bingle(app_id);
-    let nodes = resolve_reachable(algo, &discovery)?;
-    // `nodes` is non-empty (resolve_reachable errors otherwise), so index 0 is present.
-    let client = SidewinderClient::connect(algo.clone(), &nodes[0]).map_err(map_connect_error)?;
-    Ok(DiscoveredTransport {
-        discovery,
-        nodes,
-        active: 0,
-        client,
-    })
+/// Connect to `node` over identity-pinned mutual TLS. The client dials every address the node
+/// advertises — native IPv6 first, then NAT64-synthesised forms of its IPv4 address (the prefix found
+/// through `nat64`), then native IPv4 — so an IPv6-only network reaches a dual-stack node (#497).
+fn connect_node(
+    algo: &AlgoOps,
+    node: &DiscoveredNode,
+    nat64: &Arc<dyn Nat64Resolver>,
+) -> Result<SidewinderClient, BingleError> {
+    let client = SidewinderClient::connect(algo.clone(), node).map_err(map_connect_error)?;
+    Ok(client.with_nat64_resolver(Arc::clone(nat64)))
 }
 
-/// Resolve the app's cluster nodes and keep only those advertising a reachable endpoint (a peer-only
+/// Resolve the app's cluster nodes and keep only those advertising at least one address (a peer-only
 /// node holds `allow_sw_node` but publishes no [`EndpointRecord`](sidewinder_ops::EndpointRecord), and
-/// [`DiscoveredNode::base_url`] is then `None`). Errors (retryable) when the scan fails or no node has
+/// [`DiscoveredNode::addrs`] is then empty). Errors (retryable) when the scan fails or no node has
 /// published an endpoint — so a gate that is on but has nowhere to reach is reported, not silent.
 fn resolve_reachable(
     algo: &AlgoOps,
@@ -641,7 +678,7 @@ fn resolve_reachable(
     })?;
     let reachable: Vec<DiscoveredNode> = nodes
         .into_iter()
-        .filter(|node| node.base_url().is_some())
+        .filter(|node| !node.addrs().is_empty())
         .collect();
     if reachable.is_empty() {
         return Err(BingleError::Retryable(format!(
@@ -711,6 +748,12 @@ pub fn identity_refusal_holds(refused_at: Option<Instant>, now: Instant) -> bool
 /// Map a client error to a [`BingleError`], classifying unreachable/transient causes as retryable so
 /// the store-and-forward path can distinguish "try again" from a persistent failure. An identity
 /// refusal (#309) is not retryable.
+///
+/// A node none of whose addresses answer is reported by sidewinder_ops as
+/// [`HostUnreachable`](SidewinderErrorKind::HostUnreachable), including a family or route the local
+/// network lacks ("network is unreachable", "no route to host", "address not available", "address
+/// family not supported" — an IPv4 address on an IPv6-only network, #497), so it is retryable and
+/// fails over to the next node.
 #[doc(hidden)]
 pub fn map_error(operation: &str, error: anyhow::Error) -> BingleError {
     if let Some(se) = error.downcast_ref::<SidewinderError>()

@@ -48,9 +48,9 @@ dependencies = [
 
 [[package]]
 name = "algo_ops"
-version = "0.9.7"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b8edeed89340d2aea141dcaa27176606e5676eba37a74bb177e128381321f34b"
+checksum = "b59acafaca66f372875519221dde6e286ed8436299b6aa7257e33c3dd3bfea7c"
 dependencies = [
  "algonaut",
  "anyhow",
@@ -629,6 +629,7 @@ dependencies = [
  "serde_json",
  "serial_test",
  "sha2 0.10.9",
+ "socket2 0.6.4",
  "stun-rs",
  "thiserror 1.0.69",
  "tokio",
@@ -674,12 +675,15 @@ dependencies = [
  "blockchain_keystore",
  "core-foundation 0.10.1",
  "core-foundation-sys",
+ "ed25519-dalek",
  "getrandom 0.2.17",
  "reqwest 0.11.27",
+ "rustls",
  "security-framework-sys",
  "serde",
  "serde_json",
  "sidewinder_ops",
+ "sw_identity_tls",
  "tempfile",
  "tracing",
  "tracing-subscriber",
@@ -812,9 +816,9 @@ dependencies = [
 
 [[package]]
 name = "blockchain_ops"
-version = "0.9.7"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ef3fbc1acb01cd760d524e9ab6e1a15099ef4d0701fdc848fe17b2fc2459708f"
+checksum = "8dc7ba03c5091a6d3612c1be1cf1bf23116cc4ee45dc3a686cbeadc3ec375abd"
 dependencies = [
  "anyhow",
  "serde",
@@ -1983,7 +1987,7 @@ dependencies = [
  "libc",
  "percent-encoding",
  "pin-project-lite",
- "socket2 0.6.4",
+ "socket2 0.5.10",
  "system-configuration 0.7.0",
  "tokio",
  "tower-service",
@@ -2881,7 +2885,7 @@ dependencies = [
  "quinn-udp",
  "rustc-hash",
  "rustls",
- "socket2 0.6.4",
+ "socket2 0.5.10",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
@@ -2919,7 +2923,7 @@ dependencies = [
  "cfg_aliases",
  "libc",
  "once_cell",
- "socket2 0.6.4",
+ "socket2 0.5.10",
  "tracing",
  "windows-sys 0.60.2",
 ]
@@ -3652,9 +3656,9 @@ checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
 
 [[package]]
 name = "sidewinder_ops"
-version = "0.9.7"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "32a71d3387c29c2f3848f59242698e90028688ebdff944efa929a981cfadc630"
+checksum = "1c709d99776753b0b3d77a4515ceb9f3956d7b77b804b2d84dda9d3d7938c087"
 dependencies = [
  "algo_ops",
  "anyhow",
@@ -3811,9 +3815,9 @@ checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 
 [[package]]
 name = "sw_identity_tls"
-version = "0.9.7"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d95b828b528d09c0ea9124e069c02c2a3f0f75e1cecd71e9905cffa77e8fbaf9"
+checksum = "e301a73f1c97c31ae2e83c2ca332afdf9d527e72ac39981daaaeb89d55ac146d"
 dependencies = [
  "algo_ops",
  "anyhow",
@@ -4788,7 +4792,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]

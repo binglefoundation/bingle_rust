@@ -196,6 +196,9 @@ pub fn client_reaches_live_relay_past_two_dead_ones() {
         log_mode: bingle_core::util::logging::LogMode::Plain,
         wait_response_timeout: Some(Duration::from_secs(20)),
         advert_ttl: None,
+        ip_family: Default::default(),
+        stun_hosts: None,
+        nat64_prefix: None,
     };
     let client = BingleApiImpl::new(&opts);
     let listening = Arc::new(AtomicBool::new(false));
