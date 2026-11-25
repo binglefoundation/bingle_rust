@@ -15,6 +15,9 @@ pub mod cli;
 pub mod cli_utils;
 /// Helpers for loading and resolving Bingle configuration (node files, app/asset ids).
 pub mod config_utils;
+/// The host's own IPv6 addresses, for telling a translated STUN-mapped address from a native one
+/// (issue #498).
+pub mod local_addrs;
 /// NAT64 prefix discovery and RFC 6052 address translation (issue #496).
 pub mod nat64;
 #[doc(hidden)]

@@ -2,7 +2,8 @@ use std::collections::HashMap;
 
 use bingle_jsi::api::types::{
     BingleMessage, Contact, ContactSource, InetSocketAddress, Keypair, KeypairStatus,
-    KeypairStatusResponse, Message, NatType, NatTypeResponse, NetworkSourceKey, VersionInfo,
+    KeypairStatusResponse, Message, NatType, NatTypeResponse, NatTypeV6, NetworkSourceKey,
+    VersionInfo,
 };
 
 #[test]
@@ -287,6 +288,49 @@ fn nat_type_variants() {
 fn nat_type_response_construction() {
     let resp = NatTypeResponse {
         nat_type: NatType::FullCone,
+        nat_type_v6: NatTypeV6::Open,
     };
     assert_eq!(resp.nat_type, NatType::FullCone);
+    assert_eq!(resp.nat_type_v6, NatTypeV6::Open);
+}
+
+/// The IPv4 `nat_type` keeps exactly its released values (issue #498): existing app builds parse
+/// these names, so IPv6 values must not appear in it. The match is exhaustive, so a new variant
+/// fails to compile here.
+#[test]
+fn nat_type_values_are_unchanged() {
+    let name = |n: &NatType| match n {
+        NatType::Unknown => "Unknown",
+        NatType::NoConnection => "NoConnection",
+        NatType::Symmetric => "Symmetric",
+        NatType::Restricted => "Restricted",
+        NatType::FullCone => "FullCone",
+    };
+    let all = [
+        NatType::Unknown,
+        NatType::NoConnection,
+        NatType::Symmetric,
+        NatType::Restricted,
+        NatType::FullCone,
+    ];
+    for n in &all {
+        assert_eq!(format!("{n:?}"), name(n));
+    }
+}
+
+/// `nat_type_v6` has the five IPv6 values the app (bingle_ux_rn #206) consumes, named as the
+/// engine reports them.
+#[test]
+fn nat_type_v6_values_match_the_engine_names() {
+    use bingle_core::engine::NatTypeV6 as CoreV6;
+    let pairs = [
+        (NatTypeV6::Unknown, CoreV6::Unknown),
+        (NatTypeV6::None, CoreV6::None),
+        (NatTypeV6::NoConnection, CoreV6::NoConnection),
+        (NatTypeV6::OpenFirewalled, CoreV6::OpenFirewalled),
+        (NatTypeV6::Open, CoreV6::Open),
+    ];
+    for (jsi, core) in &pairs {
+        assert_eq!(format!("{jsi:?}"), core.as_str());
+    }
 }

@@ -204,8 +204,11 @@ export interface KeypairStatusResponse {
   stale: boolean;
 }
 
+/** The IPv4 NAT type in `nat_type` (values unchanged) and the IPv6 reachability in `nat_type_v6`,
+ * classified independently (bingle_rust #498). Combining them into one indicator is the app's job. */
 export interface NatTypeResponse {
   nat_type: NatType;
+  nat_type_v6: NatTypeV6;
 }
 
 export interface BingleJsiConfig {
@@ -318,6 +321,21 @@ export enum NatType {
   FullCone = "FullCone",
 }
 
+/** IPv6 reachability (bingle_rust #498). Kept apart from the IPv4 `NatType`, whose `FullCone` some
+ * apps already show as "Open". */
+export enum NatTypeV6 {
+  /** Not yet determined. */
+  Unknown = "Unknown",
+  /** No IPv6 route. */
+  None = "None",
+  /** An IPv6 route, but no STUN server answered over UDP. */
+  NoConnection = "NoConnection",
+  /** No NAT, but unsolicited inbound is dropped (a stateful firewall) or not yet shown to work. */
+  OpenFirewalled = "OpenFirewalled",
+  /** No NAT and reachable unsolicited at its own address. */
+  Open = "Open",
+}
+
 // ── Callback interface ───────────────────────────────────────────────
 
 export interface MessageCallback {
@@ -329,7 +347,10 @@ export interface LogCallback {
 }
 
 export interface ListeningCallback {
-  onListening(listening: boolean, natType: string): void;
+  /** `natType` is the IPv4 NAT type ("Unknown" while not listening); `natTypeV6` the IPv6
+   * reachability (a `NatTypeV6` value). An IPv6-only change is reported with `listening`
+   * unchanged (bingle_rust #498). */
+  onListening(listening: boolean, natType: string, natTypeV6: string): void;
 }
 
 /** How far a store-and-forward Mailbox check has got (bingle_rust #447). */
@@ -497,7 +518,7 @@ export interface BingleJsiApi {
   // Events (emitted by the native bridge)
   // onMessage: { sender_id: string; sender_handle: string; message: BingleMessage }
   // onLog: { timestamp: number; level: string; message: string }
-  // onListening: { listening: boolean; nat_type: string }
+  // onListening: { listening: boolean; nat_type: string; nat_type_v6: string }
   // onMailboxChecked: { read: number }
   // onMailboxProgress: { stage: MailboxCheckStage; read: number; retry_in_secs?: number }
 

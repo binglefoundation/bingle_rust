@@ -93,7 +93,7 @@ pub fn stun_tests() -> bool {
 
         let changes = Arc::new(Mutex::new(Vec::<(StunState, Option<SocketAddr>)>::new()));
         let changes_clone = changes.clone();
-        finder.set_state_change_handler(Some(Arc::new(move |st, ep| {
+        finder.set_state_change_handler(Some(Arc::new(move |_family, st, ep| {
             changes_clone.lock().unwrap().push((st, ep));
         })));
 

@@ -57,7 +57,7 @@ class MockBingleJsiApi: BingleJsiApiProtocol {
         buildTimestamp: "2024-01-01T00:00:00Z",
         buildNumber: "1"
     )
-    var natTypeResult: NatTypeResponse = NatTypeResponse(natType: .fullCone)
+    var natTypeResult: NatTypeResponse = NatTypeResponse(natType: .fullCone, natTypeV6: NatTypeV6.unknown)
     var keypairResult: Keypair = Keypair(id: "mock-id", passphrase: "mock-passphrase")
     var contactsResult: [Contact] = []
     var messagesResult: [Message] = []

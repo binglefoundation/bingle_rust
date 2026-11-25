@@ -203,7 +203,7 @@ pub fn client_reaches_live_relay_past_two_dead_ones() {
     let client = BingleApiImpl::new(&opts);
     let listening = Arc::new(AtomicBool::new(false));
     let flag = listening.clone();
-    let handler: Arc<OnListeningHandler> = Arc::new(move |is_listening, _nat| {
+    let handler: Arc<OnListeningHandler> = Arc::new(move |is_listening, _nat, _nat6| {
         if is_listening {
             flag.store(true, Ordering::SeqCst);
         }

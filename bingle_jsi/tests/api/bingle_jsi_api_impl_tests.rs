@@ -7,7 +7,7 @@ use bingle_jsi::api::bingle_jsi_api_impl::{
 use bingle_jsi::api::callback::{ListeningCallback, MessageCallback};
 use bingle_jsi::api::error::BingleJsiError;
 use bingle_jsi::api::types::{
-    BingleJsiConfig, BingleMessage, ContactSource, KeypairStatus, NatType,
+    BingleJsiConfig, BingleMessage, ContactSource, KeypairStatus, NatType, NatTypeV6,
 };
 use bingle_local::api::bingle_local_api::BingleLocalApi;
 use bingle_local::api::bingle_local_api_impl::BingleApiLocalImpl;
@@ -341,6 +341,7 @@ fn get_nat_type_returns_unknown_initially() {
     let api = BingleJsiApiImpl::init(config_with_handle("testuser")).expect("init should succeed");
     let nat = api.get_nat_type().expect("get_nat_type should succeed");
     assert_eq!(nat.nat_type, NatType::Unknown);
+    assert_eq!(nat.nat_type_v6, NatTypeV6::Unknown);
 }
 
 // ── local API guard tests (no local) ─────────────────────────────────
@@ -1070,20 +1071,20 @@ fn set_message_callback_replaces_previous() {
 
 /// Test callback implementation that records listening state changes.
 struct RecordingListeningCallback {
-    events: Arc<Mutex<Vec<(bool, String)>>>,
+    events: Arc<Mutex<Vec<(bool, String, String)>>>,
 }
 
 impl ListeningCallback for RecordingListeningCallback {
-    fn on_listening(&self, listening: bool, nat_type: String) {
+    fn on_listening(&self, listening: bool, nat_type: String, nat_type_v6: String) {
         let mut guard = self.events.lock().unwrap();
-        guard.push((listening, nat_type));
+        guard.push((listening, nat_type, nat_type_v6));
     }
 }
 
 #[test]
 fn set_listening_callback_succeeds() {
     let api = BingleJsiApiImpl::init(config_with_handle("testuser")).expect("init should succeed");
-    let events: Arc<Mutex<Vec<(bool, String)>>> = Arc::new(Mutex::new(Vec::new()));
+    let events: Arc<Mutex<Vec<(bool, String, String)>>> = Arc::new(Mutex::new(Vec::new()));
     let cb = RecordingListeningCallback {
         events: events.clone(),
     };
@@ -1095,13 +1096,13 @@ fn set_listening_callback_succeeds() {
 fn set_listening_callback_replaces_previous() {
     let api = BingleJsiApiImpl::init(config_with_handle("testuser")).expect("init should succeed");
 
-    let events1: Arc<Mutex<Vec<(bool, String)>>> = Arc::new(Mutex::new(Vec::new()));
+    let events1: Arc<Mutex<Vec<(bool, String, String)>>> = Arc::new(Mutex::new(Vec::new()));
     let cb1 = RecordingListeningCallback {
         events: events1.clone(),
     };
     api.set_listening_callback(Box::new(cb1));
 
-    let events2: Arc<Mutex<Vec<(bool, String)>>> = Arc::new(Mutex::new(Vec::new()));
+    let events2: Arc<Mutex<Vec<(bool, String, String)>>> = Arc::new(Mutex::new(Vec::new()));
     let cb2 = RecordingListeningCallback {
         events: events2.clone(),
     };

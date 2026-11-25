@@ -18,6 +18,8 @@ use crate::messages::{DefaultPrintingHandler, from_json_str};
 use algo_ops::{AlgoChainConfig, AlgoOps};
 
 mod advert_lifecycle;
+/// IPv6 reachability classification, beside the IPv4 `NatType` (issue #498).
+pub mod nat_v6;
 mod relay_init_mutex;
 use crate::packet_transport::{DtlsReliablePacketTransport, PacketTransport};
 use crate::relay::relay_finder::{RelayFinder, RelayFinderTrait, RelayInfo};
@@ -25,6 +27,7 @@ use crate::stun::stun_endpoint_finder::StunEndpointFinder;
 use crate::stun::stun_endpoint_finder_impl::StunEndpointFinderImpl;
 use crate::turn::turn_handler::TurnHandler;
 use ed25519_dalek::SigningKey;
+pub use nat_v6::{Ipv6Triangle, NatTypeV6};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -262,8 +265,22 @@ pub struct Engine {
     nat_restricted: std::sync::atomic::AtomicBool,
     // Flag indicating we have registered our endpoint in the DDB
     registered: std::sync::atomic::AtomicBool,
-    // Current NAT type classification
+    // Current NAT type classification (IPv4)
     nat_type: std::sync::atomic::AtomicU8,
+    // IPv6 reachability, classified on its own (issue #498); a NatTypeV6 as u8.
+    nat_type_v6: std::sync::atomic::AtomicU8,
+    // The IPv6 public address, kept apart from last_public_addr_shared so a change of family is
+    // never read as a NAT rebind (issue #498).
+    last_public_addr6: Mutex<Option<SocketAddr>>,
+    // The latest IPv6 STUN state and endpoint, kept to reclassify when the triangle result or the
+    // host's addresses change.
+    stun_v6: Mutex<(crate::stun::StunState, Option<SocketAddr>)>,
+    // IPv6 triangle test outcome (#499) for last_public_addr6; reset when that address changes.
+    ipv6_triangle: Mutex<Ipv6Triangle>,
+    // The host's own IPv6 addresses (injectable for tests).
+    local_addrs: Mutex<Arc<dyn crate::util::local_addrs::LocalAddrSource>>,
+    // The listening flag last reported to the app, so an IPv6-only change can be re-reported.
+    listening: std::sync::atomic::AtomicBool,
     // Per-connection state tracked at the Engine level (keyed by NetworkEndpointKey)
     connections: Arc<Mutex<HashMap<crate::api::bingle_api::NetworkEndpointKey, ConnectionEntry>>>,
     // Pending responses map and issuer state moved from BingleApiImpl
@@ -484,12 +501,21 @@ impl Engine {
 
     /// Notify the application-level OnListening handler, if installed.
     pub fn notify_listening(&self, listening: bool) {
+        self.note_listening(listening);
         let nat = self.nat_type();
+        let nat6 = self.nat_type_v6();
         if let Ok(g) = self.on_listening_cb.lock()
             && let Some(cb) = &*g
         {
-            cb(listening, nat);
+            cb(listening, nat, nat6);
         }
+    }
+
+    /// Remember the listening flag last reported to the app (by this engine or by the API), so an
+    /// IPv6-only change can be reported with it.
+    pub(crate) fn note_listening(&self, listening: bool) {
+        self.listening
+            .store(listening, std::sync::atomic::Ordering::SeqCst);
     }
 
     /// Create a common TURN handler for both relay and client modes
@@ -677,6 +703,12 @@ impl Engine {
             nat_restricted: std::sync::atomic::AtomicBool::new(false),
             registered: std::sync::atomic::AtomicBool::new(false),
             nat_type: std::sync::atomic::AtomicU8::new(NatType::Unknown as u8),
+            nat_type_v6: std::sync::atomic::AtomicU8::new(NatTypeV6::Unknown as u8),
+            last_public_addr6: Mutex::new(None),
+            stun_v6: Mutex::new((crate::stun::StunState::None, None)),
+            ipv6_triangle: Mutex::new(Ipv6Triangle::Untested),
+            local_addrs: Mutex::new(Arc::new(crate::util::local_addrs::SystemLocalAddrs)),
+            listening: std::sync::atomic::AtomicBool::new(false),
             connections: Arc::new(Mutex::new(HashMap::new())),
             pending_responses: Arc::new(Mutex::new(HashMap::new())),
             issuer: std::sync::OnceLock::new(),
@@ -2278,6 +2310,20 @@ impl Engine {
     fn stun_consistent_process(&self, public_addr: Option<SocketAddr>) {
         tracing::info!("[Engine] on_stun_consistent: public_addr={:?}", public_addr);
 
+        // This path drives the IPv4 state. An IPv6 address belongs to the IPv6 state, and must
+        // never be compared with the IPv4 address, which would read a change of family as a NAT
+        // rebind and tear the IPv4 session down (issue #498).
+        if let Some(addr) = public_addr
+            && crate::stun::AddrFamily::of(&addr) == crate::stun::AddrFamily::V6
+        {
+            tracing::info!(
+                "[Engine] on_stun_consistent: {} is IPv6; updating the IPv6 state only",
+                addr
+            );
+            self.stun_v6_process(crate::stun::StunState::Consistent, Some(addr));
+            return;
+        }
+
         // Detect a public-address change that warrants tearing down and re-handshaking. A
         // port-randomising (symmetric) NAT flaps the mapped port on every STUN poll while the
         // public IP stays constant; reacting to each with a full reset traps the engine in an
@@ -3047,11 +3093,18 @@ impl Engine {
             })));
 
             // Wire STUN state changes into Engine handlers.
-            f.set_state_change_handler(Some(Arc::new(move |st, ep| {
+            f.set_state_change_handler(Some(Arc::new(move |family, st, ep| {
                 let Some(api) = api_weak.upgrade() else {
                     return;
                 };
                 api.with_engine(&mut |e| {
+                    if family == crate::stun::AddrFamily::V6 {
+                        e.stun_v6_process(st, ep);
+                        return;
+                    }
+                    // An IPv4 state change is also the first chance to see that the host has no
+                    // IPv6 route at all, when no IPv6 server ever answers.
+                    e.reclassify_nat_v6();
                     if st == crate::stun::stun_endpoint_finder::StunState::Consistent {
                         e.on_stun_consistent(ep);
                     } else if st == crate::stun::stun_endpoint_finder::StunState::Inconsistent {
@@ -3151,6 +3204,8 @@ impl Engine {
         self.set_nat_type(NatType::Unknown);
         self.set_last_public_addr(None);
         *self.last_registered_relay.lock().unwrap() = None;
+        self.reset_ipv6_state();
+        self.note_listening(false);
 
         tracing::info!("[Engine::stop] done {:?}:{:?}", self.issuer, last_addr);
     }
@@ -3414,6 +3469,125 @@ impl Engine {
             3 => NatType::Restricted,
             4 => NatType::FullCone,
             _ => NatType::Unknown,
+        }
+    }
+
+    /// IPv6 reachability (issue #498), independent of the IPv4 `nat_type`.
+    pub fn nat_type_v6(&self) -> NatTypeV6 {
+        use std::sync::atomic::Ordering;
+        NatTypeV6::from_u8(self.nat_type_v6.load(Ordering::SeqCst))
+    }
+
+    /// The IPv6 public address from STUN, kept apart from the IPv4 `last_public_addr`.
+    pub fn last_public_addr6(&self) -> Option<SocketAddr> {
+        match self.last_public_addr6.lock() {
+            Ok(g) => *g,
+            Err(_) => {
+                tracing::error!("[Engine] last_public_addr6 lock poisoned");
+                None
+            }
+        }
+    }
+
+    /// Record the IPv6 triangle test outcome (#499) for the current IPv6 address and reclassify.
+    /// Only a success can make IPv6 `Open`.
+    pub fn set_ipv6_triangle_result(&self, result: Ipv6Triangle) {
+        tracing::info!("[Engine] IPv6 triangle result: {:?}", result);
+        if let Ok(mut g) = self.ipv6_triangle.lock() {
+            *g = result;
+        }
+        self.reclassify_nat_v6();
+    }
+
+    /// Replace the source of the host's IPv6 addresses. Used in tests.
+    pub fn set_local_addrs_for_tests(
+        &self,
+        source: Arc<dyn crate::util::local_addrs::LocalAddrSource>,
+    ) {
+        if let Ok(mut g) = self.local_addrs.lock() {
+            *g = source;
+        }
+    }
+
+    /// Drive the IPv6 STUN handler as the finder would. Used in tests.
+    pub fn test_stun_v6_process(&self, state: crate::stun::StunState, ep: Option<SocketAddr>) {
+        self.stun_v6_process(state, ep);
+    }
+
+    /// Handle an IPv6 STUN state change: track the IPv6 public address on its own, forget the
+    /// triangle result when that address changes, and reclassify.
+    pub(crate) fn stun_v6_process(&self, state: crate::stun::StunState, ep: Option<SocketAddr>) {
+        use crate::stun::StunState;
+        tracing::info!("[Engine] IPv6 STUN state {:?} endpoint={:?}", state, ep);
+        let addr = match state {
+            StunState::Single | StunState::Consistent => ep,
+            StunState::None | StunState::Inconsistent | StunState::Blocked => None,
+        };
+        if let Ok(mut g) = self.last_public_addr6.lock()
+            && *g != addr
+        {
+            info_theme!(
+                themes::ENGINE,
+                "[Engine] last_public_addr6: {:?} -> {:?}",
+                *g,
+                addr
+            );
+            *g = addr;
+            // A triangle result is for one address; a new address has not been tested.
+            if let Ok(mut t) = self.ipv6_triangle.lock() {
+                *t = Ipv6Triangle::Untested;
+            }
+        }
+        if let Ok(mut g) = self.stun_v6.lock() {
+            *g = (state, ep);
+        }
+        self.reclassify_nat_v6();
+    }
+
+    /// Recompute the IPv6 classification and report it to the app when it changed.
+    pub(crate) fn reclassify_nat_v6(&self) {
+        use std::sync::atomic::Ordering;
+        let Ok((state, ep)) = self.stun_v6.lock().map(|g| *g) else {
+            tracing::error!("[Engine] stun_v6 lock poisoned; IPv6 state not updated");
+            return;
+        };
+        let Ok(triangle) = self.ipv6_triangle.lock().map(|g| *g) else {
+            tracing::error!("[Engine] ipv6_triangle lock poisoned; IPv6 state not updated");
+            return;
+        };
+        let Ok(source) = self.local_addrs.lock().map(|g| g.clone()) else {
+            tracing::error!("[Engine] local_addrs lock poisoned; IPv6 state not updated");
+            return;
+        };
+        let local = source.local_ipv6();
+        let new = nat_v6::classify_nat_v6(state, ep, &local, triangle);
+        let old = NatTypeV6::from_u8(self.nat_type_v6.swap(new as u8, Ordering::SeqCst));
+        if new != old {
+            tracing::info!(
+                "[Engine] nat_type_v6 {:?} -> {:?} (stun={:?} mapped={:?} triangle={:?})",
+                old,
+                new,
+                state,
+                ep,
+                triangle
+            );
+            self.notify_listening(self.listening.load(Ordering::SeqCst));
+        }
+    }
+
+    /// Forget all IPv6 state (on stop).
+    fn reset_ipv6_state(&self) {
+        use std::sync::atomic::Ordering;
+        self.nat_type_v6
+            .store(NatTypeV6::Unknown as u8, Ordering::SeqCst);
+        if let Ok(mut g) = self.last_public_addr6.lock() {
+            *g = None;
+        }
+        if let Ok(mut g) = self.stun_v6.lock() {
+            *g = (crate::stun::StunState::None, None);
+        }
+        if let Ok(mut g) = self.ipv6_triangle.lock() {
+            *g = Ipv6Triangle::Untested;
         }
     }
 

@@ -280,7 +280,8 @@ pub struct KeypairStatusResponse {
     pub stale: bool,
 }
 
-/// Detected NAT type.
+/// Detected IPv4 NAT type. IPv6 is reported separately in [`NatTypeV6`] and never folded in here,
+/// since apps already read `Open` as IPv4 full cone (issue #498).
 #[derive(uniffi::Enum, Debug, Clone, PartialEq)]
 pub enum NatType {
     Unknown,
@@ -290,10 +291,28 @@ pub enum NatType {
     FullCone,
 }
 
-/// NAT type response.
+/// IPv6 reachability, classified independently of the IPv4 [`NatType`] (issue #498).
+#[derive(uniffi::Enum, Debug, Clone, PartialEq)]
+pub enum NatTypeV6 {
+    /// Not yet determined.
+    Unknown,
+    /// No IPv6 route.
+    None,
+    /// An IPv6 route, but no STUN server answered over UDP.
+    NoConnection,
+    /// No NAT, but unsolicited inbound is dropped (a stateful firewall) or not yet shown to work:
+    /// can connect out to `Open` peers, cannot be reached directly.
+    OpenFirewalled,
+    /// No NAT and reachable unsolicited at its own address.
+    Open,
+}
+
+/// NAT type response: the IPv4 state in `nat_type` (values unchanged) and the IPv6 state in
+/// `nat_type_v6`. Combining them into one indicator is the app's job.
 #[derive(uniffi::Record, Debug, Clone)]
 pub struct NatTypeResponse {
     pub nat_type: NatType,
+    pub nat_type_v6: NatTypeV6,
 }
 
 /// Configuration for initializing the Bingle JSI API.

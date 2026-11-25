@@ -306,7 +306,7 @@ pub fn start_with_addr_notifies_listening_true() {
 
     let listening_flag = flag.clone();
     eng.set_on_listening_handler(Some(Arc::new(
-        move |listening, _nat_type: bingle_core::engine::NatType| {
+        move |listening, _nat_type: bingle_core::engine::NatType, _nat6| {
             if listening {
                 listening_flag.store(true, Ordering::SeqCst);
             }

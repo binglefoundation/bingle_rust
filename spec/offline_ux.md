@@ -29,7 +29,9 @@ expose the state the UI needs; this spec closes the loop.
   Algorand-node reachability. `forceRecheck` is accepted for API compatibility but is not needed
   (the transport state is always current).
 - **Event alternative (preferred):** subscribe with `setListeningCallback` and handle the
-  `onListening(listening: boolean, natType: string)` event. This is push-based and avoids polling.
+  `onListening(listening: boolean, natType: string, natTypeV6: string)` event. This is push-based
+  and avoids polling. `natType` is the IPv4 state; `natTypeV6` is the IPv6 reachability
+  (bingle_rust #498), which this predicate does not use.
   Treat the network as available for sending when `listening === true && natType !== "NoConnection"`
   — the same predicate `networkAvailable()` computes internally.
 

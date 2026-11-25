@@ -306,7 +306,10 @@ class BingleJsiBridge: RCTEventEmitter {
         DispatchQueue.global(qos: .userInitiated).async {
             do {
                 let resp = try api.getNatType()
-                resolve(["nat_type": self.natTypeToString(resp.natType)])
+                resolve([
+                    "nat_type": self.natTypeToString(resp.natType),
+                    "nat_type_v6": self.natTypeV6ToString(resp.natTypeV6),
+                ])
             } catch {
                 reject("BINGLE_ERROR", "\(error)", error)
             }
@@ -1360,6 +1363,17 @@ class BingleJsiBridge: RCTEventEmitter {
         }
     }
 
+    /// IPv6 reachability, reported beside the IPv4 NAT type (bingle_rust #498).
+    private func natTypeV6ToString(_ natTypeV6: NatTypeV6) -> String {
+        switch natTypeV6 {
+        case NatTypeV6.unknown: return "Unknown"
+        case NatTypeV6.none: return "None"
+        case NatTypeV6.noConnection: return "NoConnection"
+        case NatTypeV6.openFirewalled: return "OpenFirewalled"
+        case NatTypeV6.open: return "Open"
+        }
+    }
+
     /// The dictionary `keypairStatus` and `inspectPassphrase` resolve with (KeypairStatusResponse in
     /// ts/NativeBingleJsi.ts).
     private func keypairStatusToDict(_ status: KeypairStatusResponse) -> [String: Any] {
@@ -1468,8 +1482,8 @@ class MessageCallbackBridge: MessageCallback {
 /// Bridges uniffi's ListeningCallback to RCTEventEmitter events.
 ///
 /// Each `onListening` invocation sends an "onListening" event with listening
-/// state and NAT type to the JS layer via React Native's event emitter
-/// infrastructure.
+/// state, the IPv4 NAT type and the IPv6 reachability (bingle_rust #498) to the
+/// JS layer via React Native's event emitter infrastructure.
 class ListeningCallbackBridge: ListeningCallback {
     private weak var emitter: RCTEventEmitter?
 
@@ -1477,10 +1491,11 @@ class ListeningCallbackBridge: ListeningCallback {
         self.emitter = emitter
     }
 
-    func onListening(listening: Bool, natType: String) {
+    func onListening(listening: Bool, natType: String, natTypeV6: String) {
         emitter?.sendEvent(withName: "onListening", body: [
             "listening": listening,
             "nat_type": natType,
+            "nat_type_v6": natTypeV6,
         ])
     }
 }

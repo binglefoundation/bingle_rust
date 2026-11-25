@@ -84,7 +84,7 @@ pub fn blocked_then_recovery_to_consistent() {
                 }
             }
         })));
-        f.set_state_change_handler(Some(Arc::new(move |st, _ep| {
+        f.set_state_change_handler(Some(Arc::new(move |_family, st, _ep| {
             seen2.lock().unwrap().push(st);
         })));
         // search_time_ms=2000: in Blocked state requests are sent every 2s.

@@ -15,8 +15,8 @@ use crate::api::types::{
     BingleJsiConfig, BingleMessage, Contact, ContactSource, DeliveryRoute, FailureKind,
     HandleLookupMatch, HandleLookupPartialResult, InetSocketAddress, KeyStorageBackend,
     KeyStorageStatus, Keypair, KeypairStatus, KeypairStatusResponse, MailboxCheckStage, Message,
-    MessagingSettings, NatType, NatTypeResponse, NetworkSourceKey, NotifyRegisterRequest,
-    StateFileStatus, VersionInfo,
+    MessagingSettings, NatType, NatTypeResponse, NatTypeV6, NetworkSourceKey,
+    NotifyRegisterRequest, StateFileStatus, VersionInfo,
 };
 use algo_ops::error::AlgoErrorKind;
 use bingle_core::api::bingle_api::{
@@ -57,6 +57,8 @@ pub struct BingleJsiApiImpl {
     local_api: Option<Arc<Mutex<Box<dyn BingleLocalApi>>>>,
     local_file: Option<PathBuf>,
     nat_type: Arc<Mutex<String>>,
+    /// The IPv6 reachability last reported by the engine (issue #498), as its JSI name.
+    nat_type_v6: Arc<Mutex<String>>,
     message_callback: Arc<Mutex<Option<Box<dyn MessageCallback>>>>,
     listening_callback: Arc<Mutex<Option<Box<dyn ListeningCallback>>>>,
     push_registration_callback: Arc<Mutex<Option<Box<dyn PushRegistrationCallback>>>>,
@@ -953,6 +955,17 @@ fn parse_nat_type(nat: &str) -> NatType {
     }
 }
 
+/// Parse an IPv6 reachability name (`NatTypeV6::as_str`) into a NatTypeV6 enum.
+fn parse_nat_type_v6(nat: &str) -> NatTypeV6 {
+    match nat {
+        "None" => NatTypeV6::None,
+        "NoConnection" => NatTypeV6::NoConnection,
+        "OpenFirewalled" => NatTypeV6::OpenFirewalled,
+        "Open" => NatTypeV6::Open,
+        _ => NatTypeV6::Unknown,
+    }
+}
+
 fn bingle_error_to_jsi(e: BingleError) -> BingleJsiError {
     match e {
         BingleError::Algo(ae) if ae.kind == AlgoErrorKind::HostUnreachable => {
@@ -1140,6 +1153,7 @@ impl BingleJsiApiImpl {
         let api = BingleApiImpl::new(&opts);
         let messages: Arc<Mutex<Vec<JsonValue>>> = Arc::new(Mutex::new(Vec::new()));
         let nat_type: Arc<Mutex<String>> = Arc::new(Mutex::new("Unknown".to_string()));
+        let nat_type_v6: Arc<Mutex<String>> = Arc::new(Mutex::new("Unknown".to_string()));
 
         // Initialize local API if --local was provided
         let mut local_api: Option<Arc<Mutex<Box<dyn BingleLocalApi>>>> = None;
@@ -1227,6 +1241,7 @@ impl BingleJsiApiImpl {
             local_api: local_api.clone(),
             local_file: local_file.clone(),
             nat_type: nat_type.clone(),
+            nat_type_v6: nat_type_v6.clone(),
             message_callback: message_callback.clone(),
             listening_callback: listening_callback.clone(),
             push_registration_callback: Arc::new(Mutex::new(None)),
@@ -1252,36 +1267,13 @@ impl BingleJsiApiImpl {
 
         // Setup on-listening handler to update nat_type and invoke user callback
         {
-            let nat_type_for_closure = nat_type.clone();
-            let lcb = listening_callback.clone();
-            let listening_atomic = listening.clone();
-            api.access(|api_mut| {
-                let on_listening: Arc<bingle_core::api::bingle_api::OnListeningHandler> = Arc::new(
-                    move |listening_val: bool, nt: bingle_core::engine::NatType| {
-                        let type_str = if listening_val {
-                            format!("{:?}", nt)
-                        } else {
-                            "Unknown".to_string()
-                        };
-                        tracing::info!(
-                            "on_listening: listening={} nat_type={}",
-                            listening_val,
-                            type_str
-                        );
-                        listening_atomic.store(listening_val, Ordering::SeqCst);
-                        if let Ok(mut guard) = nat_type_for_closure.lock() {
-                            *guard = type_str.clone();
-                        }
-                        // Invoke user listening callback if registered
-                        if let Ok(guard) = lcb.lock()
-                            && let Some(ref callback) = *guard
-                        {
-                            callback.on_listening(listening_val, type_str);
-                        }
-                    },
-                );
-                api_mut.set_on_listening(Some(on_listening));
-            });
+            let on_listening = Self::listening_handler(
+                nat_type.clone(),
+                nat_type_v6.clone(),
+                listening.clone(),
+                listening_callback.clone(),
+            );
+            api.access(|api_mut| api_mut.set_on_listening(Some(on_listening)));
         }
 
         // Setup on-message handler to queue received messages. The handler holds a weak reference,
@@ -1382,6 +1374,47 @@ impl BingleJsiApiImpl {
         }
 
         Ok(api_instance)
+    }
+
+    /// The engine's on-listening handler: records the listening flag and both NAT states, then
+    /// tells the host. The IPv4 state reads "Unknown" while not listening, as before; the IPv6
+    /// state is passed as the engine classified it (issue #498).
+    fn listening_handler(
+        nat_type: Arc<Mutex<String>>,
+        nat_type_v6: Arc<Mutex<String>>,
+        listening: Arc<AtomicBool>,
+        listening_callback: Arc<Mutex<Option<Box<dyn ListeningCallback>>>>,
+    ) -> Arc<bingle_core::api::bingle_api::OnListeningHandler> {
+        Arc::new(
+            move |listening_val: bool,
+                  nt: bingle_core::engine::NatType,
+                  nt6: bingle_core::engine::NatTypeV6| {
+                let type_str = if listening_val {
+                    format!("{:?}", nt)
+                } else {
+                    "Unknown".to_string()
+                };
+                let type_v6_str = nt6.as_str().to_string();
+                tracing::info!(
+                    "on_listening: listening={} nat_type={} nat_type_v6={}",
+                    listening_val,
+                    type_str,
+                    type_v6_str
+                );
+                listening.store(listening_val, Ordering::SeqCst);
+                if let Ok(mut guard) = nat_type.lock() {
+                    *guard = type_str.clone();
+                }
+                if let Ok(mut guard) = nat_type_v6.lock() {
+                    *guard = type_v6_str.clone();
+                }
+                if let Ok(guard) = listening_callback.lock()
+                    && let Some(ref callback) = *guard
+                {
+                    callback.on_listening(listening_val, type_str, type_v6_str);
+                }
+            },
+        )
     }
 
     fn run_processing_loop(
@@ -1752,18 +1785,22 @@ impl BingleJsiApiImpl {
     ) -> Arc<Self> {
         let messages: Arc<Mutex<Vec<JsonValue>>> = Arc::new(Mutex::new(Vec::new()));
         let nat_type: Arc<Mutex<String>> = Arc::new(Mutex::new("Unknown".to_string()));
+        let nat_type_v6: Arc<Mutex<String>> = Arc::new(Mutex::new("Unknown".to_string()));
         let listening = Arc::new(AtomicBool::new(false));
+        let listening_callback: Arc<Mutex<Option<Box<dyn ListeningCallback>>>> =
+            Arc::new(Mutex::new(None));
         let started = Arc::new(Mutex::new(false));
         let mut opts_obj = StartOptions::new("test".to_string());
         opts_obj.dangerous_debug = true;
         let opts = Arc::new(Mutex::new(opts_obj));
 
-        let listening_atomic = listening.clone();
-        api.access(|api_mut| {
-            api_mut.set_on_listening(Some(Arc::new(move |listening_val, _nat| {
-                listening_atomic.store(listening_val, Ordering::SeqCst);
-            })));
-        });
+        let on_listening = Self::listening_handler(
+            nat_type.clone(),
+            nat_type_v6.clone(),
+            listening.clone(),
+            listening_callback.clone(),
+        );
+        api.access(|api_mut| api_mut.set_on_listening(Some(on_listening)));
 
         Arc::new(Self {
             api,
@@ -1771,8 +1808,9 @@ impl BingleJsiApiImpl {
             local_api,
             local_file: None,
             nat_type,
+            nat_type_v6,
             message_callback: Arc::new(Mutex::new(None)),
-            listening_callback: Arc::new(Mutex::new(None)),
+            listening_callback,
             push_registration_callback: Arc::new(Mutex::new(None)),
             listening,
             processing_thread: Arc::new(Mutex::new(None)),
@@ -2011,8 +2049,17 @@ impl BingleJsiApi for BingleJsiApiImpl {
             .map_err(|_| BingleJsiError::InternalError {
                 reason: "NAT type lock poisoned".to_string(),
             })?;
+        let nat_type = parse_nat_type(&guard);
+        drop(guard);
+        let guard_v6 = self
+            .nat_type_v6
+            .lock()
+            .map_err(|_| BingleJsiError::InternalError {
+                reason: "IPv6 NAT type lock poisoned".to_string(),
+            })?;
         Ok(NatTypeResponse {
-            nat_type: parse_nat_type(&guard),
+            nat_type,
+            nat_type_v6: parse_nat_type_v6(&guard_v6),
         })
     }
 

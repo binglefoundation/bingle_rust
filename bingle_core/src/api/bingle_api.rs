@@ -510,8 +510,11 @@ pub type OnConnectHandler = dyn Fn(UserId, Handle) + Send + Sync + 'static;
 /// Handler invoked when the node starts/stops listening for network messages.
 /// Parameters:
 /// - listening: true when the node is listening; false when it has stopped.
-/// - nat_type: the detected NAT type at the time of the notification.
-pub type OnListeningHandler = dyn Fn(bool, crate::engine::NatType) + Send + Sync + 'static;
+/// - nat_type: the detected IPv4 NAT type at the time of the notification.
+/// - nat_type_v6: the IPv6 reachability at that time, classified on its own (issue #498). An
+///   IPv6-only change is reported too, with the listening flag unchanged.
+pub type OnListeningHandler =
+    dyn Fn(bool, crate::engine::NatType, crate::engine::NatTypeV6) + Send + Sync + 'static;
 
 /// Sends a protocol message through the Bingle API, returning whether it was sent.
 /// Parameters:

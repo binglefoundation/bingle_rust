@@ -53,6 +53,7 @@ export {
   ContactSource,
   KeypairStatus,
   NatType,
+  NatTypeV6,
 } from "./NativeBingleJsi";
 
 /**
@@ -153,7 +154,9 @@ export const BingleJsi = BingleJsiNative as {
    *  version(). */
   getVersions(): Promise<Record<string, VersionInfo>>;
   queued(): Promise<Record<string, unknown>[]>;
-  getNatType(): Promise<{ nat_type: string }>;
+  /** `nat_type` is the IPv4 NAT type (values unchanged); `nat_type_v6` the IPv6 reachability
+   * (bingle_rust #498). */
+  getNatType(): Promise<{ nat_type: string; nat_type_v6: string }>;
   /** Generate a keypair and make it current. With the Keychain store, a different key the user
    * syncs through iCloud Keychain isn't replaced, as that removes the account from every device on
    * their Apple Account: the call rejects with a message naming SyncedKeyWouldBeReplaced and the

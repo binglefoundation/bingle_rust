@@ -28,10 +28,22 @@ impl BingleApiInternal for MockBingleApi {
         "off".to_string()
     }
     fn notify_listening(&self, listening: bool, nat_type: bingle_core::engine::NatType) {
+        self.notify_listening_both(listening, nat_type, bingle_core::engine::NatTypeV6::Unknown);
+    }
+}
+
+impl MockBingleApi {
+    /// Report listening with both the IPv4 and the IPv6 state, as the engine does (issue #498).
+    pub fn notify_listening_both(
+        &self,
+        listening: bool,
+        nat_type: bingle_core::engine::NatType,
+        nat_type_v6: bingle_core::engine::NatTypeV6,
+    ) {
         if let Ok(guard) = self.on_listening.lock()
             && let Some(handler) = guard.as_ref()
         {
-            handler(listening, nat_type);
+            handler(listening, nat_type, nat_type_v6);
         }
     }
 }
@@ -516,4 +528,65 @@ fn shared_sender_does_not_need_the_local_api_lock() {
     );
     drop(held);
     jsi.stop().unwrap();
+}
+
+/// Records every listening event the host receives.
+struct RecordingListening {
+    events: Arc<Mutex<Vec<(bool, String, String)>>>,
+}
+
+impl bingle_jsi::api::callback::ListeningCallback for RecordingListening {
+    fn on_listening(&self, listening: bool, nat_type: String, nat_type_v6: String) {
+        self.events
+            .lock()
+            .expect("events")
+            .push((listening, nat_type, nat_type_v6));
+    }
+}
+
+/// Issue #498: `onListening` and `getNatType()` carry the IPv6 state beside the unchanged IPv4
+/// state, and an IPv6 value never leaks into `nat_type`.
+#[test]
+fn listening_reports_ipv4_and_ipv6_states_separately() {
+    use bingle_core::engine::{NatType as CoreNat, NatTypeV6 as CoreV6};
+    use bingle_jsi::api::types::{NatType, NatTypeV6};
+
+    let mock_api = Arc::new(MockBingleApi {
+        progress_steps: vec![],
+        on_listening: Mutex::new(None),
+        send_fail_count: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+        payloads: Mutex::new(Vec::new()),
+        hold_sends: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+    });
+    let jsi = BingleJsiApiImpl::init_for_tests(mock_api.clone(), None);
+    let events = Arc::new(Mutex::new(Vec::new()));
+    jsi.set_listening_callback(Box::new(RecordingListening {
+        events: events.clone(),
+    }));
+
+    mock_api.notify_listening_both(true, CoreNat::Restricted, CoreV6::Open);
+    let nat = jsi.get_nat_type().expect("get_nat_type");
+    assert_eq!(nat.nat_type, NatType::Restricted);
+    assert_eq!(nat.nat_type_v6, NatTypeV6::Open);
+
+    mock_api.notify_listening_both(true, CoreNat::FullCone, CoreV6::OpenFirewalled);
+    let nat = jsi.get_nat_type().expect("get_nat_type");
+    assert_eq!(nat.nat_type, NatType::FullCone);
+    assert_eq!(nat.nat_type_v6, NatTypeV6::OpenFirewalled);
+
+    // Not listening: IPv4 reads Unknown as before; IPv6 is reported as classified.
+    mock_api.notify_listening_both(false, CoreNat::NoConnection, CoreV6::None);
+    let nat = jsi.get_nat_type().expect("get_nat_type");
+    assert_eq!(nat.nat_type, NatType::Unknown);
+    assert_eq!(nat.nat_type_v6, NatTypeV6::None);
+
+    let got = events.lock().expect("events").clone();
+    assert_eq!(
+        got,
+        vec![
+            (true, "Restricted".to_string(), "Open".to_string()),
+            (true, "FullCone".to_string(), "OpenFirewalled".to_string()),
+            (false, "Unknown".to_string(), "None".to_string()),
+        ]
+    );
 }

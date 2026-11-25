@@ -56,9 +56,13 @@ pub trait ListeningCallback: Send + Sync {
     ///
     /// Parameters:
     /// - listening: true when the engine is listening, false when it stops
-    /// - nat_type: the detected NAT type as a string
-    ///   ("Unknown", "NoConnection", "Symmetric", "Restricted", "FullCone")
-    fn on_listening(&self, listening: bool, nat_type: String);
+    /// - nat_type: the detected IPv4 NAT type as a string
+    ///   ("Unknown", "NoConnection", "Symmetric", "Restricted", "FullCone"); "Unknown" while not
+    ///   listening
+    /// - nat_type_v6: the IPv6 reachability as a string
+    ///   ("Unknown", "None", "NoConnection", "OpenFirewalled", "Open"), classified independently of
+    ///   IPv4 (issue #498). An IPv6-only change is reported with `listening` unchanged.
+    fn on_listening(&self, listening: bool, nat_type: String, nat_type_v6: String);
 }
 
 /// Callback interface for finished Mailbox checks (issue #358).

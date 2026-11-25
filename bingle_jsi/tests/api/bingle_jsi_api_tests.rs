@@ -709,7 +709,7 @@ fn stub_set_listening_callback_does_not_panic() {
         called: Arc<AtomicBool>,
     }
     impl ListeningCallback for TestListeningCallback {
-        fn on_listening(&self, _listening: bool, _nat_type: String) {
+        fn on_listening(&self, _listening: bool, _nat_type: String, _nat_type_v6: String) {
             self.called.store(true, Ordering::SeqCst);
         }
     }
