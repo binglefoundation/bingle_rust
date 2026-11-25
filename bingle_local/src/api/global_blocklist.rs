@@ -8,9 +8,14 @@
 //! - "not blocked" is cached for the refresh period (the handle cache's expiry, 600 seconds by
 //!   default), so a new block takes effect within that time;
 //! - a failed lookup is not cached, and the sender is not treated as blocked.
+//!
+//! The blocklist can be switched off and on while running (issue #531), for an app that offers it as
+//! a user setting. While it is off, callers pass every message and make no chain reads; the cache is
+//! kept, so switching it back on uses the answers already known.
 
 use std::collections::HashMap;
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 /// How long "not blocked" is trusted before the chain is asked again, by default: the handle
@@ -30,16 +35,40 @@ enum Standing {
 #[derive(Debug)]
 pub struct GlobalBlocklist {
     refresh: Duration,
+    enabled: AtomicBool,
     senders: Mutex<HashMap<String, Standing>>,
 }
 
 impl GlobalBlocklist {
-    /// An empty blocklist that trusts "not blocked" for `refresh`.
+    /// An empty blocklist, switched on, that trusts "not blocked" for `refresh`.
     pub fn new(refresh: Duration) -> Self {
+        Self::with_enabled(refresh, true)
+    }
+
+    /// An empty blocklist, switched on or off by `enabled`, that trusts "not blocked" for `refresh`.
+    pub fn with_enabled(refresh: Duration, enabled: bool) -> Self {
         Self {
             refresh,
+            enabled: AtomicBool::new(enabled),
             senders: Mutex::new(HashMap::new()),
         }
+    }
+
+    /// Whether the blocklist is switched on. While it is off, callers treat nobody as blocked and
+    /// make no chain reads.
+    pub fn is_enabled(&self) -> bool {
+        self.enabled.load(Ordering::SeqCst)
+    }
+
+    /// This blocklist while it is switched on, `None` while it is off: what a receive or send path
+    /// checks against, so a blocklist switched off is treated as no blocklist.
+    pub fn when_enabled(&self) -> Option<&Self> {
+        self.is_enabled().then_some(self)
+    }
+
+    /// Switch the blocklist on or off (issue #531). The cache is kept either way.
+    pub fn set_enabled(&self, enabled: bool) {
+        self.enabled.store(enabled, Ordering::SeqCst);
     }
 
     /// What the cache says about `address`: `Some(true)` once it has been seen blocked,

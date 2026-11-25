@@ -447,6 +447,12 @@ impl BingleJsiApi for StubApi {
         })
     }
 
+    fn set_global_block(&self, _enabled: bool) -> Result<(), BingleJsiError> {
+        Err(BingleJsiError::NotImplemented {
+            reason: "set_global_block".to_string(),
+        })
+    }
+
     fn messaging_settings(&self) -> Result<MessagingSettings, BingleJsiError> {
         Err(BingleJsiError::NotImplemented {
             reason: "messaging_settings".to_string(),

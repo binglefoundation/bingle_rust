@@ -1147,6 +1147,23 @@ class BingleJsiBridge: RCTEventEmitter {
         }
     }
 
+    /// Switch the moderator blocklist on or off on the running session (issue #531).
+    @objc
+    func setGlobalBlock(_ enabled: Bool, resolver resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {
+        guard let api = apiInstance else {
+            reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.", nil)
+            return
+        }
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                try api.setGlobalBlock(enabled: enabled)
+                resolve(nil)
+            } catch {
+                reject("BINGLE_ERROR", "\(error)", error)
+            }
+        }
+    }
+
     /// The current effective messaging settings, for the Settings screen to render live state
     /// (issue #242). Bridged to JS in issue #301.
     @objc
@@ -1163,6 +1180,7 @@ class BingleJsiBridge: RCTEventEmitter {
                     "store_and_forward_receive": settings.storeAndForwardReceive,
                     "notify_on_giveup": settings.notifyOnGiveup,
                     "notify_gateway_url": settings.notifyGatewayUrl as Any,
+                    "global_block": settings.globalBlock as Any,
                 ])
             } catch {
                 reject("BINGLE_ERROR", "\(error)", error)

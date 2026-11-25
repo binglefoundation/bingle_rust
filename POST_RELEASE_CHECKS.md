@@ -52,3 +52,18 @@ When a release finishes, `scripts/release.sh` lists the checks below for changes
   - the step 4 roll executes both change sets without a prompt, and both relays pass the start check;
   - step 5 shows `BINGLE_ROLL_CHECK` = `528` on both relays;
   - no stack has a change set left behind (`aws cloudformation list-change-sets --stack-name <stack> --region <region>` is empty).
+
+### #531 the app's moderator blocklist switch takes effect without a restart
+
+- **Merged in:** the PR for #531; first ships in the next release.
+- **Needs:** a TestNet build of the app (bingle_ux_rn) with bingle_ux_rn #213 (the Settings switch that calls `setGlobalBlock` and saves the choice), not yet built, and a second TestNet account the phone can receive messages from.
+- **Steps:**
+  1. Block the second account:
+
+         bingle_admin moderator_block <SENDER_ADDRESS> --block --accounts <TESTNET_ACCOUNTS_DIR> --node-file <TESTNET_NODE_FILE>
+
+  2. With the switch on, send a message from the second account to the phone.
+  3. Turn the switch off in Settings, without restarting, and send another message from the second account.
+  4. Restart the app and check the switch is still off; then turn it back on and send a third message.
+  5. Unblock the account (`--unblock`).
+- **Passes when:** the first and third messages never appear, the second does, and the switch keeps its setting across the restart.

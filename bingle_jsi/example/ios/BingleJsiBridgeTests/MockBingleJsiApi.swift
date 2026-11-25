@@ -306,11 +306,14 @@ class MockBingleJsiApi: BingleJsiApiProtocol {
             storeAndForwardSend: false,
             storeAndForwardReceive: false,
             notifyOnGiveup: false,
-            notifyGatewayUrl: nil
+            notifyGatewayUrl: nil,
+            globalBlock: nil
         )
     }
 
     func setStoreAndForward(send: Bool, receive: Bool) throws {}
+
+    func setGlobalBlock(enabled: Bool) throws {}
 
     func setNotify(enabled: Bool, gatewayUrl: String?) throws {}
 

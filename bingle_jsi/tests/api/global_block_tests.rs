@@ -3,8 +3,11 @@
 
 use super::message_queue_integration_tests::mock_api;
 use bingle_jsi::api::bingle_jsi_api::BingleJsiApi;
-use bingle_jsi::api::bingle_jsi_api_impl::{BingleJsiApiImpl, moderator_blocked_contacts};
+use bingle_jsi::api::bingle_jsi_api_impl::{
+    BingleJsiApiImpl, is_sender_globally_blocked, moderator_blocked_contacts,
+};
 use bingle_jsi::api::callback::MessageCallback;
+use bingle_jsi::api::error::BingleJsiError;
 use bingle_jsi::api::types::{BingleMessage, Contact, ContactSource};
 use bingle_local::api::GlobalBlocklist;
 use bingle_local::api::bingle_local_api::BingleLocalApi;
@@ -238,4 +241,88 @@ fn without_a_blocklist_no_contact_is_read() {
 
     assert!(blocked.is_empty());
     assert_eq!(reads.load(Ordering::SeqCst), 0);
+}
+
+// The blocklist switched off and on at runtime (issue #531).
+
+/// A lookup that fails the test if the chain is read.
+fn no_chain_read(_: &str) -> Result<Option<bool>, String> {
+    panic!("no chain read expected")
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+fn set_global_block_switches_dropping_off_and_on_again() {
+    let blocklist = seeded();
+    let (jsi, local, count) = jsi(Some(blocklist.clone()));
+
+    live(&jsi, BLOCKED, "spam while on");
+    assert_eq!(*count.lock().expect("count"), 0, "dropped while on");
+
+    jsi.set_global_block(false).expect("switch off");
+    live(&jsi, BLOCKED, "kept while off");
+    assert_eq!(*count.lock().expect("count"), 1, "kept while off");
+    assert_eq!(local.get_messages().expect("messages").len(), 1);
+
+    jsi.set_global_block(true).expect("switch on");
+    live(&jsi, BLOCKED, "spam on again");
+    assert_eq!(*count.lock().expect("count"), 1, "dropped again");
+    assert_eq!(local.get_messages().expect("messages").len(), 1);
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+fn messaging_settings_reports_the_blocklist_state() {
+    let (jsi, _local, _count) = jsi(Some(seeded()));
+    let settings = jsi.messaging_settings().expect("messaging_settings");
+    assert_eq!(settings.global_block, Some(true));
+
+    jsi.set_global_block(false).expect("switch off");
+    let settings = jsi.messaging_settings().expect("messaging_settings");
+    assert_eq!(settings.global_block, Some(false));
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+fn without_a_blocklist_set_global_block_is_refused() {
+    let (jsi, _local, _count) = jsi(None);
+
+    let result = jsi.set_global_block(true);
+    assert!(
+        matches!(result, Err(BingleJsiError::InvalidRequest { .. })),
+        "got {result:?}"
+    );
+    let settings = jsi.messaging_settings().expect("messaging_settings");
+    assert_eq!(settings.global_block, None);
+}
+
+#[test]
+fn a_blocklist_switched_off_reads_nothing_and_keeps_its_cache() {
+    let blocklist = seeded();
+    blocklist.set_enabled(false);
+
+    assert!(!is_sender_globally_blocked(
+        Some(&blocklist),
+        BLOCKED,
+        no_chain_read
+    ));
+    assert!(
+        moderator_blocked_contacts(Some(&blocklist), vec![contact(BLOCKED)], no_chain_read)
+            .is_empty()
+    );
+    assert_eq!(blocklist.cached(BLOCKED), Some(true), "the block is kept");
+
+    // Switched on again, the cached answers are used without a chain read.
+    blocklist.set_enabled(true);
+    assert!(is_sender_globally_blocked(
+        Some(&blocklist),
+        BLOCKED,
+        no_chain_read
+    ));
+    let blocked = moderator_blocked_contacts(
+        Some(&blocklist),
+        vec![contact(BLOCKED), contact(CLEAR)],
+        no_chain_read,
+    );
+    assert_eq!(ids(&blocked), vec![BLOCKED]);
 }
