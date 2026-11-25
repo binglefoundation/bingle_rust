@@ -208,3 +208,15 @@ pub fn triangle_test1_reports_unusable_endpoints_in_one_line() {
     );
     assert!(capture.sent.lock().unwrap().is_empty());
 }
+
+/// Issue #493: IPv6 endpoints now parse, but the triangle handlers keep refusing them until the
+/// dual-stack socket (#494) and the IPv6 triangle test (#499) reach staging. An IPv4-mapped
+/// endpoint is reduced to IPv4 and used.
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn usable_endpoint_refuses_ipv6_but_unmaps_ipv4_mapped() {
+    assert_eq!(usable_endpoint(&inet("2001:db8::1", 3478)), None);
+    assert_eq!(usable_endpoint(&inet("::1", 3478)), None);
+    let addr: SocketAddr = "192.0.2.7:3478".parse().unwrap();
+    assert_eq!(usable_endpoint(&inet("::ffff:192.0.2.7", 3478)), Some(addr));
+}

@@ -468,6 +468,16 @@ The script will:
 3. Deploy a CloudFormation stack containing a VPC, ECS Cluster, IAM roles, Secrets Manager secret, SSM parameters, and the ECS Service.
 4. Create a CloudWatch Dashboard for monitoring CPU and Memory.
 
+### IPv6 (dual stack)
+
+Both relay templates and the email gateway template are dual stack (issue #502): the VPC has an Amazon-provided IPv6 block, the subnet assigns IPv6 addresses, a `::/0` route goes through the internet gateway, and every IPv4 security group rule has an IPv6 twin. IPv4 is unchanged. IPv6 addresses are public (no NAT) and free, while a public IPv4 address costs $0.005 an hour, which is kept for IPv4-only clients.
+
+- **Express and the email gateway (Fargate, `awsvpc` networking):** a task gets an IPv6 address only when the Elastic Container Service (ECS) account setting `dualStackIPv6` is enabled in the region. It is a one-off per account and region, which the templates do not change. Check it with `aws ecs list-account-settings --effective-settings --name dualStackIPv6 --region <region>`, and if it is not `enabled`, an account administrator turns it on with `aws ecs put-account-setting-default --name dualStackIPv6 --value enabled --region <region>`.
+- **EC2 mode (host networking):** the container shares the instance's network interface, which gets its IPv6 address from the subnet when the instance launches. No account setting is needed, but an instance launched before the stack became dual stack has no IPv6 address until it is replaced: `aws autoscaling start-instance-refresh --auto-scaling-group-name <asg> --region <region>` (the relay is down while the single instance is replaced).
+- **Existing stacks** become dual stack on their next deploy, full or `--redeploy-only` (and so on the next `scripts/roll_relays.sh`), since a redeploy now applies the checked-out template (#528). The networking changes are outside a roll's expected changes, so the roll shows them and asks before executing, unless `--yes`.
+- **Address lifecycle:** a task's IPv6 address belongs to its network interface for the task's lifetime and changes only when the task is replaced, the same lifecycle as the relay's on-chain static endpoint (issue #500): published at start and cleared on SIGTERM. The relay containers' `StopTimeout` is 120 seconds, far longer than the 3-5 seconds the clear transaction takes to confirm, and the service stops the old task before it starts the new one. So no IPv6 Elastic IP or load balancer is needed.
+- `scripts/docker_start.sh` logs the external IPv6 address it detects; publishing it next to the IPv4 address is issue #500. The relay listens on IPv6 once the dual-stack socket (issue #494) is in its build.
+
 ### Redeploying after a change
 
 If you have made changes to the code and want to redeploy the relay:
@@ -478,11 +488,17 @@ If you have made changes to the code and want to redeploy the relay:
    ```
    The stack references the pushed image by its digest, so any rebuilt image (even under an unchanged `.build_number`) is a change that CloudFormation deploys. If CloudFormation does not redeploy the service, the script forces a new ECS deployment. It reports success only once the service is running the pushed image.
 
-2. **Image-only redeploy** (updates only the stack's image, keeping the template and every other parameter):
+2. **Redeploy** (applies the checked-out template and the new image, keeping every other parameter's value):
    ```bash
    bash aws/deploy_relay.sh --handle "my-relay" --redeploy-only
    ```
-   Use this when only the code changed. The passphrase is not needed: it stays in the stack's Secrets Manager secret.
+   The passphrase is not needed: it stays in the stack's Secrets Manager secret. The template is the one the stack was made from (`aws/relay_stack.yaml` for an ec2 stack, which has an `InstanceType` parameter, otherwise `aws/relay_express.yaml`). The update goes through a CloudFormation change set (`aws/lib/changeset.sh`, issue #528):
+   - its resource changes are printed first;
+   - it runs without asking when it only replaces the task definition and updates the service (a new image, or a task definition change such as a new environment variable);
+   - anything else (IAM, networking or security groups, another replacement, an added or removed resource) asks y/N first; `--yes` runs it without asking;
+   - a template parameter the stack lacks takes its default, and one with no default stops the redeploy (do a full deploy);
+   - an empty change set (same image, same template) changes nothing, and the service is restarted on its image, so a redeploy always restarts the relay once;
+   - `--dry-run` creates and prints the change set, then deletes it, without building, pushing or changing anything.
 
 Either form builds the image first. Add `--no-build` to deploy an image already built as `bingle-relay:<tag>` (with `scripts/build_cli_image.sh --platform linux/arm64 --tag bingle-relay:<tag>`), as `scripts/roll_relays.sh` does.
 
@@ -501,7 +517,7 @@ scripts/roll_relays.sh
 - **TestNet** rolls the commit checked out, which must be on `origin/staging` (normally its head). **MainNet** rolls only `origin/deployed`, and only when its `vX.Y.Z` tag names it. The image is tagged `X.Y.Z-<commit>` on TestNet and `X.Y.Z` on MainNet.
 - Before changing anything it refuses an AWS account other than the inventory's `ACCOUNT_ID`, an inventory for another network, and a stack whose `Handle` or `NodeFile` differs from the inventory.
 - The relay image is built once, as `bingle-relay:<tag>`. Every relay runs the same image, since its handle and passphrase come from its stack.
-- Relays roll one at a time, in inventory order, with `deploy_relay.sh --redeploy-only --no-build`, which pushes and deploys that image without rebuilding it. Each must then log a start of this commit's build (`Bingle CLI starting ... (git <sha>`) within `START_TIMEOUT` seconds (300), and no `RELAY STARTUP ABORTED`. The first failure stops the roll and the remaining relays keep their old image.
+- Relays roll one at a time, in inventory order, with `deploy_relay.sh --redeploy-only --no-build`, which pushes and deploys that image without rebuilding it. Each redeploy also applies the checked-out template through a change set (see "Redeploying after a change" above, issue #528), so template changes ship with the roll. A change set outside the expected task definition and service update stops at a y/N prompt for that stack, and a refusal stops the roll as a failure would; `--yes` answers yes for every stack. The roll also refuses a stack whose template (ec2 or express) differs from the inventory's mode. `--dry-run` shows each stack's change set and deletes it. Each must then log a start of this commit's build (`Bingle CLI starting ... (git <sha>`) within `START_TIMEOUT` seconds (300), and no `RELAY STARTUP ABORTED`. The first failure stops the roll and the remaining relays keep their old image.
 - **The email gateway (MainNet):** an inventory may also have `GATEWAY=<gateway stack> <relay stack> <region>` lines (issue #489). After every relay has rolled, the gateway image is built once, as `bingle-gateway:<tag>`, and each gateway is deployed with `deploy_gateway.sh --redeploy-only --no-build`, which keeps its recipient, sender and other settings. It must then log a start of this commit's build in `/bingle/gateway/<stack>`. A failed gateway fails the roll; the relays keep the new image. A `GATEWAY` line in a TestNet inventory is refused, since there is no TestNet gateway.
 - `--check-relays <ACCOUNT>` also runs `bingle_cli checkrelays` afterwards, as the account file `<ACCOUNT>.json` in `BINGLE_ACCOUNTS_DIR`.
 - The roll is recorded as a GitHub deployment in the `testnet` or `mainnet` environment (commit, version, image tag, relay and gateway counts and outcome; no AWS account, stack or handle, as the repository is public). The release checks the `testnet` record. `BINGLE_NO_RECORD=1` skips it.

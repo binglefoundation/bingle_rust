@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 pub mod advert_record;
 pub mod client;
 
-pub use advert_record::{AdvertRecord, InetSocketAddress};
+pub use advert_record::{AdvertRecord, InetSocketAddress, canonical_ip, is_advertisable_ipv6};
 pub use client::{DdbClient, DdbClientImpl, NullDdbClient};
 
 /// DDB backend trait: minimal CRUD required by issue

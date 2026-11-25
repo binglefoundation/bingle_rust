@@ -180,6 +180,9 @@ RCT_EXTERN_METHOD(getContacts:(RCTPromiseResolveBlock)resolve
 RCT_EXTERN_METHOD(getBlockedContacts:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
+RCT_EXTERN_METHOD(getModeratorBlockedContacts:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+
 RCT_EXTERN_METHOD(addMessage:(NSString *)senderHandle
                   recipientHandles:(NSArray *)recipientHandles
                   timestamp:(double)timestamp
@@ -215,6 +218,10 @@ RCT_EXTERN_METHOD(setStoreAndForward:(BOOL)send
 
 RCT_EXTERN_METHOD(setNotify:(BOOL)enabled
                   gatewayUrl:(nullable NSString *)gatewayUrl
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+
+RCT_EXTERN_METHOD(setGlobalBlock:(BOOL)enabled
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 

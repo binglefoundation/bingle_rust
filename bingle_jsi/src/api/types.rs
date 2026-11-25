@@ -109,7 +109,8 @@ pub struct Contact {
     pub fields: HashMap<String, String>,
 }
 
-/// The runtime-adjustable messaging settings — store-and-forward gates + give-up notify — returned by
+/// The runtime-adjustable messaging settings — store-and-forward gates, give-up notify and the
+/// moderator blocklist — returned by
 /// `messagingSettings()` so a Settings screen can render live state (epic #200, story #242). Mirrors
 /// `bingle_local::api::MessagingSettings`. The Sidewinder endpoint is discovered on-chain from the
 /// init-time app id, so it is not represented here.
@@ -123,15 +124,20 @@ pub struct MessagingSettings {
     pub notify_on_giveup: bool,
     /// The notify gateway base URL; `null` leaves the nudge dormant even when enabled.
     pub notify_gateway_url: Option<String>,
+    /// Whether the moderator blocklist is switched on (issue #531); `null` when `init` built none
+    /// (`enable_global_block` not set), so `setGlobalBlock` is unavailable.
+    pub global_block: Option<bool>,
 }
 
-impl From<bingle_local::api::MessagingSettings> for MessagingSettings {
-    fn from(s: bingle_local::api::MessagingSettings) -> Self {
+impl MessagingSettings {
+    /// The local store's settings, plus the moderator blocklist's state, which the JSI owns.
+    pub fn from_local(s: bingle_local::api::MessagingSettings, global_block: Option<bool>) -> Self {
         Self {
             store_and_forward_send: s.store_and_forward_send,
             store_and_forward_receive: s.store_and_forward_receive,
             notify_on_giveup: s.notify_on_giveup,
             notify_gateway_url: s.notify_gateway_url,
+            global_block,
         }
     }
 }
@@ -397,7 +403,9 @@ pub struct BingleJsiConfig {
     /// Honour the global blocklist (issue #95, App Store guideline 1.2): drop received messages, live
     /// or from the Mailbox, whose sender a moderator has blocked on-chain (the `blocked_user` bit,
     /// #490). A block is remembered for good; "not blocked" is checked again after
-    /// `handle_cache_expiry_secs` (600 by default). `null` defaults to `false` (off).
+    /// `handle_cache_expiry_secs` (600 by default). `true` or `false` builds the blocklist switched
+    /// on or off, and `setGlobalBlock` can change it later (issue #531). `null` builds none: nothing
+    /// is blocked, no chain reads are made, and `setGlobalBlock` fails.
     pub enable_global_block: Option<bool>,
     /// IP address families the node's UDP socket uses (issue #494): `"auto"`, `"v4"` or `"v6"`. A
     /// developer setting, not a user one: it reproduces single-stack problems and can switch IPv6

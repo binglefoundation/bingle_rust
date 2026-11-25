@@ -21,6 +21,8 @@ pub mod chat_send;
 pub mod chat_state;
 #[path = "checkrelays.rs"]
 pub mod checkrelays;
+#[path = "container_start.rs"]
+pub mod container_start;
 #[path = "echo_mode.rs"]
 pub mod echo_mode;
 #[path = "gateway_start.rs"]

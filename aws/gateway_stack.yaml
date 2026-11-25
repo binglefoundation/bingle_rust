@@ -60,7 +60,9 @@ Conditions:
 Resources:
   # Network: inbound UDP is open so peers reach logclient directly over DTLS, rather than through a
   # relay. It binds one ephemeral port, which Fargate's public IP maps one to one, so the whole
-  # ephemeral range is opened; nothing else in the task listens.
+  # ephemeral range is opened; nothing else in the task listens. Both families (#502): the relay
+  # stack's subnet is dual stack, so the task's network interface also has a public IPv6 address
+  # (with the ECS account setting dualStackIPv6, see DEVELOPER.md).
   GatewaySecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
@@ -71,6 +73,17 @@ Resources:
           FromPort: 1024
           ToPort: 65535
           CidrIp: 0.0.0.0/0
+        - IpProtocol: udp
+          FromPort: 1024
+          ToPort: 65535
+          CidrIpv6: ::/0
+      # A new security group allows all outbound IPv4 only; listing the egress rules replaces
+      # that default, so the IPv4 rule is restated next to the IPv6 one.
+      SecurityGroupEgress:
+        - IpProtocol: '-1'
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: '-1'
+          CidrIpv6: ::/0
       Tags:
         - Key: Name
           Value: !Sub "${AWS::StackName}-task"

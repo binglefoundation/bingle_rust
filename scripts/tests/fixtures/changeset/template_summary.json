@@ -1,0 +1,34 @@
+{
+  "Parameters": [
+    {
+      "ParameterKey": "ImageUri",
+      "ParameterType": "String",
+      "NoEcho": false
+    },
+    {
+      "ParameterKey": "Handle",
+      "ParameterType": "String",
+      "NoEcho": false
+    },
+    {
+      "ParameterKey": "Passphrase",
+      "ParameterType": "String",
+      "NoEcho": true
+    },
+    {
+      "ParameterKey": "NatMode",
+      "DefaultValue": "Direct",
+      "ParameterType": "String",
+      "NoEcho": false
+    },
+    {
+      "ParameterKey": "NewSetting",
+      "DefaultValue": "1",
+      "ParameterType": "String",
+      "NoEcho": false
+    }
+  ],
+  "Capabilities": [
+    "CAPABILITY_IAM"
+  ]
+}

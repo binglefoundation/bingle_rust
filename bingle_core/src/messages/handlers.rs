@@ -15,8 +15,14 @@ pub const TRIANGLE_TEST_1_DELAY: std::time::Duration = std::time::Duration::from
 /// can't be used. Endpoints in relay messages come from the network, so a bad one must never panic
 /// the handler. Doesn't log: the caller reports once per message, so a message carrying many bad
 /// endpoints can't multiply log volume.
+///
+/// IPv6 endpoints parse since issue #493, but are still refused here: the triangle test isn't
+/// IPv6-aware until bingle_rust #499, and this node may run with `ip_family` v4 (bingle_rust #494).
+/// An IPv4-mapped IPv6 endpoint is reduced to IPv4 and used.
 pub fn usable_endpoint(endpoint: &InetSocketAddress) -> Option<std::net::SocketAddr> {
-    std::net::SocketAddr::try_from(endpoint.clone()).ok()
+    std::net::SocketAddr::try_from(endpoint.clone())
+        .ok()
+        .filter(|addr| addr.is_ipv4())
 }
 
 /// The usable endpoints in `endpoints`, in order, skipping any that `usable_endpoint` rejects.

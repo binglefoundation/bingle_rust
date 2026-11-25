@@ -1,57 +1,88 @@
+//! InetSocketAddress IPv6 parsing and formatting (issue #493).
+
 use bingle_core::ddb::InetSocketAddress;
 use std::convert::TryFrom;
 use std::net::SocketAddr;
 use std::str::FromStr;
 
-#[test]
-#[cfg(not(target_os = "ios"))]
-fn inet_socket_address_from_str_rejects_ipv6() {
-    // IPv6 address
-    let s = "[::1]:4433";
-    let res = InetSocketAddress::from_str(s);
-
-    // BEFORE FIX: res is Ok(...)
-    // AFTER FIX: res should be Err(...)
-    assert!(
-        res.is_err(),
-        "InetSocketAddress::from_str should reject IPv6: {}",
-        s
-    );
+fn inet(host: &str, port: u16) -> InetSocketAddress {
+    InetSocketAddress {
+        host: host.to_string(),
+        port,
+    }
 }
 
 #[test]
 #[cfg(not(target_os = "ios"))]
-fn inet_socket_address_try_from_rejects_ipv6() {
-    // If we have brackets, parse() might succeed and return an IPv6 SocketAddr
-    let isa = InetSocketAddress {
-        host: "[::1]".to_string(),
-        port: 4433,
-    };
-    let res = SocketAddr::try_from(isa);
-
-    // BEFORE FIX: res might be Ok if host has brackets
-    // AFTER FIX: res should be Err
-    assert!(
-        res.is_err(),
-        "SocketAddr::try_from(InetSocketAddress) should reject IPv6"
-    );
+fn inet_socket_address_bracketed_ipv6_round_trips() {
+    let parsed = InetSocketAddress::from_str("[2001:db8::1]:3478").expect("bracketed IPv6 parses");
+    assert_eq!(parsed, inet("2001:db8::1", 3478));
+    assert_eq!(parsed.to_string(), "[2001:db8::1]:3478");
+    let addr = SocketAddr::try_from(parsed.clone()).expect("converts to SocketAddr");
+    assert_eq!(addr, "[2001:db8::1]:3478".parse::<SocketAddr>().unwrap());
+    assert_eq!(InetSocketAddress::from(addr), parsed);
 }
 
 #[test]
 #[cfg(not(target_os = "ios"))]
-fn inet_socket_address_accepts_ipv4() {
-    let s = "1.2.3.4:4433";
-    let res = InetSocketAddress::from_str(s);
-    assert!(
-        res.is_ok(),
-        "InetSocketAddress::from_str should accept IPv4: {}",
-        s
+fn inet_socket_address_unbracketed_ipv6_host_parses() {
+    // The pre-#493 Display wrote an IPv6 host without brackets; the port is after the last colon.
+    let parsed = InetSocketAddress::from_str("2001:db8::1:3478").expect("unbracketed IPv6 parses");
+    assert_eq!(parsed, inet("2001:db8::1", 3478));
+    assert_eq!(parsed.to_string(), "[2001:db8::1]:3478");
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+fn inet_socket_address_ipv4_round_trips() {
+    let parsed = InetSocketAddress::from_str("1.2.3.4:4433").expect("IPv4 parses");
+    assert_eq!(parsed, inet("1.2.3.4", 4433));
+    assert_eq!(parsed.to_string(), "1.2.3.4:4433");
+    let addr = SocketAddr::try_from(parsed).expect("converts to SocketAddr");
+    assert!(addr.is_ipv4());
+    assert_eq!(addr, "1.2.3.4:4433".parse::<SocketAddr>().unwrap());
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+fn inet_socket_address_try_from_accepts_ipv6_host_with_or_without_brackets() {
+    let want: SocketAddr = "[::1]:4433".parse().unwrap();
+    assert_eq!(SocketAddr::try_from(inet("::1", 4433)), Ok(want));
+    assert_eq!(SocketAddr::try_from(inet("[::1]", 4433)), Ok(want));
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+fn inet_socket_address_ipv4_mapped_canonicalises_to_ipv4() {
+    let want: SocketAddr = "192.0.2.7:3478".parse().unwrap();
+    assert_eq!(
+        SocketAddr::try_from(inet("::ffff:192.0.2.7", 3478)),
+        Ok(want)
     );
+    let parsed = InetSocketAddress::from_str("[::ffff:192.0.2.7]:3478").expect("mapped parses");
+    assert_eq!(parsed, inet("192.0.2.7", 3478));
+    let mapped: SocketAddr = "[::ffff:192.0.2.7]:3478".parse().unwrap();
+    assert_eq!(InetSocketAddress::from(mapped), inet("192.0.2.7", 3478));
+}
 
-    let isa = res.unwrap();
-    assert_eq!(isa.host, "1.2.3.4");
-    assert_eq!(isa.port, 4433);
-
-    let sa = SocketAddr::try_from(isa).expect("should convert back to SocketAddr");
-    assert!(sa.is_ipv4());
+#[test]
+#[cfg(not(target_os = "ios"))]
+fn inet_socket_address_rejects_non_ip_and_malformed() {
+    for text in [
+        "relay.example.com:3478",
+        "[1.2.3.4]:3478",
+        "[2001:db8::1]",
+        "2001:db8::1",
+        "1.2.3.4",
+        "[2001:db8::1]:99999",
+        "",
+    ] {
+        assert!(
+            InetSocketAddress::from_str(text).is_err(),
+            "should reject {:?}",
+            text
+        );
+    }
+    assert!(SocketAddr::try_from(inet("relay.example.com", 3478)).is_err());
+    assert!(SocketAddr::try_from(inet("[1.2.3.4]", 3478)).is_err());
 }

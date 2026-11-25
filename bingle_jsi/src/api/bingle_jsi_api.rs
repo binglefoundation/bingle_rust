@@ -343,6 +343,12 @@ pub trait BingleJsiApi: Send + Sync {
     /// Get the list of blocked contacts.
     fn get_blocked_contacts(&self) -> Result<Vec<Contact>, BingleJsiError>;
 
+    /// Get the contacts a moderator has blocked on-chain (issue #533), so the app can hide their
+    /// stored messages as it does for contacts the user blocked. Answers come from the global
+    /// blocklist's cache, and a contact it has no current answer for is read from the chain. Empty
+    /// when the global blocklist is off (`enable_global_block` not set, or switched off).
+    fn get_moderator_blocked_contacts(&self) -> Result<Vec<Contact>, BingleJsiError>;
+
     /// Add a message to the local store.
     fn add_message(
         &self,
@@ -407,8 +413,15 @@ pub trait BingleJsiApi: Send + Sync {
     /// effect immediately without a re-init. Errors if local mode is not enabled.
     fn set_notify(&self, enabled: bool, gateway_url: Option<String>) -> Result<(), BingleJsiError>;
 
-    /// The current effective messaging settings (store-and-forward gates + notify), so the Settings
-    /// screen can render live state. Errors if local mode is not enabled.
+    /// Switch the moderator blocklist (issue #95) on or off on the **running** session (issue #531),
+    /// so an app can offer it as a user setting. While it is off, messages from a sender a moderator
+    /// blocked are kept, live and from the Mailbox, and no chain reads are made for it; switching it
+    /// on again uses the answers already cached. Fails with `InvalidRequest` when `init` built no
+    /// blocklist (`enable_global_block` not set).
+    fn set_global_block(&self, enabled: bool) -> Result<(), BingleJsiError>;
+
+    /// The current effective messaging settings (store-and-forward gates, notify and the moderator
+    /// blocklist), so the Settings screen can render live state. Errors if local mode is not enabled.
     fn messaging_settings(&self) -> Result<MessagingSettings, BingleJsiError>;
 
     /// Save all local state to a JSON file.

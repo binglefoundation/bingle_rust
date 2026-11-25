@@ -12,6 +12,7 @@ set -euo pipefail
 #   EXTRA_ARGS  - any extra args to pass to the CLI
 #   STUN_FILE   - path to STUN servers file (default /app/stunservers.txt)
 #   NODE_FILE   - path to node configuration JSON (default /app/nodely_staging_testnet_node.json)
+#   BINGLE_WEBSERVER - path of the bingle_webserver binary (default /app/bingle_webserver), for tests
 
 : "${PASSPHRASE:?Environment variable PASSPHRASE must be set}"
 : "${HANDLE:?Environment variable HANDLE must be set}"
@@ -20,8 +21,9 @@ PORT=${PORT:-12121}
 ADDRESS=${ADDRESS:-0.0.0.0}
 STUN_FILE=${STUN_FILE:-/app/stunservers.txt}
 NODE_FILE=${NODE_FILE:-/app/nodely_staging_testnet_node.json}
+BINGLE_WEBSERVER=${BINGLE_WEBSERVER:-/app/bingle_webserver}
 
-CMD=("/app/bingle_webserver" \
+CMD=("$BINGLE_WEBSERVER" \
   "--port" "$PORT" \
   "--address" "$ADDRESS" \
   "--handle" "$HANDLE" \
@@ -78,7 +80,20 @@ if [[ -n "${EXTRA_ARGS:-}" ]]; then
   CMD+=("${EXTRA_ARR[@]}")
 fi
 
-echo "Starting webserver: ${CMD[*]}"
+# Log the command with the value after --passphrase replaced, so the recovery phrase never
+# reaches the container log.
+SHOWN=()
+HIDE_NEXT=0
+for arg in "${CMD[@]}"; do
+  if [[ $HIDE_NEXT -eq 1 ]]; then
+    SHOWN+=("<set>")
+    HIDE_NEXT=0
+  else
+    SHOWN+=("$arg")
+    [[ "$arg" == "--passphrase" ]] && HIDE_NEXT=1
+  fi
+done
+echo "Starting webserver: ${SHOWN[*]}"
 
 if [[ "${MEASURE_MEMORY:-0}" == "1" ]]; then
   # Start a periodic background reporter to ensure we get a peak value 

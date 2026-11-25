@@ -162,6 +162,10 @@ class MockBingleJsiApi: BingleJsiApiProtocol {
         return []
     }
 
+    func getModeratorBlockedContacts() throws -> [Contact] {
+        return []
+    }
+
     func addMessage(senderHandle: String, recipientHandles: [String], timestamp: Int64, text: String, cipherSuite: String?) throws {}
 
     func getMessages() throws -> [Message] {
@@ -302,11 +306,14 @@ class MockBingleJsiApi: BingleJsiApiProtocol {
             storeAndForwardSend: false,
             storeAndForwardReceive: false,
             notifyOnGiveup: false,
-            notifyGatewayUrl: nil
+            notifyGatewayUrl: nil,
+            globalBlock: nil
         )
     }
 
     func setStoreAndForward(send: Bool, receive: Bool) throws {}
+
+    func setGlobalBlock(enabled: Bool) throws {}
 
     func setNotify(enabled: Bool, gatewayUrl: String?) throws {}
 

@@ -298,7 +298,8 @@ fn notify_mailbox_message(
 
 /// Whether a moderator has blocked `sender` (an Algorand address) on-chain, so its live message is
 /// dropped (issue #95). `lookup` reads the sender's `blocked_user` bit when `blocklist` has no
-/// current answer. Without a blocklist (the feature off), nothing is blocked.
+/// current answer. Without a blocklist, or with it switched off (issue #531), nothing is blocked and
+/// the chain is not read.
 pub fn is_sender_globally_blocked<F>(
     blocklist: Option<&GlobalBlocklist>,
     sender: &str,
@@ -307,7 +308,49 @@ pub fn is_sender_globally_blocked<F>(
 where
     F: FnOnce(&str) -> Result<Option<bool>, String>,
 {
-    blocklist.is_some_and(|blocklist| blocklist.is_blocked(sender, lookup))
+    blocklist
+        .and_then(GlobalBlocklist::when_enabled)
+        .is_some_and(|blocklist| blocklist.is_blocked(sender, lookup))
+}
+
+/// How many contacts [`moderator_blocked_contacts`] reads from the chain at once (issue #533).
+const MODERATOR_BLOCK_READS_AT_ONCE: usize = 4;
+
+/// The `contacts` a moderator has blocked on-chain (issue #533). `blocklist` answers from its cache,
+/// and `lookup` reads the `blocked_user` bit of each contact it has no current answer for, up to
+/// [`MODERATOR_BLOCK_READS_AT_ONCE`] at a time, recording the result. A contact whose read fails is
+/// not treated as blocked. Without a blocklist, or with it switched off (issue #531), nobody is
+/// blocked.
+pub fn moderator_blocked_contacts<F>(
+    blocklist: Option<&GlobalBlocklist>,
+    contacts: Vec<Contact>,
+    lookup: F,
+) -> Vec<Contact>
+where
+    F: Fn(&str) -> Result<Option<bool>, String> + Sync,
+{
+    let Some(blocklist) = blocklist.and_then(GlobalBlocklist::when_enabled) else {
+        return Vec::new();
+    };
+    let mut unknown: Vec<&str> = contacts
+        .iter()
+        .map(|c| c.id.as_str())
+        .filter(|id| blocklist.cached(id).is_none())
+        .collect();
+    unknown.sort_unstable();
+    unknown.dedup();
+    for batch in unknown.chunks(MODERATOR_BLOCK_READS_AT_ONCE) {
+        std::thread::scope(|scope| {
+            for id in batch {
+                let lookup = &lookup;
+                scope.spawn(move || blocklist.is_blocked(id, |address| lookup(address)));
+            }
+        });
+    }
+    contacts
+        .into_iter()
+        .filter(|c| blocklist.cached(&c.id) == Some(true))
+        .collect()
 }
 
 /// Tell the shared pending-message sender, if running, that a peer (by id and/or handle; empty ones
@@ -1110,10 +1153,12 @@ impl BingleJsiApiImpl {
             .handle_cache_expiry_secs
             .map(std::time::Duration::from_secs);
         // Honour the global blocklist (issue #95), checking "not blocked" again on the handle
-        // cache's cadence.
-        let global_blocklist = config.enable_global_block.unwrap_or(false).then(|| {
-            Arc::new(GlobalBlocklist::new(
+        // cache's cadence. Any setting builds it, switched on or off, so `set_global_block` can
+        // change it later (issue #531); none builds no blocklist and makes no chain reads.
+        let global_blocklist = config.enable_global_block.map(|enabled| {
+            Arc::new(GlobalBlocklist::with_enabled(
                 handle_cache_expiry.unwrap_or(DEFAULT_GLOBAL_BLOCK_REFRESH),
+                enabled,
             ))
         });
 
@@ -2527,9 +2572,26 @@ impl BingleJsiApi for BingleJsiApiImpl {
         Ok(())
     }
 
+    fn set_global_block(&self, enabled: bool) -> Result<(), BingleJsiError> {
+        // The blocklist is shared with the local store's Mailbox path, so one switch covers live and
+        // Mailbox messages; its cache is kept (issue #531).
+        let Some(blocklist) = self.global_blocklist.as_deref() else {
+            return Err(BingleJsiError::InvalidRequest {
+                reason: "the global blocklist is not available: init was called without enable_global_block".to_string(),
+            });
+        };
+        blocklist.set_enabled(enabled);
+        Ok(())
+    }
+
     fn messaging_settings(&self) -> Result<MessagingSettings, BingleJsiError> {
         let guard = local_api_guard(&self.local_api)?;
-        Ok(guard.messaging_settings().into())
+        Ok(MessagingSettings::from_local(
+            guard.messaging_settings(),
+            self.global_blocklist
+                .as_deref()
+                .map(GlobalBlocklist::is_enabled),
+        ))
     }
 
     fn get_contacts(&self) -> Result<Vec<Contact>, BingleJsiError> {
@@ -2556,6 +2618,16 @@ impl BingleJsiApi for BingleJsiApiImpl {
                 fields: c.fields,
             })
             .collect())
+    }
+
+    fn get_moderator_blocked_contacts(&self) -> Result<Vec<Contact>, BingleJsiError> {
+        // The contact list is read first, so the store's lock isn't held during chain reads.
+        let contacts = self.get_contacts()?;
+        Ok(moderator_blocked_contacts(
+            self.global_blocklist.as_deref(),
+            contacts,
+            |address| self.read_blocked_user(address),
+        ))
     }
 
     fn add_message(
