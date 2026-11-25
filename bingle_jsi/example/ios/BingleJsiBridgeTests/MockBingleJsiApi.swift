@@ -162,6 +162,10 @@ class MockBingleJsiApi: BingleJsiApiProtocol {
         return []
     }
 
+    func getModeratorBlockedContacts() throws -> [Contact] {
+        return []
+    }
+
     func addMessage(senderHandle: String, recipientHandles: [String], timestamp: Int64, text: String, cipherSuite: String?) throws {}
 
     func getMessages() throws -> [Message] {

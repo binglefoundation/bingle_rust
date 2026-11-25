@@ -440,6 +440,9 @@ export interface BingleJsiApi {
   isBlocked(id: string): boolean;
   getContacts(): Contact[];
   getBlockedContacts(): Contact[];
+  /** Contacts a moderator has blocked on-chain (issue #533); empty when the global blocklist is
+   * off. Hide their stored messages as for getBlockedContacts. */
+  getModeratorBlockedContacts(): Contact[];
   addMessage(
     senderHandle: string,
     recipientHandles: string[],

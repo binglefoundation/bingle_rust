@@ -180,6 +180,9 @@ RCT_EXTERN_METHOD(getContacts:(RCTPromiseResolveBlock)resolve
 RCT_EXTERN_METHOD(getBlockedContacts:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
+RCT_EXTERN_METHOD(getModeratorBlockedContacts:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+
 RCT_EXTERN_METHOD(addMessage:(NSString *)senderHandle
                   recipientHandles:(NSArray *)recipientHandles
                   timestamp:(double)timestamp

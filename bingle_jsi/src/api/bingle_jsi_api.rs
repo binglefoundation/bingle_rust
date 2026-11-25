@@ -343,6 +343,12 @@ pub trait BingleJsiApi: Send + Sync {
     /// Get the list of blocked contacts.
     fn get_blocked_contacts(&self) -> Result<Vec<Contact>, BingleJsiError>;
 
+    /// Get the contacts a moderator has blocked on-chain (issue #533), so the app can hide their
+    /// stored messages as it does for contacts the user blocked. Answers come from the global
+    /// blocklist's cache, and a contact it has no current answer for is read from the chain. Empty
+    /// when the global blocklist is off (`enable_global_block` not set).
+    fn get_moderator_blocked_contacts(&self) -> Result<Vec<Contact>, BingleJsiError>;
+
     /// Add a message to the local store.
     fn add_message(
         &self,

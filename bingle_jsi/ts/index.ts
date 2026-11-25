@@ -301,6 +301,9 @@ export const BingleJsi = BingleJsiNative as {
   getBlockedContacts(): Promise<
     { handle: string; id: string; fields: Record<string, string> }[]
   >;
+  getModeratorBlockedContacts(): Promise<
+    { handle: string; id: string; fields: Record<string, string> }[]
+  >;
   addMessage(
     senderHandle: string,
     recipientHandles: string[],
