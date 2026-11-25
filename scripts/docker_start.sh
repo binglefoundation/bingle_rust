@@ -16,6 +16,7 @@ set -euo pipefail
 #   NAT_MODE    - Direct|Full|Restricted (default Direct)
 #   AUTO_MIGRATE - set to 1 to pass --auto-migrate: at start, migrate the account from a blessed
 #                  ancestor app when it is not yet registered on the configured app
+#   BINGLE_CLI  - path of the bingle_cli binary (default /app/bingle_cli), for tests
 
 : "${PASSPHRASE:?Environment variable PASSPHRASE must be set}"
 : "${PORT:?Environment variable PORT must be set}"
@@ -25,6 +26,7 @@ STUN_FILE=${STUN_FILE:-/app/stunservers.txt}
 NODE_FILE=${NODE_FILE:-/app/nodely_staging_testnet_node.json}
 SENTINEL_FILE=${SENTINEL_FILE:-}
 NAT_MODE=${NAT_MODE:-Direct}
+BINGLE_CLI=${BINGLE_CLI:-/app/bingle_cli}
 
 # Configure NAT/iptables rules inside the container to emulate NAT types
 configure_nat() {
@@ -115,6 +117,18 @@ if [[ -n "${RELAY:-}" ]] && [[ -z "${EXTERNAL_IP:-}" ]] && [[ -z "${STUN_ONLY:-}
   fi
 fi
 
+# Report the external IPv6 address (#502). On a dual-stack AWS subnet it is the public address of
+# the instance's or task's network interface, with no NAT. Logged only: publishing it in the static
+# endpoint next to the IPv4 address is #500, so the relay's arguments are unchanged.
+if [[ -n "${RELAY:-}" ]] && command -v ip >/dev/null 2>&1; then
+  EXTERNAL_IP6=$(ip -o -6 route get 2606:4700:4700::1111 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src"){print $(i+1); exit}}') || true
+  if [[ -n "${EXTERNAL_IP6:-}" ]]; then
+    echo "Detected external IPv6 address ${EXTERNAL_IP6} (not yet published)"
+  else
+    echo "No external IPv6 address (IPv4-only host or subnet)"
+  fi
+fi
+
 if [[ ! -s "$STUN_FILE" ]]; then
   echo "STUN servers file not found or empty: $STUN_FILE" >&2
   exit 2
@@ -128,7 +142,7 @@ fi
 # Apply NAT emulation (if any) before starting CLI
 configure_nat "$NAT_MODE" || true
 
-CMD=("/app/bingle_cli" \
+CMD=("$BINGLE_CLI" \
   "run" \
   "--handle" "$HANDLE" \
   "--passphrase" "$PASSPHRASE"
@@ -205,7 +219,20 @@ fi
 
 openssl --version
 
-echo "Starting: ${CMD[*]}"
+# Log the command with the value after --passphrase replaced, so the recovery phrase never
+# reaches the container log.
+SHOWN=()
+HIDE_NEXT=0
+for arg in "${CMD[@]}"; do
+  if [[ $HIDE_NEXT -eq 1 ]]; then
+    SHOWN+=("<set>")
+    HIDE_NEXT=0
+  else
+    SHOWN+=("$arg")
+    [[ "$arg" == "--passphrase" ]] && HIDE_NEXT=1
+  fi
+done
+echo "Starting: ${SHOWN[*]}"
 
 if [[ "${MEASURE_MEMORY:-0}" == "1" ]]; then
   echo "[docker_start] measure memory, starting in background"

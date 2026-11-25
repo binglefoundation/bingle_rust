@@ -942,6 +942,24 @@ class BingleJsiBridge: RCTEventEmitter {
         }
     }
 
+    // Contacts a moderator has blocked on-chain (issue #533). May read the chain, so off the main
+    // queue.
+    @objc
+    func getModeratorBlockedContacts(_ resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {
+        guard let api = apiInstance else {
+            reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.", nil)
+            return
+        }
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                let contacts = try api.getModeratorBlockedContacts()
+                resolve(contacts.map { ["handle": $0.handle, "id": $0.id, "fields": $0.fields] })
+            } catch {
+                reject("BINGLE_ERROR", "\(error)", error)
+            }
+        }
+    }
+
     @objc
     func addMessage(_ senderHandle: String, recipientHandles: [String], timestamp: Double, text: String, cipherSuite: String?, resolver resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {
         guard let api = apiInstance else {

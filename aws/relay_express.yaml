@@ -37,11 +37,24 @@ Resources:
       EnableDnsSupport: true
       EnableDnsHostnames: true
 
+  # Dual stack (#502): an Amazon-provided /56 IPv6 block on the VPC, a /64 of it on the subnet,
+  # and a ::/0 route through the internet gateway. IPv6 addresses are public, so there is no NAT
+  # and no charge; IPv4 is unchanged for IPv4-only clients.
+  VPCIpv6CidrBlock:
+    Type: AWS::EC2::VPCCidrBlock
+    Properties:
+      VpcId: !Ref VPC
+      AmazonProvidedIpv6CidrBlock: true
+
   Subnet:
     Type: AWS::EC2::Subnet
+    # the VPC's IPv6 block exists only once VPCIpv6CidrBlock is associated
+    DependsOn: VPCIpv6CidrBlock
     Properties:
       VpcId: !Ref VPC
       CidrBlock: 10.0.1.0/24
+      Ipv6CidrBlock: !Select [ 0, !Cidr [ !Select [ 0, !GetAtt VPC.Ipv6CidrBlocks ], 1, 64 ] ]
+      AssignIpv6AddressOnCreation: true
       MapPublicIpOnLaunch: true
 
   InternetGateway:
@@ -65,6 +78,14 @@ Resources:
       DestinationCidrBlock: 0.0.0.0/0
       GatewayId: !Ref InternetGateway
 
+  DefaultRouteIpv6:
+    Type: AWS::EC2::Route
+    DependsOn: VPCGatewayAttachment
+    Properties:
+      RouteTableId: !Ref RouteTable
+      DestinationIpv6CidrBlock: ::/0
+      GatewayId: !Ref InternetGateway
+
   SubnetRouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
@@ -82,6 +103,17 @@ Resources:
           FromPort: !Ref RelayPort
           ToPort: !Ref RelayPort
           CidrIp: 0.0.0.0/0
+        - IpProtocol: udp
+          FromPort: !Ref RelayPort
+          ToPort: !Ref RelayPort
+          CidrIpv6: ::/0
+      # A new security group allows all outbound IPv4 only; listing the egress rules replaces
+      # that default, so the IPv4 rule is restated next to the IPv6 one.
+      SecurityGroupEgress:
+        - IpProtocol: '-1'
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: '-1'
+          CidrIpv6: ::/0
 
   # ECS Cluster
   ECSCluster:
@@ -169,7 +201,9 @@ Resources:
       Type: String
       Value: !Ref Handle
 
-  # Task Definition (Fargate)
+  # Task Definition (Fargate). The task's network interface (ENI) gets an IPv6 address from the
+  # dual-stack subnet, for the task's lifetime, when the ECS account setting dualStackIPv6 is
+  # enabled in the region (a one-off, see DEVELOPER.md); without it the task stays IPv4-only.
   RelayTaskDefinition:
     Type: AWS::ECS::TaskDefinition
     Properties:
@@ -188,6 +222,9 @@ Resources:
         - Name: relay
           Image: !Ref ImageUri
           Essential: true
+          # On SIGTERM the relay clears its on-chain static endpoint (#500), an Algorand
+          # transaction that confirms in about 3-5 s; 120 s (the Fargate maximum) leaves ample time
+          # before SIGKILL. The service stops the old task before starting its replacement (below).
           StopTimeout: 120
           Environment:
             - Name: RELAY
@@ -236,6 +273,7 @@ Resources:
     DependsOn:
       - VPCGatewayAttachment
       - DefaultRoute
+      - DefaultRouteIpv6
       - SubnetRouteTableAssociation
     Properties:
       Cluster: !Ref ECSCluster
