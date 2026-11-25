@@ -61,6 +61,15 @@ Resources:
         - Key: Name
           Value: BingleRelayVPC
 
+  # Dual stack (#502): an Amazon-provided /56 IPv6 block on the VPC, a /64 of it on the subnet,
+  # and a ::/0 route through the internet gateway. IPv6 addresses are public, so there is no NAT
+  # and no charge; IPv4 is unchanged for IPv4-only clients.
+  VPCIpv6CidrBlock:
+    Type: AWS::EC2::VPCCidrBlock
+    Properties:
+      VpcId: !Ref VPC
+      AmazonProvidedIpv6CidrBlock: true
+
   InternetGateway:
     Type: AWS::EC2::InternetGateway
     Properties:
@@ -76,9 +85,15 @@ Resources:
 
   Subnet:
     Type: AWS::EC2::Subnet
+    # the VPC's IPv6 block exists only once VPCIpv6CidrBlock is associated
+    DependsOn: VPCIpv6CidrBlock
     Properties:
       VpcId: !Ref VPC
       CidrBlock: !Ref SubnetCIDR
+      Ipv6CidrBlock: !Select [ 0, !Cidr [ !Select [ 0, !GetAtt VPC.Ipv6CidrBlocks ], 1, 64 ] ]
+      # the EC2 instance's network interface gets an IPv6 address, which host networking
+      # shares with the relay container
+      AssignIpv6AddressOnCreation: true
       AvailabilityZone: !Select [ 0, !GetAZs '' ]
       MapPublicIpOnLaunch: true
       Tags:
@@ -98,6 +113,14 @@ Resources:
     Properties:
       RouteTableId: !Ref RouteTable
       DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  DefaultRouteIpv6:
+    Type: AWS::EC2::Route
+    DependsOn: VPCGatewayAttachment
+    Properties:
+      RouteTableId: !Ref RouteTable
+      DestinationIpv6CidrBlock: ::/0
       GatewayId: !Ref InternetGateway
 
   SubnetRouteTableAssociation:
@@ -121,6 +144,21 @@ Resources:
           FromPort: 22
           ToPort: 22
           CidrIp: 0.0.0.0/0 # Restricted access would be better in production
+        - IpProtocol: udp
+          FromPort: !Ref RelayPort
+          ToPort: !Ref RelayPort
+          CidrIpv6: ::/0
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIpv6: ::/0 # Restricted access would be better in production
+      # A new security group allows all outbound IPv4 only; listing the egress rules replaces
+      # that default, so the IPv4 rule is restated next to the IPv6 one.
+      SecurityGroupEgress:
+        - IpProtocol: '-1'
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: '-1'
+          CidrIpv6: ::/0
       Tags:
         - Key: Name
           Value: BingleRelaySG
@@ -293,6 +331,9 @@ Resources:
           Image: !Ref ImageUri
           Memory: 480 # Slightly less than 512MiB to allow for OS overhead on t4g.nano
           Essential: true
+          # On SIGTERM the relay clears its on-chain static endpoint (#500), an Algorand
+          # transaction that confirms in about 3-5 s; 120 s (the maximum) leaves ample time before
+          # SIGKILL. The service stops the old task before starting its replacement (below).
           StopTimeout: 120
           Environment:
             - Name: RELAY
@@ -349,6 +390,7 @@ Resources:
       - ECSAutoScalingGroup
       - VPCGatewayAttachment
       - DefaultRoute
+      - DefaultRouteIpv6
       - SubnetRouteTableAssociation
     Properties:
       Cluster: !Ref ECSCluster
