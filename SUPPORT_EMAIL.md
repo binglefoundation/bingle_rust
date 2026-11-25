@@ -172,11 +172,13 @@ mount the volume or change the task can act as the account.
 
 ### Redeploying
 
-After a code change, update only the image; every other setting is kept:
+After a code change, redeploy with the new image; every other setting is kept:
 
 ```bash
 aws/deploy_gateway.sh --relay-stack <relay stack> --redeploy-only
 ```
+
+This also applies `aws/gateway_stack.yaml` as checked out, through a CloudFormation change set that is printed first. It runs without asking when it only replaces the task definition and updates the service, and asks y/N otherwise (`--yes` skips the question, `--dry-run` only shows it; #528).
 
 A MainNet release does this for you: list the gateway in the MainNet relay inventory as
 `GATEWAY=<gateway stack> <relay stack> <region>`, and `scripts/roll_relays.sh` deploys it onto the

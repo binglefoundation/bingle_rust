@@ -37,7 +37,16 @@ scripts/roll_relays.sh --dry-run
 scripts/roll_relays.sh
 ```
 
-`bingle_env.sh` is the maintainers' own environment script: it signs in to the network's AWS account and sets `BINGLE_NETWORK` and `BINGLE_RELAYS_FILE`. Any other way of setting those works. The roll records a successful `testnet` deployment of the commit on GitHub, and that record is what a release checks. Details: `DEVELOPER.md`, "Rolling every relay of a network".
+`bingle_env.sh` is the maintainers' own environment script: it signs in to the network's AWS account and sets `BINGLE_NETWORK` and `BINGLE_RELAYS_FILE`. Any other way of setting those works.
+
+A roll applies the CloudFormation templates in the checkout (`aws/relay_stack.yaml`, `aws/relay_express.yaml`, `aws/gateway_stack.yaml`) as well as the new image, keeping each stack's parameter values (issue #528). Each stack's update is a change set:
+
+- The dry run creates each change set, prints it and deletes it. Read it: a release with no template change shows only the task definition replaced and the service updated.
+- The roll prints each change set again before executing it. One limited to the task definition and the service runs without asking. Anything else (IAM, networking, another replacement, an added or removed resource) stops at a y/N prompt for that stack; answering no fails the roll there, with the later stacks untouched.
+- `scripts/roll_relays.sh --yes` executes every change set without asking, for an unattended roll whose dry run you have already read.
+- A template parameter that a stack lacks takes its default. One with no default stops the roll for that stack, which then needs a full deploy (`DEVELOPER.md`).
+
+So a template change ships with the next roll of each network and needs no step of its own. The roll records a successful `testnet` deployment of the commit on GitHub, and that record is what a release checks. Details: `DEVELOPER.md`, "Rolling every relay of a network".
 
 ### Release
 
@@ -77,7 +86,7 @@ git worktree add tmp/deployed origin/deployed
 cd tmp/deployed && source ~/.config/bingle/bingle_env.sh mainnet && scripts/roll_relays.sh --dry-run
 ```
 
-Then run `scripts/roll_relays.sh` there without `--dry-run`. MainNet rolls only the commit `deployed` points at, and only when its `vX.Y.Z` tag names it. When the MainNet inventory has a `GATEWAY` line, the same roll deploys the email gateway onto the release after the relays (#489); the dry run lists it. Remove the worktree afterwards with `git worktree remove tmp/deployed`.
+Then run `scripts/roll_relays.sh` there without `--dry-run`. As on TestNet, it applies the release's templates and asks before any change set outside the task definition and service update. MainNet rolls only the commit `deployed` points at, and only when its `vX.Y.Z` tag names it. When the MainNet inventory has a `GATEWAY` line, the same roll deploys the email gateway onto the release after the relays (#489); the dry run lists it. Remove the worktree afterwards with `git worktree remove tmp/deployed`.
 
 ### Pick up the release in bingle_ux_rn
 
