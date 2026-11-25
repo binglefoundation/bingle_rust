@@ -309,6 +309,9 @@ pub struct Engine {
     // Whether a sender is a relay, for the relay-only message-origin check in the DTLS handler.
     // Shared with the handler closure; caches the on-chain allow_relay answer per sender.
     relay_origin: Arc<crate::relay::relay_origin::RelayOriginCache>,
+    // NAT64 translation shared with the UDP mux (issue #496): the network's NAT64 prefixes and
+    // whether it has an IPv4 route. Rediscovered at start and on a network change.
+    nat64: Arc<crate::util::nat64::Nat64>,
     // On a relay: the loop that evicts relays whose on-chain allow_relay was withdrawn (#120).
     relay_permission_refresher:
         Mutex<Option<crate::relay::relay_permission_refresh::RelayPermissionRefresher>>,
@@ -711,6 +714,7 @@ impl Engine {
             ),
             peer_refusals: Arc::new(Mutex::new(Vec::new())),
             relay_origin: Arc::new(Self::new_relay_origin(api.clone())),
+            nat64: Arc::new(Self::new_nat64(options)),
             relay_permission_refresher: Mutex::new(None),
             relay_permission_refresh_interval: Mutex::new(
                 crate::relay::relay_permission_refresh::RELAY_PERMISSION_REFRESH_INTERVAL,
@@ -795,6 +799,89 @@ impl Engine {
     /// during routing in `install_dtls_handler`.  Must be called before `install_dtls_handler`.
     pub fn set_custom_message_handler(&self, handler: Arc<dyn MessageHandler + Send + Sync>) {
         *self.custom_message_handler.lock().unwrap() = Some(handler);
+    }
+
+    /// NAT64 state for `options`: the configured `nat64_prefix` if valid, otherwise discovery
+    /// through the system resolver.
+    fn new_nat64(options: &StartOptions) -> crate::util::nat64::Nat64 {
+        let configured = options.nat64_prefix.as_deref().and_then(|p| {
+            p.parse::<crate::util::nat64::Nat64Prefix>()
+                .map_err(|e| tracing::warn!("[Engine] ignoring nat64_prefix: {e}"))
+                .ok()
+        });
+        crate::util::nat64::Nat64::new(
+            Box::new(crate::util::nat64::SystemNat64Resolver),
+            configured,
+        )
+    }
+
+    /// Give `mux` the engine's NAT64 state and (re)discover the prefix in the background, unless
+    /// the node is IPv4-only.
+    fn attach_nat64(&self, mux: &UdpNetworkMux) {
+        if self.opts().ip_family == crate::dtls::network_mux_udp::IpFamily::V4 {
+            return;
+        }
+        mux.set_nat64(self.nat64.clone());
+        self.rediscover_nat64_in_background();
+    }
+
+    fn rediscover_nat64_in_background(&self) {
+        let nat64 = self.nat64.clone();
+        std::thread::spawn(move || {
+            nat64.rediscover();
+        });
+    }
+
+    /// The STUN servers to query: the explicit `stun_servers` addresses if set, otherwise
+    /// `stun_hosts` (or the built-in list) resolved now in both address families (issue #496).
+    pub fn stun_server_addresses(options: &StartOptions) -> Vec<SocketAddr> {
+        if let Some(explicit) = options.stun_servers.as_ref()
+            && !explicit.is_empty()
+        {
+            return explicit.clone();
+        }
+        let entries = crate::util::stun_servers::effective_entries(options.stun_hosts.as_deref());
+        crate::util::stun_servers::resolve_stun_entries(
+            &entries,
+            Arc::new(crate::util::stun_servers::SystemStunResolver),
+            crate::util::stun_servers::STUN_RESOLVE_DEADLINE,
+        )
+    }
+
+    /// React to a change of network (Wi-Fi to cellular, a new address): rediscover the NAT64
+    /// prefix and forget whether IPv4 was routable, and re-resolve the STUN servers so translated
+    /// and DNS64-synthesised addresses match the new network (issue #496). Runs in the background.
+    pub fn network_change(&self) {
+        tracing::info!(
+            "[Engine::network_change] rediscovering NAT64 and re-resolving STUN servers"
+        );
+        self.rediscover_nat64_in_background();
+        let options = self.opts().clone();
+        let explicit = options.stun_servers.as_ref().is_some_and(|s| !s.is_empty());
+        let Some(finder) = self.stun.lock().ok().and_then(|g| g.clone()) else {
+            return;
+        };
+        if explicit {
+            return;
+        }
+        std::thread::spawn(move || {
+            let servers = Self::stun_server_addresses(&options);
+            if servers.is_empty() {
+                tracing::warn!(
+                    "[Engine::network_change] no STUN servers resolved; keeping the old list"
+                );
+                return;
+            }
+            if let Ok(mut f) = finder.lock() {
+                f.stop();
+                f.start(servers, 2_000, 60_000);
+            }
+        });
+    }
+
+    /// The engine's NAT64 state (for tests and diagnostics).
+    pub fn nat64(&self) -> Arc<crate::util::nat64::Nat64> {
+        self.nat64.clone()
     }
 
     /// The relay-origin cache, backed by the on-chain `allow_relay` flag read through `api`.
@@ -897,16 +984,14 @@ impl Engine {
     /// a real installed handler without network side-effects.
     pub fn start_with_addr_for_tests(
         &self,
-        _options: &StartOptions,
+        options: &StartOptions,
         bind_addr: SocketAddr,
     ) -> Result<(), BingleError> {
-        use std::net::{IpAddr, Ipv4Addr};
-        let port = bind_addr.port();
-        let bind_all = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), port);
         let mux = Arc::new(
-            UdpNetworkMux::bind(bind_all)
+            UdpNetworkMux::bind_all(bind_addr.port(), options.ip_family)
                 .map_err(|e| BingleError::Other(format!("Failed to bind UDP mux: {}", e)))?,
         );
+        self.attach_nat64(&mux);
         self.install_dtls_handler()?;
         self.packet_transport
             .dtls()
@@ -1668,9 +1753,10 @@ impl Engine {
         // STUN path
         self.set_state_field(EngineState::StunIdentify);
 
-        // Bind UDP on 0.0.0.0:0 and create mux (OS assigns an ephemeral port)
-        let mut mux0 = UdpNetworkMux::bind("0.0.0.0:0")
+        // Bind UDP on every local address of the configured family; the OS assigns an ephemeral port
+        let mut mux0 = UdpNetworkMux::bind_all(0, self.opts().ip_family)
             .map_err(|e| BingleError::Other(format!("Failed to bind UDP mux: {}", e)))?;
+        self.attach_nat64(&mux0);
         let _local_addr: SocketAddr = mux0
             .local_addr()
             .map_err(|e| format!("Failed to get local addr: {}", e))?;
@@ -1952,18 +2038,21 @@ impl Engine {
                 .expect("start_with_address when no static address"),
         ));
 
-        // Always bind UDP to 0.0.0.0:<port> so that we listen on all interfaces, even when a static external IP is configured.
-        // The static address is used for signaling and routing outside any firewall, not for local bind.
+        // Always bind UDP to every local address of the configured family at <port>, so that we
+        // listen on all interfaces even when a static external IP is configured. The static
+        // address is used for signaling and routing outside any firewall, not for local bind.
         let port = bind_addr.port();
-        let bind_all = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), port);
+        let family = self.opts().ip_family;
         tracing::info!(
-            "[Engine] start_with_addr: requested={:?} binding={:?}",
+            "[Engine] start_with_addr: requested={:?} binding port {} family {}",
             bind_addr,
-            bind_all
+            port,
+            family
         );
 
-        let mut mux0 = UdpNetworkMux::bind(bind_all)
+        let mut mux0 = UdpNetworkMux::bind_all(port, family)
             .map_err(|e| BingleError::Other(format!("Failed to bind UDP mux: {}", e)))?;
+        self.attach_nat64(&mux0);
         // Determine the concrete local address after bind (handles port 0)
         let _local_addr: SocketAddr = mux0
             .local_addr()
@@ -2976,9 +3065,11 @@ impl Engine {
             })));
 
             // Kick off STUN polling using provided servers
-            let servers = options.stun_servers.clone().unwrap_or_default();
+            let servers = Self::stun_server_addresses(options);
             if servers.is_empty() {
-                return Err(BingleError::Other("No STUN servers provided".to_string()));
+                return Err(BingleError::Other(
+                    "No STUN servers resolved (none configured resolve, and no built-in server answered DNS)".to_string(),
+                ));
             }
             f.start(servers, 2_000, 60_000);
         }

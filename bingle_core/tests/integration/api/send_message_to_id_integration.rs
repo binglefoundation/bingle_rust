@@ -52,6 +52,9 @@ fn start_relay(
         log_mode: bingle_core::util::logging::LogMode::Plain,
         wait_response_timeout: None,
         advert_ttl: None,
+        ip_family: Default::default(),
+        stun_hosts: None,
+        nat64_prefix: None,
     };
     let api = BingleApiImpl::new(&opts);
     api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.start(&opts))
@@ -101,6 +104,9 @@ fn start_client_at_addr(
         log_mode: bingle_core::util::logging::LogMode::Plain,
         wait_response_timeout: None,
         advert_ttl: None,
+        ip_family: Default::default(),
+        stun_hosts: None,
+        nat64_prefix: None,
     };
     let api = BingleApiImpl::new(&opts);
     api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.start(&opts))
@@ -153,6 +159,9 @@ fn start_client_with_advert_ttl(
         // Listen retry in registration gets multiple attempts within the test's registration wait.
         wait_response_timeout: Some(Duration::from_secs(20)),
         advert_ttl,
+        ip_family: Default::default(),
+        stun_hosts: None,
+        nat64_prefix: None,
     };
     let api = BingleApiImpl::new(&opts);
     api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.start(&opts))

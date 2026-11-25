@@ -23,6 +23,9 @@ pub mod cli_parse_test;
 #[path = "cli/debug_flag.rs"]
 pub mod cli_debug_flag;
 
+#[path = "cli/ip_family_flag.rs"]
+pub mod cli_ip_family_flag;
+
 #[path = "cli/auto_migrate_flag.rs"]
 pub mod cli_auto_migrate_flag;
 
@@ -44,10 +47,16 @@ pub mod printing_enable;
 #[path = "stun/comments.rs"]
 pub mod stun_comments;
 
-#[path = "stun/ipv4_only.rs"]
-pub mod stun_ipv4_only;
+#[path = "stun/both_families.rs"]
+pub mod stun_both_families;
 
 pub mod message_mocks;
 #[path = "parse_algos_test.rs"]
 pub mod parse_algos_test;
 pub mod relay_test_util;
+
+#[path = "nat64.rs"]
+pub mod nat64;
+
+#[path = "stun_servers.rs"]
+pub mod stun_servers;
