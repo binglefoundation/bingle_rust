@@ -1,7 +1,7 @@
 use algo_ops::AlgoChainConfig;
 use serde::Deserialize;
 use std::fs;
-use std::net::{SocketAddr, ToSocketAddrs};
+use std::net::SocketAddr;
 
 /// Parse a decimal ALGOs string into microAlgos (u64).
 /// Accepts forms like "1", "0.5", "1.234567"; up to 6 fractional digits.
@@ -68,57 +68,18 @@ mod tests_do_not_use_inline {
     // Intentionally left empty per project guideline: tests live under tests/.
 }
 
-/// Parse a comma or whitespace separated list of socket addresses or hostnames with ports.
-/// Accepts entries like "1.2.3.4:3478" or "stun.example.com:3478".
+/// Parse a comma or whitespace separated list of socket addresses or hostnames with ports and
+/// resolve it now. Accepts entries like `1.2.3.4:3478`, `[2001:db8::1]:3478` or
+/// `stun.example.com:3478`; both address families are kept (issue #496). Callers that start an
+/// engine should pass the unresolved entries instead ([`parse_stun_entries`]), so the engine can
+/// resolve them again after a network change.
 pub fn parse_stun_list(s: &str) -> Result<Vec<SocketAddr>, String> {
-    // First, strip out line comments: anything after '#' on a line is ignored.
-    let mut cleaned = String::with_capacity(s.len());
-    for line in s.lines() {
-        let line_no_comment = match line.find('#') {
-            Some(idx) => &line[..idx],
-            None => line,
-        };
-        cleaned.push_str(line_no_comment);
-        cleaned.push('\n');
-    }
-
-    let mut addrs = Vec::new();
-    for part in cleaned.split(|c: char| c == ',' || c.is_whitespace()) {
-        let p = part.trim();
-        if p.is_empty() {
-            continue;
-        }
-        // Try direct SocketAddr parse first, filtering for IPv4
-        let direct_parsed = p.parse::<SocketAddr>().ok();
-
-        // If it parsed as IPv6 directly, we skip it (as requested: "only take the first IPV4 address")
-        // NOTE: The requirement says "only take the first IPV4 address" for each entry.
-        // If an entry is explicitly IPv6, we should ignore it rather than erroring
-        // if we want to be robust, OR error if it's invalid.
-        // Given the requirement "only take the first IPV4 address", if we find an IPv6 we should look for IPv4.
-
-        let parsed = direct_parsed
-            .filter(|addr| addr.is_ipv4())
-            // Fallback to DNS resolution via ToSocketAddrs for host:port strings
-            .or_else(|| {
-                p.to_socket_addrs()
-                    .ok()
-                    .and_then(|mut it| it.find(|addr| addr.is_ipv4()))
-            });
-
-        if let Some(addr) = parsed {
-            addrs.push(addr);
-        } else if direct_parsed.is_some() {
-            // It was a valid SocketAddr but IPv6, skip it as per requirement to only take IPv4
-            tracing::warn!("Ignoring unsupported IPv6 STUN server entry '{}'", p);
-            continue;
-        } else {
-            return Err(format!(
-                "Invalid STUN server entry '{}': must be <host:port> or <ip:port>",
-                p
-            ));
-        }
-    }
+    let entries = crate::util::stun_servers::split_stun_entries(s)?;
+    let addrs = crate::util::stun_servers::resolve_stun_entries(
+        &entries,
+        std::sync::Arc::new(crate::util::stun_servers::SystemStunResolver),
+        crate::util::stun_servers::STUN_RESOLVE_DEADLINE,
+    );
     if addrs.is_empty() {
         Err("No valid STUN servers provided".to_string())
     } else {
@@ -131,6 +92,25 @@ pub fn parse_stun_file(path: &str) -> Result<Vec<SocketAddr>, String> {
     let content = fs::read_to_string(path)
         .map_err(|e| format!("Failed to read STUN servers file '{}': {}", path, e))?;
     parse_stun_list(&content)
+}
+
+/// Parse a STUN list into unresolved entries (`host:port`, `ipv4:port` or `[ipv6]:port`), checking
+/// the syntax but not resolving, for [`StartOptions::stun_hosts`](crate::api::bingle_api::StartOptions::stun_hosts).
+/// An empty list is an error.
+pub fn parse_stun_entries(s: &str) -> Result<Vec<String>, String> {
+    let entries = crate::util::stun_servers::split_stun_entries(s)?;
+    if entries.is_empty() {
+        Err("No valid STUN servers provided".to_string())
+    } else {
+        Ok(entries)
+    }
+}
+
+/// Read a STUN servers file into unresolved entries; see [`parse_stun_entries`].
+pub fn parse_stun_entries_file(path: &str) -> Result<Vec<String>, String> {
+    let content = fs::read_to_string(path)
+        .map_err(|e| format!("Failed to read STUN servers file '{}': {}", path, e))?;
+    parse_stun_entries(&content)
 }
 
 #[derive(Deserialize)]

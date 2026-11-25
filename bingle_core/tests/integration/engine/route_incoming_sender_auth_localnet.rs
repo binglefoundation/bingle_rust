@@ -395,6 +395,9 @@ fn make_opts(app_id: u64) -> StartOptions {
         log_mode: bingle_core::util::logging::LogMode::Plain,
         wait_response_timeout: None,
         advert_ttl: None,
+        ip_family: Default::default(),
+        stun_hosts: None,
+        nat64_prefix: None,
     }
 }
 

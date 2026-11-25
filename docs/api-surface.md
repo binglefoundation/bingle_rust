@@ -37,6 +37,7 @@ The peer-to-peer messaging engine plus the Algorand integration. Supported surfa
 - `api::bingle_api::BingleApi` — the messaging engine trait (the primary entry point).
 - `api::bingle_api_impl::BingleApiImpl` — the concrete implementation and its constructor.
 - `api::bingle_api::StartOptions` — engine start configuration.
+- `api::bingle_api::IpFamily` — which IP address families the UDP socket uses (`StartOptions::ip_family`, issue #494).
 - `api::bingle_api::{BingleError, SendFailureKind}` — error and send-failure types.
 - `api::bingle_api::{UserId, Handle}` and the callback aliases `ProgressCallback`,
   `OnMessageHandler`, `OnConnectHandler`, `OnListeningHandler`.

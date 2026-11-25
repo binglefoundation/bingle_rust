@@ -133,6 +133,9 @@ fn run_signoff_on_stop_test(broken_nat: bool) {
         log_mode: bingle_core::util::logging::LogMode::Plain,
         wait_response_timeout: Some(Duration::from_secs(20)),
         advert_ttl: None,
+        ip_family: Default::default(),
+        stun_hosts: None,
+        nat64_prefix: None,
     };
     let client = BingleApiImpl::new(&opts);
     client

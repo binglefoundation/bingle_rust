@@ -1,5 +1,5 @@
 use std::any::Any;
-use std::net::{ToSocketAddrs, UdpSocket};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV6, ToSocketAddrs, UdpSocket};
 use std::sync::{
     Arc, Mutex,
     atomic::{AtomicBool, Ordering},
@@ -11,6 +11,119 @@ use super::network_mux_trait::{HandleDtls, HandleStun, HandleTurn, NetworkMux, R
 use crate::api::bingle_api::NetworkEndpoint;
 use std::sync::OnceLock;
 use tracing::{debug, info, warn};
+
+/// Which IP address families the node's UDP socket uses (issue #494). `Auto`, the default, is
+/// dual-stack where the host supports IPv6 and IPv4-only where it doesn't; `V4` and `V6` restrict
+/// the node to one family, to reproduce single-stack problems or to switch IPv6 off in the field.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum IpFamily {
+    /// Dual-stack where the host has IPv6, IPv4-only where it doesn't.
+    #[default]
+    Auto,
+    /// IPv4 only.
+    V4,
+    /// IPv6 only.
+    V6,
+}
+
+impl std::str::FromStr for IpFamily {
+    type Err = String;
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        match s.to_ascii_lowercase().as_str() {
+            "auto" => Ok(IpFamily::Auto),
+            "v4" | "ipv4" => Ok(IpFamily::V4),
+            "v6" | "ipv6" => Ok(IpFamily::V6),
+            other => Err(format!(
+                "invalid IP family '{other}': expected auto, v4 or v6"
+            )),
+        }
+    }
+}
+
+impl std::fmt::Display for IpFamily {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            IpFamily::Auto => "auto",
+            IpFamily::V4 => "v4",
+            IpFamily::V6 => "v6",
+        })
+    }
+}
+
+/// How a bound socket handles address families. Fixed for the mux's lifetime, so a rebind after
+/// a network error recreates the same kind of socket.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SocketMode {
+    /// An IPv4 socket: IPv4 peers only.
+    V4,
+    /// An IPv6 socket with `IPV6_V6ONLY` off: IPv6 peers natively and IPv4 peers as
+    /// IPv4-mapped (`::ffff:a.b.c.d`) addresses.
+    DualStack,
+    /// An IPv6 socket with `IPV6_V6ONLY` on: IPv6 peers only.
+    V6Only,
+}
+
+/// Open a UDP socket on the unspecified address of `mode`'s family at `port` (0 for any).
+/// `IPV6_V6ONLY` is always set explicitly: BSD and iOS default it on, Linux and Android off.
+fn open_udp(mode: SocketMode, port: u16) -> std::io::Result<UdpSocket> {
+    use socket2::{Domain, Protocol, SockAddr, Socket, Type};
+    match mode {
+        SocketMode::V4 => UdpSocket::bind(SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), port)),
+        SocketMode::DualStack | SocketMode::V6Only => {
+            let socket = Socket::new(Domain::IPV6, Type::DGRAM, Some(Protocol::UDP))?;
+            socket.set_only_v6(mode == SocketMode::V6Only)?;
+            socket.bind(&SockAddr::from(SocketAddr::new(
+                IpAddr::V6(Ipv6Addr::UNSPECIFIED),
+                port,
+            )))?;
+            Ok(socket.into())
+        }
+    }
+}
+
+/// The mode of an already-bound socket, read back from the OS.
+fn mode_of(socket: &UdpSocket) -> std::io::Result<SocketMode> {
+    if socket.local_addr()?.is_ipv4() {
+        return Ok(SocketMode::V4);
+    }
+    if socket2::SockRef::from(socket).only_v6()? {
+        Ok(SocketMode::V6Only)
+    } else {
+        Ok(SocketMode::DualStack)
+    }
+}
+
+/// The address a received datagram came from, with an IPv4-mapped IPv6 address (`::ffff:a.b.c.d`,
+/// as a dual-stack socket reports an IPv4 peer) turned back into plain IPv4. Everything above the
+/// socket then sees one form per peer, so endpoint keys, STUN server matches and TURN maps compare
+/// equal whichever socket mode received the packet.
+pub fn canonical_peer(from: SocketAddr) -> SocketAddr {
+    SocketAddr::new(from.ip().to_canonical(), from.port())
+}
+
+/// The address to pass to `send_to` on a socket of `mode` for destination `to`. A dual-stack socket
+/// sends to an IPv4 peer through its IPv4-mapped form; a single-family socket refuses the other
+/// family. The mapped form stays local to the socket call and never reaches a message or advert.
+pub fn socket_target(mode: SocketMode, to: SocketAddr) -> std::result::Result<SocketAddr, String> {
+    let to = canonical_peer(to);
+    match (mode, to) {
+        (SocketMode::V4, SocketAddr::V4(_)) => Ok(to),
+        (SocketMode::V4, SocketAddr::V6(_)) => Err(format!(
+            "cannot send to IPv6 address {to} from an IPv4 socket"
+        )),
+        (SocketMode::DualStack, SocketAddr::V4(v4)) => Ok(SocketAddr::V6(SocketAddrV6::new(
+            v4.ip().to_ipv6_mapped(),
+            v4.port(),
+            0,
+            0,
+        ))),
+        (SocketMode::DualStack | SocketMode::V6Only, SocketAddr::V6(_)) => Ok(to),
+        (SocketMode::V6Only, SocketAddr::V4(_)) => Err(format!(
+            "cannot send to IPv4 address {to} from an IPv6-only socket"
+        )),
+    }
+}
 
 /// Mux classification types translated from the provided Kotlin function
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -51,11 +164,18 @@ pub fn mux_type_for(data: &[u8]) -> MuxType {
 /// UDP-based NetworkMux implementation
 pub struct UdpNetworkMux {
     socket: Mutex<Option<UdpSocket>>,
-    /// The concrete local address the socket is bound to (e.g. `0.0.0.0:PORT`).
+    /// The concrete local address the socket is bound to (e.g. `0.0.0.0:PORT` or `[::]:PORT`).
     /// Kept so the receive loop can rebind to the same port after a transient
     /// network error (mobile connectivity drop) instead of tearing the transport
     /// down permanently.
     bind_addr: std::net::SocketAddr,
+    /// The socket's address-family mode, kept so a rebind recreates the same kind of socket and
+    /// so sends can map IPv4 destinations on a dual-stack socket.
+    mode: SocketMode,
+    /// NAT64 translation (issue #496), set by the engine: sends to IPv4 peers go to their
+    /// synthesised IPv6 address when this network has no IPv4 route, and datagrams from a
+    /// synthesised address are reported as their IPv4 peer.
+    nat64: OnceLock<Arc<crate::util::nat64::Nat64>>,
     handle_dtls: Mutex<Option<HandleDtls>>,
     handle_stun: Mutex<Option<HandleStun>>,
     handle_turn: OnceLock<HandleTurn>,
@@ -75,14 +195,53 @@ impl UdpNetworkMux {
         info!("[UdpNetworkMux] bind {:?}", addr);
         let socket = UdpSocket::bind(&addr)
             .map_err(|e| std::io::Error::other(format!("udp bind to {:?} failed: {}", addr, e)))?;
+        Self::from_socket(socket)
+    }
+
+    /// Bind a UDP socket on every local address of `family` at `port` (0 for any): `[::]` with
+    /// `IPV6_V6ONLY` off for `Auto`, falling back to `0.0.0.0` when the host has no IPv6; `0.0.0.0`
+    /// for `V4`; `[::]` with `IPV6_V6ONLY` on for `V6`.
+    pub fn bind_all(port: u16, family: IpFamily) -> std::io::Result<Self> {
+        #[allow(unused)]
+        {
+            crate::util::printing::enable_immediate_prints();
+        }
+        let socket = match family {
+            IpFamily::V4 => open_udp(SocketMode::V4, port),
+            IpFamily::V6 => open_udp(SocketMode::V6Only, port),
+            IpFamily::Auto => open_udp(SocketMode::DualStack, port).or_else(|e| {
+                info!(
+                    "[UdpNetworkMux] dual-stack bind on port {} failed ({}); falling back to IPv4",
+                    port, e
+                );
+                open_udp(SocketMode::V4, port)
+            }),
+        }
+        .map_err(|e| {
+            std::io::Error::other(format!(
+                "udp bind (family {family}) to port {port} failed: {e}"
+            ))
+        })?;
+        info!(
+            "[UdpNetworkMux] bound {:?} for family {}",
+            socket.local_addr(),
+            family
+        );
+        Self::from_socket(socket)
+    }
+
+    fn from_socket(socket: UdpSocket) -> std::io::Result<Self> {
         // Set a modest read timeout to allow responsive shutdown of the receive loop
         socket.set_read_timeout(Some(Duration::from_millis(200)))?;
         // Remember the concrete bound address (resolves port 0 to the assigned
         // port) so we can rebind to the same port on transient network errors.
         let bind_addr = socket.local_addr()?;
+        let mode = mode_of(&socket)?;
         Ok(Self {
             socket: Mutex::new(Some(socket)),
             bind_addr,
+            mode,
+            nat64: OnceLock::new(),
             handle_dtls: Mutex::new(None),
             handle_stun: Mutex::new(None),
             handle_turn: OnceLock::new(),
@@ -104,6 +263,71 @@ impl UdpNetworkMux {
             .local_addr()
     }
 
+    /// The socket's address-family mode.
+    pub fn mode(&self) -> SocketMode {
+        self.mode
+    }
+
+    /// Use `nat64` to reach IPv4 peers when the network has no IPv4 route (issue #496). Has no
+    /// effect on an IPv4 socket. Set once, before the mux starts; a later call is ignored.
+    pub fn set_nat64(&self, nat64: Arc<crate::util::nat64::Nat64>) {
+        if self.mode != SocketMode::V4 && self.nat64.set(nat64).is_err() {
+            debug!("[UdpNetworkMux] NAT64 already set; ignoring");
+        }
+    }
+
+    /// The peer address as the layers above the socket know it: IPv4-mapped and NAT64-synthesised
+    /// sources are reported as their IPv4 peer.
+    fn peer_from(&self, from: SocketAddr) -> SocketAddr {
+        let from = canonical_peer(from);
+        match self.nat64.get() {
+            Some(n) => n.unsynthesise(from),
+            None => from,
+        }
+    }
+
+    /// Send one datagram to `to`, through NAT64 when `to` is IPv4 and this network has no IPv4
+    /// route (or the socket is IPv6-only). A first "no route" failure on a dual-stack socket marks
+    /// the network as IPv6-only and retries through NAT64.
+    fn send_datagram(&self, sock: &UdpSocket, buf: &[u8], to: SocketAddr) -> Result<()> {
+        let to = canonical_peer(to);
+        let nat64 = self.nat64.get();
+        if let Some(n) = nat64
+            && to.is_ipv4()
+            && (self.mode == SocketMode::V6Only || n.no_ipv4_route())
+        {
+            return Self::send_synthesised(sock, buf, to, n);
+        }
+        let target = socket_target(self.mode, to)?;
+        match sock.send_to(buf, target) {
+            Ok(_) => Ok(()),
+            Err(e) => {
+                if let Some(n) = nat64
+                    && to.is_ipv4()
+                    && crate::util::nat64::is_no_route_error(&e)
+                    && n.mark_no_ipv4_route()
+                {
+                    return Self::send_synthesised(sock, buf, to, n);
+                }
+                Err(format!("udp send_to {to} failed: {e}"))
+            }
+        }
+    }
+
+    fn send_synthesised(
+        sock: &UdpSocket,
+        buf: &[u8],
+        to: SocketAddr,
+        nat64: &crate::util::nat64::Nat64,
+    ) -> Result<()> {
+        let dest = nat64
+            .synthesise(to)
+            .ok_or_else(|| format!("no IPv4 route and no NAT64 prefix to reach {to}"))?;
+        sock.send_to(buf, dest)
+            .map(|_| ())
+            .map_err(|e| format!("udp send_to {to} via NAT64 {dest} failed: {e}"))
+    }
+
     /// Get only the bound IP address (for debug printing)
     pub fn bound_ip(&self) -> std::io::Result<std::net::IpAddr> {
         self.local_addr().map(|a| a.ip())
@@ -117,11 +341,21 @@ impl UdpNetworkMux {
     /// already dropped every handle to the previous socket — including clearing
     /// the Mutex — so the port is free to rebind.
     fn rebind(&self) -> std::io::Result<UdpSocket> {
-        let socket = UdpSocket::bind(self.bind_addr).map_err(|e| {
+        let socket = if self.bind_addr.ip().is_unspecified() {
+            open_udp(self.mode, self.bind_addr.port())
+        } else {
+            UdpSocket::bind(self.bind_addr)
+        }
+        .map_err(|e| {
             std::io::Error::other(format!("udp rebind to {:?} failed: {}", self.bind_addr, e))
         })?;
         socket.set_read_timeout(Some(Duration::from_millis(200)))?;
         let loop_clone = socket.try_clone()?;
+        // The socket recovered from a network error: the network may have changed, so try IPv4
+        // natively again rather than keep diverting it through NAT64.
+        if let Some(n) = self.nat64.get() {
+            n.clear_no_ipv4_route();
+        }
         // Install the live socket so write() and local_addr() use it again.
         let mut guard = self
             .socket
@@ -222,13 +456,7 @@ impl UdpNetworkMux {
                         if n == 0 {
                             continue;
                         }
-                        if from.is_ipv6() {
-                            warn!(
-                                "[UdpNetworkMux][receive][loop on {:?}] rejecting IPv6 packet from {}",
-                                to, from
-                            );
-                            continue;
-                        }
+                        let from = this.peer_from(from);
                         let data = &buf[..n];
                         tracing::trace!(
                             "[UdpNetworkMux][receive][loop on {:?}] recv_from {}: {} bytes",
@@ -348,10 +576,9 @@ impl NetworkMux for UdpNetworkMux {
                 buf.len(),
                 wrapped.len()
             );
-            return match sock.send_to(&wrapped, relay_addr) {
-                Ok(_) => Ok(()),
-                Err(e) => Err(format!("udp send_to (relay) failed: {}", e)),
-            };
+            return self
+                .send_datagram(sock, &wrapped, relay_addr)
+                .map_err(|e| format!("relay: {e}"));
         }
         // Direct path: Extract destination inet address; panic if missing per design
         let to_addr = to
@@ -390,10 +617,7 @@ impl NetworkMux for UdpNetworkMux {
                 {}
             }
         }
-        match sock.send_to(buf, to_addr) {
-            Ok(_) => Ok(()),
-            Err(e) => Err(format!("udp send_to failed: {}", e)),
-        }
+        self.send_datagram(sock, buf, to_addr)
     }
 
     fn get_handle_dtls(&self) -> Option<HandleDtls> {

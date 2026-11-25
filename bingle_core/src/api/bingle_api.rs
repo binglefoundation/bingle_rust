@@ -521,6 +521,9 @@ pub type OnListeningHandler = dyn Fn(bool, crate::engine::NatType) + Send + Sync
 pub type SendViaBingle =
     std::sync::Arc<dyn Fn(&NetworkEndpoint, &UserId, JsonValue) -> bool + Send + Sync + 'static>;
 
+/// Which IP address families the node's UDP socket uses; see [`StartOptions::ip_family`].
+pub use crate::dtls::network_mux_udp::IpFamily;
+
 /// Options used to start the Bingle node.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct StartOptions {
@@ -534,8 +537,15 @@ pub struct StartOptions {
     pub static_ip: Option<SocketAddr>,
     /// True if we are to become a relay.
     pub am_relay: bool,
-    /// Optional array of STUN servers (IP:port) to determine our IP address.
+    /// Optional array of STUN servers (IP:port) to determine our IP address. When set, these exact
+    /// addresses are used and never re-resolved (tests, localnet). Otherwise see `stun_hosts`.
     pub stun_servers: Option<Vec<SocketAddr>>,
+    /// Unresolved STUN servers (`host:port`, `ipv4:port` or `[ipv6]:port`) that the engine resolves
+    /// at start and again after a network change, in both address families (issue #496). Ignored
+    /// when `stun_servers` is set; `None` or empty uses the built-in list
+    /// ([`DEFAULT_STUN_SERVERS`](crate::util::stun_servers::DEFAULT_STUN_SERVERS)).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stun_hosts: Option<Vec<String>>,
     /// Optional Algorand provider configuration loaded from --node-file.
     #[serde(default)]
     pub algo_provider_config: Option<algo_ops::AlgoChainConfig>,
@@ -570,6 +580,14 @@ pub struct StartOptions {
     /// must not use a shorter value than its clients, or live clients lapse between refreshes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub advert_ttl: Option<Duration>,
+    /// IP address families the node's UDP socket uses (issue #494): `auto` (default) is dual-stack
+    /// where the host has IPv6, `v4` or `v6` restricts the node to one family.
+    #[serde(default)]
+    pub ip_family: IpFamily,
+    /// NAT64 prefix (`addr/len`, e.g. `64:ff9b::/96`) to use instead of discovering one (issue
+    /// #496), for lab networks without DNS64. `None` discovers the prefix (RFC 7050).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub nat64_prefix: Option<String>,
 }
 
 impl StartOptions {
@@ -581,6 +599,7 @@ impl StartOptions {
             static_ip: None,
             am_relay: false,
             stun_servers: None,
+            stun_hosts: None,
             algo_provider_config: None,
             algo_network: None,
             app_id: None,
@@ -591,6 +610,8 @@ impl StartOptions {
             log_mode: LogMode::Plain,
             wait_response_timeout: None,
             advert_ttl: None,
+            ip_family: IpFamily::Auto,
+            nat64_prefix: None,
         }
     }
 }
@@ -601,7 +622,7 @@ impl std::fmt::Display for StartOptions {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "StartOptions {{ handle: {:?}, algo_passphrase: {}, static_ip: {:?}, am_relay: {}, stun_servers: {:?}, algo_provider_config: {:?}, algo_network: {:?}, app_id: {:?}, asset_id: {:?}, log_level: {:?}, handle_cache_expiry: {:?}, dangerous_debug: {}, log_mode: {:?}, wait_response_timeout: {:?}, advert_ttl: {:?} }}",
+            "StartOptions {{ handle: {:?}, algo_passphrase: {}, static_ip: {:?}, am_relay: {}, stun_servers: {:?}, algo_provider_config: {:?}, algo_network: {:?}, app_id: {:?}, asset_id: {:?}, log_level: {:?}, handle_cache_expiry: {:?}, dangerous_debug: {}, log_mode: {:?}, wait_response_timeout: {:?}, advert_ttl: {:?}, ip_family: {}, stun_hosts: {:?}, nat64_prefix: {:?} }}",
             self.handle,
             if self.algo_passphrase.is_some() {
                 "<set>"
@@ -621,6 +642,9 @@ impl std::fmt::Display for StartOptions {
             self.log_mode,
             self.wait_response_timeout,
             self.advert_ttl,
+            self.ip_family,
+            self.stun_hosts,
+            self.nat64_prefix,
         )
     }
 }

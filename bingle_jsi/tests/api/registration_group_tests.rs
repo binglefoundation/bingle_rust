@@ -62,6 +62,7 @@ fn config(local: Option<String>, ids: Option<(u64, u64)>) -> BingleJsiConfig {
         key_storage: None,
         encrypt_state: None,
         enable_global_block: None,
+        ip_family: None,
     }
 }
 

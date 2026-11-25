@@ -1,6 +1,6 @@
 [package]
 name = "bingle_local"
-version = "0.3.39"
+version = "0.3.40"
 edition = "2024"
 description = "Local API crate for storing messages and contacts for Bingle (placeholder)."
 license = "MIT OR Apache-2.0"
@@ -17,11 +17,11 @@ name = "bingle_local"
 path = "src/lib.rs"
 
 [dependencies]
-bingle_core = { path = "../bingle_core", version = "0.3.39" }
-algo_ops = "0.9.7"
+bingle_core = { path = "../bingle_core", version = "0.3.40" }
+algo_ops = "0.10.0"
 # Sidewinder sidechain node client: the store-and-forward Mailbox (FIFO) ops the offline path posts
 # to and reads from (store-and-forward epic #200, story #213). Built on the same algo_ops handle.
-sidewinder_ops = "0.9.7"
+sidewinder_ops = "0.10.0"
 # The sealed state file (#459): sealed_store and the recovery-phrase slot, without the vault's `cli`
 # and `backup` tool dependencies (clap, rpassword, printpdf, qrcode).
 blockchain_account_vault = { version = "0.9.7", default-features = false }
@@ -76,6 +76,11 @@ test-support = []
 bingle_local = { path = ".", features = ["test-support"] }
 tempfile = "3"
 bingle_test = { path = "../bingle_test" }
+# The Mailbox failover tests (#497) stand up loopback mutual-TLS Sidewinder nodes: the server-side
+# identity verifier and certificate, the node key type, and a blocking rustls server connection.
+sw_identity_tls = { version = "0.10.0", features = ["server"] }
+ed25519-dalek = "2"
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 
 [lints]
 workspace = true

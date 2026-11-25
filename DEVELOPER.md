@@ -63,9 +63,14 @@ bingle_cli chat [--handle <handle>|<handle>] [--passphrase <text>] \
 - `--node-file <file>` — selects the Algorand network and Bingle app/asset ids (see
   [Networks](#networks-mainnet-testnet-localnet)); defaults to mainnet. Use
   `nodely_deployed_mainnet_node.json` to reach the public deployment.
-- `--stun-servers-file <file>` / `--stun-servers <list>` — STUN servers for NAT traversal. The
-  repository ships a ready-made `stunservers.txt`; pass `--stun-servers-file stunservers.txt` so
-  peers behind NAT can connect.
+- `--stun-servers-file <file>` / `--stun-servers <list>` — STUN servers for NAT traversal, as
+  `host:port`, `ipv4:port` or `[ipv6]:port`. Optional: without them the node uses a built-in list
+  (Cloudflare, Google, Twilio). The node resolves names at start and after a network change, in
+  both address families. The repository's `stunservers.txt` holds the same list.
+- `--ip-family <auto|v4|v6>` — which address families the UDP socket uses (default `auto`,
+  dual-stack where the host has IPv6).
+- `--nat64-prefix <addr/len>` — NAT64 prefix to use instead of discovering one, e.g. `64:ff9b::/96`,
+  for test networks without DNS64.
 - `--store-forward <both|send|receive|none>` — enable store-and-forward via the Sidewinder Mailbox
   (default `none`). `send` posts a message to the recipient's Mailbox when direct delivery gives up;
   `receive` polls your own Mailbox for messages left while you were offline; `both` does both. See

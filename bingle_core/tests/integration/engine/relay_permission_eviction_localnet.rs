@@ -89,6 +89,9 @@ pub fn relay_disabled_on_chain_leaves_the_set_at_the_next_refresh() {
         log_mode: bingle_core::util::logging::LogMode::Plain,
         wait_response_timeout: None,
         advert_ttl: None,
+        ip_family: Default::default(),
+        stun_hosts: None,
+        nat64_prefix: None,
     };
     let api = BingleApiImpl::new(&opts);
     api.with_engine_mut(|e| e.set_issuer(format!("{creator_addr}{ISSUER_SUFFIX}")));
