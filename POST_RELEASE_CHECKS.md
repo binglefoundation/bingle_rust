@@ -19,15 +19,4 @@ When a release finishes, `scripts/release.sh` lists the checks below for changes
 
 ## Waiting for a release
 
-### #533 the app hides a moderator-blocked user's conversation
-
-- **Merged in:** #536; first ships in the next release.
-- **Needs:** a TestNet build of the app (bingle_ux_rn) with bingle_ux_rn #214 (it hides the contacts `getModeratorBlockedContacts()` returns), and a second TestNet account that already has a conversation with the phone.
-- **Steps:**
-  1. Block the second account:
-
-         bingle_admin moderator_block <SENDER_ADDRESS> --block --accounts <TESTNET_ACCOUNTS_DIR> --node-file <TESTNET_NODE_FILE>
-
-  2. Restart the app, or wait 10 minutes (the "not blocked" refresh), then open the conversation list.
-  3. Unblock it (`--unblock`) and restart the app.
-- **Passes when:** after the block, the conversation with the second account is gone from the conversation list, as for a contact blocked in the app; after the unblock and restart, it is back.
+None.
