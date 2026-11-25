@@ -315,3 +315,81 @@ pub fn test_evict_keeps_relay_when_blockchain_unreachable() {
         "the relay stays in the set while its permission cannot be read"
     );
 }
+
+fn engine_and_spend_key() -> (Engine, String, ed25519_dalek::SigningKey) {
+    let api = DummyApi {
+        app_id: None,
+        config: None,
+    };
+    let engine = Engine::new(
+        &StartOptions::new("".into()),
+        crate::util::mock_bingle_api::to_weak(api),
+    );
+    let id = crate::util::test_util::ADDRESS_SPEND.to_string();
+    let seed = algonaut::crypto::mnemonic::to_key(crate::util::test_util::PASSPHRASE_SPEND)
+        .expect("valid mnemonic");
+    (engine, id, ed25519_dalek::SigningKey::from_bytes(&seed))
+}
+
+fn record_with_endpoint6(
+    id: &str,
+    host: &str,
+    signing_key: &ed25519_dalek::SigningKey,
+) -> AdvertRecord {
+    AdvertRecord::new_unsigned(
+        id.to_string(),
+        None,
+        Some(false),
+        None,
+        None,
+        "2025-01-01T00:00:00Z".into(),
+    )
+    .with_endpoint6(Some(bingle_core::ddb::InetSocketAddress {
+        host: host.to_string(),
+        port: 3478,
+    }))
+    .signed(signing_key)
+}
+
+/// Issue #493: a relay stores a record with a global unicast endpoint6 and re-serves it verbatim.
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn test_ddb_upsert_keeps_global_endpoint6() {
+    let (engine, id, signing_key) = engine_and_spend_key();
+    let record = record_with_endpoint6(&id, "2606:4700::1111", &signing_key);
+    engine.ddb_upsert_record(record.clone());
+    let found = engine.ddb_backend_lookup_for_tests(&id);
+    assert_eq!(found, Some(record));
+}
+
+/// Issue #493: a relay stores and re-serves a record whose endpoint6 is not global unicast, so the
+/// peer stays reachable on its IPv4 endpoint. The signature covers endpoint6, so the relay can't
+/// strip it; it is left unusable instead (`usable_endpoint6` returns `None`).
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn test_ddb_upsert_keeps_record_with_unusable_endpoint6() {
+    for host in ["fe80::1", "fd00::1", "ff02::1", "::ffff:192.0.2.7"] {
+        let (engine, id, signing_key) = engine_and_spend_key();
+        let record = record_with_endpoint6(&id, host, &signing_key);
+        engine.ddb_upsert_record(record.clone());
+        let found = engine.ddb_backend_lookup_for_tests(&id);
+        assert_eq!(
+            found.as_ref(),
+            Some(&record),
+            "record with endpoint6 {:?} is stored",
+            host
+        );
+        let found = found.expect("stored");
+        assert!(
+            found.verify(),
+            "re-served record still verifies for {:?}",
+            host
+        );
+        assert_eq!(
+            found.usable_endpoint6(),
+            None,
+            "endpoint6 {:?} is not usable",
+            host
+        );
+    }
+}
