@@ -263,6 +263,7 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
                 val resp = api.getNatType()
                 val map = Arguments.createMap()
                 map.putString("nat_type", natTypeToString(resp.natType))
+                map.putString("nat_type_v6", natTypeV6ToString(resp.natTypeV6))
                 promise.resolve(map)
             } catch (e: Exception) {
                 promise.reject("BINGLE_ERROR", e.message, e)
@@ -1390,6 +1391,15 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
         NatType.FULL_CONE -> "FullCone"
     }
 
+    // IPv6 reachability, reported beside the IPv4 NAT type (bingle_rust #498).
+    private fun natTypeV6ToString(natTypeV6: NatTypeV6): String = when (natTypeV6) {
+        NatTypeV6.UNKNOWN -> "Unknown"
+        NatTypeV6.NONE -> "None"
+        NatTypeV6.NO_CONNECTION -> "NoConnection"
+        NatTypeV6.OPEN_FIREWALLED -> "OpenFirewalled"
+        NatTypeV6.OPEN -> "Open"
+    }
+
     // The map keypairStatus and inspectPassphrase resolve with (KeypairStatusResponse in
     // ts/NativeBingleJsi.ts).
     private fun keypairStatusToMap(status: KeypairStatusResponse): WritableMap {
@@ -1474,14 +1484,15 @@ class MessageCallbackBridge(private val reactContext: ReactApplicationContext) :
  * Bridges uniffi's ListeningCallback to React Native event emitter events.
  *
  * Each [onListening] invocation sends an "onListening" event with listening
- * state and NAT type to the JS layer via React Native's event emitter
- * infrastructure.
+ * state, the IPv4 NAT type and the IPv6 reachability (bingle_rust #498) to the
+ * JS layer via React Native's event emitter infrastructure.
  */
 class ListeningCallbackBridge(private val reactContext: ReactApplicationContext) : ListeningCallback {
-    override fun onListening(listening: Boolean, natType: String) {
+    override fun onListening(listening: Boolean, natType: String, natTypeV6: String) {
         val body = Arguments.createMap()
         body.putBoolean("listening", listening)
         body.putString("nat_type", natType)
+        body.putString("nat_type_v6", natTypeV6)
 
         reactContext
             .getJSModule(com.facebook.react.modules.core.DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)

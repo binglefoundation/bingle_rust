@@ -476,7 +476,7 @@ final class BingleJsiBridgeTests: XCTestCase {
     // MARK: - getNatType
 
     func testGetNatType_resolvesWithNatTypeString() {
-        mockApi.natTypeResult = NatTypeResponse(natType: .symmetric)
+        mockApi.natTypeResult = NatTypeResponse(natType: .symmetric, natTypeV6: NatTypeV6.openFirewalled)
         let expectation = self.expectation(description: "resolve called")
         var resolvedDict: [String: Any]?
 
@@ -490,6 +490,7 @@ final class BingleJsiBridgeTests: XCTestCase {
 
         waitForExpectations(timeout: 2.0)
         XCTAssertEqual(resolvedDict?["nat_type"] as? String, "Symmetric")
+        XCTAssertEqual(resolvedDict?["nat_type_v6"] as? String, "OpenFirewalled")
     }
 
     // MARK: - generateKeypair

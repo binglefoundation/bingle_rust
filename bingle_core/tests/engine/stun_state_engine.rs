@@ -74,7 +74,7 @@ fn test_engine_handles_stun_none_sets_unknown_and_calls_on_listening_false() {
 
     use bingle_core::engine::BingleAccessUnsafeForTests;
     engine.access_unsafe_for_tests(|e| {
-        e.set_on_listening_handler(Some(Arc::new(move |listening, _nat: NatType| {
+        e.set_on_listening_handler(Some(Arc::new(move |listening, _nat: NatType, _nat6| {
             if listening {
                 flag_true.store(true, Ordering::SeqCst);
             } else {

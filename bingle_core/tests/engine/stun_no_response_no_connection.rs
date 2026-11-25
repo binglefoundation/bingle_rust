@@ -365,7 +365,7 @@ pub fn no_stun_responses_sets_no_connection_and_calls_on_listening_false() {
 
     let flag_false = called_false.clone();
     let flag_true = called_true.clone();
-    eng.set_on_listening_handler(Some(Arc::new(move |listening, _nat: NatType| {
+    eng.set_on_listening_handler(Some(Arc::new(move |listening, _nat: NatType, _nat6| {
         if listening {
             flag_true.store(true, Ordering::SeqCst);
         } else {

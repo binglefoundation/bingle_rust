@@ -63,7 +63,7 @@ pub fn reset_state_after_blocked_recovers_to_consistent() {
                 let _ = m.write(&nsk, payload);
             }
         })));
-        f.set_state_change_handler(Some(Arc::new(move |st, _ep| {
+        f.set_state_change_handler(Some(Arc::new(move |_family, st, _ep| {
             states2.lock().unwrap().push(st);
         })));
         // search_time_ms=100: reach Blocked quickly (3 × 100ms = ~300ms).

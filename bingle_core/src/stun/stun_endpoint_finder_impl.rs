@@ -9,7 +9,7 @@ use std::time::Duration;
 
 // Bring the public trait/types from our module
 use super::stun_endpoint_finder::{
-    ErrorHandler, SendPacketHandler, StateChangeHandler, StunEndpointFinder, StunState,
+    AddrFamily, ErrorHandler, SendPacketHandler, StateChangeHandler, StunEndpointFinder, StunState,
 };
 
 // Explicitly reference the stun-rs crate (module path stun_rs). We keep usage minimal here
@@ -43,10 +43,61 @@ impl ServerStatus {
     }
 }
 
-struct Inner {
-    servers: Vec<ServerStatus>,
+/// The state and endpoint of one address family (issue #498).
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct FamilyState {
     state: StunState,
     endpoint: Option<SocketAddr>,
+}
+
+impl FamilyState {
+    const NONE: FamilyState = FamilyState {
+        state: StunState::None,
+        endpoint: None,
+    };
+    const BLOCKED: FamilyState = FamilyState {
+        state: StunState::Blocked,
+        endpoint: None,
+    };
+
+    /// The state of one family given the mapped endpoints its servers reported.
+    fn from_endpoints(endpoints: &[SocketAddr]) -> Self {
+        match endpoints {
+            [] => FamilyState::NONE,
+            [only] => FamilyState {
+                state: StunState::Single,
+                endpoint: Some(*only),
+            },
+            [first, rest @ ..] if rest.iter().all(|e| e == first) => FamilyState {
+                state: StunState::Consistent,
+                endpoint: Some(*first),
+            },
+            _ => FamilyState {
+                state: StunState::Inconsistent,
+                endpoint: None,
+            },
+        }
+    }
+
+    /// Rank used to combine the families into the polling state: the more settled family wins.
+    fn rank(&self) -> u8 {
+        match self.state {
+            StunState::Blocked => 0,
+            StunState::None => 1,
+            StunState::Single => 2,
+            StunState::Inconsistent => 3,
+            StunState::Consistent => 4,
+        }
+    }
+}
+
+struct Inner {
+    servers: Vec<ServerStatus>,
+    // Combined state of both families; it drives the polling interval, the silence timeout and the
+    // blocked check, which are about the UDP path as a whole rather than one family.
+    state: StunState,
+    v4: FamilyState,
+    v6: FamilyState,
     search_ticks: u64,
     repeat_ticks: u64,
     state_change: Option<StateChangeHandler>,
@@ -175,9 +226,11 @@ impl Inner {
                                     self.servers.len()
                                 );
                                 self.state = StunState::Blocked;
-                                self.endpoint = None;
+                                self.v4 = FamilyState::BLOCKED;
+                                self.v6 = FamilyState::BLOCKED;
                                 if let Some(cb) = &self.state_change {
-                                    cb(self.state, None);
+                                    cb(AddrFamily::V4, StunState::Blocked, None);
+                                    cb(AddrFamily::V6, StunState::Blocked, None);
                                 }
                             } else {
                                 tracing::info!(
@@ -214,51 +267,42 @@ impl Inner {
         }
     }
 
+    /// Recompute each family's state from the servers' latest mapped endpoints, and notify the
+    /// families whose state changed, or whose endpoint changed (a NAT port change both servers
+    /// agree on in the same round keeps the state Consistent but must still be reported).
     fn recompute_state_and_notify(&mut self) {
-        // Save the old endpoint before the match so we can detect address changes
-        // while the state stays Consistent (Bug 1 fix).
-        let old_endpoint = self.endpoint;
-        // Collect endpoints for all servers that have responded
-        let mut endpoints = Vec::new();
-        for s in &self.servers {
-            if let Some(ep) = s.endpoint {
-                endpoints.push(ep);
+        let mut changed = Vec::new();
+        for family in [AddrFamily::V4, AddrFamily::V6] {
+            let endpoints: Vec<SocketAddr> = self
+                .servers
+                .iter()
+                .filter_map(|s| s.endpoint)
+                .filter(|e| AddrFamily::of(e) == family)
+                .collect();
+            let new = FamilyState::from_endpoints(&endpoints);
+            let slot = match family {
+                AddrFamily::V4 => &mut self.v4,
+                AddrFamily::V6 => &mut self.v6,
+            };
+            if *slot != new {
+                *slot = new;
+                changed.push((family, new));
             }
         }
-        let new_state = match endpoints.len() {
-            0 => StunState::None,
-            1 => StunState::Single,
-            _ => {
-                let first = endpoints[0];
-                if endpoints.iter().all(|&e| e == first) {
-                    self.endpoint = Some(first);
-                    tracing::info!("[STUN] endpoint Consistent: {:?}", self.endpoint);
-                    StunState::Consistent
-                } else {
-                    self.endpoint = None;
-                    tracing::info!("[STUN] endpoint Inconsistent");
-                    StunState::Inconsistent
-                }
-            }
+        self.state = if self.v4.rank() >= self.v6.rank() {
+            self.v4.state
+        } else {
+            self.v6.state
         };
-        // For None or Single, clear remembered endpoint
-        if matches!(new_state, StunState::None | StunState::Single) {
-            self.endpoint = None;
-        }
-        // Fire callback when the state variant changes OR when the endpoint address
-        // changes while the state stays Consistent.  Without the endpoint check, a NAT
-        // port change that both servers agree on in the same round would be silently
-        // dropped because new_state == self.state == Consistent.
-        let endpoint_changed = new_state == StunState::Consistent && self.endpoint != old_endpoint;
-        if new_state != self.state || endpoint_changed {
-            self.state = new_state;
+        for (family, new) in changed {
             tracing::info!(
-                "[STUN] state change: {:?} endpoint={:?}",
-                self.state,
-                self.endpoint
+                "[STUN] state change: {:?} {:?} endpoint={:?}",
+                family,
+                new.state,
+                new.endpoint
             );
             if let Some(cb) = &self.state_change {
-                cb(self.state, self.endpoint);
+                cb(family, new.state, new.endpoint);
             }
         }
     }
@@ -285,7 +329,8 @@ impl StunEndpointFinderImpl {
         let inner = Inner {
             servers: Vec::new(),
             state: StunState::None,
-            endpoint: None,
+            v4: FamilyState::NONE,
+            v6: FamilyState::NONE,
             search_ticks: 1000 / TICK_MS,
             repeat_ticks: 10000 / TICK_MS,
             state_change: None,
@@ -442,7 +487,8 @@ impl StunEndpointFinder for StunEndpointFinderImpl {
         inner.search_ticks = (search_time_ms / TICK_MS).max(1);
         inner.repeat_ticks = (repeat_time_ms / TICK_MS).max(1);
         inner.state = StunState::None;
-        inner.endpoint = None;
+        inner.v4 = FamilyState::NONE;
+        inner.v6 = FamilyState::NONE;
         inner.intervals_without_two = 0;
         inner.error_reported = false;
         inner.last_response_tick = None;
@@ -554,7 +600,8 @@ impl StunEndpointFinder for StunEndpointFinderImpl {
             inner.state
         );
         inner.state = StunState::None;
-        inner.endpoint = None;
+        inner.v4 = FamilyState::NONE;
+        inner.v6 = FamilyState::NONE;
         // Reset interval counter and error flag so the polling loop does not immediately
         // re-enter Blocked state (which would happen if intervals_without_two was still >= 3).
         inner.intervals_without_two = 0;

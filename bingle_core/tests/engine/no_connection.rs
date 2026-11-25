@@ -38,7 +38,7 @@ fn test_stun_blocked_calls_on_listening_false() {
     let flag_true = called_with_true.clone();
 
     let eng = Engine::new(&options, crate::util::mock_bingle_api::mock_api_weak());
-    eng.set_on_listening_handler(Some(Arc::new(move |listening, _nat| {
+    eng.set_on_listening_handler(Some(Arc::new(move |listening, _nat, _nat6| {
         if listening {
             flag_true.store(true, Ordering::SeqCst);
         } else {
@@ -94,7 +94,7 @@ fn test_no_relay_target_calls_on_listening_false() {
     let flag_true = called_with_true.clone();
 
     let eng = Engine::new(&options, crate::util::mock_bingle_api::mock_api_weak());
-    eng.set_on_listening_handler(Some(Arc::new(move |listening, _nat| {
+    eng.set_on_listening_handler(Some(Arc::new(move |listening, _nat, _nat6| {
         if listening {
             flag_true.store(true, Ordering::SeqCst);
         } else {

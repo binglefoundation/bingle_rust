@@ -45,7 +45,7 @@ fn make_xor_mapped_response(ip: [u8; 4], port: u16) -> Vec<u8> {
 
 #[test]
 #[cfg(not(target_os = "ios"))]
-pub fn single_response_triggers_single_and_callback_without_ip() {
+pub fn single_response_triggers_single_and_callback_with_its_endpoint() {
     let mut finder = StunEndpointFinderImpl::new();
     let s1: SocketAddr = "1.1.1.1:3478".parse().unwrap();
     let s2: SocketAddr = "8.8.8.8:3478".parse().unwrap();
@@ -53,7 +53,7 @@ pub fn single_response_triggers_single_and_callback_without_ip() {
 
     let seen: StunStateLog = Arc::new(Mutex::new(Vec::new()));
     let seen_clone = Arc::clone(&seen);
-    finder.set_state_change_handler(Some(Arc::new(move |st, ep| {
+    finder.set_state_change_handler(Some(Arc::new(move |_family, st, ep| {
         seen_clone.lock().unwrap().push((st, ep));
     })));
 
@@ -62,13 +62,19 @@ pub fn single_response_triggers_single_and_callback_without_ip() {
     finder.process_packet(s1, &resp);
 
     let list = seen.lock().unwrap();
-    // Find the SINGLE callback and ensure endpoint is None
+    // The SINGLE callback carries the one mapped endpoint seen so far (issue #498: IPv6 is
+    // classified from a single server's reply, since few servers answer over IPv6).
     let single = list
         .iter()
         .find(|(st, _)| *st == StunState::Single)
         .cloned();
-    assert!(single.is_some());
-    assert!(single.unwrap().1.is_none());
+    assert_eq!(
+        single,
+        Some((
+            StunState::Single,
+            Some("203.0.113.9:55000".parse().unwrap())
+        ))
+    );
 
     finder.stop();
 }
@@ -83,7 +89,7 @@ pub fn two_inconsistent_responses_trigger_inconsistent_callback_without_ip() {
 
     let seen: StunStateLog = Arc::new(Mutex::new(Vec::new()));
     let seen_clone = Arc::clone(&seen);
-    finder.set_state_change_handler(Some(Arc::new(move |st, ep| {
+    finder.set_state_change_handler(Some(Arc::new(move |_family, st, ep| {
         seen_clone.lock().unwrap().push((st, ep));
     })));
 
@@ -113,7 +119,7 @@ pub fn two_consistent_then_one_inconsistent_switches_to_inconsistent_and_callbac
 
     let seen: StunStateLog = Arc::new(Mutex::new(Vec::new()));
     let seen_clone = Arc::clone(&seen);
-    finder.set_state_change_handler(Some(Arc::new(move |st, ep| {
+    finder.set_state_change_handler(Some(Arc::new(move |_family, st, ep| {
         seen_clone.lock().unwrap().push((st, ep));
     })));
 
@@ -241,7 +247,7 @@ pub fn blocked_when_no_servers_respond_within_timeout() {
 
     let changes: StunStateLog = Arc::new(Mutex::new(Vec::new()));
     let changes_clone = Arc::clone(&changes);
-    finder.set_state_change_handler(Some(Arc::new(move |st, ep| {
+    finder.set_state_change_handler(Some(Arc::new(move |_family, st, ep| {
         changes_clone.lock().unwrap().push((st, ep));
     })));
 
@@ -356,7 +362,7 @@ pub fn consistent_reverts_to_none_after_no_response_timeout() {
 
     let changes: StunStateLog = Arc::new(Mutex::new(Vec::new()));
     let changes_clone = Arc::clone(&changes);
-    finder.set_state_change_handler(Some(Arc::new(move |st, ep| {
+    finder.set_state_change_handler(Some(Arc::new(move |_family, st, ep| {
         changes_clone.lock().unwrap().push((st, ep));
     })));
 
@@ -431,7 +437,7 @@ pub fn state_transitions_consistent_and_inconsistent() {
 
     let changes = Arc::new(Mutex::new(Vec::<(StunState, Option<SocketAddr>)>::new()));
     let changes_clone = changes.clone();
-    finder.set_state_change_handler(Some(Arc::new(move |st, ep| {
+    finder.set_state_change_handler(Some(Arc::new(move |_family, st, ep| {
         changes_clone.lock().unwrap().push((st, ep));
     })));
 
@@ -495,7 +501,7 @@ pub fn two_consistent_responses_trigger_consistent_with_ip_in_callback() {
 
     let seen: StunStateLog = Arc::new(Mutex::new(Vec::new()));
     let seen_clone = Arc::clone(&seen);
-    finder.set_state_change_handler(Some(Arc::new(move |st, ep| {
+    finder.set_state_change_handler(Some(Arc::new(move |_family, st, ep| {
         seen_clone.lock().unwrap().push((st, ep));
     })));
 
@@ -540,7 +546,7 @@ pub fn consistent_endpoint_change_fires_callback() {
 
     let changes: StunStateLog = Arc::new(Mutex::new(Vec::new()));
     let changes_clone = Arc::clone(&changes);
-    finder.set_state_change_handler(Some(Arc::new(move |st, ep| {
+    finder.set_state_change_handler(Some(Arc::new(move |_family, st, ep| {
         changes_clone.lock().unwrap().push((st, ep));
     })));
 

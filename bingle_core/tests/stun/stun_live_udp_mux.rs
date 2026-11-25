@@ -73,7 +73,7 @@ fn live_stun_endpoint_finder_with_udp_mux() {
             }
         })));
 
-        f.set_state_change_handler(Some(Arc::new(move |st, ep| {
+        f.set_state_change_handler(Some(Arc::new(move |_family, st, ep| {
             seen_clone.lock().unwrap().push((st, ep));
         })));
 

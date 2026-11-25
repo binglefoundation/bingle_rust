@@ -145,7 +145,7 @@ pub fn engine_static_ip_triggers_on_listening_handler() {
     let api = BingleApiImpl::new_with_dtls(Box::new(MockDtls));
     let path_clone = sentinel_str.clone();
     let handler: Arc<OnListeningHandler> = Arc::new(
-        move |listening: bool, _nat_type: bingle_core::engine::NatType| {
+        move |listening: bool, _nat_type: bingle_core::engine::NatType, _nat6| {
             if listening {
                 if let Ok(mut f) = fs::OpenOptions::new()
                     .create(true)

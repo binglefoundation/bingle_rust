@@ -19,7 +19,7 @@ pub fn on_listening_handler_creates_and_deletes_sentinel() {
     let api = BingleApiImpl::new(&StartOptions::new("".into()));
     let path_clone = sentinel_str.clone();
     let handler: Arc<OnListeningHandler> = Arc::new(
-        move |listening: bool, _nat_type: bingle_core::engine::NatType| {
+        move |listening: bool, _nat_type: bingle_core::engine::NatType, _nat6| {
             if listening {
                 // Create or truncate the sentinel file
                 if let Ok(mut f) = fs::OpenOptions::new()

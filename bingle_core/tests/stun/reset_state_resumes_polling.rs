@@ -66,7 +66,7 @@ pub fn reset_state_resumes_stun_polling() {
                 let _ = m.write(&nsk, payload);
             }
         })));
-        f.set_state_change_handler(Some(Arc::new(move |st, _ep| {
+        f.set_state_change_handler(Some(Arc::new(move |_family, st, _ep| {
             if st == StunState::Consistent {
                 *consistent_count2.lock().unwrap() += 1;
             }

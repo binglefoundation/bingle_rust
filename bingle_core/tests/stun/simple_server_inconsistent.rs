@@ -66,7 +66,7 @@ pub fn simple_stun_mixed_servers_inconsistent() {
                 let _ = m.write(&nsk, payload);
             }
         })));
-        f.set_state_change_handler(Some(Arc::new(move |st, ep| {
+        f.set_state_change_handler(Some(Arc::new(move |_family, st, ep| {
             seen2.lock().unwrap().push((st, ep));
         })));
         f.start(vec![a1, a2], 100, 500);

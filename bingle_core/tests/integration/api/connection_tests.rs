@@ -67,7 +67,7 @@ fn setup_on_listening(
 ) {
     let flag = listening_flag.clone();
     let nat = nat_type_guard.clone();
-    let handler: Arc<OnListeningHandler> = Arc::new(move |is_listening, nt| {
+    let handler: Arc<OnListeningHandler> = Arc::new(move |is_listening, nt, _nat6| {
         tracing::info!(
             "[Test][on_listening] listening={} nat_type={:?}",
             is_listening,
