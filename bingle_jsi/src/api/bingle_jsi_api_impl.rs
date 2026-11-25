@@ -308,6 +308,45 @@ where
     blocklist.is_some_and(|blocklist| blocklist.is_blocked(sender, lookup))
 }
 
+/// How many contacts [`moderator_blocked_contacts`] reads from the chain at once (issue #533).
+const MODERATOR_BLOCK_READS_AT_ONCE: usize = 4;
+
+/// The `contacts` a moderator has blocked on-chain (issue #533). `blocklist` answers from its cache,
+/// and `lookup` reads the `blocked_user` bit of each contact it has no current answer for, up to
+/// [`MODERATOR_BLOCK_READS_AT_ONCE`] at a time, recording the result. A contact whose read fails is
+/// not treated as blocked. Without a blocklist (the feature off), nobody is blocked.
+pub fn moderator_blocked_contacts<F>(
+    blocklist: Option<&GlobalBlocklist>,
+    contacts: Vec<Contact>,
+    lookup: F,
+) -> Vec<Contact>
+where
+    F: Fn(&str) -> Result<Option<bool>, String> + Sync,
+{
+    let Some(blocklist) = blocklist else {
+        return Vec::new();
+    };
+    let mut unknown: Vec<&str> = contacts
+        .iter()
+        .map(|c| c.id.as_str())
+        .filter(|id| blocklist.cached(id).is_none())
+        .collect();
+    unknown.sort_unstable();
+    unknown.dedup();
+    for batch in unknown.chunks(MODERATOR_BLOCK_READS_AT_ONCE) {
+        std::thread::scope(|scope| {
+            for id in batch {
+                let lookup = &lookup;
+                scope.spawn(move || blocklist.is_blocked(id, |address| lookup(address)));
+            }
+        });
+    }
+    contacts
+        .into_iter()
+        .filter(|c| blocklist.cached(&c.id) == Some(true))
+        .collect()
+}
+
 /// Tell the shared pending-message sender, if running, that a peer (by id and/or handle; empty ones
 /// are skipped) was heard from, ending its offline window (issue #278).
 /// Whether `sender` (an Algorand address) is a contact this user has blocked, so its live message is
@@ -2509,6 +2548,16 @@ impl BingleJsiApi for BingleJsiApiImpl {
                 fields: c.fields,
             })
             .collect())
+    }
+
+    fn get_moderator_blocked_contacts(&self) -> Result<Vec<Contact>, BingleJsiError> {
+        // The contact list is read first, so the store's lock isn't held during chain reads.
+        let contacts = self.get_contacts()?;
+        Ok(moderator_blocked_contacts(
+            self.global_blocklist.as_deref(),
+            contacts,
+            |address| self.read_blocked_user(address),
+        ))
     }
 
     fn add_message(

@@ -222,6 +222,12 @@ impl BingleJsiApi for StubApi {
         })
     }
 
+    fn get_moderator_blocked_contacts(&self) -> Result<Vec<Contact>, BingleJsiError> {
+        Err(BingleJsiError::NotImplemented {
+            reason: "get_moderator_blocked_contacts".to_string(),
+        })
+    }
+
     fn add_message(
         &self,
         _sender_handle: String,

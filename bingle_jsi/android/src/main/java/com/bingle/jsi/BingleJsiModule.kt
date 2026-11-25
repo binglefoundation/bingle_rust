@@ -916,6 +916,35 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
         }.start()
     }
 
+    // Contacts a moderator has blocked on-chain (issue #533). May read the chain, so off the UI
+    // thread.
+    @ReactMethod
+    fun getModeratorBlockedContacts(promise: Promise) {
+        val api = apiInstance
+        if (api == null) {
+            promise.reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.")
+            return
+        }
+        Thread {
+            try {
+                val contacts = api.getModeratorBlockedContacts()
+                val arr = Arguments.createArray()
+                contacts.forEach { c ->
+                    val map = Arguments.createMap()
+                    map.putString("handle", c.handle)
+                    map.putString("id", c.id)
+                    val fields = Arguments.createMap()
+                    c.fields.forEach { (k, v) -> fields.putString(k, v) }
+                    map.putMap("fields", fields)
+                    arr.pushMap(map)
+                }
+                promise.resolve(arr)
+            } catch (e: Exception) {
+                promise.reject("BINGLE_ERROR", e.message, e)
+            }
+        }.start()
+    }
+
     @ReactMethod
     fun addMessage(senderHandle: String, recipientHandles: ReadableArray, timestamp: Double, text: String, cipherSuite: String?, promise: Promise) {
         val api = apiInstance
