@@ -40,7 +40,9 @@ impl Harness {
 
     /// Run `script` with only `env` set, plus the stub in place of the binary named by `bin_var`.
     fn run(&self, script: &str, bin_var: &str, env: &[(&str, &str)]) -> Output {
-        let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("../scripts").join(script);
+        let script = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../scripts")
+            .join(script);
         let mut cmd = Command::new("bash");
         cmd.arg(script)
             .env_clear()
@@ -91,12 +93,18 @@ pub fn relay_start_logs_the_command_without_the_passphrase() {
     assert!(out.status.success(), "script failed: {}", printed(&out));
     let text = printed(&out);
     assert!(!text.contains(PHRASE), "passphrase printed: {text}");
-    assert!(!text.contains("abandon"), "part of the passphrase printed: {text}");
+    assert!(
+        !text.contains("abandon"),
+        "part of the passphrase printed: {text}"
+    );
     assert!(
         text.contains("--passphrase <set>"),
         "command line not logged: {text}"
     );
-    assert!(text.contains("--handle relay-1"), "handle not logged: {text}");
+    assert!(
+        text.contains("--handle relay-1"),
+        "handle not logged: {text}"
+    );
 }
 
 #[test]
@@ -115,7 +123,10 @@ pub fn webserver_start_logs_the_command_without_the_passphrase() {
     let out = h.run("docker_webserver_start.sh", "BINGLE_WEBSERVER", &[]);
     assert!(out.status.success(), "script failed: {}", printed(&out));
     let text = printed(&out);
-    assert!(!text.contains("abandon"), "part of the passphrase printed: {text}");
+    assert!(
+        !text.contains("abandon"),
+        "part of the passphrase printed: {text}"
+    );
     assert!(
         text.contains("--passphrase <set>"),
         "command line not logged: {text}"
