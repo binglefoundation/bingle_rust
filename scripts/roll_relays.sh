@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 # Roll a network's relays onto one commit, and record what each network runs (issue #399).
 #
-#   scripts/roll_relays.sh --dry-run          # preview: check everything, change nothing
+#   scripts/roll_relays.sh --dry-run          # preview: check everything and show each stack's
+#                                             # change set, then delete it; change no stack
 #   scripts/roll_relays.sh                    # roll every relay in the inventory
+#   scripts/roll_relays.sh --yes              # roll without asking, even when a change set goes
+#                                             # beyond the expected task definition and service update
 #   scripts/roll_relays.sh --check-relays RELAY_CLIENT
 #         after the roll, also run `bingle_cli checkrelays` as that account (a file name in
 #         BINGLE_ACCOUNTS_DIR, without .json) and require it to pass
@@ -20,11 +23,19 @@
 #
 # The relay image is built once, as bingle-relay:<tag>; every relay runs the same image, since its
 # handle and passphrase come from its stack. Each relay is then rolled in inventory order with
-# aws/deploy_relay.sh --redeploy-only --no-build (image only; the passphrase stays in the stack's
-# Secrets Manager secret), then health-gated: the relay must log a start of this commit's build
-# within START_TIMEOUT seconds, and no RELAY STARTUP ABORTED. The first relay that fails stops the
-# roll, so the rest keep their old image. A relay already on this image is restarted on it, so
-# re-running is safe.
+# aws/deploy_relay.sh --redeploy-only --no-build, then health-gated: the relay must log a start of
+# this commit's build within START_TIMEOUT seconds, and no RELAY STARTUP ABORTED. The first relay
+# that fails stops the roll, so the rest keep their old image. A relay already on this image and
+# template is restarted on it, so re-running is safe.
+#
+# Each redeploy applies the template in this checkout (aws/relay_stack.yaml or
+# aws/relay_express.yaml, by the relay's mode; aws/gateway_stack.yaml for a gateway) along with the
+# new image, keeping every other stack parameter, so template changes ship with the roll (#528). It
+# goes through a CloudFormation change set, which is printed. One that only replaces the task
+# definition and updates the service runs without asking; anything else (IAM, networking, another
+# replacement, an added or removed resource) stops at a y/N prompt for that stack, unless --yes. A
+# declined change set fails the roll like a failed deploy. The passphrase stays in the stack's
+# Secrets Manager secret.
 #
 # On MainNet the inventory can also name the email gateway (GATEWAY lines, #489; there is no TestNet
 # gateway, so a TestNet inventory may not have one). After every relay has rolled, each gateway is
@@ -146,10 +157,12 @@ print_inventory() {
 
 # ── arguments ─────────────────────────────────────────────────────────
 DRY_RUN=0
+YES=0
 CHECK_ACCOUNT=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --dry-run) DRY_RUN=1; shift ;;
+    --yes) YES=1; shift ;;
     --check-relays) [[ -n "${2:-}" ]] || die "--check-relays needs an account name"; CHECK_ACCOUNT=$2; shift 2 ;;
     --check-inventory)
       [[ -n "${2:-}" ]] || die "--check-inventory needs a file"
@@ -227,9 +240,13 @@ for ((i = 0; i < ${#R_HANDLE[@]}; i++)); do
     || die "stack $stack is not in $region; deploy it first (admin runbook) or fix the inventory"
   live_handle=$(stack_param "$stack" "$region" Handle)
   live_node=$(stack_param "$stack" "$region" NodeFile)
+  # Only the ec2 template has InstanceType; the roll applies the template of the inventory's mode.
+  live_mode=express
+  [[ "$(stack_param "$stack" "$region" InstanceType)" == None ]] || live_mode=ec2
   [[ "$live_handle" == "${R_HANDLE[i]}" ]] || die "stack $stack runs handle '$live_handle', but the inventory says '${R_HANDLE[i]}'"
   [[ "$live_node" == "${R_NODE_FILE[i]}" ]] || die "stack $stack reads node file '$live_node', but the inventory says '${R_NODE_FILE[i]}'"
-  ok "$stack ($region): handle ${R_HANDLE[i]}, node file $live_node"
+  [[ "$live_mode" == "${R_MODE[i]}" ]] || die "stack $stack is an $live_mode stack, but the inventory says ${R_MODE[i]}"
+  ok "$stack ($region): $live_mode, handle ${R_HANDLE[i]}, node file $live_node"
 done
 for ((i = 0; i < ${#G_STACK[@]}; i++)); do
   stack=${G_STACK[i]} region=${G_REGION[i]}
@@ -258,9 +275,28 @@ if [[ $DRY_RUN -eq 1 ]]; then
   fi
   [[ -n "$CHECK_ACCOUNT" ]] && echo "    then: bingle_cli checkrelays as $CHECK_ACCOUNT"
   [[ "${BINGLE_NO_RECORD:-0}" == 1 ]] || echo "    and record a $INV_NETWORK deployment of $SHORT in $GH_REPO"
-  info "dry run: nothing changed"
+  # Show what each redeploy would change: its change set is created, printed and deleted. The image
+  # is not built, so a change set names the tag's digest if ECR already has it, or else the tag.
+  dry_failed=0
+  for ((i = 0; i < ${#R_HANDLE[@]}; i++)); do
+    info "dry run: change set for ${R_HANDLE[i]} (${R_STACK[i]}, ${R_REGION[i]})"
+    mode_args=()
+    [[ "${R_MODE[i]}" == express ]] && mode_args=(--express)
+    aws/deploy_relay.sh --redeploy-only --dry-run --handle "${R_HANDLE[i]}" --stack-name "${R_STACK[i]}" --region "${R_REGION[i]}" --tag "$TAG" ${mode_args[@]+"${mode_args[@]}"} \
+      || { warn "${R_STACK[i]}: no change set (see above); a roll would stop here"; dry_failed=1; }
+  done
+  for ((i = 0; i < ${#G_STACK[@]}; i++)); do
+    info "dry run: change set for gateway ${G_STACK[i]} (${G_REGION[i]})"
+    aws/deploy_gateway.sh --redeploy-only --dry-run --relay-stack "${G_RELAY_STACK[i]}" --stack-name "${G_STACK[i]}" --region "${G_REGION[i]}" --tag "$TAG" \
+      || { warn "gateway ${G_STACK[i]}: no change set (see above); a roll would stop here"; dry_failed=1; }
+  done
+  [[ $dry_failed -eq 0 ]] || die "dry run: a change set could not be created; no stack was changed"
+  info "dry run: no stack changed"
   exit 0
 fi
+
+yes_args=()
+[[ $YES -eq 1 ]] && yes_args=(--yes)
 
 # ── the image ─────────────────────────────────────────────────────────
 # Built once here; each deploy below pushes and deploys it without rebuilding.
@@ -338,7 +374,7 @@ for ((i = 0; i < ${#R_HANDLE[@]}; i++)); do
   since=$(( $(date +%s) * 1000 ))
   mode_args=()
   [[ "${R_MODE[i]}" == express ]] && mode_args=(--express)
-  aws/deploy_relay.sh --redeploy-only --no-build --handle "$handle" --stack-name "$stack" --region "$region" --tag "$TAG" ${mode_args[@]+"${mode_args[@]}"} \
+  aws/deploy_relay.sh --redeploy-only --no-build --handle "$handle" --stack-name "$stack" --region "$region" --tag "$TAG" ${mode_args[@]+"${mode_args[@]}"} ${yes_args[@]+"${yes_args[@]}"} \
     || die "$stack failed to roll; the relays after it were not touched"
   wait_for_start "$stack" "$region" "$since" \
     || die "$stack did not start cleanly on $SHORT; the relays after it were not touched"
@@ -358,7 +394,7 @@ for ((i = 0; i < ${#G_STACK[@]}; i++)); do
   stack=${G_STACK[i]} region=${G_REGION[i]}
   info "deploying gateway $stack ($region) onto $TAG"
   since=$(( $(date +%s) * 1000 ))
-  aws/deploy_gateway.sh --redeploy-only --no-build --relay-stack "${G_RELAY_STACK[i]}" --stack-name "$stack" --region "$region" --tag "$TAG" \
+  aws/deploy_gateway.sh --redeploy-only --no-build --relay-stack "${G_RELAY_STACK[i]}" --stack-name "$stack" --region "$region" --tag "$TAG" ${yes_args[@]+"${yes_args[@]}"} \
     || die "gateway $stack failed to deploy; the relays keep $SHORT"
   wait_for_start "$stack" "$region" "$since" "/bingle/gateway/$stack" \
     || die "gateway $stack did not start cleanly on $SHORT; the relays keep $SHORT"

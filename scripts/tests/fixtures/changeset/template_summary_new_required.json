@@ -1,0 +1,16 @@
+{
+  "Parameters": [
+    {
+      "ParameterKey": "ImageUri",
+      "ParameterType": "String"
+    },
+    {
+      "ParameterKey": "Handle",
+      "ParameterType": "String"
+    },
+    {
+      "ParameterKey": "NewRequired",
+      "ParameterType": "String"
+    }
+  ]
+}

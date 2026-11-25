@@ -1,0 +1,30 @@
+{
+  "Stacks": [
+    {
+      "StackName": "example-relay-stack",
+      "Parameters": [
+        {
+          "ParameterKey": "ImageUri",
+          "ParameterValue": "111111111111.dkr.ecr.us-east-1.amazonaws.com/bingle-relay@sha256:aaaa"
+        },
+        {
+          "ParameterKey": "Handle",
+          "ParameterValue": "example-relay"
+        },
+        {
+          "ParameterKey": "Passphrase",
+          "ParameterValue": "****"
+        },
+        {
+          "ParameterKey": "NatMode",
+          "ParameterValue": "Direct"
+        },
+        {
+          "ParameterKey": "OldSetting",
+          "ParameterValue": "x"
+        }
+      ],
+      "StackStatus": "UPDATE_COMPLETE"
+    }
+  ]
+}
