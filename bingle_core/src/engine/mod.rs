@@ -3037,6 +3037,10 @@ impl Engine {
     /// no-response timeout (default 30s), or for a whole re-poll round while IPv6 servers kept
     /// answering (issue #549). This signals a network outage or IP change: we reset the engine to
     /// StunIdentify so it will re-identify NAT type once servers become reachable again.
+    ///
+    /// TODO(#551): registration runs on IPv4 alone, so this resets the whole engine even while
+    /// IPv6 still answers, and an IPv6-only host without NAT64 never registers at all (IPv4 never
+    /// leaves None, so this is never called and nothing else drives registration).
     pub(crate) fn on_stun_none(&self) {
         use std::sync::atomic::Ordering;
         tracing::info!(
