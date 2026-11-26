@@ -1,3 +1,4 @@
+pub mod dtls_cookie;
 pub mod dtls_debug;
 pub mod dtls_openssl;
 pub mod dtls_trait;
