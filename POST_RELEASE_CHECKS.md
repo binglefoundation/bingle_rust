@@ -130,24 +130,13 @@ When a release finishes, `scripts/release.sh` lists the checks below for changes
 
 ### #470 a failed call's structured kind reaches JavaScript on both platforms
 
-- **Merged in:** the PR for #470; first ships in the next release. The bridge tests and the e2e test were written with the change but not run, because they need native builds. bingle_ux_rn doesn't read `userInfo` yet (a bingle_ux_rn issue tracks that), so the example app checks it.
-- **Needs:** the release's commit, with the iOS simulator framework and the Android libraries built for it (`BINGLE_IOS_SIM_ONLY=1 bash bingle_jsi/scripts/build_ios.sh`, `bash bingle_jsi/scripts/build_android.sh`), pods installed in `bingle_jsi/example/ios`, and an Android emulator.
-- **Steps:**
-  1. Run the Swift bridge tests:
+- **Merged in:** the PR for #470; first ships in the next release. The Swift bridge tests (`StructuredErrorBridgeTests`) and Kotlin unit tests (`BingleJsiErrorsTest`) passed locally before merge. The e2e test was written with the change but not run. bingle_ux_rn doesn't read `userInfo` yet (bingle_ux_rn #220 tracks that), so the example app checks it.
+- **Needs:** the release's commit, with the iOS simulator framework and the Android libraries built for it (`BINGLE_IOS_SIM_ONLY=1 bash bingle_jsi/scripts/build_ios.sh`, `bash bingle_jsi/scripts/build_android.sh`), `npm install` in `bingle_jsi/example` (it has no lock file, so not `npm ci`), pods installed in `bingle_jsi/example/ios`, and an Android emulator.
+- **Steps:** run the lifecycle e2e on each platform, from `bingle_jsi/example`:
 
-         BINGLE_IOS_TEST_SCHEMES=BingleJsiBridgeTests ./bingle_jsi/scripts/run_ios_bridge_tests.sh
+      npm run e2e:build:ios && npm run e2e:test:ios -- e2e/lifecycle.test.ts
 
-  2. Run the Kotlin unit tests, from `bingle_jsi/example/android`:
+      npm run e2e:build:android && npm run e2e:test:android -- e2e/lifecycle.test.ts
 
-         ./gradlew :react-native-bingle-jsi:testDebugUnitTest
-
-  3. Run the lifecycle e2e on each platform, from `bingle_jsi/example`:
-
-         npm run e2e:build:ios && npm run e2e:test:ios -- e2e/lifecycle.test.ts
-
-         npm run e2e:build:android && npm run e2e:test:android -- e2e/lifecycle.test.ts
-
-- **Passes when:**
-  - `StructuredErrorBridgeTests` passes in step 1, and `BingleJsiErrorsTest` passes in step 2;
-  - in step 3, `rejects a bad call with the variant name and a structured kind` passes on both platforms: the rejection has `userInfo.kind`, and on Android its message starts with the variant name, as on iOS.
+- **Passes when:** `rejects a bad call with the variant name and a structured kind` passes on both platforms: the rejection has `userInfo.kind`, and on Android its message starts with the variant name, as on iOS.
 
