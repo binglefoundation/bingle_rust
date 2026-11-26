@@ -81,6 +81,23 @@ check "apply IAM change with --yes: executed" "executed 0 create-change-set exec
 check "apply dry run: shown and deleted, not executed" "dry-run 0 create-change-set delete-change-set" "$(apply iam_change.json 1 1)"
 check "apply failed set: failure, set deleted" "failed 1 create-change-set delete-change-set" "$(apply failed.json 0 0)"
 check "apply unreadable description: never executed" "failed 1 create-change-set delete-change-set" "$(apply unreadable.json 1 0)"
+
+# pre-flight (#548): CS_REPORT records the classification; CS_APPROVED lets a change set that was
+# approved at the start of the roll execute without asking (here: with no terminal, which otherwise
+# declines it).
+CS_REPORT="$tmp/report" apply iam_change.json 0 1 >/dev/null
+check "a dry run writes its classification to CS_REPORT" "$(changeset_classify "$FIXTURES/iam_change.json")" "$(cat "$tmp/report")"
+changeset_classify "$FIXTURES/iam_change.json" >"$tmp/approved_iam"
+changeset_classify "$FIXTURES/image_only.json" >"$tmp/approved_safe"
+cat "$tmp/approved_iam" >"$tmp/approved_more"
+echo "Modify ExtraThing (AWS::EC2::SecurityGroup, Replacement: False)" >>"$tmp/approved_more"
+check "approved at pre-flight: executed without asking" "executed 0 create-change-set execute-change-set" "$(CS_APPROVED="$tmp/approved_iam" apply iam_change.json 0 0)"
+check "fewer changes than approved: executed without asking" "executed 0 create-change-set execute-change-set" "$(CS_APPROVED="$tmp/approved_more" apply iam_change.json 0 0)"
+check "a change that was not approved: asks (declined, no terminal)" "declined 1 create-change-set delete-change-set" "$(CS_APPROVED="$tmp/approved_safe" apply iam_change.json 0 0)"
+check "approval file missing: asks (declined, no terminal)" "declined 1 create-change-set delete-change-set" "$(CS_APPROVED="$tmp/nonexistent" apply iam_change.json 0 0)"
+STUB_CHANGESET=iam_change.json
+check "a change that was not approved is named" "[test] These differ from the changes approved at the start of the roll:" \
+  "$(CS_APPROVED="$tmp/approved_safe" changeset_apply example-relay-stack us-east-1 x ImageUri img 0 0 </dev/null 2>/dev/null | grep -F 'These differ')"
 unset -f aws
 
 echo "  $passes passed, $fails failed"

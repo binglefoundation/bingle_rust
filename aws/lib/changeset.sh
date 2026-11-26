@@ -14,6 +14,14 @@
 #
 # Needs aws and python3. Callers set CS_PREFIX (the log prefix, e.g. "[deploy]") before calling.
 # Bash 3.2 compatible (no associative arrays, no mapfile).
+#
+# A roll previews every stack before it changes any (issue #548), through two environment
+# variables, which scripts/roll_relays.sh sets on each deploy script it runs:
+#   CS_REPORT    a file: changeset_apply writes its classification there (changeset_classify's
+#                output), so the roll can list every stack that needs review and ask once
+#   CS_APPROVED  a file holding the classification approved at the start of the roll: a change set
+#                whose review changes are all in it executes without asking again; one with a change
+#                that is not prompts as before
 
 CS_PREFIX=${CS_PREFIX:-"[changeset]"}
 
@@ -170,6 +178,23 @@ changeset_preview_image_ref() {
   fi
 }
 
+# _cs_unapproved <verdict file> <approved verdict file>: the review changes in the first that the
+# second does not list (all of them when the second is missing or names none).
+_cs_unapproved() {
+  local line
+  tail -n +2 "$1" | while IFS= read -r line; do
+    if [[ ! -f "$2" ]] || ! tail -n +2 "$2" | grep -Fxq -- "$line"; then
+      echo "$line"
+    fi
+  done
+}
+
+# _cs_approved <verdict file> <approved verdict file>: true when every review change in the first was
+# approved in the second. A change set with fewer changes than were approved is still approved.
+_cs_approved() {
+  [[ -f "$2" ]] && [[ -z "$(_cs_unapproved "$1" "$2")" ]]
+}
+
 _cs_delete() { # <stack> <change set name> <region>
   aws cloudformation delete-change-set --stack-name "$1" --change-set-name "$2" --region "$3" >/dev/null 2>&1 || true
 }
@@ -217,6 +242,9 @@ changeset_apply() {
   fi
   changeset_classify "$tmp/changeset.json" >"$tmp/verdict"
   verdict=$(head -n 1 "$tmp/verdict")
+  if [[ -n "${CS_REPORT:-}" ]]; then
+    cp "$tmp/verdict" "$CS_REPORT"
+  fi
 
   case "$verdict" in
     empty)
@@ -246,6 +274,16 @@ changeset_apply() {
       echo "$CS_PREFIX Dry run: a roll would stop and ask before executing this (or run it with --yes). Deleting the change set."
     fi
     _cs_delete "$stack" "$name" "$region"; CS_RESULT=dry-run; rm -rf "$tmp"; return 0
+  fi
+
+  if [[ "$verdict" == review && $yes -ne 1 && -n "${CS_APPROVED:-}" ]]; then
+    if _cs_approved "$tmp/verdict" "$CS_APPROVED"; then
+      echo "$CS_PREFIX These changes were approved at the start of the roll; executing without asking again."
+      yes=1
+    else
+      echo "$CS_PREFIX These differ from the changes approved at the start of the roll:"
+      _cs_unapproved "$tmp/verdict" "$CS_APPROVED" | sed 's/^/      - /'
+    fi
   fi
 
   if [[ "$verdict" == review && $yes -ne 1 ]]; then

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Roll a network's relays onto one commit, and record what each network runs (issue #399).
 #
-#   scripts/roll_relays.sh --dry-run          # preview: check everything and show each stack's
-#                                             # change set, then delete it; change no stack
+#   scripts/roll_relays.sh --dry-run          # the pre-flight alone: check everything and show each
+#                                             # stack's change set, then delete it; change no stack
 #   scripts/roll_relays.sh                    # roll every relay in the inventory
 #   scripts/roll_relays.sh --yes              # roll without asking, even when a change set goes
 #                                             # beyond the expected task definition and service update
@@ -36,11 +36,17 @@
 # Each redeploy applies the template in this checkout (aws/relay_stack.yaml or
 # aws/relay_express.yaml, by the relay's mode; aws/gateway_stack.yaml for a gateway) along with the
 # new image, keeping every other stack parameter, so template changes ship with the roll (#528). It
-# goes through a CloudFormation change set, which is printed. One that only replaces the task
-# definition and updates the service runs without asking; anything else (IAM, networking, another
-# replacement, an added or removed resource) stops at a y/N prompt for that stack, unless --yes. A
-# declined change set fails the roll like a failed deploy. The passphrase stays in the stack's
-# Secrets Manager secret.
+# goes through a CloudFormation change set. One that only replaces the task definition and updates
+# the service is expected; anything else (IAM, networking, another replacement, an added or removed
+# resource) needs review. The passphrase stays in the stack's Secrets Manager secret.
+#
+# Pre-flight (#548): before it builds or changes anything, the roll creates, prints and deletes every
+# stack's change set (relays, then gateways), as --dry-run does. A stack that cannot be previewed
+# stops the roll. It then lists the stacks whose change sets need review and asks once whether to
+# roll them all; a refusal changes no stack, and --yes answers yes. During the roll a stack whose
+# real change set has only the review changes approved at the start executes without asking again;
+# one with a change that was not approved (the image digest is only final after the push) stops at a
+# y/N prompt for that stack, and a refusal there fails the roll like a failed deploy.
 #
 # On MainNet the inventory can also name the email gateway (GATEWAY lines, #489; there is no TestNet
 # gateway, so a TestNet inventory may not have one). After every relay has rolled, each gateway is
@@ -321,22 +327,67 @@ if [[ $DRY_RUN -eq 1 ]]; then
   fi
   [[ -n "$CHECK_ACCOUNT" ]] && echo "    then: bingle_cli checkrelays as $CHECK_ACCOUNT"
   [[ "${BINGLE_NO_RECORD:-0}" == 1 ]] || echo "    and record a $INV_NETWORK deployment of $SHORT in $GH_REPO"
-  # Show what each redeploy would change: its change set is created, printed and deleted. The image
-  # is not built, so a change set names the tag's digest if ECR already has it, or else the tag.
-  dry_failed=0
+fi
+
+# ── pre-flight ────────────────────────────────────────────────────────
+# Every stack's change set is created, printed, classified and deleted before anything is built or
+# changed (#548). The image is not built yet, so a change set names the tag's digest if ECR already
+# has it, or else the tag; either way only the task definition differs from the real one. Each
+# classification is kept in PREFLIGHT_DIR: relay-<n> and gateway-<n>.
+PREFLIGHT_DIR=$(mktemp -d "${TMPDIR:-/tmp}/roll-preflight.XXXXXX")
+cleanup() { rm -rf "$PREFLIGHT_DIR"; }
+trap cleanup EXIT
+preview_failed=0
+for ((i = 0; i < ${#R_HANDLE[@]}; i++)); do
+  info "pre-flight: change set for ${R_HANDLE[i]} (${R_STACK[i]}, ${R_REGION[i]})"
+  mode_args=()
+  [[ "${R_MODE[i]}" == express ]] && mode_args=(--express)
+  CS_REPORT="$PREFLIGHT_DIR/relay-$i" aws/deploy_relay.sh --redeploy-only --dry-run --handle "${R_HANDLE[i]}" --stack-name "${R_STACK[i]}" --region "${R_REGION[i]}" --tag "$TAG" ${mode_args[@]+"${mode_args[@]}"} \
+    || { warn "${R_STACK[i]}: no change set (see above)"; preview_failed=1; }
+done
+for ((i = 0; i < ${#G_STACK[@]}; i++)); do
+  info "pre-flight: change set for gateway ${G_STACK[i]} (${G_REGION[i]})"
+  CS_REPORT="$PREFLIGHT_DIR/gateway-$i" aws/deploy_gateway.sh --redeploy-only --dry-run --relay-stack "${G_RELAY_STACK[i]}" --stack-name "${G_STACK[i]}" --region "${G_REGION[i]}" --tag "$TAG" \
+    || { warn "gateway ${G_STACK[i]}: no change set (see above)"; preview_failed=1; }
+done
+[[ $preview_failed -eq 0 ]] || die "pre-flight: a change set could not be created; no stack was changed"
+
+# needs_review <report file>: true when the stack's change set needs review.
+needs_review() { [[ "$(head -n 1 "$1" 2>/dev/null)" == review ]]; }
+review_count=0
+for ((i = 0; i < ${#R_HANDLE[@]}; i++)); do
+  needs_review "$PREFLIGHT_DIR/relay-$i" && review_count=$((review_count + 1))
+done
+for ((i = 0; i < ${#G_STACK[@]}; i++)); do
+  needs_review "$PREFLIGHT_DIR/gateway-$i" && review_count=$((review_count + 1))
+done
+stack_count=$(( ${#R_HANDLE[@]} + ${#G_STACK[@]} ))
+if [[ $review_count -eq 0 ]]; then
+  ok "pre-flight: every change set is the expected task definition and service update, or empty"
+else
+  info "pre-flight: $review_count of $stack_count stack(s) change more than the task definition and service:"
   for ((i = 0; i < ${#R_HANDLE[@]}; i++)); do
-    info "dry run: change set for ${R_HANDLE[i]} (${R_STACK[i]}, ${R_REGION[i]})"
-    mode_args=()
-    [[ "${R_MODE[i]}" == express ]] && mode_args=(--express)
-    aws/deploy_relay.sh --redeploy-only --dry-run --handle "${R_HANDLE[i]}" --stack-name "${R_STACK[i]}" --region "${R_REGION[i]}" --tag "$TAG" ${mode_args[@]+"${mode_args[@]}"} \
-      || { warn "${R_STACK[i]}: no change set (see above); a roll would stop here"; dry_failed=1; }
+    needs_review "$PREFLIGHT_DIR/relay-$i" || continue
+    echo "    ${R_STACK[i]} (${R_REGION[i]}):"
+    tail -n +2 "$PREFLIGHT_DIR/relay-$i" | sed 's/^/      - /'
   done
   for ((i = 0; i < ${#G_STACK[@]}; i++)); do
-    info "dry run: change set for gateway ${G_STACK[i]} (${G_REGION[i]})"
-    aws/deploy_gateway.sh --redeploy-only --dry-run --relay-stack "${G_RELAY_STACK[i]}" --stack-name "${G_STACK[i]}" --region "${G_REGION[i]}" --tag "$TAG" \
-      || { warn "gateway ${G_STACK[i]}: no change set (see above); a roll would stop here"; dry_failed=1; }
+    needs_review "$PREFLIGHT_DIR/gateway-$i" || continue
+    echo "    gateway ${G_STACK[i]} (${G_REGION[i]}):"
+    tail -n +2 "$PREFLIGHT_DIR/gateway-$i" | sed 's/^/      - /'
   done
-  [[ $dry_failed -eq 0 ]] || die "dry run: a change set could not be created; no stack was changed"
+  if [[ $DRY_RUN -eq 1 ]]; then
+    info "dry run: a roll would ask once, here, before changing any stack (or run them with --yes)"
+  elif [[ $YES -eq 1 ]]; then
+    warn "rolling them because of --yes"
+  else
+    [[ -t 0 ]] || die "pre-flight: $review_count stack(s) need review and there is no terminal to ask on; review the changes above and rerun with --yes"
+    read -r -p "Roll all $stack_count stack(s), including these changes? [y/N] " answer || answer=""
+    [[ "$answer" == y || "$answer" == Y ]] || die "not rolled; no stack was changed"
+  fi
+fi
+
+if [[ $DRY_RUN -eq 1 ]]; then
   info "dry run: no stack changed"
   exit 0
 fi
@@ -371,6 +422,7 @@ finish() {
     record_status failure "$TAG: failed"
     [[ -n "$DEPLOYMENT_ID" ]] && warn "recorded a failed $INV_NETWORK deployment of $SHORT"
   fi
+  cleanup
 }
 trap finish EXIT
 
@@ -420,7 +472,7 @@ for ((i = 0; i < ${#R_HANDLE[@]}; i++)); do
   since=$(( $(date +%s) * 1000 ))
   mode_args=()
   [[ "${R_MODE[i]}" == express ]] && mode_args=(--express)
-  aws/deploy_relay.sh --redeploy-only --no-build --handle "$handle" --stack-name "$stack" --region "$region" --tag "$TAG" ${mode_args[@]+"${mode_args[@]}"} ${yes_args[@]+"${yes_args[@]}"} \
+  CS_APPROVED="$PREFLIGHT_DIR/relay-$i" aws/deploy_relay.sh --redeploy-only --no-build --handle "$handle" --stack-name "$stack" --region "$region" --tag "$TAG" ${mode_args[@]+"${mode_args[@]}"} ${yes_args[@]+"${yes_args[@]}"} \
     || die "$stack failed to roll; the relays after it were not touched"
   wait_for_start "$stack" "$region" "$since" \
     || die "$stack did not start cleanly on $SHORT; the relays after it were not touched"
@@ -440,7 +492,7 @@ for ((i = 0; i < ${#G_STACK[@]}; i++)); do
   stack=${G_STACK[i]} region=${G_REGION[i]}
   info "deploying gateway $stack ($region) onto $TAG"
   since=$(( $(date +%s) * 1000 ))
-  aws/deploy_gateway.sh --redeploy-only --no-build --relay-stack "${G_RELAY_STACK[i]}" --stack-name "$stack" --region "$region" --tag "$TAG" ${yes_args[@]+"${yes_args[@]}"} \
+  CS_APPROVED="$PREFLIGHT_DIR/gateway-$i" aws/deploy_gateway.sh --redeploy-only --no-build --relay-stack "${G_RELAY_STACK[i]}" --stack-name "$stack" --region "$region" --tag "$TAG" ${yes_args[@]+"${yes_args[@]}"} \
     || die "gateway $stack failed to deploy; the relays keep $SHORT"
   wait_for_start "$stack" "$region" "$since" "/bingle/gateway/$stack" \
     || die "gateway $stack did not start cleanly on $SHORT; the relays keep $SHORT"
