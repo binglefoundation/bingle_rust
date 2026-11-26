@@ -344,7 +344,7 @@ fn s_client_with_fragmented_hello(server: SocketAddr) -> Option<String> {
     while start.elapsed() < Duration::from_secs(5) {
         if output
             .lock()
-            .map(|o| o.contains("ServerHello"))
+            .map(|o| server_hello_received(&o))
             .unwrap_or(false)
         {
             break;
@@ -355,6 +355,19 @@ fn s_client_with_fragmented_hello(server: SocketAddr) -> Option<String> {
     let _ = child.wait();
     thread::sleep(Duration::from_millis(100));
     output.lock().ok().map(|o| o.clone())
+}
+
+/// Whether `s_client -msg` output shows a ServerHello from the server: a received ("<<<")
+/// handshake message whose hex dump starts with type 0x02. Checked by byte because OpenSSL 3.0
+/// prints DTLS 1.2 messages as "Not TLS data" rather than naming them.
+fn server_hello_received(output: &str) -> bool {
+    let lines: Vec<&str> = output.lines().collect();
+    lines.windows(2).any(|pair| {
+        let (header, dump) = (pair[0], pair[1].trim_start());
+        header.starts_with("<<<")
+            && (header.contains("Handshake") || header.contains("content_type=22"))
+            && dump.starts_with("02 ")
+    })
 }
 
 #[ntest::timeout(30_000)]
@@ -381,7 +394,7 @@ pub fn a_client_hello_split_across_datagrams_gets_a_server_hello() {
         output
     );
     assert!(
-        output.contains("<<< DTLS 1.2, Handshake") && output.contains("ServerHello"),
+        server_hello_received(&output),
         "the server never answered the fragmented ClientHello with a ServerHello:\n{}",
         output
     );
