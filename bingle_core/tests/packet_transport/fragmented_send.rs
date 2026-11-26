@@ -9,7 +9,9 @@ use crate::util::test_util::CapturedPackets;
 use bingle_core::api::bingle_api::NetworkEndpoint;
 use bingle_core::dtls::{Dtls, DtlsOpenSsl, UdpNetworkMux};
 use bingle_core::packet_transport::frame::{FragHeader, Frame, PACKET_MAX, build_data_frag, parse};
-use bingle_core::packet_transport::reassembly::DEFAULT_PER_PEER_REASSEMBLY_BYTES;
+use bingle_core::packet_transport::reassembly::{
+    DEFAULT_PER_PEER_REASSEMBLY_BYTES, ReassemblyLimits,
+};
 use bingle_core::packet_transport::{DtlsReliablePacketTransport, PacketTransport};
 use std::collections::HashSet;
 use std::net::SocketAddr;
@@ -393,6 +395,13 @@ pub fn an_8_mib_block_crosses_real_dtls_loopback_exactly() {
     let (receiver, receiver_addr, received) = loopback_node("frag-receiver", 1492);
     let (sender, _, _) = loopback_node("frag-sender", 1492);
     let to = NetworkEndpoint::new_direct(receiver_addr);
+    // 8 MiB is over the default per-peer budget, so the receiver raises it, as a media
+    // transfer would.
+    receiver.set_reassembly_limits(ReassemblyLimits {
+        per_peer_bytes: 16 * 1024 * 1024,
+        global_bytes: 64 * 1024 * 1024,
+        ..ReassemblyLimits::standard()
+    });
 
     // A small block first establishes the session.
     sender

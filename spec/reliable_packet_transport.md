@@ -261,8 +261,8 @@ Duplicate fragment handling:
 - Memory is allocated per fragment as fragments arrive, never up front from the announced `block_len`.
 - Enforce caps (defaults, configurable with `set_reassembly_limits`):
   - max in-progress transfers per peer: `8`; a new transfer beyond it drops that peer's oldest,
-  - max reassembly bytes per peer: `16 MiB`; exceeding it drops that peer's oldest other transfer,
-  - max global reassembly bytes: `64 MiB`; exceeding it drops the largest other transfer,
+  - max reassembly bytes per peer: `4 MiB` for now (`16 MiB` once #544 adds active cleanup); exceeding it drops that peer's oldest other transfer,
+  - max global reassembly bytes: `16 MiB` for now (`64 MiB` once #544 adds active cleanup); exceeding it drops the largest other transfer,
   - a transfer whose `block_len` exceeds either byte budget is refused at its first fragment, so the per-peer budget is also the largest block a receiver accepts until it is raised,
   - reject any transfer metadata implying `> PACKET_MAX`.
 - Consistency: `frag_count >= 2`, `frag_index < frag_count`, `block_len >= frag_count`, every fragment but the last has the same length `L`, `(frag_count - 1) * L < block_len <= frag_count * L`, and the last fragment is `block_len - (frag_count - 1) * L` bytes. A fragment that breaks a rule drops its transfer.

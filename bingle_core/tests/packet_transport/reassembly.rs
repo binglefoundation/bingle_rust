@@ -428,7 +428,7 @@ pub fn announcing_a_large_block_allocates_nothing_up_front() {
             FragOutcome::Progress { .. }
         ));
     }
-    // Eight transfers each announcing 16 MiB hold only the eight fragments that arrived.
+    // Eight transfers each announcing the per-peer limit hold only the eight fragments that arrived.
     assert_eq!(r.transfer_count(), 8);
     assert_eq!(r.bytes_in_use(), 8 * FRAG);
 }

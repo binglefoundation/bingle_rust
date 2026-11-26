@@ -13,11 +13,13 @@ use std::time::{Duration, Instant};
 /// Identifies one transfer: the sending peer, its DTLS session generation and the `tx_id`.
 pub type TransferKey = (NetworkEndpointKey, u64, u16);
 
-/// Default bytes one peer may hold in partial reassemblies (16 MiB). This is also the largest
-/// fragmented block a receiver accepts until the limit is raised.
-pub const DEFAULT_PER_PEER_REASSEMBLY_BYTES: usize = 16 * 1024 * 1024;
-/// Default bytes all peers together may hold in partial reassemblies (64 MiB).
-pub const DEFAULT_GLOBAL_REASSEMBLY_BYTES: usize = 64 * 1024 * 1024;
+/// Default bytes one peer may hold in partial reassemblies (4 MiB). This is also the largest
+/// fragmented block a receiver accepts until the limit is raised. Kept small for now because
+/// partial transfers are only cleaned up when a fragment arrives; #544 adds active cleanup and
+/// raises it back to the media size (16 MiB).
+pub const DEFAULT_PER_PEER_REASSEMBLY_BYTES: usize = 4 * 1024 * 1024;
+/// Default bytes all peers together may hold in partial reassemblies (16 MiB; 64 MiB after #544).
+pub const DEFAULT_GLOBAL_REASSEMBLY_BYTES: usize = 16 * 1024 * 1024;
 /// Default number of transfers one peer may have in progress at once.
 pub const DEFAULT_MAX_TRANSFERS_PER_PEER: usize = 8;
 /// Default lifetime of a partial transfer, measured from its first fragment (spec §6.4).
