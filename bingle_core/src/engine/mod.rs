@@ -3033,14 +3033,18 @@ impl Engine {
         self.notify_listening(false);
     }
 
-    /// Called when the STUN finder reverts to None state after servers stop responding for
-    /// the no-response timeout period (default 30s).  This signals a network outage or IP
-    /// change: we reset the engine to StunIdentify so it will re-identify NAT type once
-    /// servers become reachable again.
+    /// Called when the STUN finder reports IPv4 as None: no IPv4 server answered for the
+    /// no-response timeout (default 30s), or for a whole re-poll round while IPv6 servers kept
+    /// answering (issue #549). This signals a network outage or IP change: we reset the engine to
+    /// StunIdentify so it will re-identify NAT type once servers become reachable again.
+    ///
+    /// TODO(#551): registration runs on IPv4 alone, so this resets the whole engine even while
+    /// IPv6 still answers, and an IPv6-only host without NAT64 never registers at all (IPv4 never
+    /// leaves None, so this is never called and nothing else drives registration).
     pub(crate) fn on_stun_none(&self) {
         use std::sync::atomic::Ordering;
         tracing::info!(
-            "[Engine] on_stun_none: STUN servers silent for timeout period; resetting to StunIdentify"
+            "[Engine] on_stun_none: no IPv4 STUN answers (silence timeout or a whole re-poll round); resetting to StunIdentify"
         );
         self.stop_relay_keep_alive();
         self.set_nat_type(NatType::Unknown);

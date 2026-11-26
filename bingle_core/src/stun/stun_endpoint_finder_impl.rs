@@ -79,6 +79,15 @@ impl FamilyState {
         }
     }
 
+    /// Whether the family has had an answer since the last reset: Single, Consistent or
+    /// Inconsistent.
+    fn is_settled(&self) -> bool {
+        matches!(
+            self.state,
+            StunState::Single | StunState::Consistent | StunState::Inconsistent
+        )
+    }
+
     /// Rank used to combine the families into the polling state: the more settled family wins.
     fn rank(&self) -> u8 {
         match self.state {
@@ -89,6 +98,18 @@ impl FamilyState {
             StunState::Consistent => 4,
         }
     }
+}
+
+/// What a recompute of the family states may conclude (issue #549).
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Round {
+    /// A reply arrived during a re-poll round. A re-poll clears every server's answer before
+    /// sending, so a family's missing answers only mean its replies have not arrived yet: a settled
+    /// family keeps its state until the round holds at least two of its answers.
+    InProgress,
+    /// The round is over (the next poll, or the silence timeout): each family's state is what its
+    /// servers answered, so a family with no answers goes to None.
+    Complete,
 }
 
 struct Inner {
@@ -158,7 +179,7 @@ impl Inner {
                 // Setting state to None BEFORE calling recompute_state_and_notify
                 // was preventing the notification because it thought the state hadn't changed.
                 // We let recompute_state_and_notify handle the transition from the old state.
-                self.recompute_state_and_notify();
+                self.recompute_state_and_notify(Round::Complete);
             }
         }
 
@@ -170,6 +191,12 @@ impl Inner {
             .is_none_or(|last| now.saturating_sub(last) >= interval_ticks)
         {
             self.last_poll_tick = Some(now);
+
+            // Close the re-poll round that ends here before this poll clears its answers: a family
+            // that did not answer during the whole round goes to None now (issue #549).
+            if matches!(self.state, StunState::Consistent | StunState::Inconsistent) {
+                self.recompute_state_and_notify(Round::Complete);
+            }
 
             // Determine servers to poll
             let to_poll: Vec<SocketAddr> = match self.state {
@@ -270,7 +297,12 @@ impl Inner {
     /// Recompute each family's state from the servers' latest mapped endpoints, and notify the
     /// families whose state changed, or whose endpoint changed (a NAT port change both servers
     /// agree on in the same round keeps the state Consistent but must still be reported).
-    fn recompute_state_and_notify(&mut self) {
+    ///
+    /// With `Round::InProgress` during a re-poll, a settled family with fewer than two answers so
+    /// far keeps its state: otherwise the first reply of a round, from the other family, would
+    /// report this family as None (issue #549).
+    fn recompute_state_and_notify(&mut self, round: Round) {
+        let repolling = matches!(self.state, StunState::Consistent | StunState::Inconsistent);
         let mut changed = Vec::new();
         for family in [AddrFamily::V4, AddrFamily::V6] {
             let endpoints: Vec<SocketAddr> = self
@@ -279,11 +311,14 @@ impl Inner {
                 .filter_map(|s| s.endpoint)
                 .filter(|e| AddrFamily::of(e) == family)
                 .collect();
-            let new = FamilyState::from_endpoints(&endpoints);
             let slot = match family {
                 AddrFamily::V4 => &mut self.v4,
                 AddrFamily::V6 => &mut self.v6,
             };
+            if round == Round::InProgress && repolling && slot.is_settled() && endpoints.len() < 2 {
+                continue;
+            }
+            let new = FamilyState::from_endpoints(&endpoints);
             if *slot != new {
                 *slot = new;
                 changed.push((family, new));
@@ -575,7 +610,7 @@ impl StunEndpointFinder for StunEndpointFinderImpl {
         // silent window is over, so the next poll will start a fresh window.
         inner.last_request_tick = None;
         // Recompute state and notify
-        inner.recompute_state_and_notify();
+        inner.recompute_state_and_notify(Round::InProgress);
     }
 
     fn set_state_change_handler(&mut self, handler: Option<StateChangeHandler>) {
