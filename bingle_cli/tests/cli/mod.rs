@@ -37,6 +37,8 @@ pub mod maildir;
 pub mod mailer;
 #[path = "roll_guard.rs"]
 pub mod roll_guard;
+#[path = "roll_preflight.rs"]
+pub mod roll_preflight;
 #[path = "run_args.rs"]
 pub mod run_args;
 #[path = "shutdown.rs"]
