@@ -37,6 +37,8 @@ scripts/roll_relays.sh --dry-run
 scripts/roll_relays.sh
 ```
 
+The roll checks the commit before it touches anything (#546). It stops if this checkout is behind the head of `origin/staging` (update it with `git pull --ff-only`, or add `--allow-earlier` to roll an earlier staging commit on purpose), and if TestNet already runs this commit (add `--force` to redeploy it anyway). It prints the commit TestNet runs now and the one it will run.
+
 `bingle_env.sh` is the maintainers' own environment script: it signs in to the network's AWS account and sets `BINGLE_NETWORK` and `BINGLE_RELAYS_FILE`. Any other way of setting those works.
 
 A roll applies the CloudFormation templates in the checkout (`aws/relay_stack.yaml`, `aws/relay_express.yaml`, `aws/gateway_stack.yaml`) as well as the new image, keeping each stack's parameter values (issue #528). Each stack's update is a change set:
