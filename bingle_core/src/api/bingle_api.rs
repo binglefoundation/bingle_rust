@@ -266,6 +266,13 @@ pub trait BingleApiInternal: Send + Sync {
     fn relay_finder_remove_relay(&self, _relay_id: &str) { /* default no-op */
     }
 
+    /// Handle a peer relay reported failed (issue #516): keep it in the relay set as suspect, or
+    /// remove it when its on-chain `allow_relay` is withdrawn. Returns `false` when it was already
+    /// suspect. Only a relay engine implements this.
+    fn relay_mark_suspect(&self, relay_id: &str) -> bool {
+        panic!("relay_mark_suspect({relay_id}) is not implemented for this BingleApiInternal");
+    }
+
     /// Clear cached relay states in the relay finder so the pool is re-queried.
     fn relay_finder_clear_state_cache(&self) { /* default no-op */
     }
@@ -418,6 +425,9 @@ macro_rules! impl_bingle_api_internal_noop {
             fn ddb_upsert_record(&self, _record: $crate::ddb::AdvertRecord) {}
             fn ddb_delete_record(&self, _id: &str) {}
             fn relay_finder_remove_relay(&self, _relay_id: &str) {}
+            fn relay_mark_suspect(&self, _relay_id: &str) -> bool {
+                false
+            }
             fn relay_finder_clear_state_cache(&self) {}
             fn ddb_backend_size(&self) -> usize {
                 0

@@ -56,3 +56,6 @@ pub mod relay_probe_failures;
 
 #[path = "relay_selection_dead_relays.rs"]
 pub mod relay_selection_dead_relays;
+
+#[path = "relay_suspects.rs"]
+pub mod relay_suspects;

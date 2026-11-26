@@ -103,6 +103,63 @@ pub fn evict_disallowed_relays<B: DdbBackend + ?Sized>(
     evict
 }
 
+/// Put back relays that are permitted on chain but missing from `backend`, so a relay removed
+/// from the relay set returns to it without a restart (issue #516).
+///
+/// `candidates` are the relays found by discovery. A candidate is added only when it is not
+/// `my_id`, has an endpoint, has no record in `backend`, and `permission` reports `Some(true)`;
+/// an unknown permission adds nothing. As in [`evict_disallowed_relays`], the backend lock is not
+/// held while `permission` runs. Returns the added ids.
+pub fn restore_missing_relays<B: DdbBackend + ?Sized>(
+    backend: &std::sync::Mutex<B>,
+    candidates: &[crate::relay::relay_finder::RelayInfo],
+    my_id: &str,
+    mut permission: impl FnMut(&str) -> Option<bool>,
+) -> Vec<String> {
+    let missing: Vec<&crate::relay::relay_finder::RelayInfo> = match backend.lock() {
+        Ok(b) => candidates
+            .iter()
+            .filter(|r| r.id() != my_id)
+            .filter(|r| r.advert_record.endpoint.is_some())
+            .filter(|r| b.lookup(r.id()).is_none())
+            .collect(),
+        Err(_) => {
+            tracing::error!("[ddb::restore_missing_relays] DDB backend lock poisoned");
+            return Vec::new();
+        }
+    };
+    let restore: Vec<&crate::relay::relay_finder::RelayInfo> = missing
+        .into_iter()
+        .filter(|r| permission(r.id()) == Some(true))
+        .collect();
+    if restore.is_empty() {
+        return Vec::new();
+    }
+    match backend.lock() {
+        Ok(mut b) => {
+            let mut added = Vec::new();
+            for r in restore {
+                // Another path may have added it while the lock was released.
+                if b.lookup(r.id()).is_some() {
+                    continue;
+                }
+                tracing::info!(
+                    "[ddb::restore_missing_relays] adding relay id={} back to the relay set: allowed on chain but missing",
+                    r.id()
+                );
+                // As initialize_relay seeds the relay set from the discovered roots.
+                b.upsert(r.advert_record.clone());
+                added.push(r.id().to_string());
+            }
+            added
+        }
+        Err(_) => {
+            tracing::error!("[ddb::restore_missing_relays] DDB backend lock poisoned");
+            Vec::new()
+        }
+    }
+}
+
 /// Default time to live of a client advert held by a relay (issue #280). A client refreshes its
 /// advert every third of this, so a live client's advert never lapses; a client that stops without
 /// signing off (crash, lost network) is gone within this time.

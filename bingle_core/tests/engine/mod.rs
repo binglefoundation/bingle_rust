@@ -92,3 +92,6 @@ pub mod nat_v6;
 
 #[path = "stun_per_family.rs"]
 pub mod stun_per_family;
+
+#[path = "relay_suspect_recovery.rs"]
+pub mod relay_suspect_recovery;

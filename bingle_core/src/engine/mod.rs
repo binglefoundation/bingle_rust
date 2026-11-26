@@ -242,6 +242,12 @@ pub struct Engine {
     // Relays that recently could not be reached, skipped by relay selection for a cooldown.
     // Shared by every relay finder this engine creates, which are often short-lived (#122).
     relay_probe_failures: Arc<crate::relay::relay_probe_failures::RelayProbeFailures>,
+    // On a relay: peer relays reported failed and not heard from since, re-checked with backoff
+    // (#516). Shared with the DTLS handler closure, which clears a relay when it hears from it.
+    relay_suspects: Arc<crate::relay::relay_suspects::RelaySuspects>,
+    // On a relay: the loop that re-checks suspect relays (#516).
+    relay_suspect_checker: Mutex<Option<crate::util::periodic_task::PeriodicTask>>,
+    relay_suspect_check_interval: Mutex<std::time::Duration>,
     // The relay we most recently registered with. Retained so that, if our public endpoint
     // changes (e.g. a NAT port remap), we can re-register with the same relay on the new
     // mapping without a full re-discovery.
@@ -692,6 +698,11 @@ impl Engine {
             relay_finder: Mutex::new(None),
             relay_probe_failures: Arc::new(
                 crate::relay::relay_probe_failures::RelayProbeFailures::new(),
+            ),
+            relay_suspects: Arc::new(crate::relay::relay_suspects::RelaySuspects::new()),
+            relay_suspect_checker: Mutex::new(None),
+            relay_suspect_check_interval: Mutex::new(
+                crate::relay::relay_suspects::RELAY_SUSPECT_CHECK_INTERVAL,
             ),
             last_registered_relay: Mutex::new(None),
             last_reregister_at: Mutex::new(None),
@@ -1397,51 +1408,69 @@ impl Engine {
 
         tracing::debug!("[Engine::ripple_message] relay_ids={:?}", relay_ids);
 
-        // Use endpoints from make_epoch_info if available, otherwise try to look them up individually
-        if let Some(endpoints) = relay_endpoints_opt {
-            for (id, endpoint) in relay_ids.into_iter().zip(endpoints) {
-                if id == my_id || id == originator_id {
-                    tracing::debug!(
-                        "[Engine::ripple_message][endpoints known] skipping relay {} my_id={}, originator_id={}",
-                        id,
-                        my_id,
-                        originator_id
-                    );
-                    continue;
-                }
-                if let Ok(addr) = SocketAddr::try_from(endpoint) {
-                    tracing::info!(
-                        "[Engine::ripple_message] sending to relay={} at {:?}",
-                        id,
-                        addr
-                    );
-                    let nsk = NetworkEndpoint::new_direct(addr);
-                    let _ = api.send_message_to_network(&nsk, &id, message.clone(), None);
-                }
+        // Pair each relay with its endpoint: from make_epoch_info when every relay has one,
+        // otherwise looked up individually.
+        let targets: Vec<(String, Option<InetSocketAddress>)> = match relay_endpoints_opt {
+            Some(endpoints) => relay_ids
+                .into_iter()
+                .zip(endpoints)
+                .map(|(id, ep)| (id, Some(ep)))
+                .collect(),
+            None => relay_ids
+                .into_iter()
+                .map(|id| {
+                    let ep = ddb.lookup(&id).and_then(|rec| rec.endpoint);
+                    (id, ep)
+                })
+                .collect(),
+        };
+
+        for (id, endpoint) in targets {
+            if id == my_id || id == originator_id {
+                tracing::debug!(
+                    "[Engine::ripple_message] skipping relay {} my_id={}, originator_id={}",
+                    id,
+                    my_id,
+                    originator_id
+                );
+                continue;
             }
-        } else {
-            for id in relay_ids {
-                if id == my_id || id == originator_id {
-                    tracing::debug!(
-                        "[Engine::ripple_message][no endpoints known] skipping relay {} my_id={}, originator_id={}",
-                        id,
-                        my_id,
-                        originator_id
-                    );
-                    continue;
-                }
-                if let Some(rec) = ddb.lookup(&id)
-                    && let Some(endpoint) = rec.endpoint
-                    && let Ok(addr) = SocketAddr::try_from(endpoint)
-                {
-                    tracing::info!(
-                        "[Engine::ripple_message] sending to relay={} at {:?}",
-                        id,
-                        addr
-                    );
-                    let nsk = NetworkEndpoint::new_direct(addr);
-                    let _ = api.send_message_to_network(&nsk, &id, message.clone(), None);
-                }
+            // A ripple that does not reach a relay is logged at warn, so a peer relay that
+            // stops receiving ripples shows at the default log level (#516).
+            let suspect = if self.relay_suspects.is_suspect(&id) {
+                " (suspect)"
+            } else {
+                ""
+            };
+            let Some(addr) = endpoint.and_then(|ep| SocketAddr::try_from(ep).ok()) else {
+                tracing::warn!(
+                    "[Engine::ripple_message] skipping relay {}{}: no usable endpoint",
+                    id,
+                    suspect
+                );
+                continue;
+            };
+            tracing::info!(
+                "[Engine::ripple_message] sending to relay={} at {:?}",
+                id,
+                addr
+            );
+            let nsk = NetworkEndpoint::new_direct(addr);
+            match api.send_message_to_network(&nsk, &id, message.clone(), None) {
+                Ok(true) => {}
+                Ok(false) => tracing::warn!(
+                    "[Engine::ripple_message] ripple to relay {}{} at {} was not sent",
+                    id,
+                    suspect,
+                    addr
+                ),
+                Err(e) => tracing::warn!(
+                    "[Engine::ripple_message] ripple to relay {}{} at {} failed: {}",
+                    id,
+                    suspect,
+                    addr,
+                    e
+                ),
             }
         }
     }
@@ -1561,6 +1590,7 @@ impl Engine {
         let custom_handler = self.custom_message_handler.lock().unwrap().clone();
         let peer_refusals = self.peer_refusals.clone();
         let relay_origin = self.relay_origin.clone();
+        let relay_suspects = self.relay_suspects.clone();
 
         let router_arc = self.router();
 
@@ -1649,6 +1679,12 @@ impl Engine {
                         } else {
                             tracing::warn!("[Engine::install_dtls_handler][cb] could not lock endpoint_status");
                         }
+                    }
+
+                    // 2b) Any authenticated message from a suspect relay shows it is reachable
+                    //     again (#516).
+                    if am_relay && relay_suspects.clear(&sender_id) {
+                        tracing::info!("[Engine::install_dtls_handler][cb] heard from suspect relay {}; no longer suspect", sender_id);
                     }
 
                     // No inline DDB handling; use Router + handlers instead
@@ -2931,6 +2967,12 @@ impl Engine {
             api.with_engine(&mut |e| {
                 e.evict_disallowed_relays();
             });
+            // Discovery may query a relay, so it runs outside with_engine.
+            let mut finder = None;
+            api.with_engine(&mut |e| finder = e.relay_finder.lock().ok().and_then(|g| g.clone()));
+            if let Some(finder) = finder {
+                Self::restore_missing_relays(&api, finder.as_ref());
+            }
             true
         });
         let mut refresher = crate::relay::relay_permission_refresh::RelayPermissionRefresher::new(
@@ -2986,6 +3028,211 @@ impl Engine {
             );
         }
         evicted
+    }
+
+    /// Put back permitted relays that are missing from this relay's DDB, found by `finder`'s
+    /// discovery, so a relay that left the relay set rejoins it without a restart (issue #516).
+    /// Runs outside `with_engine`: discovery may query a relay. Returns the added ids.
+    fn restore_missing_relays(
+        api: &Arc<dyn crate::api::bingle_api::BingleApiBoth>,
+        finder: &dyn crate::relay::relay_finder::RelayFinderTrait,
+    ) -> Vec<String> {
+        let Some(my_id) = api.get_my_id() else {
+            tracing::warn!("[Engine::restore_missing_relays] my id not set; skipping");
+            return Vec::new();
+        };
+        let my_id = my_id
+            .trim_end_matches(crate::protocol::ISSUER_SUFFIX)
+            .to_string();
+        let mut backend = None;
+        api.with_engine(&mut |e| backend = Some(e.ddb_backend.clone()));
+        let Some(backend) = backend else {
+            return Vec::new();
+        };
+        let candidates = finder.list_root_relays(&my_id, false);
+        let added = crate::ddb::restore_missing_relays(&backend, &candidates, &my_id, |id| {
+            crate::blockchain::algo_bingle::relay_permission(
+                api.as_ref(),
+                id,
+                "Engine::restore_missing_relays",
+            )
+        });
+        if !added.is_empty() {
+            info_theme!(
+                themes::ENGINE,
+                "[Engine::restore_missing_relays] added {} relay(s) back to the relay set: {:?}",
+                added.len(),
+                added
+            );
+        }
+        added
+    }
+
+    /// Peer relays reported failed and not heard from since (issue #516).
+    pub fn relay_suspects(&self) -> Arc<crate::relay::relay_suspects::RelaySuspects> {
+        self.relay_suspects.clone()
+    }
+
+    /// Handle a peer relay that was reported failed and failed its check, or that a peer relay
+    /// rippled as failed (issue #516). A relay whose on-chain `allow_relay` is withdrawn is
+    /// removed, as the permission refresh would. Any other relay stays in the relay set, so
+    /// ripples to it resume when it is reachable, and is marked suspect: re-checked with backoff
+    /// until it answers, or until a message arrives from it. Returns `true` when this changed
+    /// anything, `false` when the relay was already suspect.
+    pub fn relay_mark_suspect(&self, relay_id: &str) -> bool {
+        let Some(api) = self.bingle_api.upgrade() else {
+            tracing::warn!("[Engine::relay_mark_suspect] bingle_api dropped; skipping");
+            return false;
+        };
+        let permission = crate::blockchain::algo_bingle::relay_permission(
+            api.as_ref(),
+            relay_id,
+            "Engine::relay_mark_suspect",
+        );
+        if permission == Some(false) {
+            self.ddb_delete_record(relay_id);
+            self.relay_finder_remove_relay(relay_id);
+            self.relay_suspects.clear(relay_id);
+            warn_theme!(
+                themes::ENGINE,
+                "[Engine::relay_mark_suspect] removed relay {}: reported failed and allow_relay is not set on chain",
+                relay_id
+            );
+            return true;
+        }
+        if !self.relay_suspects.mark(relay_id) {
+            tracing::info!(
+                "[Engine::relay_mark_suspect] relay {} is already suspect",
+                relay_id
+            );
+            return false;
+        }
+        warn_theme!(
+            themes::ENGINE,
+            "[Engine::relay_mark_suspect] relay {} reported failed: kept in the relay set as suspect, re-checking in {:?}",
+            relay_id,
+            crate::relay::relay_suspects::RELAY_SUSPECT_FIRST_RECHECK
+        );
+        self.start_relay_suspect_checker();
+        true
+    }
+
+    /// The suspect relays due a re-check, each with the address in its DDB record, if any.
+    fn relay_suspect_recheck_targets(&self) -> Vec<(String, Option<SocketAddr>)> {
+        let due = self.relay_suspects.due();
+        if due.is_empty() {
+            return Vec::new();
+        }
+        let Ok(b) = self.ddb_backend.lock() else {
+            tracing::error!("[Engine::relay_suspect_recheck_targets] ddb_backend lock poisoned");
+            return Vec::new();
+        };
+        due.into_iter()
+            .map(|id| {
+                let addr = b
+                    .lookup(&id)
+                    .and_then(|rec| rec.endpoint)
+                    .and_then(|ep| SocketAddr::try_from(ep).ok());
+                (id, addr)
+            })
+            .collect()
+    }
+
+    /// One pass of the suspect relay re-check (issue #516): probe each suspect relay that is due,
+    /// clear it when it answers Available, and back off when it does not. Probes run outside
+    /// `with_engine`, as each waits on a response.
+    fn recheck_suspect_relays(api: &Arc<dyn crate::api::bingle_api::BingleApiBoth>) {
+        let mut targets = Vec::new();
+        let mut suspects = None;
+        api.with_engine(&mut |e| {
+            targets = e.relay_suspect_recheck_targets();
+            suspects = Some(e.relay_suspects());
+        });
+        let Some(suspects) = suspects else {
+            return;
+        };
+        for (id, addr) in targets {
+            let Some(addr) = addr else {
+                // Nothing to ripple to: the permission refresh puts the relay back if it is
+                // still allowed on chain.
+                suspects.clear(&id);
+                warn_theme!(
+                    themes::ENGINE,
+                    "[Engine::recheck_suspect_relays] relay {} is no longer in the relay set; no longer suspect",
+                    id
+                );
+                continue;
+            };
+            match crate::relay::relay_suspects::probe_relay_state(api.as_ref(), &id, addr) {
+                Ok(RelayState::Available) => {
+                    if suspects.clear(&id) {
+                        info_theme!(
+                            themes::ENGINE,
+                            "[Engine::recheck_suspect_relays] relay {} answered Available; no longer suspect",
+                            id
+                        );
+                    }
+                }
+                outcome => {
+                    let reason = match outcome {
+                        Ok(state) => format!("answered {state:?}"),
+                        Err(e) => e,
+                    };
+                    if let Some(wait) = suspects.recheck_failed(&id) {
+                        info_theme!(
+                            themes::ENGINE,
+                            "[Engine::recheck_suspect_relays] relay {} still suspect ({}); next re-check in {:?}",
+                            id,
+                            reason,
+                            wait
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    /// Start the loop that re-checks suspect relays, if it is not already running (issue #516).
+    fn start_relay_suspect_checker(&self) {
+        let Ok(mut guard) = self.relay_suspect_checker.lock() else {
+            tracing::error!(
+                "[Engine::start_relay_suspect_checker] relay_suspect_checker mutex poisoned"
+            );
+            return;
+        };
+        if guard.is_some() {
+            return;
+        }
+        let api_weak = self.bingle_api.clone();
+        let span = self.span();
+        let pass: crate::util::periodic_task::PeriodicPass = Box::new(move || {
+            let _guard = span.enter();
+            let Some(api) = api_weak.upgrade() else {
+                return false;
+            };
+            Self::recheck_suspect_relays(&api);
+            true
+        });
+        let mut checker = crate::util::periodic_task::PeriodicTask::new(
+            "RelaySuspectChecker",
+            *self.relay_suspect_check_interval.lock().unwrap(),
+            crate::util::periodic_task::FirstPass::AfterInterval,
+            pass,
+        );
+        checker.start();
+        *guard = Some(checker);
+    }
+
+    /// Stop the suspect relay re-check loop, if running.
+    pub(crate) fn stop_relay_suspect_checker(&self) {
+        let old = self
+            .relay_suspect_checker
+            .lock()
+            .ok()
+            .and_then(|mut g| g.take());
+        if let Some(mut old) = old {
+            old.stop();
+        }
     }
 
     /// Start the relay keep-alive towards the remembered home relay if it is not already running.
@@ -3140,6 +3387,7 @@ impl Engine {
         // Stop the relay keep-alive first so no send races the teardown below
         self.stop_relay_keep_alive();
         self.stop_relay_permission_refresh();
+        self.stop_relay_suspect_checker();
         self.stop_advert_refresh();
         self.stop_advert_expiry_sweep();
         // Clear any API pointers and global router callbacks to avoid dangling references across tests
@@ -3394,6 +3642,11 @@ impl Engine {
     /// Test helper: override the relay permission refresh interval (#120).
     pub fn test_set_relay_permission_refresh_interval(&self, interval: std::time::Duration) {
         *self.relay_permission_refresh_interval.lock().unwrap() = interval;
+    }
+
+    /// Test helper: set how often suspect relays are looked at, before one is marked.
+    pub fn test_set_relay_suspect_check_interval(&self, interval: std::time::Duration) {
+        *self.relay_suspect_check_interval.lock().unwrap() = interval;
     }
 
     /// Test helper: whether the relay permission refresh loop is running (#120).

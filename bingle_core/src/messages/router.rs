@@ -380,6 +380,11 @@ impl BingleApiInternal for LockingApiWrapper {
             a.relay_finder_remove_relay(relay_id)
         }
     }
+    fn relay_mark_suspect(&self, relay_id: &str) -> bool {
+        self.api("relay_mark_suspect")
+            .map(|a| a.relay_mark_suspect(relay_id))
+            .unwrap_or(false)
+    }
     fn relay_finder_clear_state_cache(&self) {
         if let Some(a) = self.api("relay_finder_clear_state_cache") {
             a.relay_finder_clear_state_cache()

@@ -82,3 +82,29 @@ When a release finishes, `scripts/release.sh` lists the checks below for changes
   4. If the app can still address the handle (for example from a link or by typing it in full), try to send it a message.
   5. Unblock it (`--unblock`) and restart the app.
 - **Passes when:** before the block the handle is found; after it, the search doesn't return it and any send to it is refused, with nothing delivered to the second account; after the unblock and restart, it is found again.
+
+### #516 ripples to a peer relay resume after it is reported failed, without a restart
+
+- **Merged in:** the PR for #516; first ships in the next release. The check runs on TestNet, after the release is rolled to both TestNet relays.
+- **Needs:** both TestNet relays (relay A and relay B below), signed in to the TestNet AWS account; a TestNet app build on a phone, to produce a failure report. Relay log groups are `/bingle/relay/<stack>`.
+- **Steps:**
+  1. Follow relay B's log in one terminal:
+
+         aws logs tail /bingle/relay/<relay B stack> --follow --region <relay B region> --format short
+
+  2. Stop relay A:
+
+         aws ecs update-service --cluster <relay A cluster> --service <relay A service> --desired-count 0 --region <relay A region>
+
+  3. Open the app on the phone, background and reopen it until relay B logs `relay_mark_suspect] relay <relay A id> reported failed`. The app reports relay A to relay B when relay selection tries A first, so it may take a few tries, or a phone whose preferred relay is A.
+  4. Start relay A again:
+
+         aws ecs update-service --cluster <relay A cluster> --service <relay A service> --desired-count 1 --region <relay A region>
+
+  5. Wait for relay A to pass its start check, then watch relay B's log for up to 10 minutes.
+- **Passes when:**
+  - in step 3, relay B logs `kept in the relay set as suspect`, not `removed relay`, and while A is down each ripple to it logs `ripple to relay <relay A id> (suspect) ... failed` at warn;
+  - after step 4, relay B logs `no longer suspect` for relay A (`answered Available` or `heard from suspect relay`);
+  - relay B's later ripples to relay A log no failure, with no restart of relay B;
+  - an account that advertises on relay B (the TestNet gateway, if it is on B) is found by a lookup on relay A after its next advert refresh: no `found: false` for it in relay A's log.
+
