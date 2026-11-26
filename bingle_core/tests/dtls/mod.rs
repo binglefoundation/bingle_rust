@@ -102,3 +102,9 @@ pub mod dtls_expected_peer_id;
 
 #[path = "dtls_nat_rebind.rs"]
 pub mod dtls_nat_rebind;
+
+#[path = "dtls_accept_handover.rs"]
+pub mod dtls_accept_handover;
+
+#[path = "dtls_cookie.rs"]
+pub mod dtls_cookie;

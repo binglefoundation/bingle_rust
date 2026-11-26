@@ -296,6 +296,11 @@ pub mod openssl_impl {
     /// new handshake reaches the peer from wherever the NAT now maps it.
     pub const DIRECT_SESSION_IDLE_LIMIT: std::time::Duration = std::time::Duration::from_secs(60);
 
+    /// How long an inbound handshake may take before it is abandoned. A separate handshake started
+    /// beside an established session (see `handle_dtls_accept_packet`) that never completes is
+    /// cleaned up at this point, while the established session carries on.
+    pub const ACCEPT_HANDSHAKE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
     #[derive(Clone)]
     struct PeerState {
         writer: Option<PeerWriter>,
@@ -312,6 +317,17 @@ pub mod openssl_impl {
         /// When this session last heard from its peer: set when it is created and when its
         /// handshake completes, and refreshed by each datagram its read loop receives (issue #483).
         last_received: std::time::Instant,
+        /// A new inbound handshake from this peer's address, running beside the established
+        /// session until the client proves it receives our replies (a valid cookie).
+        pending_accept: Option<PendingAccept>,
+    }
+
+    /// A second inbound handshake for an endpoint that already has an established session. It
+    /// reads its own queue, so the established session keeps working while it runs.
+    #[derive(Clone)]
+    struct PendingAccept {
+        async_queue: Arc<AsyncPeerQueue>,
+        generation: u64,
     }
     type PeerStates = Arc<Mutex<HashMap<crate::api::bingle_api::NetworkEndpointKey, PeerState>>>;
 
@@ -335,7 +351,16 @@ pub mod openssl_impl {
             cipher_suite: None,
             generation,
             last_received: std::time::Instant::now(),
+            pending_accept: None,
         }
+    }
+
+    /// The generation for whatever replaces `ps`: past both its own and its pending handshake's,
+    /// so a generation is never reused for the same endpoint and a stale thread can't claim the
+    /// replacement.
+    fn successor_generation(ps: &PeerState) -> u64 {
+        let pending = ps.pending_accept.as_ref().map_or(0, |p| p.generation);
+        next_peer_generation(ps.generation.max(pending))
     }
 
     /// Simultaneous-connect tie-break (issue #288): when two peers dial each other at once, the one
@@ -384,6 +409,9 @@ pub mod openssl_impl {
             );
         }
         peer_state.async_queue.close();
+        if let Some(pending) = peer_state.pending_accept {
+            pending.async_queue.close();
+        }
     }
 
     /// Accept-path background thread entry point.
@@ -405,6 +433,7 @@ pub mod openssl_impl {
         handle_message: Option<HandleMessage>,
         peer_cert_handler: Option<HandlePeerCertificate>,
         owner_generation: u64,
+        handshake_timeout: std::time::Duration,
         handle: String,
     ) {
         let _span = tracing::info_span!("BingleApi", handle = %handle);
@@ -418,7 +447,7 @@ pub mod openssl_impl {
         // Step 1: drive the DTLS accept-side handshake to completion.
         let hs_result = dtls_async_runtime.block_on(async {
             match tokio::time::timeout(
-                std::time::Duration::from_secs(30),
+                handshake_timeout,
                 std::future::poll_fn(|cx| {
                     let pinned = Pin::new(&mut stream);
                     pinned.poll_do_handshake(cx)
@@ -442,6 +471,20 @@ pub mod openssl_impl {
                 let key = from.get_key().expect("direct endpoint key");
                 if let Some(peer_state) = take_peer_state_if_owner(&mut m, &key, owner_generation) {
                     close_peer_state(peer_state);
+                } else if let Some(ps) = m.get_mut(&key)
+                    && ps
+                        .pending_accept
+                        .as_ref()
+                        .is_some_and(|p| p.generation == owner_generation)
+                    && let Some(pending) = ps.pending_accept.take()
+                {
+                    // A handshake started beside an established session never completed (for
+                    // example a forged ClientHello): drop it and leave the session alone.
+                    tracing::info!(
+                        "[DtlsOpenSsl:::accept] separate handshake for {} abandoned; the established session is kept",
+                        from
+                    );
+                    pending.async_queue.close();
                 }
             }
             return;
@@ -1468,6 +1511,12 @@ pub mod openssl_impl {
         pub(crate) dangerous_debug: AtomicBool,
         // How long a direct session may be silent before a send replaces it (issue #483).
         direct_session_idle_limit: Mutex<std::time::Duration>,
+        // How long an inbound handshake may take (ACCEPT_HANDSHAKE_TIMEOUT by default).
+        accept_handshake_timeout: Mutex<std::time::Duration>,
+        // Makes and checks the HelloVerifyRequest cookies for inbound handshakes.
+        cookie_key: Arc<crate::dtls::dtls_cookie::CookieKey>,
+        // Where each inbound `Ssl` keeps its peer's endpoint key, for the cookie callbacks.
+        peer_key_index: openssl::ex_data::Index<openssl::ssl::Ssl, String>,
 
         // State placeholders
         // Prepared DTLS server acceptor (DTLSv1.2), built on start()
@@ -1505,6 +1554,9 @@ pub mod openssl_impl {
         reader_threads: Arc<Mutex<Vec<std::thread::JoinHandle<()>>>>,
         public_endpoint: Arc<Mutex<Option<SocketAddr>>>,
         handle: String,
+        cookie_key: Arc<crate::dtls::dtls_cookie::CookieKey>,
+        peer_key_index: openssl::ex_data::Index<openssl::ssl::Ssl, String>,
+        accept_handshake_timeout: std::time::Duration,
     }
 
     impl DtlsOpenSsl {
@@ -1542,6 +1594,12 @@ pub mod openssl_impl {
                 app_layer_only_verification: AtomicBool::new(false),
                 dangerous_debug: AtomicBool::new(false),
                 direct_session_idle_limit: Mutex::new(DIRECT_SESSION_IDLE_LIMIT),
+                accept_handshake_timeout: Mutex::new(ACCEPT_HANDSHAKE_TIMEOUT),
+                cookie_key: Arc::new(
+                    crate::dtls::dtls_cookie::CookieKey::new().expect("DTLS cookie secret"),
+                ),
+                peer_key_index: openssl::ssl::Ssl::new_ex_index::<String>()
+                    .expect("DTLS peer key ex_data index"),
                 acceptor: Mutex::new(None),
                 peer_states: peers,
                 expected_peer_ids: ExpectedPeerIds::default(),
@@ -1651,6 +1709,22 @@ pub mod openssl_impl {
                 *current = limit;
             }
             self
+        }
+
+        /// How long an inbound handshake may take before it is abandoned (default
+        /// [`ACCEPT_HANDSHAKE_TIMEOUT`]). Tests shorten it.
+        pub fn with_accept_handshake_timeout(self, timeout: std::time::Duration) -> Self {
+            if let Ok(mut current) = self.accept_handshake_timeout.lock() {
+                *current = timeout;
+            }
+            self
+        }
+
+        fn accept_handshake_timeout(&self) -> std::time::Duration {
+            self.accept_handshake_timeout
+                .lock()
+                .map(|t| *t)
+                .unwrap_or(ACCEPT_HANDSHAKE_TIMEOUT)
         }
 
         fn direct_session_idle_limit(&self) -> std::time::Duration {
@@ -1852,17 +1926,35 @@ pub mod openssl_impl {
             // Emit TLS secrets for external analyzers (e.g., Wireshark) using the NSS Key Log Format.
             // builder.set_keylog_callback(keylog_callback("server"));
 
-            // Add DTLS cookie callbacks (basic allow-all for now; can be hardened later).
-            builder.set_cookie_generate_cb(|_ssl, cookie| {
-                // Minimal cookie: fixed 16 bytes. Real impl should HMAC peer addr and time.
-                let bytes = [0xAAu8; 16];
-                let n = bytes.len().min(cookie.len());
-                cookie[..n].copy_from_slice(&bytes[..n]);
+            // HelloVerifyRequest cookie exchange: every inbound handshake first proves the client
+            // receives our replies. The cookie is an HMAC over the peer's endpoint key (stored on
+            // each inbound `Ssl`) and a time bucket. The accept path checks the same cookie before
+            // it lets a new handshake replace an established session.
+            builder.set_options(SslOptions::COOKIE_EXCHANGE);
+            let index = self.peer_key_index;
+            let generate_key = self.cookie_key.clone();
+            builder.set_cookie_generate_cb(move |ssl, cookie| {
+                let Some(peer) = ssl.ex_data(index) else {
+                    tracing::error!("[DtlsOpenSsl] cookie generate: no peer key on the Ssl");
+                    return Err(openssl::error::ErrorStack::get());
+                };
+                let made = generate_key
+                    .make(peer, std::time::SystemTime::now())
+                    .map_err(|e| {
+                        tracing::error!("[DtlsOpenSsl] cookie generate failed: {}", e);
+                        openssl::error::ErrorStack::get()
+                    })?;
+                let n = made.len().min(cookie.len());
+                cookie[..n].copy_from_slice(&made[..n]);
                 Ok(n)
             });
-            builder.set_cookie_verify_cb(|_ssl, _cookie| {
-                // Accept any cookie for now to keep the handshake path simple.
-                true
+            let verify_key = self.cookie_key.clone();
+            builder.set_cookie_verify_cb(move |ssl, cookie| match ssl.ex_data(index) {
+                Some(peer) => verify_key.verify(peer, cookie, std::time::SystemTime::now()),
+                None => {
+                    tracing::error!("[DtlsOpenSsl] cookie verify: no peer key on the Ssl");
+                    false
+                }
             });
 
             // Persist the acceptor for use in the DTLS handshake loop.
@@ -1878,7 +1970,9 @@ pub mod openssl_impl {
         ///
         /// ### Packet Type Handling
         /// - **ClientHello**:
-        ///   - If an established stream already exists, it is dropped to allow a reconnect (Client Restart).
+        ///   - If an established stream already exists, a separate handshake runs beside it (see 2).
+        ///   - If a handshake for this peer is already running, it joins that handshake: a
+        ///     fragment or retransmission of the same hello never restarts it.
         ///   - If no stream exists, it triggers the creation of a new `SslStream` (unless suppressed).
         /// - **Non-Handshake/Other**:
         ///   - These are enqueued for the existing `SslStream`.
@@ -1891,7 +1985,12 @@ pub mod openssl_impl {
         ///    packet, and initiates a new `SslStream` in `accept_state`.
         ///
         /// 2. **Existing Established Stream**:
-        ///    - If a `ClientHello` arrives, the old session is terminated and a new one starts.
+        ///    - A `ClientHello` may be the peer restarting, but may also be forged with the peer's
+        ///      address. It starts a separate handshake on its own queue, and the established
+        ///      session keeps working. Every inbound handshake does the HelloVerifyRequest cookie
+        ///      exchange; only when the client returns a valid cookie (proving it receives our
+        ///      replies at that address) does the new handshake replace the session. A handshake
+        ///      that never gets that far times out and is dropped, leaving the session alone.
         ///    - Otherwise, the packet is simply enqueued for the existing session.
         ///
         /// 3. **Outbound Connect in Progress (`is_connecting_peer`)** — a `ClientHello` arriving
@@ -1927,6 +2026,9 @@ pub mod openssl_impl {
                 reader_threads,
                 public_endpoint,
                 handle,
+                cookie_key,
+                peer_key_index,
+                accept_handshake_timeout,
             } = ctx.clone();
             let public_endpoint: &Mutex<Option<SocketAddr>> = &public_endpoint;
             let tracing_span = tracing::info_span!("BingleApi", handle = %handle);
@@ -1972,7 +2074,6 @@ pub mod openssl_impl {
                 let key = from.get_key().expect("direct endpoint key");
                 let mut pm = peers.lock().unwrap();
 
-                // Detect ClientHello on existing established peer to handle client restarts
                 let is_client_hello = is_client_hello(data);
 
                 // No session for this peer, and the datagram can't open one: it belongs to a
@@ -2024,53 +2125,95 @@ pub mod openssl_impl {
                     pm.insert(key.clone(), new_peer_state(next_generation));
                 }
 
+                // A ClientHello from a peer whose session is established: the peer may have
+                // restarted, but the datagram may also be forged with the peer's address, or be a
+                // fragment or retransmission of a hello already being handled. Never drop the
+                // session on its say-so. Run the new handshake beside it, on its own queue, and
+                // replace the session only once the client returns a valid cookie, which it can
+                // only do if it receives our HelloVerifyRequest at that address.
                 if is_client_hello
-                    && pm
-                        .get(&key)
-                        .map(|ps| !ps.is_connecting_peer && ps.writer.is_some())
-                        .unwrap_or(false)
-                    && let Some(ps) = pm.remove(&key)
+                    && let Some(ps) = pm.get_mut(&key)
+                    && ps.writer_ready
+                    && !ps.is_connecting_peer
                 {
-                    let next_generation = next_peer_generation(ps.generation);
-                    tracing::info!(
-                        "[DtlsOpenSsl:::accept] ClientHello on existing established peer for {} - dropping old peer state to allow reconnect, next_generation={}",
-                        from,
-                        next_generation
-                    );
-                    close_peer_state(ps);
-                    pm.insert(key.clone(), new_peer_state(next_generation));
-                    if let Some(handler) = handle_new_session.as_ref() {
-                        handler(from);
+                    let cookie_ok = crate::dtls::dtls_cookie::client_hello_cookie(data)
+                        .is_some_and(|cookie| {
+                            cookie_key.verify(
+                                &key.to_string(),
+                                cookie,
+                                std::time::SystemTime::now(),
+                            )
+                        });
+                    let handover = if cookie_ok {
+                        ps.pending_accept.take()
+                    } else {
+                        None
+                    };
+                    if let Some(pending) = handover {
+                        tracing::info!(
+                            "[DtlsOpenSsl:::accept] ClientHello with a valid cookie from {} - replacing the established session, generation={}",
+                            from,
+                            pending.generation
+                        );
+                        if let Some(old) = pm.remove(&key) {
+                            close_peer_state(old);
+                        }
+                        let mut next = new_peer_state(pending.generation);
+                        next.async_queue = pending.async_queue.clone();
+                        // A placeholder writer until `run_accept_stream` installs the real one, so
+                        // the datagrams that follow join this handshake.
+                        let (placeholder_tx, _placeholder_rx) = mpsc::channel::<Vec<u8>>();
+                        next.writer = Some(PeerWriter::from_channel(placeholder_tx));
+                        pm.insert(key.clone(), next);
+                        if let Some(handler) = handle_new_session.as_ref() {
+                            handler(from);
+                        }
+                        (pending.async_queue, None, None)
+                    } else if let Some(pending) = ps.pending_accept.as_ref() {
+                        (pending.async_queue.clone(), ps.peer_handle.clone(), None)
+                    } else {
+                        let generation = successor_generation(ps);
+                        let queue = Arc::new(AsyncPeerQueue::new(ASYNC_PEER_QUEUE_CAPACITY));
+                        ps.pending_accept = Some(PendingAccept {
+                            async_queue: queue.clone(),
+                            generation,
+                        });
+                        tracing::info!(
+                            "[DtlsOpenSsl:::accept] ClientHello from {}, which has an established session - starting a separate handshake (generation={}); the session is kept until the client returns a valid cookie",
+                            from,
+                            generation
+                        );
+                        (queue, ps.peer_handle.clone(), Some(generation))
                     }
-                }
-
-                let ps = get_or_create_peer_state(&mut pm, &key);
-                // No session for this peer yet: claim the peer state for an inbound accept now,
-                // in the same critical section as the lookup, before the datagram is queued.
-                // Otherwise a local send could create an outbound connect on this queue in the gap
-                // and its client stream would read the peer's ClientHello (issue #288).
-                let accept_generation = if ps.writer.is_none() {
-                    let generation = next_peer_generation(ps.generation);
-                    ps.generation = generation;
-                    let (placeholder_tx, _placeholder_rx) = mpsc::channel::<Vec<u8>>();
-                    // A placeholder writer, so later packets from this peer are queued rather
-                    // than starting another stream; `run_accept_stream` installs the real one.
-                    ps.writer = Some(PeerWriter::from_channel(placeholder_tx));
-                    ps.handshake_logged = false;
-                    tracing::debug!(
-                        "[DtlsOpenSsl:::accept] reserved peer state for an accept, generation {} for {}",
-                        generation,
-                        from
-                    );
-                    Some(generation)
                 } else {
-                    None
-                };
-                (
-                    ps.async_queue.clone(),
-                    ps.peer_handle.clone(),
-                    accept_generation,
-                )
+                    let ps = get_or_create_peer_state(&mut pm, &key);
+                    // No session for this peer yet: claim the peer state for an inbound accept now,
+                    // in the same critical section as the lookup, before the datagram is queued.
+                    // Otherwise a local send could create an outbound connect on this queue in the gap
+                    // and its client stream would read the peer's ClientHello (issue #288).
+                    let accept_generation = if ps.writer.is_none() {
+                        let generation = next_peer_generation(ps.generation);
+                        ps.generation = generation;
+                        let (placeholder_tx, _placeholder_rx) = mpsc::channel::<Vec<u8>>();
+                        // A placeholder writer, so later packets from this peer are queued rather
+                        // than starting another stream; `run_accept_stream` installs the real one.
+                        ps.writer = Some(PeerWriter::from_channel(placeholder_tx));
+                        ps.handshake_logged = false;
+                        tracing::debug!(
+                            "[DtlsOpenSsl:::accept] reserved peer state for an accept, generation {} for {}",
+                            generation,
+                            from
+                        );
+                        Some(generation)
+                    } else {
+                        None
+                    };
+                    (
+                        ps.async_queue.clone(),
+                        ps.peer_handle.clone(),
+                        accept_generation,
+                    )
+                }
             };
 
             if peer_handle.is_none() {
@@ -2136,6 +2279,11 @@ pub mod openssl_impl {
                 );
                 let mut ssl = openssl::ssl::Ssl::new(acceptor.context()).expect("ssl new");
                 ssl.set_accept_state();
+                // The cookie callbacks bind the cookie to this peer's endpoint key.
+                ssl.set_ex_data(
+                    peer_key_index,
+                    from.get_key().expect("direct endpoint key").to_string(),
+                );
                 let conn = CommonNetworkMuxConn {
                     mux: mux.clone(),
                     peer: from.clone(),
@@ -2159,6 +2307,7 @@ pub mod openssl_impl {
                         handle_message2,
                         peer_cert_handler,
                         accept_generation,
+                        accept_handshake_timeout,
                         handle2,
                     );
                 });
@@ -2200,6 +2349,9 @@ pub mod openssl_impl {
                 reader_threads: self.reader_threads.clone(),
                 public_endpoint: self.public_endpoint.clone(),
                 handle: self.handle.clone(),
+                cookie_key: self.cookie_key.clone(),
+                peer_key_index: self.peer_key_index,
+                accept_handshake_timeout: self.accept_handshake_timeout(),
             };
 
             // Install a DTLS packet handler that queues datagrams and sets up per-peer SslStreams on first packet.
@@ -2325,7 +2477,7 @@ pub mod openssl_impl {
                             old.last_received.elapsed(),
                             idle_limit
                         );
-                        let next_generation = next_peer_generation(old.generation);
+                        let next_generation = successor_generation(&old);
                         close_peer_state(old);
                         map.insert(key_to.clone(), new_peer_state(next_generation));
                     }
@@ -2421,7 +2573,7 @@ pub mod openssl_impl {
                         std::time::Instant::now() + CONNECT_DEADLINE,
                     );
                 }
-                let owner_generation = next_peer_generation(ps.generation);
+                let owner_generation = successor_generation(ps);
                 ps.generation = owner_generation;
                 let async_q_arc = ps.async_queue.clone();
 
