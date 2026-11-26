@@ -1,0 +1,46 @@
+v0.3.41 lets the transport send message blocks too large for one packet. It also starts Internet Protocol version 6 (IPv6) support and adds a runtime switch for the moderator blocklist. It breaks the native listening callback and some bingle_core handler types, which now also carry an IPv6 network address translation (NAT) state. Roll relays before the app, because older receivers drop fragmented blocks.
+
+## What changed
+
+Seven changes in this release are ones a user or integrator will notice.
+
+| Area | Change | Issue |
+|---|---|---|
+| App bridge (bingle_jsi) | `getNatType()` and the `onListening` event now return `nat_type_v6` next to the unchanged IPv4 `nat_type`. Both read `"Unknown"` while not listening, and `onListening` now fires only when what the app sees changes. The native `ListeningCallback::on_listening` gains a third `nat_type_v6` parameter. | [#498](https://github.com/binglefoundation/bingle_rust/issues/498) |
+| App bridge (bingle_jsi) | The new `setGlobalBlock(enabled)` turns the moderator blocklist on or off without a restart, and `messagingSettings().global_block` reports its state. Passing `enable_global_block: false` at init now creates a blocklist that starts switched off. The setter returns `InvalidRequest` when there is no blocklist. | [#542](https://github.com/binglefoundation/bingle_rust/issues/542) |
+| App bridge (bingle_jsi) | With the blocklist on, `handle_lookup_matches` leaves out moderator-blocked accounts, and `handle_lookup` and `handle_lookup_partial` return `NotFound` for them. `queue_message` and the `send_message_to_handle` methods refuse a blocked recipient with `InvalidRequest` and send nothing. Sends by id or network endpoint are not checked yet. | [#543](https://github.com/binglefoundation/bingle_rust/issues/543) |
+| Core library | A block too large for one packet is now split into fragments and reassembled at the other end. Before, such a block failed, for example a long emoji text or a large relay status list. Smaller blocks are sent exactly as before. By default a receiver accepts fragmented blocks up to 4 MiB per peer, and `set_reassembly_limits` changes that limit. | [#524](https://github.com/binglefoundation/bingle_rust/issues/524) |
+| Core library | The STUN (Session Traversal Utilities for NAT) finder now keeps separate IPv4 and IPv6 states, so dual-stack hosts no longer read as `Inconsistent`. A new `NatTypeV6` reports the IPv6 state, and an IPv6 change never resets IPv4. `StateChangeHandler`, `OnListeningHandler` and the `Single` STUN state change shape. | [#498](https://github.com/binglefoundation/bingle_rust/issues/498) |
+| Core library | Advert records now accept IPv6 endpoints and can carry an optional signed `endpoint6`, which relays store and pass on unchanged. Records without `endpoint6` are serialised exactly as before, so existing signatures still verify. Nodes don't publish `endpoint6` yet, and only global IPv6 addresses will ever be used. | [#522](https://github.com/binglefoundation/bingle_rust/issues/522) |
+| Release process | A relay roll with `scripts/roll_relays.sh` now applies the checked-out CloudFormation templates, not just the new image, and `--dry-run` shows each change set. Task definition and in-place service updates are applied without asking. Other changes, such as IAM (Identity and Access Management) or security groups, stop at a prompt unless you pass `--yes`. | [#541](https://github.com/binglefoundation/bingle_rust/issues/541) |
+| Release process | The post-release check for hiding moderator-blocked contacts passed on TestNet, so it was removed from the checklist. | [#540](https://github.com/binglefoundation/bingle_rust/issues/540) |
+
+## Upgrading
+
+Code changes are needed only if you implement the listening callback yourself or use the changed bingle_core handler types.
+
+- **App (React Native):**
+  - Release the app only after the relays run v0.3.41. Older receivers drop fragmented blocks without acknowledging them.
+  - Existing JavaScript keeps working, because `nat_type` and its values are unchanged.
+  - Read `nat_type_v6` from the `onListening` event and from `getNatType()`.
+  - A JavaScript object that implements `ListeningCallback` directly must accept a third `natTypeV6` argument.
+  - Don't treat IPv6 `Open` as the existing IPv4 `'Open'` value.
+  - `onListening` can now fire for an IPv6-only change while listening. Rerun lookups only when `listening` changes from false to true.
+- **Rust users of bingle_core and bingle_local:**
+  - `OnListeningHandler` closures now take `(bool, NatType, NatTypeV6)`.
+  - `StateChangeHandler` closures now take `(AddrFamily, StunState, Option<SocketAddr>)`.
+  - Code that matches on `Single` must handle the endpoint it now carries.
+  - `received_single_blocks` is renamed `delivered_blocks`.
+  - A node that must accept fragmented blocks over 4 MiB should raise its limits with `set_reassembly_limits`.
+
+## Pull requests
+
+* docs: #533 post-release check passed, remove it by @bingle-claude in https://github.com/binglefoundation/bingle_rust/pull/540
+* feat(aws): relay roll applies the current CloudFormation templates (#528) by @bingle-claude in https://github.com/binglefoundation/bingle_rust/pull/541
+* feat(#493): parse IPv6 adverts and carry an optional signed endpoint6 (wave 0 parsing) by @bingle-claude in https://github.com/binglefoundation/bingle_rust/pull/522
+* feat(jsi): set_global_block runtime setter for the moderator blocklist (#531) by @bingle-claude in https://github.com/binglefoundation/bingle_rust/pull/542
+* feat(jsi): hide moderator-blocked users from lookups and refuse sends to them (#539) by @bingle-claude in https://github.com/binglefoundation/bingle_rust/pull/543
+* feat(#498): STUN state per address family; IPv6 NatTypeV6 (Open, OpenFirewalled) through JSI by @bingle-claude in https://github.com/binglefoundation/bingle_rust/pull/537
+* FRPT: multi-packet blocks (DATA_FRAG), first release (#518) by @bingle-claude in https://github.com/binglefoundation/bingle_rust/pull/524
+
+**Full Changelog**: https://github.com/binglefoundation/bingle_rust/compare/v0.3.40...v0.3.41
