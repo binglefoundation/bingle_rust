@@ -526,7 +526,7 @@ pub fn send_to_peer_returns_err_immediately_when_recent_failure_recorded() {
     );
     assert_eq!(
         result.unwrap_err(),
-        bingle_core::engine::SEND_FAIL_BACKOFF_REFUSAL
+        bingle_core::engine::SendToPeerError::Backoff
     );
 }
 

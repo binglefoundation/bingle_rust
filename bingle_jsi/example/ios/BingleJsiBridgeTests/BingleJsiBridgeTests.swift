@@ -1080,3 +1080,80 @@ final class KeyStorageBridgeTests: XCTestCase {
         waitForExpectations(timeout: 2.0)
     }
 }
+
+// MARK: - Structured errors (bingle_rust #470)
+
+/// A rejected call carries `{ kind, ...fields }` as the error's userInfo, which React Native exposes
+/// as `error.userInfo`; the code and message are as before.
+final class StructuredErrorBridgeTests: XCTestCase {
+
+    var bridge: SpyBingleJsiBridge!
+    var mockApi: MockBingleJsiApi!
+
+    override func setUp() {
+        super.setUp()
+        bridge = SpyBingleJsiBridge()
+        mockApi = MockBingleJsiApi()
+        bridge.injectApi(mockApi)
+    }
+
+    override func tearDown() {
+        bridge = nil
+        mockApi = nil
+        super.tearDown()
+    }
+
+    /// Reject handleLookup with `error` and return what the rejecter received.
+    private func rejection(for error: Error) -> (code: String?, message: String?, userInfo: [String: Any]) {
+        mockApi.handleLookupError = error
+        let rejected = self.expectation(description: "reject called")
+        var code: String?
+        var message: String?
+        var userInfo: [String: Any] = [:]
+        bridge.handleLookup(
+            "alice",
+            resolver: { _ in XCTFail("unexpected resolve") },
+            rejecter: { rejectedCode, rejectedMessage, rejectedError in
+                code = rejectedCode
+                message = rejectedMessage
+                userInfo = (rejectedError as NSError?)?.userInfo as? [String: Any] ?? [:]
+                rejected.fulfill()
+            }
+        )
+        waitForExpectations(timeout: 2.0)
+        return (code, message, userInfo)
+    }
+
+    func testSyncedKeyWouldBeReplaced_carriesKindAndStoredAddress() {
+        let error = BingleJsiError.SyncedKeyWouldBeReplaced(storedAddress: "STOREDADDRESSEXAMPLE")
+        let result = rejection(for: error)
+        XCTAssertEqual(result.code, "BINGLE_ERROR")
+        XCTAssertEqual(result.message, "\(error)", "the message is unchanged")
+        XCTAssertEqual(result.userInfo["kind"] as? String, "SyncedKeyWouldBeReplaced")
+        XCTAssertEqual(result.userInfo["storedAddress"] as? String, "STOREDADDRESSEXAMPLE")
+    }
+
+    func testNoBlockchain_carriesKindAndReason() {
+        let result = rejection(for: BingleJsiError.NoBlockchain(reason: "node timed out"))
+        XCTAssertEqual(result.code, "BINGLE_ERROR")
+        XCTAssertEqual(result.message, "NoBlockchain(reason: \"node timed out\")")
+        XCTAssertEqual(result.userInfo["kind"] as? String, "NoBlockchain")
+        XCTAssertEqual(result.userInfo["reason"] as? String, "node timed out")
+    }
+
+    func testSendFailed_carriesTheFailureKind() {
+        let result = rejection(for: BingleJsiError.SendFailed(failureKind: .sendBackoff, reason: "Sending is failing"))
+        XCTAssertEqual(result.userInfo["kind"] as? String, "SendFailed")
+        XCTAssertEqual(result.userInfo["failureKind"] as? String, "SendBackoff")
+        XCTAssertEqual(result.userInfo["reason"] as? String, "Sending is failing")
+    }
+
+    func testNonEngineError_isUnknown() {
+        let error = NSError(domain: "test", code: 42, userInfo: [NSLocalizedDescriptionKey: "lookup failed"])
+        let result = rejection(for: error)
+        XCTAssertEqual(result.code, "BINGLE_ERROR")
+        XCTAssertEqual(result.message, "\(error)", "the message is unchanged")
+        XCTAssertEqual(result.userInfo["kind"] as? String, "Unknown")
+        XCTAssertEqual(result.userInfo.count, 1, "an unknown error has no fields")
+    }
+}

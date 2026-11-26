@@ -1,4 +1,10 @@
+use crate::api::types::FailureKind;
+
 /// Errors returned by the Bingle JSI API.
+///
+/// The bridges report each variant's name and fields to JavaScript as `error.userInfo`
+/// (bingle_rust #470). A new variant must be added to both bridges' `bingle-error-kinds` blocks and
+/// to `BingleJsiErrorInfo` in `ts/index.ts`; `tests/api/bridge_coverage_tests.rs` checks this.
 #[derive(Debug, thiserror::Error, uniffi::Error)]
 pub enum BingleJsiError {
     #[error("Not found: {reason}")]
@@ -40,4 +46,11 @@ pub enum BingleJsiError {
     /// `replace_synced_key: true` if they agree.
     #[error("Synced key would be replaced: {stored_address}")]
     SyncedKeyWouldBeReplaced { stored_address: String },
+    /// A send failed (bingle_rust #554). `failure_kind` is the typed cause, the same one a stored
+    /// message's `failure_kind` carries; `reason` is the detail, for logs.
+    #[error("Send failed ({failure_kind:?}): {reason}")]
+    SendFailed {
+        failure_kind: FailureKind,
+        reason: String,
+    },
 }

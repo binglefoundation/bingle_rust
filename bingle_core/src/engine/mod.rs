@@ -34,9 +34,21 @@ use uuid::Uuid;
 pub const MINIMUM_MTU: usize = 1492;
 /// How long to suppress sends to a peer that recently failed.
 pub const SEND_FAIL_BACKOFF: Duration = Duration::from_secs(30);
-/// The error `send_to_peer` returns when `SEND_FAIL_BACKOFF` refuses a send, so nothing was sent.
-/// Callers compare against it to tell a local refusal from a send that was tried (#554).
-pub const SEND_FAIL_BACKOFF_REFUSAL: &str = "Sending is failing";
+
+/// Why `Engine::send_to_peer` didn't send (#554).
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum SendToPeerError {
+    /// The endpoint can't be sent to: an incomplete relay endpoint, or this node's own address.
+    #[error("{0}")]
+    Rejected(String),
+    /// A send to this endpoint failed within `SEND_FAIL_BACKOFF`, so this one was refused here
+    /// and nothing was sent.
+    #[error("Sending is failing")]
+    Backoff,
+    /// The transport tried to send, and failed.
+    #[error("{0}")]
+    Failed(String),
+}
 /// If relay registration is still pending (TrianglePing or NATRestricted) this long after the
 /// last attempt, a subsequent STUN-consistent event re-drives it (re-sends TriangleTest1, which
 /// leads to a fresh Listen). This lets a lost triangle/Listen packet self-heal instead of
@@ -1282,7 +1294,7 @@ impl Engine {
     /// Send bytes to a peer and track the connection's last_seen.
     /// The destination is recorded as seen before the send, whatever its outcome (#347); if this
     /// is the first interaction with the peer, a connection entry is created on successful send.
-    pub fn send_to_peer(&self, to: &NetworkEndpoint, data: &[u8]) -> Result<(), String> {
+    pub fn send_to_peer(&self, to: &NetworkEndpoint, data: &[u8]) -> Result<(), SendToPeerError> {
         match std::str::from_utf8(data) {
             Ok(s) => tracing::info!("[Engine::send_to_peer] to={} data={}", to, s),
             Err(_) => tracing::info!(
@@ -1294,19 +1306,19 @@ impl Engine {
         // Guard: reject incomplete relay endpoints (missing channel); fully-configured
         // relay endpoints (with channel+address) are handled by the TURN layer in DTLS.
         if to.is_relay() && to.relay_channel().is_none() {
-            return Err(format!(
+            return Err(SendToPeerError::Rejected(format!(
                 "[Engine::send_to_peer] rejecting incomplete relay endpoint (no channel): {}",
                 to
-            ));
+            )));
         }
         // Guard: do not send to ourselves
         if let Some(target_addr) = to.inet_socket_address()
             && self.last_public_addr() == Some(target_addr)
         {
-            return Err(format!(
+            return Err(SendToPeerError::Rejected(format!(
                 "[Engine::send_to_peer] rejecting send to self: {}",
                 target_addr
-            ));
+            )));
         }
         // Guard: skip send if the peer recently failed (within SEND_FAIL_BACKOFF).
         // Placed after structural guards so that get_key() is only called for valid endpoints.
@@ -1316,7 +1328,7 @@ impl Engine {
             && !status.is_working
             && status.last_checked_timestamp.elapsed() < SEND_FAIL_BACKOFF
         {
-            return Err(SEND_FAIL_BACKOFF_REFUSAL.to_string());
+            return Err(SendToPeerError::Backoff);
         }
         // Track the endpoint as seen before sending, whatever the outcome. The first packet (a
         // DTLS ClientHello for a new peer) opens a path through our NAT to that address, even if
@@ -1330,7 +1342,10 @@ impl Engine {
         // Perform the packet transport send using the configured transport (avoid pre-locking connections to
         // prevent rare OS mutex EINVAL during early send paths). We update the connection map only
         // after a successful send.
-        let res = self.packet_transport.send(to, data);
+        let res = self
+            .packet_transport
+            .send(to, data)
+            .map_err(SendToPeerError::Failed);
         // Update send_status regardless of success or failure
         if let Some(key) = to.get_key() {
             match &res {

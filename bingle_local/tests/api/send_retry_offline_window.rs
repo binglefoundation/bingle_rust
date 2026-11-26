@@ -11,6 +11,7 @@ const WINDOW: Duration = Duration::from_secs(60);
 fn peer_unreachable_kinds_indicate_offline() {
     for kind in [
         SendFailureKind::PeerUnreachable,
+        SendFailureKind::SendBackoff,
         SendFailureKind::RelayAllocationFailed,
         SendFailureKind::RecipientNotAdvertised,
         SendFailureKind::NoResponse,

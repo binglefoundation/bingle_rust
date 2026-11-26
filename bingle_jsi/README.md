@@ -626,3 +626,48 @@ The full API is defined in `src/api/bingle_jsi_api.rs`. Key methods:
 | `keypairStatus()` | Check keypair funding status |
 | `save(path)` / `load(path)` | Persist/restore local state |
 | `setMessageCallback(callback)` | Register incoming message callback |
+
+### Errors
+
+A failed call rejects its promise with:
+
+- **`code`:** `"BINGLE_ERROR"`, or `"BINGLE_INIT_ERROR"` from `initBingleJsi` and `"BINGLE_NOT_INITIALIZED"` before it.
+- **`message`:** the engine error's variant and fields, for logs, in the same form on iOS and Android (bingle_rust #464). For example `NoBlockchain(reason: "node timed out")` or `SyncedKeyWouldBeReplaced(storedAddress: "…")`.
+- **`userInfo`:** `{ kind, ...fields }` (bingle_rust #470). `kind` is the `BingleJsiError` variant name, and the fields are that variant's, under camelCase names. An error that didn't come from the engine has `kind: "Unknown"`. On Android, Kotlin names a variant differently (`InternalException`), but `kind` and the message use the Rust and Swift name (`InternalError`), so one check works on both platforms.
+
+Read it with `bingleErrorInfo` instead of matching the message text:
+
+```ts
+import { BingleJsi, bingleErrorInfo } from "react-native-bingle-jsi";
+
+try {
+  await BingleJsi.generateKeypair();
+} catch (e) {
+  const info = bingleErrorInfo(e);
+  if (info?.kind === "SyncedKeyWouldBeReplaced") {
+    askBeforeReplacing(info.storedAddress);
+  }
+}
+```
+
+`bingleErrorInfo(error)` returns a `BingleJsiErrorInfo`, or `null` when the error has no structured info: it isn't a bridge rejection, it came from an older native module, or its kind is one this version doesn't know. `BingleJsiErrorKind` is the union of the kinds:
+
+| `kind` | Fields | Meaning |
+|--------|--------|---------|
+| `NotFound` | `reason` | The thing asked for doesn't exist |
+| `InvalidRequest` | `reason` | A bad argument, or a call not allowed in this state |
+| `NotImplemented` | `reason` | Not available in this build |
+| `InternalError` | `reason` | Anything else the engine reports |
+| `NoBlockchain` | `reason` | The Algorand node couldn't be reached |
+| `Retryable` | `reason` | A transient failure; try again |
+| `HandleTaken` | `reason` | The handle belongs to another account |
+| `KeyStorageUnavailable` | `reason` | A Keychain-only call on the file key store (#385) |
+| `StateLocked` | `reason` | The sealed state file can't be used while the device is locked (#459) |
+| `RecoveryPhraseRequired` | `reason` | The state file needs the account's recovery phrase (#459) |
+| `SyncedKeyWouldBeReplaced` | `storedAddress` | The call would replace a different key synced through iCloud Keychain (#452) |
+| `SendFailed` | `failureKind`, `reason` | A send failed. `failureKind` is a `FailureKind`, the same cause a stored message's `failure_kind` carries (#554) |
+| `Unknown` | none | Not an engine error |
+
+`FailureKind` includes `SendBackoff`: a recent send to that peer failed, so this one was refused on the device without sending, and it is tried again once the engine's 30-second send backoff ends (#554). Like `PeerUnreachable`, it's retryable.
+
+A new `BingleJsiError` variant has to be added to both bridges (`bingleErrorInfo` in `ios/BingleJsiBridge.swift`, `BingleJsiErrors.info` in `android/.../BingleJsiErrors.kt`) and to `BingleJsiErrorInfo` in `ts/index.ts`. `tests/api/bridge_coverage_tests.rs` fails until it is, and checks the `FailureKind` mappings the same way.

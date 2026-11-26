@@ -116,3 +116,38 @@ When a release finishes, `scripts/release.sh` lists the checks below for changes
 - **Passes when:** the `fail_type` is `"timeout"` or `"send_failed"`, not `"send_rejected"`.
 - **Not checked here:** the ripple handler's `rippled a report ... as` line needs a third relay to receive the ripple, which TestNet's two relays can't show. Not reporting a relay the app's send backoff refused is covered by unit tests, because on a device the app's relay cooldown usually skips that relay before any probe.
 
+### #464 Android shows the specific Delete my account error when offline
+
+- **Merged in:** the PR for #464; first ships in the next release. The check needs an Android build of bingle_ux_rn on the `react-native-bingle-jsi` release that has it. No app change is needed: `deleteErrorText` in bingle_ux_rn's `src/screens/DeleteAccountScreen.tsx` already reads the variant name from the message.
+- **Needs:** an Android phone or emulator with that TestNet Bingle Client build, signed in to a test account.
+- **Steps:**
+  1. Turn on airplane mode.
+  2. Settings → Delete my account, and confirm.
+  3. Turn airplane mode off.
+- **Passes when:**
+  - step 2 shows the app's text for an unreachable network (the `NoBlockchain` case), not its generic failure text;
+  - after step 3 the account is still there: the failed deletion changed nothing.
+
+### #470 a failed call's structured kind reaches JavaScript on both platforms
+
+- **Merged in:** the PR for #470; first ships in the next release. The bridge tests and the e2e test were written with the change but not run, because they need native builds. bingle_ux_rn doesn't read `userInfo` yet (a bingle_ux_rn issue tracks that), so the example app checks it.
+- **Needs:** the release's commit, with the iOS simulator framework and the Android libraries built for it (`BINGLE_IOS_SIM_ONLY=1 bash bingle_jsi/scripts/build_ios.sh`, `bash bingle_jsi/scripts/build_android.sh`), pods installed in `bingle_jsi/example/ios`, and an Android emulator.
+- **Steps:**
+  1. Run the Swift bridge tests:
+
+         BINGLE_IOS_TEST_SCHEMES=BingleJsiBridgeTests ./bingle_jsi/scripts/run_ios_bridge_tests.sh
+
+  2. Run the Kotlin unit tests, from `bingle_jsi/example/android`:
+
+         ./gradlew :react-native-bingle-jsi:testDebugUnitTest
+
+  3. Run the lifecycle e2e on each platform, from `bingle_jsi/example`:
+
+         npm run e2e:build:ios && npm run e2e:test:ios -- e2e/lifecycle.test.ts
+
+         npm run e2e:build:android && npm run e2e:test:android -- e2e/lifecycle.test.ts
+
+- **Passes when:**
+  - `StructuredErrorBridgeTests` passes in step 1, and `BingleJsiErrorsTest` passes in step 2;
+  - in step 3, `rejects a bad call with the variant name and a structured kind` passes on both platforms: the rejection has `userInfo.kind`, and on Android its message starts with the variant name, as on iOS.
+

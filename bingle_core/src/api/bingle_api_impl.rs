@@ -16,7 +16,7 @@ use crate::api::pki::generate_pki_from_ops;
 use crate::blockchain::algo_bingle::AccountsCache;
 use crate::crypto::live_signature;
 use crate::dtls::Dtls;
-use crate::engine::{BingleAccess, Engine, EngineState};
+use crate::engine::{BingleAccess, Engine, EngineState, SendToPeerError};
 use crate::protocol::ISSUER_SUFFIX;
 use crate::relay::relay_finder::RelayFinderTrait;
 use algo_ops::AlgoOps;
@@ -545,15 +545,20 @@ impl BingleApiImpl {
                 // The single report of a failed send; an unreachable peer is expected, so not a
                 // warning (issue #278).
                 tracing::info!("[BingleApiImpl] Engine send_to_peer failed: {}", err);
-                if err.contains("rejecting") {
-                    Ok(false)
-                } else {
+                match err {
+                    SendToPeerError::Rejected(_) => Ok(false),
+                    // A recent send to this endpoint failed, so the engine refused this one
+                    // without sending: transient, but nothing was tried (#554).
+                    SendToPeerError::Backoff => Err(BingleError::Send {
+                        kind: SendFailureKind::SendBackoff,
+                        detail: err.to_string(),
+                    }),
                     // The endpoint resolved but the peer could not be reached over DTLS (connect
                     // timeout / no route — peer offline): a transient, retryable cause (issue #99).
-                    Err(BingleError::Send {
+                    SendToPeerError::Failed(detail) => Err(BingleError::Send {
                         kind: SendFailureKind::PeerUnreachable,
-                        detail: err,
-                    })
+                        detail,
+                    }),
                 }
             }
         }

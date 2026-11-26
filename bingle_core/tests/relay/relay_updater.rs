@@ -9,7 +9,7 @@ use bingle_core::api::bingle_api::{
     BingleError, NetworkEndpoint, ProgressCallback, SendFailureKind, UserId,
 };
 use bingle_core::ddb::InetSocketAddress;
-use bingle_core::engine::{RelayState, SEND_FAIL_BACKOFF_REFUSAL};
+use bingle_core::engine::RelayState;
 use bingle_core::messages::marshal::{from_json_value, to_json_value};
 use bingle_core::messages::types::{
     DdbMessage, DdbRelaysStatusResponse, Message, ReportFailMessage,
@@ -1136,8 +1136,8 @@ pub fn relay_report_not_sent_when_local_send_backoff_refused_the_probe() {
         58331,
         Arc::new(|| {
             Err(BingleError::Send {
-                kind: SendFailureKind::PeerUnreachable,
-                detail: SEND_FAIL_BACKOFF_REFUSAL.to_string(),
+                kind: SendFailureKind::SendBackoff,
+                detail: "Sending is failing".to_string(),
             })
         }),
     );
@@ -1213,14 +1213,19 @@ pub fn probe_failure_classifies_send_errors() {
         ProbeFailure::Timeout
     );
     assert_eq!(
-        ProbeFailure::from_send_error(&send(
-            SendFailureKind::PeerUnreachable,
-            SEND_FAIL_BACKOFF_REFUSAL
-        )),
+        ProbeFailure::from_send_error(&send(SendFailureKind::SendBackoff, "x")),
         ProbeFailure::LocalBackoff
     );
     assert_eq!(
         ProbeFailure::from_send_error(&send(SendFailureKind::PeerUnreachable, "no route")),
+        ProbeFailure::SendFailed
+    );
+    // The kind decides, not the text: the old backoff message as PeerUnreachable is a real failure.
+    assert_eq!(
+        ProbeFailure::from_send_error(&send(
+            SendFailureKind::PeerUnreachable,
+            "Sending is failing"
+        )),
         ProbeFailure::SendFailed
     );
     assert_eq!(

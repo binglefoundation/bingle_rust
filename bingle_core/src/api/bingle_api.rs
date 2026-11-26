@@ -45,6 +45,9 @@ pub enum SendFailureKind {
     /// The recipient's endpoint is resolved but the peer could not be reached over DTLS
     /// (connect timeout / no route — peer offline) (transient).
     PeerUnreachable,
+    /// A send to the peer's endpoint failed within the engine's send backoff, so this send was
+    /// refused locally and nothing was sent (transient; it is tried again once the backoff ends).
+    SendBackoff,
     /// A request was sent but the peer or relay did not answer within the timeout (transient).
     NoResponse,
     // --- protocol / data ---
@@ -72,6 +75,7 @@ impl SendFailureKind {
             | SendFailureKind::NoRelayAvailable
             | SendFailureKind::RelayAllocationFailed
             | SendFailureKind::PeerUnreachable
+            | SendFailureKind::SendBackoff
             | SendFailureKind::NoResponse
             | SendFailureKind::NotReady => true,
             SendFailureKind::HandleNotFound

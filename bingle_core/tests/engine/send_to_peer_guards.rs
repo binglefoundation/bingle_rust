@@ -3,7 +3,7 @@ use crate::util::test_util::init_test_logging;
 use bingle_core::api::bingle_api::{NetworkEndpoint, StartOptions};
 use bingle_core::dtls::network_mux_udp::UdpNetworkMux;
 use bingle_core::dtls::{Dtls, HandleMessage};
-use bingle_core::engine::Engine;
+use bingle_core::engine::{Engine, SendToPeerError};
 use std::net::SocketAddr;
 
 #[derive(Default)]
@@ -200,7 +200,7 @@ pub fn send_to_peer_rejects_incomplete_relay_endpoint() {
     assert!(result.is_err());
     let err = result.unwrap_err();
     assert!(
-        err.contains("rejecting incomplete relay endpoint"),
+        matches!(&err, SendToPeerError::Rejected(text) if text.contains("rejecting incomplete relay endpoint")),
         "unexpected error: {}",
         err
     );
@@ -232,7 +232,7 @@ pub fn send_to_peer_rejects_send_to_self() {
     assert!(result.is_err());
     let err = result.unwrap_err();
     assert!(
-        err.contains("rejecting send to self"),
+        matches!(&err, SendToPeerError::Rejected(text) if text.contains("rejecting send to self")),
         "unexpected error: {}",
         err
     );

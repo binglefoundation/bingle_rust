@@ -16,6 +16,8 @@ struct MockDtls {
     pub expected: Arc<Mutex<Vec<(NetworkEndpoint, String)>>>,
     /// For each send, the id expected at its endpoint when it was sent.
     pub expected_at_send: Arc<Mutex<Vec<Option<String>>>>,
+    /// When set, every send fails.
+    pub fail_sends: Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl MockDtls {
@@ -27,6 +29,7 @@ impl MockDtls {
                 handle_message: Arc::new(Mutex::new(None)),
                 expected: Arc::new(Mutex::new(vec![])),
                 expected_at_send: Arc::new(Mutex::new(vec![])),
+                fail_sends: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             },
             v,
         )
@@ -41,6 +44,9 @@ impl Dtls for MockDtls {
         Ok(())
     }
     fn send(&self, to: &bingle_core::api::bingle_api::NetworkEndpoint, data: &[u8]) -> Result<()> {
+        if self.fail_sends.load(std::sync::atomic::Ordering::SeqCst) {
+            return Err("simulated send failure".to_string());
+        }
         let addr = to
             .inet_socket_address()
             .expect("MockDtls::send requires inet_socket_address");
@@ -293,5 +299,43 @@ pub fn send_message_to_network_expects_destination_id_before_sending() {
         expected_at_send.lock().unwrap().first().cloned(),
         Some(Some(uid)),
         "the send went out without the destination id expected at its endpoint"
+    );
+}
+
+/// A failed send reports PeerUnreachable; a second send inside the engine's send backoff is
+/// refused without reaching DTLS and reports the typed SendBackoff cause (#554).
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn send_over_dtls_reports_send_backoff_after_a_failed_send() {
+    let (mock, sent_vec) = MockDtls::new();
+    mock.fail_sends
+        .store(true, std::sync::atomic::Ordering::SeqCst);
+    let my_addr: SocketAddr = "44.223.62.108:12121".parse().expect("valid addr");
+    let api = BingleApiImpl::new_with_dtls(Box::new(mock));
+    api.access_unsafe_for_tests(|a: &mut BingleApiImpl| {
+        a.engine_set_public_addr_for_tests(Some(my_addr));
+    });
+    let nsk = NetworkEndpoint::new_direct("10.0.0.1:5000".parse().expect("valid addr"));
+    let uid = test_util::ADDRESS_SPEND.to_string();
+    let send = || {
+        api.access_unsafe_for_tests(|a: &mut BingleApiImpl| {
+            a.send_message_to_network(&nsk, &uid, serde_json::json!({"test": true}), None)
+        })
+    };
+
+    match send() {
+        Err(BingleError::Send { kind, .. }) => assert_eq!(kind, SendFailureKind::PeerUnreachable),
+        other => panic!("expected PeerUnreachable from the failed send, got {other:?}"),
+    }
+    match send() {
+        Err(BingleError::Send { kind, detail }) => {
+            assert_eq!(kind, SendFailureKind::SendBackoff);
+            assert_eq!(detail, "Sending is failing", "the human message is kept");
+        }
+        other => panic!("expected SendBackoff inside the backoff, got {other:?}"),
+    }
+    assert!(
+        sent_vec.lock().unwrap().is_empty(),
+        "neither send should have been captured as sent"
     );
 }

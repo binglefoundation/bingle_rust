@@ -165,6 +165,9 @@ pub enum FailureKind {
     RelayAllocationFailed,
     /// The recipient's endpoint resolved but the peer could not be reached (transient).
     PeerUnreachable,
+    /// A recent send to the peer failed, so this one was refused locally without sending; it is
+    /// tried again once the engine's send backoff ends (transient).
+    SendBackoff,
     /// A request was sent but the peer or relay did not answer in time (transient).
     NoResponse,
     /// The recipient's connection record was present but unusable (permanent).
@@ -190,6 +193,7 @@ impl FailureKind {
             FailureKind::NoRelayAvailable => K::NoRelayAvailable,
             FailureKind::RelayAllocationFailed => K::RelayAllocationFailed,
             FailureKind::PeerUnreachable => K::PeerUnreachable,
+            FailureKind::SendBackoff => K::SendBackoff,
             FailureKind::NoResponse => K::NoResponse,
             FailureKind::MalformedAdvert => K::MalformedAdvert,
             FailureKind::ProtocolError => K::ProtocolError,

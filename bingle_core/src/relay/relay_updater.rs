@@ -3,7 +3,7 @@ use std::time::{Duration, Instant};
 
 use crate::api::bingle_api::{BingleApiBothType, BingleError, NetworkEndpoint, SendFailureKind};
 use crate::ddb::AdvertRecord;
-use crate::engine::{RelayState, SEND_FAIL_BACKOFF_REFUSAL};
+use crate::engine::RelayState;
 use crate::messages::marshal::{from_json_value, to_json_value};
 use crate::messages::types::{
     DdbGetRelaysStatus, DdbMessage, DdbRelaysStatusResponse, Message, RelayReportFailed,
@@ -77,9 +77,9 @@ impl ProbeFailure {
                 ..
             } => ProbeFailure::Timeout,
             BingleError::Send {
-                kind: SendFailureKind::PeerUnreachable,
-                detail,
-            } if detail == SEND_FAIL_BACKOFF_REFUSAL => ProbeFailure::LocalBackoff,
+                kind: SendFailureKind::SendBackoff,
+                ..
+            } => ProbeFailure::LocalBackoff,
             _ => ProbeFailure::SendFailed,
         }
     }

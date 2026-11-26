@@ -43,3 +43,15 @@ fn error_is_std_error() {
     let display: &dyn Display = &err;
     assert!(!display.to_string().is_empty());
 }
+
+#[test]
+fn send_failed_error_display_names_the_kind() {
+    let err = BingleJsiError::SendFailed {
+        failure_kind: bingle_jsi::api::types::FailureKind::SendBackoff,
+        reason: "Sending is failing".to_string(),
+    };
+    assert_eq!(
+        err.to_string(),
+        "Send failed (SendBackoff): Sending is failing"
+    );
+}

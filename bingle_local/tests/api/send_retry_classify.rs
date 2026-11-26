@@ -36,6 +36,7 @@ fn typed_error_kind_is_preserved() {
         SendFailureKind::NoRelayAvailable,
         SendFailureKind::RelayAllocationFailed,
         SendFailureKind::PeerUnreachable,
+        SendFailureKind::SendBackoff,
         SendFailureKind::NoResponse,
         SendFailureKind::MalformedAdvert,
         SendFailureKind::ProtocolError,
@@ -56,6 +57,7 @@ fn retryable_split_matches_intent() {
         SendFailureKind::NoRelayAvailable,
         SendFailureKind::RelayAllocationFailed,
         SendFailureKind::PeerUnreachable,
+        SendFailureKind::SendBackoff,
         SendFailureKind::NoResponse,
         SendFailureKind::NotReady,
     ];
@@ -125,4 +127,13 @@ fn send_failure_is_constructible_and_comparable() {
     };
     let b = a.clone();
     assert_eq!(a, b);
+}
+
+#[test]
+fn send_backoff_keeps_the_peer_unreachable_text() {
+    // A send backoff refusal showed as PeerUnreachable before #554, so users see the same text.
+    let backoff = classify_send_error(&send_err(SendFailureKind::SendBackoff)).expect("a failure");
+    let unreachable =
+        classify_send_error(&send_err(SendFailureKind::PeerUnreachable)).expect("a failure");
+    assert_eq!(backoff.reason, unreachable.reason);
 }

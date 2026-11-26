@@ -83,7 +83,7 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
                 stopInBackground(previous)
                 promise.resolve(true)
             } catch (e: Exception) {
-                promise.reject("BINGLE_INIT_ERROR", "Failed to initialize BingleJsi: ${e.message}", e)
+                rejectBingle(promise, e, code = "BINGLE_INIT_ERROR", messagePrefix = "Failed to initialize BingleJsi: ")
             }
         }.start()
     }
@@ -100,7 +100,7 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
                 val result = api.handleLookup(handle)
                 promise.resolve(result)
             } catch (e: Exception) {
-                promise.reject("BINGLE_ERROR", e.message, e)
+                rejectBingle(promise, e)
             }
         }.start()
     }
@@ -120,7 +120,7 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
                 map.putString("canonical_handle", result.canonicalHandle)
                 promise.resolve(map)
             } catch (e: Exception) {
-                promise.reject("BINGLE_ERROR", e.message, e)
+                rejectBingle(promise, e)
             }
         }.start()
     }
@@ -146,7 +146,7 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
                 }
                 promise.resolve(array)
             } catch (e: Exception) {
-                promise.reject("BINGLE_ERROR", e.message, e)
+                rejectBingle(promise, e)
             }
         }.start()
     }
@@ -163,7 +163,7 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
                 val result = api.sendMessageToId(userId, msg)
                 promise.resolve(result)
             } catch (e: Exception) {
-                promise.reject("BINGLE_ERROR", e.message, e)
+                rejectBingle(promise, e)
             }
         }.start()
     }
@@ -181,7 +181,7 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
                 val result = api.sendMessageToHandle(handle, msg)
                 promise.resolve(result)
             } catch (e: Exception) {
-                promise.reject("BINGLE_ERROR", e.message, e)
+                rejectBingle(promise, e)
             }
         }.start()
     }
@@ -200,7 +200,7 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
                 map.putString("build_number", info.buildNumber)
                 promise.resolve(map)
             } catch (e: Exception) {
-                promise.reject("BINGLE_ERROR", e.message, e)
+                rejectBingle(promise, e)
             }
         }.start()
     }
@@ -227,7 +227,7 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
                 }
                 promise.resolve(result)
             } catch (e: Exception) {
-                promise.reject("BINGLE_ERROR", e.message, e)
+                rejectBingle(promise, e)
             }
         }.start()
     }
@@ -246,7 +246,7 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
                 messages.forEach { arr.pushMap(messageToMap(it)) }
                 promise.resolve(arr)
             } catch (e: Exception) {
-                promise.reject("BINGLE_ERROR", e.message, e)
+                rejectBingle(promise, e)
             }
         }.start()
     }
@@ -266,7 +266,7 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
                 map.putString("nat_type_v6", natTypeV6ToString(resp.natTypeV6))
                 promise.resolve(map)
             } catch (e: Exception) {
-                promise.reject("BINGLE_ERROR", e.message, e)
+                rejectBingle(promise, e)
             }
         }.start()
     }
@@ -283,7 +283,7 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
                 val available = api.networkAvailable(forceRecheck)
                 promise.resolve(available)
             } catch (e: Exception) {
-                promise.reject("BINGLE_ERROR", e.message, e)
+                rejectBingle(promise, e)
             }
         }.start()
     }
@@ -303,7 +303,7 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
                 map.putString("passphrase", kp.passphrase)
                 promise.resolve(map)
             } catch (e: Exception) {
-                promise.reject("BINGLE_ERROR", e.message, e)
+                rejectBingle(promise, e)
             }
         }.start()
     }
@@ -323,7 +323,7 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
                 map.putString("passphrase", kp.passphrase)
                 promise.resolve(map)
             } catch (e: Exception) {
-                promise.reject("BINGLE_ERROR", e.message, e)
+                rejectBingle(promise, e)
             }
         }.start()
     }
@@ -339,7 +339,7 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
             try {
                 promise.resolve(keypairMap(api.generateKeypairReplacing(replaceSyncedKey)))
             } catch (e: Exception) {
-                promise.reject("BINGLE_ERROR", e.message, e)
+                rejectBingle(promise, e)
             }
         }.start()
     }
@@ -355,7 +355,7 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
             try {
                 promise.resolve(keypairMap(api.importKeypairReplacing(passphrase, replaceSyncedKey)))
             } catch (e: Exception) {
-                promise.reject("BINGLE_ERROR", e.message, e)
+                rejectBingle(promise, e)
             }
         }.start()
     }
@@ -372,7 +372,7 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
             try {
                 promise.resolve(keypairStatusToMap(api.inspectPassphrase(passphrase)))
             } catch (e: Exception) {
-                promise.reject("BINGLE_ERROR", e.message, e)
+                rejectBingle(promise, e)
             }
         }.start()
     }
@@ -399,7 +399,7 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
                 val sig = api.signNotifyEnvelope(route, iss, audience, token, env, topic, nonce, exp.toLong())
                 promise.resolve(sig)
             } catch (e: Exception) {
-                promise.reject("BINGLE_ERROR", e.message, e)
+                rejectBingle(promise, e)
             }
         }.start()
     }
@@ -430,7 +430,7 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
                 map.putString("sig", req.sig)
                 promise.resolve(map)
             } catch (e: Exception) {
-                promise.reject("BINGLE_ERROR", e.message, e)
+                rejectBingle(promise, e)
             }
         }.start()
     }
@@ -468,7 +468,7 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
                 val signed = api.signRegistrationGroup(strings(transactions), indexes(signIndexes), handle)
                 promise.resolve(stringArray(signed))
             } catch (e: Exception) {
-                promise.reject("BINGLE_ERROR", e.message, e)
+                rejectBingle(promise, e)
             }
         }.start()
     }
@@ -484,7 +484,7 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
             try {
                 promise.resolve(keypairMap(api.beginRecoveryKeypair()))
             } catch (e: Exception) {
-                promise.reject("BINGLE_ERROR", e.message, e)
+                rejectBingle(promise, e)
             }
         }.start()
     }
@@ -501,7 +501,7 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
                 val signed = api.signRecoveryGroup(strings(transactions), indexes(signIndexes), handle)
                 promise.resolve(stringArray(signed))
             } catch (e: Exception) {
-                promise.reject("BINGLE_ERROR", e.message, e)
+                rejectBingle(promise, e)
             }
         }.start()
     }
@@ -517,7 +517,7 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
             try {
                 promise.resolve(keypairMap(api.completeRecoveryKeypair()))
             } catch (e: Exception) {
-                promise.reject("BINGLE_ERROR", e.message, e)
+                rejectBingle(promise, e)
             }
         }.start()
     }
@@ -546,7 +546,7 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
                 if (lastInstallAt != null) map.putDouble("last_install_at", lastInstallAt.toDouble()) else map.putNull("last_install_at")
                 promise.resolve(map)
             } catch (e: Exception) {
-                promise.reject("BINGLE_ERROR", e.message, e)
+                rejectBingle(promise, e)
             }
         }.start()
     }
@@ -563,7 +563,7 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
                 api.setDeviceOnly(enabled)
                 promise.resolve(null)
             } catch (e: Exception) {
-                promise.reject("BINGLE_ERROR", e.message, e)
+                rejectBingle(promise, e)
             }
         }.start()
     }
@@ -580,7 +580,7 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
                 api.markPhraseBackedUp()
                 promise.resolve(null)
             } catch (e: Exception) {
-                promise.reject("BINGLE_ERROR", e.message, e)
+                rejectBingle(promise, e)
             }
         }.start()
     }
@@ -596,7 +596,7 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
             try {
                 promise.resolve(keypairMap(api.restoreStoredKey()))
             } catch (e: Exception) {
-                promise.reject("BINGLE_ERROR", e.message, e)
+                rejectBingle(promise, e)
             }
         }.start()
     }
@@ -613,7 +613,7 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
                 api.removeKeyFromDevice()
                 promise.resolve(null)
             } catch (e: Exception) {
-                promise.reject("BINGLE_ERROR", e.message, e)
+                rejectBingle(promise, e)
             }
         }.start()
     }
@@ -636,7 +636,7 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
                 }
                 promise.resolve(status)
             } catch (e: Exception) {
-                promise.reject("BINGLE_ERROR", e.message, e)
+                rejectBingle(promise, e)
             }
         }.start()
     }
@@ -653,7 +653,7 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
                 api.forgetStateKey()
                 promise.resolve(null)
             } catch (e: Exception) {
-                promise.reject("BINGLE_ERROR", e.message, e)
+                rejectBingle(promise, e)
             }
         }.start()
     }
@@ -669,7 +669,7 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
             try {
                 promise.resolve(keypairMap(api.openStateWithRecoveryPhrase(phrase)))
             } catch (e: Exception) {
-                promise.reject("BINGLE_ERROR", e.message, e)
+                rejectBingle(promise, e)
             }
         }.start()
     }
@@ -685,7 +685,7 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
             try {
                 promise.resolve(keypairMap(api.exportKeypair()))
             } catch (e: Exception) {
-                promise.reject("BINGLE_ERROR", e.message, e)
+                rejectBingle(promise, e)
             }
         }.start()
     }
@@ -702,7 +702,7 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
             try {
                 promise.resolve(api.appRecord(name))
             } catch (e: Exception) {
-                promise.reject("BINGLE_ERROR", e.message, e)
+                rejectBingle(promise, e)
             }
         }.start()
     }
@@ -720,7 +720,7 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
                 api.setAppRecord(name, json)
                 promise.resolve(null)
             } catch (e: Exception) {
-                promise.reject("BINGLE_ERROR", e.message, e)
+                rejectBingle(promise, e)
             }
         }.start()
     }
@@ -738,7 +738,7 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
                 api.removeAppRecord(name)
                 promise.resolve(null)
             } catch (e: Exception) {
-                promise.reject("BINGLE_ERROR", e.message, e)
+                rejectBingle(promise, e)
             }
         }.start()
     }
@@ -755,7 +755,7 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
                 api.deleteAccount()
                 promise.resolve(null)
             } catch (e: Exception) {
-                promise.reject("BINGLE_ERROR", e.message, e)
+                rejectBingle(promise, e)
             }
         }.start()
     }
@@ -772,7 +772,7 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
                 val result = api.registerKeypair(handle)
                 promise.resolve(result)
             } catch (e: Exception) {
-                promise.reject("BINGLE_ERROR", e.message, e)
+                rejectBingle(promise, e)
             }
         }.start()
     }
@@ -790,7 +790,7 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
                 api.addContact(handle, id, src)
                 promise.resolve(null)
             } catch (e: Exception) {
-                promise.reject("BINGLE_ERROR", e.message, e)
+                rejectBingle(promise, e)
             }
         }.start()
     }
@@ -807,7 +807,7 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
                 api.blockContact(id)
                 promise.resolve(null)
             } catch (e: Exception) {
-                promise.reject("BINGLE_ERROR", e.message, e)
+                rejectBingle(promise, e)
             }
         }.start()
     }
@@ -824,7 +824,7 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
                 api.unblockContact(id)
                 promise.resolve(null)
             } catch (e: Exception) {
-                promise.reject("BINGLE_ERROR", e.message, e)
+                rejectBingle(promise, e)
             }
         }.start()
     }
@@ -841,7 +841,7 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
                 api.removeContact(id)
                 promise.resolve(null)
             } catch (e: Exception) {
-                promise.reject("BINGLE_ERROR", e.message, e)
+                rejectBingle(promise, e)
             }
         }.start()
     }
@@ -858,7 +858,7 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
                 val result = api.isBlocked(id)
                 promise.resolve(result)
             } catch (e: Exception) {
-                promise.reject("BINGLE_ERROR", e.message, e)
+                rejectBingle(promise, e)
             }
         }.start()
     }
@@ -885,7 +885,7 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
                 }
                 promise.resolve(arr)
             } catch (e: Exception) {
-                promise.reject("BINGLE_ERROR", e.message, e)
+                rejectBingle(promise, e)
             }
         }.start()
     }
@@ -912,7 +912,7 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
                 }
                 promise.resolve(arr)
             } catch (e: Exception) {
-                promise.reject("BINGLE_ERROR", e.message, e)
+                rejectBingle(promise, e)
             }
         }.start()
     }
@@ -941,7 +941,7 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
                 }
                 promise.resolve(arr)
             } catch (e: Exception) {
-                promise.reject("BINGLE_ERROR", e.message, e)
+                rejectBingle(promise, e)
             }
         }.start()
     }
@@ -962,7 +962,7 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
                 api.addMessage(senderHandle, handles, timestamp.toLong(), text, cipherSuite)
                 promise.resolve(null)
             } catch (e: Exception) {
-                promise.reject("BINGLE_ERROR", e.message, e)
+                rejectBingle(promise, e)
             }
         }.start()
     }
@@ -1005,7 +1005,7 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
                 }
                 promise.resolve(arr)
             } catch (e: Exception) {
-                promise.reject("BINGLE_ERROR", e.message, e)
+                rejectBingle(promise, e)
             }
         }.start()
     }
@@ -1026,7 +1026,7 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
                 api.queueMessage(handles, text)
                 promise.resolve(null)
             } catch (e: Exception) {
-                promise.reject("BINGLE_ERROR", e.message, e)
+                rejectBingle(promise, e)
             }
         }.start()
     }
@@ -1044,7 +1044,7 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
                 api.updateMessageStatusById(id, progress.toFloat(), failureReason)
                 promise.resolve(null)
             } catch (e: Exception) {
-                promise.reject("BINGLE_ERROR", e.message, e)
+                rejectBingle(promise, e)
             }
         }.start()
     }
@@ -1061,7 +1061,7 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
                 api.updateMessageStatus(timestamp.toLong(), progress.toFloat(), failureReason)
                 promise.resolve(null)
             } catch (e: Exception) {
-                promise.reject("BINGLE_ERROR", e.message, e)
+                rejectBingle(promise, e)
             }
         }.start()
     }
@@ -1079,7 +1079,7 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
                 api.setStoreAndForward(send, receive)
                 promise.resolve(null)
             } catch (e: Exception) {
-                promise.reject("BINGLE_ERROR", e.message, e)
+                rejectBingle(promise, e)
             }
         }.start()
     }
@@ -1097,7 +1097,7 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
                 api.setNotify(enabled, gatewayUrl)
                 promise.resolve(null)
             } catch (e: Exception) {
-                promise.reject("BINGLE_ERROR", e.message, e)
+                rejectBingle(promise, e)
             }
         }.start()
     }
@@ -1115,7 +1115,7 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
                 api.setGlobalBlock(enabled)
                 promise.resolve(null)
             } catch (e: Exception) {
-                promise.reject("BINGLE_ERROR", e.message, e)
+                rejectBingle(promise, e)
             }
         }.start()
     }
@@ -1140,7 +1140,7 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
                 if (globalBlock != null) map.putBoolean("global_block", globalBlock) else map.putNull("global_block")
                 promise.resolve(map)
             } catch (e: Exception) {
-                promise.reject("BINGLE_ERROR", e.message, e)
+                rejectBingle(promise, e)
             }
         }.start()
     }
@@ -1156,7 +1156,7 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
             try {
                 promise.resolve(keypairStatusToMap(api.keypairStatus()))
             } catch (e: Exception) {
-                promise.reject("BINGLE_ERROR", e.message, e)
+                rejectBingle(promise, e)
             }
         }.start()
     }
@@ -1173,7 +1173,7 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
                 api.save(path)
                 promise.resolve(null)
             } catch (e: Exception) {
-                promise.reject("BINGLE_ERROR", e.message, e)
+                rejectBingle(promise, e)
             }
         }.start()
     }
@@ -1190,7 +1190,7 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
                 api.load(path)
                 promise.resolve(null)
             } catch (e: Exception) {
-                promise.reject("BINGLE_ERROR", e.message, e)
+                rejectBingle(promise, e)
             }
         }.start()
     }
@@ -1207,7 +1207,7 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
                 api.start()
                 promise.resolve(null)
             } catch (e: Exception) {
-                promise.reject("BINGLE_ERROR", e.message, e)
+                rejectBingle(promise, e)
             }
         }.start()
     }
@@ -1229,7 +1229,7 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
                 api.foregrounding()
                 promise.resolve(null)
             } catch (e: Exception) {
-                promise.reject("BINGLE_ERROR", e.message, e)
+                rejectBingle(promise, e)
             }
         }.start()
     }
@@ -1250,7 +1250,7 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
                 api.backgrounding()
                 promise.resolve(null)
             } catch (e: Exception) {
-                promise.reject("BINGLE_ERROR", e.message, e)
+                rejectBingle(promise, e)
             }
         }.start()
     }
@@ -1267,7 +1267,7 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
                 api.stop()
                 promise.resolve(null)
             } catch (e: Exception) {
-                promise.reject("BINGLE_ERROR", e.message, e)
+                rejectBingle(promise, e)
             }
         }.start()
     }
@@ -1284,7 +1284,7 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
                 val result = api.isStarted()
                 promise.resolve(result)
             } catch (e: Exception) {
-                promise.reject("BINGLE_ERROR", e.message, e)
+                rejectBingle(promise, e)
             }
         }.start()
     }
@@ -1420,21 +1420,24 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
         KeypairStatus.UPGRADE_REQUIRED -> "UpgradeRequired"
     }
 
-    // Map the typed send-failure cause (issue #99) to the FailureKind string the TypeScript layer
-    // expects (matches the FailureKind union in ts/NativeBingleJsi.ts).
-    private fun failureKindToString(kind: FailureKind): String = when (kind) {
-        FailureKind.HANDLE_NOT_FOUND -> "HandleNotFound"
-        FailureKind.HANDLE_LOOKUP_FAILED -> "HandleLookupFailed"
-        FailureKind.RECIPIENT_NOT_ADVERTISED -> "RecipientNotAdvertised"
-        FailureKind.INVALID_RECIPIENT_ID -> "InvalidRecipientId"
-        FailureKind.NO_RELAY_AVAILABLE -> "NoRelayAvailable"
-        FailureKind.RELAY_ALLOCATION_FAILED -> "RelayAllocationFailed"
-        FailureKind.PEER_UNREACHABLE -> "PeerUnreachable"
-        FailureKind.NO_RESPONSE -> "NoResponse"
-        FailureKind.MALFORMED_ADVERT -> "MalformedAdvert"
-        FailureKind.PROTOCOL_ERROR -> "ProtocolError"
-        FailureKind.NOT_READY -> "NotReady"
-        FailureKind.UNKNOWN -> "Unknown"
+    private fun failureKindToString(kind: FailureKind): String = BingleJsiErrors.failureKindName(kind)
+
+    /**
+     * Reject a promise for a failed call (bingle_rust #464, #470). `code` is unchanged. The message
+     * names the error variant in the iOS form, and `userInfo` carries `{ kind, ...fields }`, which
+     * React Native exposes as `error.userInfo`.
+     */
+    private fun rejectBingle(
+        promise: Promise,
+        e: Throwable,
+        code: String = "BINGLE_ERROR",
+        messagePrefix: String = ""
+    ) {
+        val info = BingleJsiErrors.info(e)
+        val userInfo = Arguments.createMap()
+        userInfo.putString("kind", info.kind)
+        for ((name, value) in info.fields) userInfo.putString(name, value)
+        promise.reject(code, messagePrefix + BingleJsiErrors.message(e), e, userInfo)
     }
 }
 
