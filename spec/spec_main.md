@@ -540,6 +540,20 @@ Nodes that agree the relay failed add their `FailVote` to `confirmations`; nodes
 disagree add theirs to `disputes`. Any node processing a `ReportFailedComplete` can verify
 every vote by checking the corresponding signature.
 
+### Current handling
+The voting round is not implemented yet. Today a relay that receives a `RelayReportFailed`
+checks the reported relay with one `DdbGetRelaysStatus`. If that fails, it marks the relay
+suspect and sends one `ReportFailedRipple` to its peer relays, which mark it suspect too.
+
+- A suspect relay stays in the relay set, so ripples to it resume as soon as it is reachable.
+  A relay whose on-chain `allow_relay` is withdrawn is removed instead.
+- A suspect relay is re-checked with `DdbGetRelaysStatus` after 30 seconds, then with a
+  doubling wait of up to 10 minutes. It stops being suspect when a check finds it Available, or
+  when any authenticated message arrives from it.
+- A report for a relay that is already suspect is not rippled again.
+- Each relay permission refresh also puts back any relay that discovery lists, the chain
+  allows, and the relay set lacks.
+
 # Message reference
 
 Polymorphism is based on the pair (app, type). If those fields are absent or null, the message is plain text with field text.

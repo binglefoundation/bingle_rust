@@ -7,4 +7,5 @@ pub mod relay_keep_alive;
 pub mod relay_origin;
 pub mod relay_permission_refresh;
 pub mod relay_probe_failures;
+pub mod relay_suspects;
 pub mod relay_updater;

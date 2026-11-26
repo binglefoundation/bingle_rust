@@ -216,6 +216,9 @@ impl BingleApiInternal for BothAsApi {
     fn ddb_upsert_record(&self, record: AdvertRecord) {
         self.inner.ddb_upsert_record(record)
     }
+    fn relay_mark_suspect(&self, relay_id: &str) -> bool {
+        self.inner.relay_mark_suspect(relay_id)
+    }
     fn ddb_backend_size(&self) -> usize {
         self.inner.ddb_backend_size()
     }
@@ -1739,12 +1742,19 @@ impl DefaultPrintingHandler {
 
         let failed_relay_id = &relay_report_failed.failed_relay_id;
 
-        // Find the failed relay's address via list_all_relays
+        // Find the failed relay's address via list_all_relays, else from its DDB record.
         let relay_addr_opt = api
             .list_all_relays(true)
             .into_iter()
             .find(|r| r.id() == failed_relay_id)
-            .map(|r| r.address());
+            .map(|r| r.address())
+            .or_else(|| {
+                let backend = router.get_ddb_backend()?;
+                let b = backend.lock().ok()?;
+                b.lookup(failed_relay_id)
+                    .and_then(|rec| rec.endpoint)
+                    .and_then(|ep| std::net::SocketAddr::try_from(ep).ok())
+            });
 
         let mark_failed = match relay_addr_opt {
             None => {
@@ -1755,65 +1765,38 @@ impl DefaultPrintingHandler {
                 true
             }
             Some(relay_addr) => {
-                // Send DdbGetRelaysStatus to the failed relay to check its status
-                let request = Message::Ddb(DdbMessage::GetRelaysStatus(DdbGetRelaysStatus {
-                    app: "ddb".to_string(),
-                    epoch_id: 0,
-                    tag: None,
-                    text: None,
-                    data: None,
-                }));
-                let nsk = crate::api::bingle_api::NetworkEndpoint::new_direct(relay_addr);
-                let request_json = crate::messages::marshal::to_json_value(&request);
-                let send_result = api.send_message_to_network_with_response(
-                    &nsk,
+                match crate::relay::relay_suspects::probe_relay_state(
+                    api.as_ref(),
                     failed_relay_id,
-                    request_json,
-                    None,
-                );
-
-                match send_result {
+                    relay_addr,
+                ) {
                     Err(e) => {
                         warn!(
-                            "[handlers::on_report_fail] failed to send DdbGetRelaysStatus to {}: {}",
+                            "[handlers::on_report_fail] check of reported relay {} failed: {}",
                             failed_relay_id, e
                         );
                         true
                     }
-                    Ok(response_json) => {
-                        let parsed = crate::messages::marshal::from_json_value(response_json);
-                        match parsed {
-                            Ok(Message::Ddb(DdbMessage::RelaysStatusResponse(status))) => {
-                                if status.responder_state != RelayState::Available {
-                                    warn!(
-                                        "[handlers::on_report_fail] relay {} responded but state is {:?}, marking failed",
-                                        failed_relay_id, status.responder_state
-                                    );
-                                    true
-                                } else {
-                                    warn!(
-                                        "[handlers::on_report_fail] relay {} responded as Available, ignoring report",
-                                        failed_relay_id
-                                    );
-                                    false
-                                }
-                            }
-                            _ => {
-                                warn!(
-                                    "[handlers::on_report_fail] unexpected response from relay {}, marking failed",
-                                    failed_relay_id
-                                );
-                                true
-                            }
-                        }
+                    Ok(RelayState::Available) => {
+                        warn!(
+                            "[handlers::on_report_fail] relay {} responded as Available, ignoring report",
+                            failed_relay_id
+                        );
+                        false
+                    }
+                    Ok(state) => {
+                        warn!(
+                            "[handlers::on_report_fail] relay {} responded but state is {:?}, marking failed",
+                            failed_relay_id, state
+                        );
+                        true
                     }
                 }
             }
         };
 
-        if mark_failed {
-            Self::mark_relay_as_failed(api.clone(), failed_relay_id);
-
+        // A relay already suspect has been rippled once; don't ripple it again (#516).
+        if mark_failed && api.relay_mark_suspect(failed_relay_id) {
             // Build ReportFailedRipple and send to all peer relays
             let ripple = ReportFailedRipple {
                 app: "reportFail".to_string(),
@@ -1867,21 +1850,8 @@ impl DefaultPrintingHandler {
             return;
         }
 
-        Self::mark_relay_as_failed(api, &ripple.failed_relay_id);
+        api.relay_mark_suspect(&ripple.failed_relay_id);
         // no response returned (temporary implementation)
-    }
-}
-
-impl DefaultPrintingHandler {
-    /// Temporary utility: mark a relay as failed by removing it from the local DDB
-    /// and from the relay finder cache. Trusts the caller that the relay is indeed failed.
-    fn mark_relay_as_failed(api: Arc<dyn BingleApiBoth>, relay_id: &str) {
-        api.ddb_delete_record(relay_id);
-        api.relay_finder_remove_relay(relay_id);
-        warn!(
-            "[handlers::mark_relay_as_failed] removed relay {} from local DDB and relay finder cache",
-            relay_id
-        );
     }
 }
 

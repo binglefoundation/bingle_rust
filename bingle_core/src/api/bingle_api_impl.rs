@@ -1956,6 +1956,9 @@ impl crate::api::bingle_api::BingleApiInternal for BingleApiImpl {
         self.engine
             .access(|e| e.relay_finder_remove_relay(relay_id))
     }
+    fn relay_mark_suspect(&self, relay_id: &str) -> bool {
+        self.engine.access(|e| e.relay_mark_suspect(relay_id))
+    }
     fn relay_finder_clear_state_cache(&self) {
         self.engine.access(|e| e.relay_finder_clear_state_cache())
     }

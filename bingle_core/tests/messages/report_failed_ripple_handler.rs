@@ -22,13 +22,12 @@ fn make_report_failed_ripple(failed_relay_id: &str) -> Message {
     }))
 }
 
-// A combined mock that tracks calls to mark_relay_as_failed helpers.
+// A combined mock that tracks calls to relay_mark_suspect.
 // - known_relay_id: the relay id considered a known relay (for sender validation)
-// - ddb_deleted / relay_cache_removed: track calls to mark_relay_as_failed helpers
+// - suspected: tracks calls to relay_mark_suspect
 struct TrackingApi {
     known_relay_id: String,
-    ddb_deleted: Arc<Mutex<Vec<String>>>,
-    relay_cache_removed: Arc<Mutex<Vec<String>>>,
+    suspected: Arc<Mutex<Vec<String>>>,
 }
 
 impl InnerBingleApi for TrackingApi {
@@ -48,18 +47,12 @@ impl InnerBingleApi for TrackingApi {
 }
 
 impl InnerBingleApiInternal for TrackingApi {
-    fn ddb_delete_record(&self, id: &str) {
-        self.ddb_deleted
+    fn relay_mark_suspect(&self, relay_id: &str) -> bool {
+        self.suspected
             .lock()
-            .expect("lock ddb_deleted")
-            .push(id.to_string());
-    }
-
-    fn relay_finder_remove_relay(&self, relay_id: &str) {
-        self.relay_cache_removed
-            .lock()
-            .expect("lock relay_cache_removed")
+            .expect("lock suspected")
             .push(relay_id.to_string());
+        true
     }
 }
 
@@ -75,21 +68,18 @@ fn router_with_api(api: Arc<TrackingApi>) -> Arc<Router> {
     router
 }
 
-// Test: we are not a relay - message is silently ignored, mark_relay_as_failed not called
+// Test: we are not a relay - message is silently ignored, relay_mark_suspect not called
 #[test]
 #[cfg(not(target_os = "ios"))]
 pub fn report_failed_ripple_ignored_when_not_relay() {
-    struct PanicOnDelete;
-    impl InnerBingleApiInternal for PanicOnDelete {
-        fn ddb_delete_record(&self, _id: &str) {
-            panic!("ddb_delete_record must not be called when we are not a relay");
-        }
-        fn relay_finder_remove_relay(&self, _relay_id: &str) {
-            panic!("relay_finder_remove_relay must not be called when we are not a relay");
+    struct PanicOnSuspect;
+    impl InnerBingleApiInternal for PanicOnSuspect {
+        fn relay_mark_suspect(&self, _relay_id: &str) -> bool {
+            panic!("relay_mark_suspect must not be called when we are not a relay");
         }
     }
 
-    let panic_arc = Arc::new(PanicOnDelete);
+    let panic_arc = Arc::new(PanicOnSuspect);
     let weak =
         crate::util::mock_bingle_api::to_weak(MockApiBoth::new_with_internal_override(panic_arc));
     let router = Arc::new(Router::new(weak));
@@ -102,21 +92,19 @@ pub fn report_failed_ripple_ignored_when_not_relay() {
     Router::with_current_router(router.clone(), || {
         router.route(&handler, &msg, RELAY_SENDER_ISSUER);
     });
-    // reaching here without panic verifies mark_relay_as_failed was not called
+    // reaching here without panic verifies relay_mark_suspect was not called
 }
 
-// Test: sender is not a known relay - message is silently ignored, mark_relay_as_failed not called
+// Test: sender is not a known relay - message is silently ignored, relay_mark_suspect not called
 #[test]
 #[cfg(not(target_os = "ios"))]
 pub fn report_failed_ripple_ignored_when_sender_not_relay() {
-    let ddb_deleted: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
-    let relay_cache_removed: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let suspected: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
 
     // known_relay_id is different from RELAY_SENDER, so sender is not a relay
     let tracking_api = Arc::new(TrackingApi {
         known_relay_id: "SOME_OTHER_RELAY".into(),
-        ddb_deleted: ddb_deleted.clone(),
-        relay_cache_removed: relay_cache_removed.clone(),
+        suspected: suspected.clone(),
     });
 
     let router = router_with_api(tracking_api);
@@ -127,31 +115,21 @@ pub fn report_failed_ripple_ignored_when_sender_not_relay() {
         router.route(&handler, &msg, RELAY_SENDER_ISSUER);
     });
 
-    let deleted = ddb_deleted.lock().expect("lock ddb_deleted");
     assert!(
-        deleted.is_empty(),
-        "ddb_delete_record must not be called when sender is not a relay"
-    );
-    let removed = relay_cache_removed
-        .lock()
-        .expect("lock relay_cache_removed");
-    assert!(
-        removed.is_empty(),
-        "relay_finder_remove_relay must not be called when sender is not a relay"
+        suspected.lock().expect("lock suspected").is_empty(),
+        "relay_mark_suspect must not be called when sender is not a relay"
     );
 }
 
-// Test: valid ripple from a known relay -> mark_relay_as_failed called for failed_relay_id
+// Test: valid ripple from a known relay -> relay_mark_suspect called for failed_relay_id
 #[test]
 #[cfg(not(target_os = "ios"))]
 pub fn report_failed_ripple_marks_failed_when_sender_is_relay() {
-    let ddb_deleted: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
-    let relay_cache_removed: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let suspected: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
 
     let tracking_api = Arc::new(TrackingApi {
         known_relay_id: RELAY_SENDER.into(),
-        ddb_deleted: ddb_deleted.clone(),
-        relay_cache_removed: relay_cache_removed.clone(),
+        suspected: suspected.clone(),
     });
 
     let router = router_with_api(tracking_api);
@@ -162,16 +140,9 @@ pub fn report_failed_ripple_marks_failed_when_sender_is_relay() {
         router.route(&handler, &msg, RELAY_SENDER_ISSUER);
     });
 
-    let deleted = ddb_deleted.lock().expect("lock ddb_deleted");
-    assert!(
-        deleted.contains(&FAILED_RELAY.to_string()),
-        "ddb_delete_record should have been called for the failed relay"
-    );
-    let removed = relay_cache_removed
-        .lock()
-        .expect("lock relay_cache_removed");
-    assert!(
-        removed.contains(&FAILED_RELAY.to_string()),
-        "relay_finder_remove_relay should have been called for the failed relay"
+    assert_eq!(
+        *suspected.lock().expect("lock suspected"),
+        vec![FAILED_RELAY.to_string()],
+        "the failed relay should be marked suspect, not removed (#516)"
     );
 }

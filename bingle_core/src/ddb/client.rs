@@ -17,6 +17,9 @@ use crate::relay::relay_finder::{RelayFinderTrait, RelayInfo};
 /// loop for the full default timeout, blocking all later retries (bingle_rust #31/#43).
 const DDB_RESPONSE_TIMEOUT: Duration = Duration::from_secs(10);
 
+/// Most relays a lookup asks before it reports the recipient as not advertised (issue #516).
+const MAX_LOOKUP_RELAYS: usize = 3;
+
 /// Public DDB client interface used by higher layers.
 /// Provides register_ip and lookup helpers that send DDB messages over the network
 /// and validate typed responses.
@@ -93,6 +96,112 @@ impl DdbClientImpl {
             .ok_or_else(|| BingleError::Other("get_my_id returned None".to_string()))?;
         tracing::trace!("[DdbClientImpl::find_relay] RelayFinder::find_relay");
         finder.find_relay(&my_id).map_err(BingleError::Retryable)
+    }
+
+    /// Send a `QueryResolve` for `id` to `relay` and return its `queryResponse`. A response
+    /// without the record is `RecipientNotAdvertised`.
+    fn query_relay(&self, relay: &RelayInfo, id: &str) -> Result<JsonValue, BingleError> {
+        let relay_user_b64 = match Self::relay_user_id(relay.id()) {
+            Ok(u) => u,
+            Err(e) => {
+                tracing::error!("[DdbClientImpl::lookup] relay_user_id failed: {}", e);
+                return Err(e);
+            }
+        };
+        let nsk = NetworkEndpoint::new_direct(relay.address());
+
+        let q = Message::Ddb(DdbMessage::QueryResolve(DdbQueryResolve {
+            app: "ddb".to_string(),
+            id: id.to_string(),
+            tag: None,
+            text: None,
+            data: None,
+        }));
+        let json: JsonValue = to_json_value(&q);
+
+        let resp = match self.api()?.send_message_to_network_with_response_timeout(
+            &nsk,
+            &relay_user_b64,
+            json,
+            None,
+            DDB_RESPONSE_TIMEOUT,
+        ) {
+            Ok(r) => r,
+            Err(e) => {
+                tracing::error!(
+                    "[DdbClientImpl::lookup] send_message_to_network_with_response failed: {}",
+                    e
+                );
+                // We found a relay but could not complete the DDB query through it (no response /
+                // relay unreachable): a transient, retryable cause (issue #99).
+                return Err(BingleError::Send {
+                    kind: SendFailureKind::NoRelayAvailable,
+                    detail: format!("recipient lookup via relay failed: {}", e),
+                });
+            }
+        };
+
+        let is_ddb = resp.get("app").and_then(|v| v.as_str()) == Some("ddb");
+        let ty = resp.get("type").and_then(|v| v.as_str());
+        if !is_ddb || ty != Some("queryResponse") {
+            return Err(BingleError::Send {
+                kind: SendFailureKind::ProtocolError,
+                detail: "unexpected response (expected DdbQueryResponse)".to_string(),
+            });
+        }
+        let found = resp.get("found").and_then(|v| v.as_bool()).unwrap_or(false);
+        if !found {
+            // The recipient has no AdvertRecord in the DDB: they are not currently connected /
+            // advertising. Transient — they may reconnect (issue #99).
+            return Err(BingleError::Send {
+                kind: SendFailureKind::RecipientNotAdvertised,
+                detail: format!("recipient {} not found in DDB", id),
+            });
+        }
+        Ok(resp)
+    }
+
+    /// After `first` had no record for `id`, query up to [`MAX_LOOKUP_RELAYS`] relays in all,
+    /// each chosen by relay selection with the relays already asked excluded, and return the
+    /// first response that has the record (issue #516). `None` when no other relay has it or
+    /// none can be reached.
+    fn query_other_relays(&self, first: &RelayInfo, id: &str) -> Option<JsonValue> {
+        let my_id = self.api().ok()?.get_my_id()?;
+        let finder =
+            crate::relay::relay_finder::RelayFinder::new(self.api.clone(), self.discover.clone());
+        let mut asked = vec![first.address()];
+        while asked.len() < MAX_LOOKUP_RELAYS {
+            let relay = match finder.find_relay_excluding(&my_id, &asked) {
+                Ok(r) => r,
+                Err(e) => {
+                    tracing::debug!(
+                        "[DdbClientImpl::lookup] no further relay to ask for {}: {}",
+                        id,
+                        e
+                    );
+                    return None;
+                }
+            };
+            asked.push(relay.address());
+            match self.query_relay(&relay, id) {
+                Ok(resp) => {
+                    tracing::warn!(
+                        "[DdbClientImpl::lookup] relay {} had no record for {}, but relay {} did: relays may not be replicating",
+                        first.id(),
+                        id,
+                        relay.id()
+                    );
+                    return Some(resp);
+                }
+                Err(e) => tracing::info!(
+                    "[DdbClientImpl::lookup] relay {} has no usable record for {}: {}",
+                    relay.id(),
+                    id,
+                    e
+                ),
+            }
+        }
+        None
     }
 
     fn relay_user_id(relay_id: &str) -> Result<String, BingleError> {
@@ -644,65 +753,23 @@ impl DdbClient for DdbClientImpl {
                 });
             }
         };
-        let relay_user_b64 = match Self::relay_user_id(relay.id()) {
-            Ok(u) => u,
-            Err(e) => {
-                tracing::error!("[DdbClientImpl::lookup] relay_user_id failed: {}", e);
-                return Err(e);
-            }
-        };
-        let nsk = NetworkEndpoint::new_direct(relay.address());
 
-        // 2) Build QueryResolve
-        let q = Message::Ddb(DdbMessage::QueryResolve(DdbQueryResolve {
-            app: "ddb".to_string(),
-            id: id.to_string(),
-            tag: None,
-            text: None,
-            data: None,
-        }));
-        let json: JsonValue = to_json_value(&q);
-
-        // 3) Send and await response
-        let resp = match self.api()?.send_message_to_network_with_response_timeout(
-            &nsk,
-            &relay_user_b64,
-            json,
-            None,
-            DDB_RESPONSE_TIMEOUT,
-        ) {
-            Ok(r) => r,
-            Err(e) => {
-                tracing::error!(
-                    "[DdbClientImpl::lookup] send_message_to_network_with_response failed: {}",
-                    e
-                );
-                // We found a relay but could not complete the DDB query through it (no response /
-                // relay unreachable): a transient, retryable cause (issue #99).
-                return Err(BingleError::Send {
-                    kind: SendFailureKind::NoRelayAvailable,
-                    detail: format!("recipient lookup via relay failed: {}", e),
-                });
-            }
-        };
-
-        let is_ddb = resp.get("app").and_then(|v| v.as_str()) == Some("ddb");
-        let ty = resp.get("type").and_then(|v| v.as_str());
-        if !is_ddb || ty != Some("queryResponse") {
-            return Err(BingleError::Send {
-                kind: SendFailureKind::ProtocolError,
-                detail: "unexpected response (expected DdbQueryResponse)".to_string(),
-            });
-        }
-        let found = resp.get("found").and_then(|v| v.as_bool()).unwrap_or(false);
-        if !found {
-            // The recipient has no AdvertRecord in the DDB: they are not currently connected /
-            // advertising. Transient — they may reconnect (issue #99).
-            return Err(BingleError::Send {
+        // 2) Query it. When it has no record, ask the other relays before giving up: if
+        // replication between relays has broken, the record may be held only by the relay the
+        // recipient advertised on (issue #516).
+        let resp = match self.query_relay(&relay, id) {
+            Ok(resp) => resp,
+            Err(BingleError::Send {
                 kind: SendFailureKind::RecipientNotAdvertised,
-                detail: format!("recipient {} not found in DDB", id),
-            });
-        }
+                detail,
+            }) => self
+                .query_other_relays(&relay, id)
+                .ok_or(BingleError::Send {
+                    kind: SendFailureKind::RecipientNotAdvertised,
+                    detail,
+                })?,
+            Err(e) => return Err(e),
+        };
         // Build NetworkEndpoint from advert (supporting both direct endpoint and relay_id)
         let advert = match resp.get("advert") {
             Some(a) => a,

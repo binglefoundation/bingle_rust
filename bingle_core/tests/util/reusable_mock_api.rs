@@ -532,6 +532,10 @@ impl bingle_core::api::bingle_api::BingleApiInternal for MockApiBoth {
             .relay_finder_remove_relay(relay_id);
     }
 
+    fn relay_mark_suspect(&self, relay_id: &str) -> bool {
+        self.inner_bingle_api_internal.relay_mark_suspect(relay_id)
+    }
+
     fn relay_finder_clear_state_cache(&self) {
         self.inner_bingle_api_internal
             .relay_finder_clear_state_cache();
@@ -675,6 +679,10 @@ pub trait InnerBingleApiInternal {
     fn ddb_delete_record(&self, _id: &str) {}
 
     fn relay_finder_remove_relay(&self, _relay_id: &str) {}
+
+    fn relay_mark_suspect(&self, _relay_id: &str) -> bool {
+        true
+    }
 
     fn relay_finder_clear_state_cache(&self) {}
 

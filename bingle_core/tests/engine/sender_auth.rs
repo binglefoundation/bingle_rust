@@ -82,12 +82,12 @@ impl InnerBingleApi for AlwaysAuthApi {
 // Minimal fake DTLS (no cipher suite, just stores the installed handler)
 // ---------------------------------------------------------------------------
 
-struct MinimalFakeDtls {
+pub(crate) struct MinimalFakeDtls {
     handler: Mutex<Option<HandleMessage>>,
 }
 
 impl MinimalFakeDtls {
-    fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             handler: Mutex::new(None),
         }
