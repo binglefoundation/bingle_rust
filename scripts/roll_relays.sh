@@ -11,14 +11,19 @@
 #         BINGLE_ACCOUNTS_DIR, without .json) and require it to pass
 #   scripts/roll_relays.sh --check-inventory <file>
 #         parse and print an inventory file, then exit (no AWS or git needed)
+#   scripts/roll_relays.sh --allow-earlier    # TestNet: roll an earlier staging commit on purpose
+#   scripts/roll_relays.sh --force            # roll even though the network already runs this commit
 #
 # Run it after `source ~/.config/bingle/bingle_env.sh testnet|mainnet`, which signs in to AWS and
 # sets BINGLE_NETWORK and BINGLE_RELAYS_FILE. The relays come from that inventory file (the format
 # is aws/relays.example.env); this repository names no relay of its own.
 #
 # What it rolls:
-#   testnet  the commit checked out here, which must be on origin/staging (normally its head)
+#   testnet  the commit checked out here, which must be the head of origin/staging (an earlier
+#            staging commit only with --allow-earlier, #546)
 #   mainnet  the commit checked out here, which must be origin/deployed and carry its vX.Y.Z tag
+# Before anything changes it prints the commit the network runs now (its latest successful
+# deployment record) and the one it will run, and it stops if they are the same unless --force.
 # The tree must be clean, because the image is built from this checkout.
 #
 # The relay image is built once, as bingle-relay:<tag>; every relay runs the same image, since its
@@ -158,11 +163,15 @@ print_inventory() {
 # ── arguments ─────────────────────────────────────────────────────────
 DRY_RUN=0
 YES=0
+ALLOW_EARLIER=0
+FORCE=0
 CHECK_ACCOUNT=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --dry-run) DRY_RUN=1; shift ;;
     --yes) YES=1; shift ;;
+    --allow-earlier) ALLOW_EARLIER=1; shift ;;
+    --force) FORCE=1; shift ;;
     --check-relays) [[ -n "${2:-}" ]] || die "--check-relays needs an account name"; CHECK_ACCOUNT=$2; shift 2 ;;
     --check-inventory)
       [[ -n "${2:-}" ]] || die "--check-inventory needs a file"
@@ -200,12 +209,14 @@ SHORT=$(git rev-parse --short=8 HEAD)
 if [[ -n "$(git status --porcelain --untracked-files=no -- . ':!.build_number')" ]]; then
   die "the tree has uncommitted changes; the image is built from this checkout, so commit or discard them first"
 fi
-VERSION=$(python3 - <<'PY'
-import re, pathlib
-m = re.search(r'\[package\][^\[]*?\nversion\s*=\s*"([^"]*)"', pathlib.Path("bingle_core/Cargo.toml").read_text(), re.S)
-print(m.group(1) if m else "")
-PY
-)
+# version_at <ref>: the crate version bingle_core/Cargo.toml carries at a commit.
+version_at() {
+  git show "$1:bingle_core/Cargo.toml" 2>/dev/null | python3 -c '
+import re, sys
+m = re.search(r"\[package\][^\[]*?\nversion\s*=\s*\"([^\"]*)\"", sys.stdin.read(), re.S)
+print(m.group(1) if m else "")'
+}
+VERSION=$(version_at HEAD)
 [[ -n "$VERSION" ]] || die "could not read the version from bingle_core/Cargo.toml"
 
 case "$INV_NETWORK" in
@@ -213,7 +224,11 @@ case "$INV_NETWORK" in
     git merge-base --is-ancestor "$SHA" origin/staging \
       || die "HEAD $SHORT is not on origin/staging; TestNet only runs staging commits (git checkout staging && git pull)"
     if [[ "$SHA" != "$(git rev-parse origin/staging)" ]]; then
-      warn "HEAD $SHORT is an earlier staging commit, not the head of origin/staging ($(git rev-parse --short=8 origin/staging))"
+      staging_short=$(git rev-parse --short=8 origin/staging)
+      staging_version=$(version_at origin/staging)
+      [[ $ALLOW_EARLIER -eq 1 ]] \
+        || die "HEAD $SHORT ($VERSION) is an earlier staging commit, not the head of origin/staging, $staging_short ($staging_version). Update this checkout (git pull --ff-only), or add --allow-earlier to roll $SHORT on purpose"
+      warn "HEAD $SHORT ($VERSION) is an earlier staging commit, not the head of origin/staging, $staging_short ($staging_version); rolling it because of --allow-earlier"
     fi
     TAG="$VERSION-$SHORT" ;;
   mainnet)
@@ -225,6 +240,37 @@ case "$INV_NETWORK" in
     TAG="$VERSION" ;;
 esac
 ok "commit $SHORT, version $VERSION, image tag $TAG"
+
+# ── what the network runs now ─────────────────────────────────────────
+# current_deployment <environment>: "<sha> <version>" of the newest deployment whose latest status
+# is success, or nothing.
+current_deployment() {
+  local id sha ver state
+  gh api "repos/$GH_REPO/deployments?environment=$1&per_page=20" \
+    --jq '.[] | "\(.id) \(.sha) \(.payload.version // "?")"' 2>/dev/null \
+    | while read -r id sha ver; do
+        state=$(gh api "repos/$GH_REPO/deployments/$id/statuses?per_page=1" --jq '.[0].state // ""' 2>/dev/null || true)
+        if [[ "$state" == success ]]; then
+          echo "$sha $ver"
+          return 0
+        fi
+      done
+}
+current=""
+if command -v gh >/dev/null 2>&1; then
+  current=$(current_deployment "$INV_NETWORK" || true)
+fi
+if [[ -n "$current" ]]; then
+  read -r current_sha current_version <<< "$current"
+  info "rolling $INV_NETWORK from ${current_sha:0:8} ($current_version) to $SHORT ($VERSION)"
+  if [[ "$current_sha" == "$SHA" ]]; then
+    [[ $FORCE -eq 1 ]] \
+      || die "$INV_NETWORK already runs $SHORT ($VERSION). If you meant a newer commit, update this checkout (git pull --ff-only); to redeploy $SHORT anyway, add --force"
+    warn "$INV_NETWORK already runs $SHORT; redeploying it because of --force"
+  fi
+else
+  warn "could not read which commit $INV_NETWORK runs now (no successful deployment record, or gh unavailable); rolling to $SHORT ($VERSION)"
+fi
 
 # ── the stacks ────────────────────────────────────────────────────────
 # Each stack must exist and run the handle and node file the inventory says, so a stale inventory or
