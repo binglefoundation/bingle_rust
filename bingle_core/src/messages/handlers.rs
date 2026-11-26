@@ -1741,6 +1741,12 @@ impl DefaultPrintingHandler {
         let router = &from.router;
 
         let failed_relay_id = &relay_report_failed.failed_relay_id;
+        tracing::info!(
+            "[handlers::on_report_fail] {} reported relay {} as {:?}",
+            from.id,
+            failed_relay_id,
+            relay_report_failed.fail_type
+        );
 
         // Find the failed relay's address via list_all_relays, else from its DDB record.
         let relay_addr_opt = api
@@ -1849,6 +1855,12 @@ impl DefaultPrintingHandler {
             );
             return;
         }
+        tracing::info!(
+            "[handlers::on_report_failed_ripple] relay {} rippled a report of relay {} as {:?}",
+            sender_id,
+            ripple.failed_relay_id,
+            ripple.fail_type
+        );
 
         api.relay_mark_suspect(&ripple.failed_relay_id);
         // no response returned (temporary implementation)

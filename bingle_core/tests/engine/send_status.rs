@@ -524,7 +524,10 @@ pub fn send_to_peer_returns_err_immediately_when_recent_failure_recorded() {
         "expected Err due to backoff guard, got {:?}",
         result
     );
-    assert_eq!(result.unwrap_err(), "Sending is failing");
+    assert_eq!(
+        result.unwrap_err(),
+        bingle_core::engine::SEND_FAIL_BACKOFF_REFUSAL
+    );
 }
 
 #[test]

@@ -34,6 +34,9 @@ use uuid::Uuid;
 pub const MINIMUM_MTU: usize = 1492;
 /// How long to suppress sends to a peer that recently failed.
 pub const SEND_FAIL_BACKOFF: Duration = Duration::from_secs(30);
+/// The error `send_to_peer` returns when `SEND_FAIL_BACKOFF` refuses a send, so nothing was sent.
+/// Callers compare against it to tell a local refusal from a send that was tried (#554).
+pub const SEND_FAIL_BACKOFF_REFUSAL: &str = "Sending is failing";
 /// If relay registration is still pending (TrianglePing or NATRestricted) this long after the
 /// last attempt, a subsequent STUN-consistent event re-drives it (re-sends TriangleTest1, which
 /// leads to a fresh Listen). This lets a lost triangle/Listen packet self-heal instead of
@@ -1313,7 +1316,7 @@ impl Engine {
             && !status.is_working
             && status.last_checked_timestamp.elapsed() < SEND_FAIL_BACKOFF
         {
-            return Err("Sending is failing".to_string());
+            return Err(SEND_FAIL_BACKOFF_REFUSAL.to_string());
         }
         // Track the endpoint as seen before sending, whatever the outcome. The first packet (a
         // DTLS ClientHello for a new peer) opens a path through our NAT to that address, even if

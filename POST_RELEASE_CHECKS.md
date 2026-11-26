@@ -108,3 +108,11 @@ When a release finishes, `scripts/release.sh` lists the checks below for changes
   - relay B's later ripples to relay A log no failure, with no restart of relay B;
   - an account that advertises on relay B (the TestNet gateway, if it is on B) is found by a lookup on relay A after its next advert refresh: no `found: false` for it in relay A's log.
 
+### #554 a relay failure report says why the relay failed
+
+- **Merged in:** the PR for #554; first ships in the next release. The reports come from the app, so the check needs a TestNet app build on the jsi release that has it, and the relays rolled to that release for the log line.
+- **Needs:** the same setup as the #516 check above. Run it during that check: its step 3 makes the report this one reads.
+- **Steps:** in the #516 check's step 3, find relay B's line `[handlers::on_report_fail] <app account> reported relay <relay A id> as "<fail_type>"`.
+- **Passes when:** the `fail_type` is `"timeout"` or `"send_failed"`, not `"send_rejected"`.
+- **Not checked here:** the ripple handler's `rippled a report ... as` line needs a third relay to receive the ripple, which TestNet's two relays can't show. Not reporting a relay the app's send backoff refused is covered by unit tests, because on a device the app's relay cooldown usually skips that relay before any probe.
+

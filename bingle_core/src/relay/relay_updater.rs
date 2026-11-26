@@ -1,9 +1,9 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use crate::api::bingle_api::{BingleApiBothType, NetworkEndpoint};
+use crate::api::bingle_api::{BingleApiBothType, BingleError, NetworkEndpoint, SendFailureKind};
 use crate::ddb::AdvertRecord;
-use crate::engine::RelayState;
+use crate::engine::{RelayState, SEND_FAIL_BACKOFF_REFUSAL};
 use crate::messages::marshal::{from_json_value, to_json_value};
 use crate::messages::types::{
     DdbGetRelaysStatus, DdbMessage, DdbRelaysStatusResponse, Message, RelayReportFailed,
@@ -39,8 +39,57 @@ pub const RELAY_SELECTION_BUDGET: Duration = Duration::from_secs(12);
 /// relay it has not sent to, so selection must not contact more relays than it needs.
 pub const RELAY_PREFERENCE_GRACE: Duration = Duration::from_millis(1500);
 
+/// Why a candidate was not selected, which sets the `fail_type` of the failure report sent to
+/// the selected relay (#554).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProbeFailure {
+    /// The request was sent, but the relay didn't answer in time.
+    Timeout,
+    /// The send to the relay failed, for example because the connection couldn't be made.
+    SendFailed,
+    /// The relay answered, but not as Available.
+    NotAvailable,
+    /// The relay answered with a status that couldn't be used.
+    BadStatus,
+    /// The engine's send backoff refused the probe here, so the relay was never tried.
+    LocalBackoff,
+    /// The probe couldn't start here (no API, or no probe thread), so the relay was never tried.
+    NotAttempted,
+}
+
+impl ProbeFailure {
+    /// The `fail_type` to report, or `None` when the relay was never tried and so isn't reported.
+    pub fn report_fail_type(self) -> Option<&'static str> {
+        match self {
+            ProbeFailure::Timeout => Some("timeout"),
+            ProbeFailure::SendFailed => Some("send_failed"),
+            ProbeFailure::NotAvailable => Some("not_available"),
+            ProbeFailure::BadStatus => Some("bad_status"),
+            ProbeFailure::LocalBackoff | ProbeFailure::NotAttempted => None,
+        }
+    }
+
+    /// Classify an error from the status request.
+    pub fn from_send_error(err: &BingleError) -> Self {
+        match err {
+            BingleError::Send {
+                kind: SendFailureKind::NoResponse,
+                ..
+            } => ProbeFailure::Timeout,
+            BingleError::Send {
+                kind: SendFailureKind::PeerUnreachable,
+                detail,
+            } if detail == SEND_FAIL_BACKOFF_REFUSAL => ProbeFailure::LocalBackoff,
+            _ => ProbeFailure::SendFailed,
+        }
+    }
+}
+
+/// A failed probe: why, and the detail for the log.
+type ProbeError = (ProbeFailure, String);
+
 /// Result of one candidate's status probe, sent back from its probe thread.
-type ProbeResult = (usize, Result<DdbRelaysStatusResponse, String>);
+type ProbeResult = (usize, Result<DdbRelaysStatusResponse, ProbeError>);
 
 pub struct RelayUpdater {
     my_id: String,
@@ -227,7 +276,7 @@ impl RelayUpdater {
         let mut started = 0usize;
         let mut resolved = 0usize;
         let mut next_start_at = Instant::now();
-        let mut failed_relay_ids: Vec<String> = Vec::new();
+        let mut failed_relays: Vec<(String, ProbeFailure)> = Vec::new();
 
         loop {
             let now = Instant::now();
@@ -265,23 +314,24 @@ impl RelayUpdater {
                 Ok(status) if status.responder_state == RelayState::Available => {
                     self.update_cached_relay_state(candidate.id(), status.responder_state);
                     if let Some(relay) = self.accept_available(candidate, &status, my_id_norm) {
-                        self.report_failed_relays(&relay, &failed_relay_ids);
+                        self.report_failed_relays(&relay, &failed_relays);
                         return Some(relay);
                     }
-                    failed_relay_ids.push(candidate.id().to_string());
+                    failed_relays.push((candidate.id().to_string(), ProbeFailure::BadStatus));
                 }
                 Ok(status) => {
                     self.update_cached_relay_state(candidate.id(), status.responder_state);
-                    failed_relay_ids.push(candidate.id().to_string());
+                    failed_relays.push((candidate.id().to_string(), ProbeFailure::NotAvailable));
                 }
-                Err(err) => {
+                Err((failure, detail)) => {
                     tracing::info!(
-                        "[RelayUpdater::relay_select_and_query] relay {} unreachable: {}",
+                        "[RelayUpdater::relay_select_and_query] relay {} unreachable ({:?}): {}",
                         candidate.id(),
-                        err
+                        failure,
+                        detail
                     );
                     self.update_cached_relay_state(candidate.id(), RelayState::Off);
-                    failed_relay_ids.push(candidate.id().to_string());
+                    failed_relays.push((candidate.id().to_string(), failure));
                 }
             }
         }
@@ -316,7 +366,13 @@ impl RelayUpdater {
                 relay.id(),
                 err
             );
-            let _ = sender.send((rank, Err(format!("probe not started: {err}"))));
+            let _ = sender.send((
+                rank,
+                Err((
+                    ProbeFailure::NotAttempted,
+                    format!("probe not started: {err}"),
+                )),
+            ));
         }
     }
 
@@ -349,8 +405,15 @@ impl RelayUpdater {
         Some(relay)
     }
 
-    fn report_failed_relays(&self, selected_relay: &RelayInfo, failed_relay_ids: &[String]) {
-        if failed_relay_ids.is_empty() {
+    /// Report each failed candidate to the selected relay, with why it failed. A candidate that was
+    /// never tried, because the probe was refused or couldn't start here, isn't reported: the
+    /// fault may be this client's, not the relay's (#554).
+    fn report_failed_relays(
+        &self,
+        selected_relay: &RelayInfo,
+        failed_relays: &[(String, ProbeFailure)],
+    ) {
+        if failed_relays.is_empty() {
             return;
         }
         let Some(api) = &self.api else {
@@ -358,14 +421,28 @@ impl RelayUpdater {
         };
         let timestamp = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
         let nsk = NetworkEndpoint::new_direct(selected_relay.address());
-        for failed_id in failed_relay_ids {
+        for (failed_id, failure) in failed_relays {
+            let Some(fail_type) = failure.report_fail_type() else {
+                tracing::info!(
+                    "[report_failed_relays] not reporting relay {}: it was never tried ({:?})",
+                    failed_id,
+                    failure
+                );
+                continue;
+            };
+            tracing::info!(
+                "[report_failed_relays] reporting relay {} to {} as {}",
+                failed_id,
+                selected_relay.id(),
+                fail_type
+            );
             let report =
                 Message::ReportFail(ReportFailMessage::RelayReportFailed(RelayReportFailed {
                     app: "reportFail".to_string(),
                     tag: None,
                     response_tag: None,
                     failed_relay_id: failed_id.clone(),
-                    fail_type: "send_rejected".to_string(),
+                    fail_type: fail_type.to_string(),
                     timestamp: timestamp.clone(),
                 }));
             if let Some(api_ref) = api.upgrade() {
@@ -421,9 +498,9 @@ impl RelayUpdater {
     fn query_relay_status(
         api: Option<&BingleApiBothType>,
         relay: &RelayInfo,
-    ) -> Result<DdbRelaysStatusResponse, String> {
+    ) -> Result<DdbRelaysStatusResponse, ProbeError> {
         let Some(api) = api else {
-            return Err("api unavailable".to_string());
+            return Err((ProbeFailure::NotAttempted, "api unavailable".to_string()));
         };
 
         let request = Message::Ddb(DdbMessage::GetRelaysStatus(DdbGetRelaysStatus {
@@ -438,7 +515,7 @@ impl RelayUpdater {
         let api_ref = api.upgrade().ok_or_else(|| {
             let err = "api dropped".to_string();
             tracing::error!("[RelayUpdater::query_relay_status] {}", err);
-            err
+            (ProbeFailure::NotAttempted, err)
         })?;
         let response = api_ref
             .send_message_to_network_with_response_timeout(
@@ -448,12 +525,16 @@ impl RelayUpdater {
                 None,
                 RELAY_STATUS_RESPONSE_TIMEOUT,
             )
-            .map_err(|err| err.to_string())?;
+            .map_err(|err| (ProbeFailure::from_send_error(&err), err.to_string()))?;
 
-        let parsed = from_json_value(response).map_err(|err| format!("{err:?}"))?;
+        let parsed = from_json_value(response)
+            .map_err(|err| (ProbeFailure::BadStatus, format!("{err:?}")))?;
         match parsed {
             Message::Ddb(DdbMessage::RelaysStatusResponse(status_response)) => Ok(status_response),
-            _ => Err("unexpected response type".to_string()),
+            _ => Err((
+                ProbeFailure::BadStatus,
+                "unexpected response type".to_string(),
+            )),
         }
     }
 
