@@ -34,8 +34,13 @@ CS_PREFIX=${CS_PREFIX:-"[changeset]"}
 #   failed  the change set could not be created; the following line is CloudFormation's reason
 # The expected set: an AWS::ECS::TaskDefinition modified (always a replacement), unless it changes
 # its roles or network mode; an AWS::ECS::Service modified in place, unless it changes networking,
-# load balancing, service discovery or its role. Anything else (IAM, security groups, VPC, a launch
-# template, a log group, any added or removed resource, any other replacement) needs review.
+# load balancing, service discovery or its role; and any other resource modified in place only
+# because it reads an attribute of, or refers to, one of those two (every detail is Evaluation
+# Dynamic with that resource as its CausingEntity). CloudFormation can't know such a value until the
+# service is updated, so it lists the reader as changed even though the value comes out the same:
+# the relay dashboard's ${RelayService.Name}, on every roll. Anything else (IAM, security groups,
+# VPC, a launch template, a log group, any added or removed resource, any other replacement, a
+# direct change to any other resource) needs review.
 changeset_classify() {
   python3 - "$1" <<'PY'
 import json, sys
@@ -67,6 +72,22 @@ TASK_DEF_REVIEW = {"TaskRoleArn", "ExecutionRoleArn", "NetworkMode"}
 SERVICE_REVIEW = {"NetworkConfiguration", "LoadBalancers", "Role", "ServiceRegistries",
                   "ServiceConnectConfiguration", "VpcLatticeConfigurations"}
 
+# The resources a roll expects to change, which other resources may follow (see dynamic_only).
+expected = {(c.get("ResourceChange") or {}).get("LogicalResourceId") for c in changes
+            if (c.get("ResourceChange") or {}).get("Action") == "Modify"
+            and (c.get("ResourceChange") or {}).get("ResourceType")
+            in ("AWS::ECS::TaskDefinition", "AWS::ECS::Service")}
+
+def dynamic_only(rc):
+    """Whether every detail of this change waits on an expected resource: a reference to it, or one
+    of its attributes ("RelayService.Name"), evaluated when the change set runs."""
+    details = rc.get("Details") or []
+    return bool(details) and all(
+        d.get("Evaluation") == "Dynamic"
+        and d.get("ChangeSource") in ("ResourceReference", "ResourceAttribute")
+        and (d.get("CausingEntity") or "").split(".")[0] in expected
+        for d in details)
+
 reasons = []
 for c in changes:
     rc = c.get("ResourceChange") or {}
@@ -90,6 +111,8 @@ for c in changes:
         bad = sorted(props & SERVICE_REVIEW)
         if bad:
             reasons.append(f"{lid} ({rtype}) changes {', '.join(bad)}")
+        continue
+    if action == "Modify" and replacement == "False" and dynamic_only(rc):
         continue
     extra = f", Replacement: {replacement}" if action == "Modify" else ""
     reasons.append(f"{action} {lid} ({rtype}{extra})")

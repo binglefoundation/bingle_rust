@@ -1,0 +1,86 @@
+{
+  "Changes": [
+    {
+      "Type": "Resource",
+      "ResourceChange": {
+        "Action": "Modify",
+        "LogicalResourceId": "RelayTaskDefinition",
+        "PhysicalResourceId": "arn:aws:ecs:us-east-1:111111111111:task-definition/example-relay:7",
+        "ResourceType": "AWS::ECS::TaskDefinition",
+        "Replacement": "True",
+        "Scope": [
+          "Properties"
+        ],
+        "Details": [
+          {
+            "Target": {
+              "Attribute": "Properties",
+              "Name": "ContainerDefinitions",
+              "RequiresRecreation": "Always"
+            },
+            "Evaluation": "Static",
+            "ChangeSource": "DirectModification"
+          }
+        ]
+      }
+    },
+    {
+      "Type": "Resource",
+      "ResourceChange": {
+        "Action": "Modify",
+        "LogicalResourceId": "RelayService",
+        "PhysicalResourceId": "arn:aws:ecs:us-east-1:111111111111:service/example-cluster/example-relay",
+        "ResourceType": "AWS::ECS::Service",
+        "Replacement": "False",
+        "Scope": [
+          "Properties"
+        ],
+        "Details": [
+          {
+            "Target": {
+              "Attribute": "Properties",
+              "Name": "TaskDefinition",
+              "RequiresRecreation": "Never"
+            },
+            "Evaluation": "Dynamic",
+            "ChangeSource": "ResourceReference",
+            "CausingEntity": "RelayTaskDefinition"
+          }
+        ]
+      }
+    },
+    {
+      "Type": "Resource",
+      "ResourceChange": {
+        "Action": "Modify",
+        "LogicalResourceId": "RelayDashboard",
+        "PhysicalResourceId": "example-relay-stack-Dashboard",
+        "ResourceType": "AWS::CloudWatch::Dashboard",
+        "Replacement": "False",
+        "Scope": [
+          "Properties"
+        ],
+        "Details": [
+          {
+            "Target": {
+              "Attribute": "Properties",
+              "Name": "DashboardBody",
+              "RequiresRecreation": "Never"
+            },
+            "Evaluation": "Dynamic",
+            "ChangeSource": "ResourceAttribute",
+            "CausingEntity": "RelayService.Name"
+          }
+        ]
+      }
+    }
+  ],
+  "ChangeSetName": "roll-20261126120000",
+  "ChangeSetId": "arn:aws:cloudformation:us-east-1:111111111111:changeSet/roll-20261126120000/00000000-0000-0000-0000-000000000000",
+  "StackName": "example-relay-stack",
+  "ExecutionStatus": "AVAILABLE",
+  "Status": "CREATE_COMPLETE",
+  "Capabilities": [
+    "CAPABILITY_IAM"
+  ]
+}
