@@ -1,0 +1,38 @@
+This release makes relays and peer connections more reliable and adds structured errors to the React Native bridge. Two changes can break code: `Engine::send_to_peer` now returns a typed error, and failed bridge sends reject with `SendFailed`. Most notably, dual-stack hosts stop re-registering every minute, and DTLS (datagram transport layer security) sessions survive forged and fragmented handshakes.
+
+## What changed
+
+App builders, Rust integrators or relay operators will notice ten of these changes, and one is internal.
+
+| Area | Change | Issue |
+| --- | --- | --- |
+| App bridge (bingle_jsi) | A failed call now carries a structured error in `userInfo` as `{ kind, ...fields }`, on iOS and Android. The new TypeScript helper `bingleErrorInfo(error)` reads it, with the `BingleJsiErrorInfo` and `BingleJsiErrorKind` types. Android messages now use the iOS form, such as `NoBlockchain(reason: "...")`, and report `InternalError` by that name. | [#555](https://github.com/binglefoundation/bingle_rust/issues/555) |
+| App bridge (bingle_jsi) | A failed send now rejects with `SendFailed`, carrying `failureKind` and `reason`, instead of `InternalError`. `FailureKind` gains `SendBackoff`, so a stored message's `failure_kind` can be `"SendBackoff"` where it was `"PeerUnreachable"`. | [#555](https://github.com/binglefoundation/bingle_rust/issues/555) |
+| Core library | On a dual-stack host, a STUN (session traversal utilities for network address translation) re-poll no longer reports the other address family as lost. Before, this cleared registration and re-ran it every minute, as seen on the MainNet gateway since 0.3.41. A family that really stops answering is still reported after one 60-second round. | [#549](https://github.com/binglefoundation/bingle_rust/issues/549) |
+| Core library | DTLS now uses cookie exchange, which adds one round trip to each new inbound session. An established session is replaced only after a verified handshake, so one forged datagram can't close it. A ClientHello split across datagrams, such as the OpenSSL 4.x DTLS 1.3 hello, now completes. | [#545](https://github.com/binglefoundation/bingle_rust/issues/545) |
+| Core library | A relay reported as failed now stays in the relay set as suspect instead of being removed for good. The relay is re-checked with a growing wait of up to 10 minutes, and ripples to it resume without a restart. A lookup that misses now asks up to 3 relays, and relay discovery puts back missing relays the chain allows. | [#553](https://github.com/binglefoundation/bingle_rust/issues/553) |
+| Core library | Client relay failure reports now give a cause: `timeout`, `send_failed`, `not_available` or `bad_status`, instead of always `send_rejected`. A relay the client never tried is no longer reported. Relays still accept `send_rejected` from older clients. | [#555](https://github.com/binglefoundation/bingle_rust/issues/555) |
+| Core library | `Engine::send_to_peer` returns `SendToPeerError` (`Rejected`, `Backoff` or `Failed`) instead of a `String`. A send the send backoff refuses now gives the new `SendFailureKind::SendBackoff`. | [#555](https://github.com/binglefoundation/bingle_rust/issues/555) |
+| Local library | `SendBackoff` is retryable and shows the same "will keep retrying" message as `PeerUnreachable`, so app users see no change. | [#555](https://github.com/binglefoundation/bingle_rust/issues/555) |
+| Release process | `roll_relays.sh` now previews every stack's change set before it builds or changes anything. It lists unexpected changes and asks once, and a refusal or a failed preview changes no stack. `--yes` answers yes, and `--dry-run` now runs only the preview. | [#548](https://github.com/binglefoundation/bingle_rust/issues/548) |
+| Release process | `roll_relays.sh` refuses a TestNet roll from a checkout behind `origin/staging`, and any roll of the commit the network already runs. `--allow-earlier` and `--force` override these checks. Every roll and dry run prints the commit and version it rolls from and to. | [#546](https://github.com/binglefoundation/bingle_rust/issues/546) |
+| Tests | New tests check that the Swift and Kotlin error mappings and the TypeScript types cover every bridge error and failure kind. Both native mappings also switch exhaustively, so a variant without a mapping doesn't compile. | [#555](https://github.com/binglefoundation/bingle_rust/issues/555) |
+
+## Upgrading
+
+You need code changes only if you match on send errors or call `Engine::send_to_peer` directly.
+
+- **App (React Native):** A failed send now rejects with `kind: "SendFailed"`, so check for it with `bingleErrorInfo(error)` instead of matching `InternalError` text. Handle `"SendBackoff"` wherever you switch on `FailureKind`. Android error messages have a new format, so match on `userInfo.kind` instead of message text. According to the release's changes, the Bingle app's source doesn't match on these errors, so it is unaffected.
+- **Rust users of bingle_core and bingle_local:** Handle `SendToPeerError` where you call `Engine::send_to_peer`. Add `SendFailureKind::SendBackoff` to exhaustive matches, and treat it as retryable, as you would `PeerUnreachable`.
+- **CLI users rolling relays:** Run `git pull --ff-only` before a TestNet roll, or pass `--allow-earlier` to roll an earlier commit on purpose. Pass `--yes` when you run `roll_relays.sh` without a terminal.
+
+## Pull requests
+
+* fix(dtls): replace an established session only after a verified handshake; handle fragmented ClientHellos by @bingle-claude in https://github.com/binglefoundation/bingle_rust/pull/545
+* fix(#546): roll_relays.sh refuses a stale checkout or a commit TestNet already runs by @bingle-claude in https://github.com/binglefoundation/bingle_rust/pull/547
+* fix(#549): a STUN re-poll no longer reports the other family as None by @bingle-claude in https://github.com/binglefoundation/bingle_rust/pull/550
+* feat(#548): a roll previews every change set and asks once, before changing any stack by @bingle-claude in https://github.com/binglefoundation/bingle_rust/pull/552
+* fix(relay): keep a reported peer relay as suspect and recover it (#516) by @bingle-claude in https://github.com/binglefoundation/bingle_rust/pull/553
+* Relay failure reports say why; typed SendBackoff; structured bridge errors (#554, #464, #470) by @bingle-claude in https://github.com/binglefoundation/bingle_rust/pull/555
+
+**Full Changelog**: https://github.com/binglefoundation/bingle_rust/compare/v0.3.41...v0.3.42
