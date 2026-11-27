@@ -108,3 +108,35 @@ When a release finishes, `scripts/release.sh` lists the checks below for changes
   - relay B's later ripples to relay A log no failure, with no restart of relay B;
   - an account that advertises on relay B (the TestNet gateway, if it is on B) is found by a lookup on relay A after its next advert refresh: no `found: false` for it in relay A's log.
 
+### #554 a relay failure report says why the relay failed
+
+- **Merged in:** the PR for #554; first ships in the next release. The reports come from the app, so the check needs a TestNet app build on the jsi release that has it, and the relays rolled to that release for the log line.
+- **Needs:** the same setup as the #516 check above. Run it during that check: its step 3 makes the report this one reads.
+- **Steps:** in the #516 check's step 3, find relay B's line `[handlers::on_report_fail] <app account> reported relay <relay A id> as "<fail_type>"`.
+- **Passes when:** the `fail_type` is `"timeout"` or `"send_failed"`, not `"send_rejected"`.
+- **Not checked here:** the ripple handler's `rippled a report ... as` line needs a third relay to receive the ripple, which TestNet's two relays can't show. Not reporting a relay the app's send backoff refused is covered by unit tests, because on a device the app's relay cooldown usually skips that relay before any probe.
+
+### #464 Android shows the specific Delete my account error when offline
+
+- **Merged in:** the PR for #464; first ships in the next release. The check needs an Android build of bingle_ux_rn on the `react-native-bingle-jsi` release that has it. No app change is needed: `deleteErrorText` in bingle_ux_rn's `src/screens/DeleteAccountScreen.tsx` already reads the variant name from the message.
+- **Needs:** an Android phone or emulator with that TestNet Bingle Client build, signed in to a test account.
+- **Steps:**
+  1. Turn on airplane mode.
+  2. Settings → Delete my account, and confirm.
+  3. Turn airplane mode off.
+- **Passes when:**
+  - step 2 shows the app's text for an unreachable network (the `NoBlockchain` case), not its generic failure text;
+  - after step 3 the account is still there: the failed deletion changed nothing.
+
+### #470 a failed call's structured kind reaches JavaScript on both platforms
+
+- **Merged in:** the PR for #470; first ships in the next release. The Swift bridge tests (`StructuredErrorBridgeTests`) and Kotlin unit tests (`BingleJsiErrorsTest`) passed locally before merge. The e2e test was written with the change but not run. bingle_ux_rn doesn't read `userInfo` yet (bingle_ux_rn #220 tracks that), so the example app checks it.
+- **Needs:** the release's commit, with the iOS simulator framework and the Android libraries built for it (`BINGLE_IOS_SIM_ONLY=1 bash bingle_jsi/scripts/build_ios.sh`, `bash bingle_jsi/scripts/build_android.sh`), `npm install` in `bingle_jsi/example` (it has no lock file, so not `npm ci`), pods installed in `bingle_jsi/example/ios`, and an Android emulator.
+- **Steps:** run the lifecycle e2e on each platform, from `bingle_jsi/example`:
+
+      npm run e2e:build:ios && npm run e2e:test:ios -- e2e/lifecycle.test.ts
+
+      npm run e2e:build:android && npm run e2e:test:android -- e2e/lifecycle.test.ts
+
+- **Passes when:** `rejects a bad call with the variant name and a structured kind` passes on both platforms: the rejection has `userInfo.kind`, and on Android its message starts with the variant name, as on iOS.
+

@@ -27,6 +27,7 @@ import {
 import {
   initBingleJsi,
   BingleJsi,
+  bingleErrorInfo,
   failureKindIsRetryable,
 } from 'react-native-bingle-jsi';
 import type {BingleJsiConfig, FailureKind} from 'react-native-bingle-jsi';
@@ -83,6 +84,23 @@ const extraDispatch: Record<string, (...args: any[]) => unknown> = {
   // test that recreates the activity mid-command (issue #431).
   delay: (ms: number) =>
     new Promise<number>(resolve => setTimeout(() => resolve(ms), ms)),
+  // Run a BingleJsi method expected to fail, and resolve with its rejection's message and
+  // structured info, for the error-reporting tests (bingle_rust #464, #470).
+  failureOf: async (method: string, args: unknown[] = []) => {
+    const fn = (BingleJsi as Record<string, any>)[method];
+    if (typeof fn !== 'function') {
+      throw new Error(`unknown method: ${method}`);
+    }
+    try {
+      await fn.apply(BingleJsi, args);
+    } catch (e: unknown) {
+      return {
+        message: e instanceof Error ? e.message : String(e),
+        info: bingleErrorInfo(e),
+      };
+    }
+    throw new Error(`expected ${method} to fail`);
+  },
 };
 
 /**

@@ -3,7 +3,7 @@
 
 use bingle_core::api::bingle_api::{
     BingleApi, BingleApiInternal, BingleError, Handle, HandleMatch, OnConnectHandler,
-    OnListeningHandler, OnMessageHandler, ProgressCallback, StartOptions, UserId,
+    OnListeningHandler, OnMessageHandler, ProgressCallback, SendFailureKind, StartOptions, UserId,
 };
 use bingle_core::api::network_endpoint::NetworkEndpoint;
 use bingle_jsi::api::bingle_jsi_api::BingleJsiApi;
@@ -11,7 +11,7 @@ use bingle_jsi::api::bingle_jsi_api_impl::{
     BingleJsiApiImpl, partition_moderator_blocked, without_moderator_blocked_matches,
 };
 use bingle_jsi::api::error::BingleJsiError;
-use bingle_jsi::api::types::{BingleMessage, HandleLookupMatch};
+use bingle_jsi::api::types::{BingleMessage, FailureKind, HandleLookupMatch};
 use bingle_local::api::GlobalBlocklist;
 use bingle_local::api::bingle_local_api::BingleLocalApi;
 use bingle_local::api::bingle_local_api_impl::{BingleApiLocalImpl, LocalApiConfig};
@@ -24,6 +24,8 @@ const BLOCKED: &str = "MALLORYADDRESS";
 const CLEAR: &str = "ALICEADDRESS";
 /// An address the seeded blocklist knows nothing about.
 const UNKNOWN: &str = "CAROLADDRESS";
+/// A handle whose sends the engine refuses with its send backoff (#554).
+const BACKED_OFF: &str = "erin";
 
 /// An engine whose handles resolve from a fixed table, recording the sends it is asked for and
 /// counting handle lookups.
@@ -137,6 +139,12 @@ impl BingleApi for DirectoryApi {
         _: serde_json::Value,
         _: Option<Arc<ProgressCallback>>,
     ) -> Result<bool, BingleError> {
+        if handle == BACKED_OFF {
+            return Err(BingleError::Send {
+                kind: SendFailureKind::SendBackoff,
+                detail: "Sending is failing".to_string(),
+            });
+        }
         self.record_send(handle);
         Ok(true)
     }
@@ -456,4 +464,23 @@ fn reads_run_a_few_at_a_time_and_keep_the_order() {
     );
     assert_eq!(reads.load(Ordering::SeqCst), 10);
     assert!(most.load(Ordering::SeqCst) <= 4, "at most 4 reads at once");
+}
+
+// Send failures, using the same engine mock.
+
+/// A send the engine refuses reaches the app as `SendFailed` with its typed cause, not as
+/// `InternalError` text (#554, #470).
+#[test]
+fn a_send_failure_carries_its_failure_kind() {
+    let (jsi, _local) = jsi(DirectoryApi::new(), None);
+    match jsi.send_message_to_handle(BACKED_OFF.to_string(), message()) {
+        Err(BingleJsiError::SendFailed {
+            failure_kind,
+            reason,
+        }) => {
+            assert_eq!(failure_kind, FailureKind::SendBackoff);
+            assert_eq!(reason, "Sending is failing");
+        }
+        other => panic!("expected SendFailed, got {other:?}"),
+    }
 }

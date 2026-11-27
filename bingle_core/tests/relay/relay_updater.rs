@@ -5,7 +5,9 @@ use std::time::Duration;
 use crate::util::test_util::{
     signed_non_root_relay, signed_non_root_relay_with, signed_root_relay, signed_root_relay_with,
 };
-use bingle_core::api::bingle_api::{BingleError, NetworkEndpoint, ProgressCallback, UserId};
+use bingle_core::api::bingle_api::{
+    BingleError, NetworkEndpoint, ProgressCallback, SendFailureKind, UserId,
+};
 use bingle_core::ddb::InetSocketAddress;
 use bingle_core::engine::RelayState;
 use bingle_core::messages::marshal::{from_json_value, to_json_value};
@@ -13,7 +15,7 @@ use bingle_core::messages::types::{
     DdbMessage, DdbRelaysStatusResponse, Message, ReportFailMessage,
 };
 use bingle_core::relay::relay_finder::{RelayFinderTrait, RelayInfo};
-use bingle_core::relay::relay_updater::RelayUpdater;
+use bingle_core::relay::relay_updater::{ProbeFailure, RelayUpdater};
 
 use crate::util::reusable_mock_api::{InnerBingleApi, MockApiBoth, to_weak_api_both};
 
@@ -596,6 +598,7 @@ struct ReportTrackingApi {
     queried_ids: Arc<Mutex<Vec<String>>>,
     responder: Arc<QueryResponder>,
     reported_failed_ids: Arc<Mutex<Vec<String>>>,
+    reported_fail_types: Arc<Mutex<Vec<String>>>,
     reported_to_relay_id: Arc<Mutex<Option<String>>>,
 }
 
@@ -637,6 +640,10 @@ impl InnerBingleApi for ReportTrackingApi {
                 .lock()
                 .expect("reported_failed_ids lock should succeed")
                 .push(report.failed_relay_id);
+            self.reported_fail_types
+                .lock()
+                .expect("reported_fail_types lock should succeed")
+                .push(report.fail_type);
             *self
                 .reported_to_relay_id
                 .lock()
@@ -673,6 +680,7 @@ pub fn relay_report_failed_sent_when_preferred_relay_errors() {
             Ok(alternate_response.clone())
         }),
         reported_failed_ids: reported_failed_ids.clone(),
+        reported_fail_types: Arc::new(Mutex::new(Vec::new())),
         reported_to_relay_id: reported_to_relay_id.clone(),
     });
 
@@ -753,6 +761,7 @@ pub fn relay_report_failed_sent_when_preferred_relay_not_available() {
             Ok(alternate_response.clone())
         }),
         reported_failed_ids: reported_failed_ids.clone(),
+        reported_fail_types: Arc::new(Mutex::new(Vec::new())),
         reported_to_relay_id: reported_to_relay_id.clone(),
     });
 
@@ -818,6 +827,7 @@ pub fn relay_report_failed_not_sent_when_preferred_succeeds() {
         queried_ids: queried_ids.clone(),
         responder: Arc::new(move |_user_id: &str, _query_index: usize| Ok(response.clone())),
         reported_failed_ids: reported_failed_ids.clone(),
+        reported_fail_types: Arc::new(Mutex::new(Vec::new())),
         reported_to_relay_id: reported_to_relay_id.clone(),
     });
 
@@ -1019,4 +1029,226 @@ pub fn relay_select_and_query_excludes_my_id_always() {
         !ids.contains(&"MYID".to_string()),
         "own id should never be queried"
     );
+}
+
+/// Select a relay when the preferred one answers `preferred_answer` and the other is Available,
+/// returning the failure reports sent as `(failed relay id, fail_type)` (#554).
+fn reports_after_preferred_fails(
+    base_port: u16,
+    preferred_answer: Arc<dyn Fn() -> Result<serde_json::Value, BingleError> + Send + Sync>,
+) -> Vec<(String, String)> {
+    let reported_failed_ids = Arc::new(Mutex::new(Vec::new()));
+    let reported_fail_types = Arc::new(Mutex::new(Vec::new()));
+    let alternate_response = relays_status_response_json(
+        RelayState::Available,
+        vec![
+            ("MYID", addr(base_port), RelayState::Own),
+            ("ROOTA", addr(base_port + 1), RelayState::Available),
+            ("ROOTB", addr(base_port + 2), RelayState::Available),
+        ],
+    );
+    let api: Arc<dyn InnerBingleApi + Send + Sync> = Arc::new(ReportTrackingApi {
+        queried_ids: Arc::new(Mutex::new(Vec::new())),
+        responder: Arc::new(move |_user_id: &str, query_index: usize| {
+            if query_index == 0 {
+                return preferred_answer();
+            }
+            Ok(alternate_response.clone())
+        }),
+        reported_failed_ids: reported_failed_ids.clone(),
+        reported_fail_types: reported_fail_types.clone(),
+        reported_to_relay_id: Arc::new(Mutex::new(None)),
+    });
+    let updater = updater_with_api(
+        "MYID.",
+        vec![
+            signed_root_relay("MYID", addr(base_port)),
+            signed_root_relay("ROOTA", addr(base_port + 1)),
+            signed_root_relay("ROOTB", addr(base_port + 2)),
+        ],
+        api,
+    );
+    updater.init_from_blockchain();
+    updater
+        .relay_select_and_query(&[])
+        .expect("the other relay should be selected");
+
+    let ids = reported_failed_ids
+        .lock()
+        .expect("reported_failed_ids lock should succeed")
+        .clone();
+    let fail_types = reported_fail_types
+        .lock()
+        .expect("reported_fail_types lock should succeed")
+        .clone();
+    ids.into_iter().zip(fail_types).collect()
+}
+
+fn single_fail_type(reports: &[(String, String)]) -> &str {
+    assert_eq!(reports.len(), 1, "expected one report, got {reports:?}");
+    reports[0].1.as_str()
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn relay_report_says_timeout_when_preferred_does_not_answer() {
+    let reports = reports_after_preferred_fails(
+        58301,
+        Arc::new(|| {
+            Err(BingleError::Send {
+                kind: SendFailureKind::NoResponse,
+                detail: "timeout waiting for response".to_string(),
+            })
+        }),
+    );
+    assert_eq!(single_fail_type(&reports), "timeout");
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn relay_report_says_send_failed_when_preferred_unreachable() {
+    let reports = reports_after_preferred_fails(
+        58311,
+        Arc::new(|| {
+            Err(BingleError::Send {
+                kind: SendFailureKind::PeerUnreachable,
+                detail: "connect timed out".to_string(),
+            })
+        }),
+    );
+    assert_eq!(single_fail_type(&reports), "send_failed");
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn relay_report_says_send_failed_for_an_untyped_error() {
+    let reports = reports_after_preferred_fails(
+        58321,
+        Arc::new(|| Err(BingleError::Other("Failed to send request".to_string()))),
+    );
+    assert_eq!(single_fail_type(&reports), "send_failed");
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn relay_report_not_sent_when_local_send_backoff_refused_the_probe() {
+    let reports = reports_after_preferred_fails(
+        58331,
+        Arc::new(|| {
+            Err(BingleError::Send {
+                kind: SendFailureKind::SendBackoff,
+                detail: "Sending is failing".to_string(),
+            })
+        }),
+    );
+    assert!(
+        reports.is_empty(),
+        "a relay the client never tried must not be reported, got {reports:?}"
+    );
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn relay_report_says_not_available_when_preferred_answers_off() {
+    let off = relays_status_response_json(
+        RelayState::Off,
+        vec![
+            ("MYID", addr(58341), RelayState::Own),
+            ("ROOTA", addr(58342), RelayState::Off),
+            ("ROOTB", addr(58343), RelayState::Available),
+        ],
+    );
+    let reports = reports_after_preferred_fails(58341, Arc::new(move || Ok(off.clone())));
+    assert_eq!(single_fail_type(&reports), "not_available");
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn relay_report_says_bad_status_for_an_unexpected_response() {
+    let wrong = to_json_value(&Message::Ddb(DdbMessage::GetRelaysStatus(
+        bingle_core::messages::types::DdbGetRelaysStatus {
+            app: "ddb".to_string(),
+            epoch_id: 0,
+            tag: None,
+            text: None,
+            data: None,
+        },
+    )));
+    let reports = reports_after_preferred_fails(58351, Arc::new(move || Ok(wrong.clone())));
+    assert_eq!(single_fail_type(&reports), "bad_status");
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn relay_report_says_bad_status_when_available_status_is_unusable() {
+    let mut unusable = relays_status_response_json(
+        RelayState::Available,
+        vec![
+            ("MYID", addr(58361), RelayState::Own),
+            ("ROOTA", addr(58362), RelayState::Available),
+            ("ROOTB", addr(58363), RelayState::Available),
+        ],
+    );
+    // An Available answer with no endpoints can't refresh the relay cache.
+    let obj = unusable
+        .as_object_mut()
+        .expect("status response should be a JSON object");
+    let key = ["relayEndpoints", "relay_endpoints"]
+        .into_iter()
+        .find(|k| obj.contains_key(*k))
+        .expect("status response should carry relay endpoints");
+    obj.insert(key.to_string(), serde_json::Value::Null);
+    let reports = reports_after_preferred_fails(58361, Arc::new(move || Ok(unusable.clone())));
+    assert_eq!(single_fail_type(&reports), "bad_status");
+}
+
+#[test]
+pub fn probe_failure_classifies_send_errors() {
+    let send = |kind, detail: &str| BingleError::Send {
+        kind,
+        detail: detail.to_string(),
+    };
+    assert_eq!(
+        ProbeFailure::from_send_error(&send(SendFailureKind::NoResponse, "x")),
+        ProbeFailure::Timeout
+    );
+    assert_eq!(
+        ProbeFailure::from_send_error(&send(SendFailureKind::SendBackoff, "x")),
+        ProbeFailure::LocalBackoff
+    );
+    assert_eq!(
+        ProbeFailure::from_send_error(&send(SendFailureKind::PeerUnreachable, "no route")),
+        ProbeFailure::SendFailed
+    );
+    // The kind decides, not the text: the old backoff message as PeerUnreachable is a real failure.
+    assert_eq!(
+        ProbeFailure::from_send_error(&send(
+            SendFailureKind::PeerUnreachable,
+            "Sending is failing"
+        )),
+        ProbeFailure::SendFailed
+    );
+    assert_eq!(
+        ProbeFailure::from_send_error(&BingleError::Other("x".to_string())),
+        ProbeFailure::SendFailed
+    );
+}
+
+#[test]
+pub fn probe_failure_report_fail_types() {
+    assert_eq!(ProbeFailure::Timeout.report_fail_type(), Some("timeout"));
+    assert_eq!(
+        ProbeFailure::SendFailed.report_fail_type(),
+        Some("send_failed")
+    );
+    assert_eq!(
+        ProbeFailure::NotAvailable.report_fail_type(),
+        Some("not_available")
+    );
+    assert_eq!(
+        ProbeFailure::BadStatus.report_fail_type(),
+        Some("bad_status")
+    );
+    assert_eq!(ProbeFailure::LocalBackoff.report_fail_type(), None);
+    assert_eq!(ProbeFailure::NotAttempted.report_fail_type(), None);
 }

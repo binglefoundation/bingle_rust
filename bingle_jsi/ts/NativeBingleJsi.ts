@@ -148,6 +148,7 @@ export type FailureKind =
   | 'NoRelayAvailable'
   | 'RelayAllocationFailed'
   | 'PeerUnreachable'
+  | 'SendBackoff'
   | 'NoResponse'
   | 'MalformedAdvert'
   | 'ProtocolError'

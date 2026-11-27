@@ -89,6 +89,23 @@ describe(`bingle_jsi account lifecycle (${backend})`, () => {
       );
     });
 
+    it('rejects a bad call with the variant name and a structured kind', async () => {
+      // bingle_rust #464: on Android the message names the variant as on iOS, e.g.
+      // `InternalError(reason: "...")`, not just `reason=...`. bingle_rust #470: both platforms
+      // carry `{ kind, ...fields }` as error.userInfo, read with bingleErrorInfo.
+      const failure = await call({
+        method: 'failureOf',
+        args: ['importKeypair', ['not a recovery phrase']],
+      });
+      assert.ok(failure.info, `no structured info on: ${failure.message}`);
+      assert.notStrictEqual(failure.info.kind, 'Unknown', 'an engine error must name its variant');
+      assert.strictEqual(typeof failure.info.reason, 'string');
+      assert.ok(
+        failure.message.startsWith(`${failure.info.kind}(reason: `),
+        `message should start with the variant name, got: ${failure.message}`,
+      );
+    });
+
     it('reflects contact add/block/remove in getContacts', async () => {
       // Per-run unique ids (add_contact rejects a duplicate id, and the state file persists).
       const stamp = Date.now();

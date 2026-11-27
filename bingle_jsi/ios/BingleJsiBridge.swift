@@ -130,7 +130,7 @@ class BingleJsiBridge: RCTEventEmitter {
                 BingleJsiBridge.stopInBackground(previous)
                 resolve(true)
             } catch {
-                reject("BINGLE_INIT_ERROR", "Failed to initialize BingleJsi: \(error)", error)
+                self.rejectBingle(error, reject, code: "BINGLE_INIT_ERROR", messagePrefix: "Failed to initialize BingleJsi: ")
             }
         }
     }
@@ -146,7 +146,7 @@ class BingleJsiBridge: RCTEventEmitter {
                 let result = try api.handleLookup(handle: handle)
                 resolve(result)
             } catch {
-                reject("BINGLE_ERROR", "\(error)", error)
+                self.rejectBingle(error, reject)
             }
         }
     }
@@ -165,7 +165,7 @@ class BingleJsiBridge: RCTEventEmitter {
                     "canonical_handle": result.canonicalHandle,
                 ])
             } catch {
-                reject("BINGLE_ERROR", "\(error)", error)
+                self.rejectBingle(error, reject)
             }
         }
     }
@@ -187,7 +187,7 @@ class BingleJsiBridge: RCTEventEmitter {
                     ] as [String: Any]
                 })
             } catch {
-                reject("BINGLE_ERROR", "\(error)", error)
+                self.rejectBingle(error, reject)
             }
         }
     }
@@ -204,7 +204,7 @@ class BingleJsiBridge: RCTEventEmitter {
                 let result = try api.sendMessageToId(userId: userId, message: msg)
                 resolve(result)
             } catch {
-                reject("BINGLE_ERROR", "\(error)", error)
+                self.rejectBingle(error, reject)
             }
         }
     }
@@ -221,7 +221,7 @@ class BingleJsiBridge: RCTEventEmitter {
                 let result = try api.sendMessageToHandle(handle: handle, message: msg)
                 resolve(result)
             } catch {
-                reject("BINGLE_ERROR", "\(error)", error)
+                self.rejectBingle(error, reject)
             }
         }
     }
@@ -242,7 +242,7 @@ class BingleJsiBridge: RCTEventEmitter {
                         "build_number": info.buildNumber,
                     ])
                 } catch {
-                    reject("BINGLE_ERROR", "\(error)", error)
+                    self.rejectBingle(error, reject)
                 }
             } else {
                 let info = getVersion()
@@ -276,7 +276,7 @@ class BingleJsiBridge: RCTEventEmitter {
                     ]
                 })
             } catch {
-                reject("BINGLE_ERROR", "\(error)", error)
+                self.rejectBingle(error, reject)
             }
         }
     }
@@ -292,7 +292,7 @@ class BingleJsiBridge: RCTEventEmitter {
                 let messages = try api.queued()
                 resolve(messages.map { self.messageToDict($0) })
             } catch {
-                reject("BINGLE_ERROR", "\(error)", error)
+                self.rejectBingle(error, reject)
             }
         }
     }
@@ -311,7 +311,7 @@ class BingleJsiBridge: RCTEventEmitter {
                     "nat_type_v6": self.natTypeV6ToString(resp.natTypeV6),
                 ])
             } catch {
-                reject("BINGLE_ERROR", "\(error)", error)
+                self.rejectBingle(error, reject)
             }
         }
     }
@@ -327,7 +327,7 @@ class BingleJsiBridge: RCTEventEmitter {
                 let available = try api.networkAvailable(forceRecheck: forceRecheck)
                 resolve(available)
             } catch {
-                reject("BINGLE_ERROR", "\(error)", error)
+                self.rejectBingle(error, reject)
             }
         }
     }
@@ -343,7 +343,7 @@ class BingleJsiBridge: RCTEventEmitter {
                 let kp = try api.generateKeypair()
                 resolve(["id": kp.id, "passphrase": kp.passphrase])
             } catch {
-                reject("BINGLE_ERROR", "\(error)", error)
+                self.rejectBingle(error, reject)
             }
         }
     }
@@ -359,7 +359,7 @@ class BingleJsiBridge: RCTEventEmitter {
                 let kp = try api.importKeypair(passphrase: passphrase)
                 resolve(["id": kp.id, "passphrase": kp.passphrase])
             } catch {
-                reject("BINGLE_ERROR", "\(error)", error)
+                self.rejectBingle(error, reject)
             }
         }
     }
@@ -377,7 +377,7 @@ class BingleJsiBridge: RCTEventEmitter {
                 let kp = try api.generateKeypairReplacing(replaceSyncedKey: replaceSyncedKey)
                 resolve(["id": kp.id, "passphrase": kp.passphrase])
             } catch {
-                reject("BINGLE_ERROR", "\(error)", error)
+                self.rejectBingle(error, reject)
             }
         }
     }
@@ -394,7 +394,7 @@ class BingleJsiBridge: RCTEventEmitter {
                 let kp = try api.importKeypairReplacing(passphrase: passphrase, replaceSyncedKey: replaceSyncedKey)
                 resolve(["id": kp.id, "passphrase": kp.passphrase])
             } catch {
-                reject("BINGLE_ERROR", "\(error)", error)
+                self.rejectBingle(error, reject)
             }
         }
     }
@@ -411,7 +411,7 @@ class BingleJsiBridge: RCTEventEmitter {
                 let status = try api.inspectPassphrase(passphrase: passphrase)
                 resolve(self.keypairStatusToDict(status))
             } catch {
-                reject("BINGLE_ERROR", "\(error)", error)
+                self.rejectBingle(error, reject)
             }
         }
     }
@@ -427,7 +427,7 @@ class BingleJsiBridge: RCTEventEmitter {
                 let sig = try api.signNotifyEnvelope(route: route, iss: iss, audience: audience, token: token, env: env, topic: topic, nonce: nonce, exp: exp.int64Value)
                 resolve(sig)
             } catch {
-                reject("BINGLE_ERROR", "\(error)", error)
+                self.rejectBingle(error, reject)
             }
         }
     }
@@ -454,7 +454,7 @@ class BingleJsiBridge: RCTEventEmitter {
                 }
                 resolve(body)
             } catch {
-                reject("BINGLE_ERROR", "\(error)", error)
+                self.rejectBingle(error, reject)
             }
         }
     }
@@ -473,7 +473,7 @@ class BingleJsiBridge: RCTEventEmitter {
                 let signed = try api.signRegistrationGroup(transactions: transactions, signIndexes: indexes, handle: handle)
                 resolve(signed)
             } catch {
-                reject("BINGLE_ERROR", "\(error)", error)
+                self.rejectBingle(error, reject)
             }
         }
     }
@@ -489,7 +489,7 @@ class BingleJsiBridge: RCTEventEmitter {
                 let kp = try api.beginRecoveryKeypair()
                 resolve(["id": kp.id, "passphrase": kp.passphrase])
             } catch {
-                reject("BINGLE_ERROR", "\(error)", error)
+                self.rejectBingle(error, reject)
             }
         }
     }
@@ -506,7 +506,7 @@ class BingleJsiBridge: RCTEventEmitter {
                 let signed = try api.signRecoveryGroup(transactions: transactions, signIndexes: indexes, handle: handle)
                 resolve(signed)
             } catch {
-                reject("BINGLE_ERROR", "\(error)", error)
+                self.rejectBingle(error, reject)
             }
         }
     }
@@ -522,7 +522,7 @@ class BingleJsiBridge: RCTEventEmitter {
                 let kp = try api.completeRecoveryKeypair()
                 resolve(["id": kp.id, "passphrase": kp.passphrase])
             } catch {
-                reject("BINGLE_ERROR", "\(error)", error)
+                self.rejectBingle(error, reject)
             }
         }
     }
@@ -549,7 +549,7 @@ class BingleJsiBridge: RCTEventEmitter {
                     "last_install_at": status.lastInstallAt.map { NSNumber(value: $0) } as Any,
                 ])
             } catch {
-                reject("BINGLE_ERROR", "\(error)", error)
+                self.rejectBingle(error, reject)
             }
         }
     }
@@ -565,7 +565,7 @@ class BingleJsiBridge: RCTEventEmitter {
                 try api.setDeviceOnly(enabled: enabled)
                 resolve(nil)
             } catch {
-                reject("BINGLE_ERROR", "\(error)", error)
+                self.rejectBingle(error, reject)
             }
         }
     }
@@ -581,7 +581,7 @@ class BingleJsiBridge: RCTEventEmitter {
                 try api.markPhraseBackedUp()
                 resolve(nil)
             } catch {
-                reject("BINGLE_ERROR", "\(error)", error)
+                self.rejectBingle(error, reject)
             }
         }
     }
@@ -597,7 +597,7 @@ class BingleJsiBridge: RCTEventEmitter {
                 let kp = try api.restoreStoredKey()
                 resolve(["id": kp.id, "passphrase": kp.passphrase])
             } catch {
-                reject("BINGLE_ERROR", "\(error)", error)
+                self.rejectBingle(error, reject)
             }
         }
     }
@@ -613,7 +613,7 @@ class BingleJsiBridge: RCTEventEmitter {
                 try api.removeKeyFromDevice()
                 resolve(nil)
             } catch {
-                reject("BINGLE_ERROR", "\(error)", error)
+                self.rejectBingle(error, reject)
             }
         }
     }
@@ -636,7 +636,7 @@ class BingleJsiBridge: RCTEventEmitter {
                 case .recoveryPhraseRequired: resolve("recovery_phrase_required")
                 }
             } catch {
-                reject("BINGLE_ERROR", "\(error)", error)
+                self.rejectBingle(error, reject)
             }
         }
     }
@@ -652,7 +652,7 @@ class BingleJsiBridge: RCTEventEmitter {
                 try api.forgetStateKey()
                 resolve(nil)
             } catch {
-                reject("BINGLE_ERROR", "\(error)", error)
+                self.rejectBingle(error, reject)
             }
         }
     }
@@ -668,7 +668,7 @@ class BingleJsiBridge: RCTEventEmitter {
                 let kp = try api.openStateWithRecoveryPhrase(phrase: phrase)
                 resolve(["id": kp.id, "passphrase": kp.passphrase])
             } catch {
-                reject("BINGLE_ERROR", "\(error)", error)
+                self.rejectBingle(error, reject)
             }
         }
     }
@@ -684,7 +684,7 @@ class BingleJsiBridge: RCTEventEmitter {
                 let kp = try api.exportKeypair()
                 resolve(["id": kp.id, "passphrase": kp.passphrase])
             } catch {
-                reject("BINGLE_ERROR", "\(error)", error)
+                self.rejectBingle(error, reject)
             }
         }
     }
@@ -700,7 +700,7 @@ class BingleJsiBridge: RCTEventEmitter {
             do {
                 resolve(try api.appRecord(name: name))
             } catch {
-                reject("BINGLE_ERROR", "\(error)", error)
+                self.rejectBingle(error, reject)
             }
         }
     }
@@ -717,7 +717,7 @@ class BingleJsiBridge: RCTEventEmitter {
                 try api.setAppRecord(name: name, json: json)
                 resolve(nil)
             } catch {
-                reject("BINGLE_ERROR", "\(error)", error)
+                self.rejectBingle(error, reject)
             }
         }
     }
@@ -734,7 +734,7 @@ class BingleJsiBridge: RCTEventEmitter {
                 try api.removeAppRecord(name: name)
                 resolve(nil)
             } catch {
-                reject("BINGLE_ERROR", "\(error)", error)
+                self.rejectBingle(error, reject)
             }
         }
     }
@@ -750,7 +750,7 @@ class BingleJsiBridge: RCTEventEmitter {
                 try api.deleteAccount()
                 resolve(nil)
             } catch {
-                reject("BINGLE_ERROR", "\(error)", error)
+                self.rejectBingle(error, reject)
             }
         }
     }
@@ -771,7 +771,7 @@ class BingleJsiBridge: RCTEventEmitter {
             try api.requestPushRegistration()
             resolve(nil)
         } catch {
-            reject("BINGLE_ERROR", "\(error)", error)
+            self.rejectBingle(error, reject)
         }
     }
 
@@ -790,7 +790,7 @@ class BingleJsiBridge: RCTEventEmitter {
                 let accepted = try api.registerApnsToken(token: data)
                 resolve(accepted)
             } catch {
-                reject("BINGLE_ERROR", "\(error)", error)
+                self.rejectBingle(error, reject)
             }
         }
     }
@@ -827,7 +827,7 @@ class BingleJsiBridge: RCTEventEmitter {
                 try api.registerKeypair(handle: handle)
                 resolve(nil)
             } catch {
-                reject("BINGLE_ERROR", "\(error)", error)
+                self.rejectBingle(error, reject)
             }
         }
     }
@@ -844,7 +844,7 @@ class BingleJsiBridge: RCTEventEmitter {
                 try api.addContact(handle: handle, id: id, source: src)
                 resolve(nil)
             } catch {
-                reject("BINGLE_ERROR", "\(error)", error)
+                self.rejectBingle(error, reject)
             }
         }
     }
@@ -860,7 +860,7 @@ class BingleJsiBridge: RCTEventEmitter {
                 try api.blockContact(id: id)
                 resolve(nil)
             } catch {
-                reject("BINGLE_ERROR", "\(error)", error)
+                self.rejectBingle(error, reject)
             }
         }
     }
@@ -876,7 +876,7 @@ class BingleJsiBridge: RCTEventEmitter {
                 try api.unblockContact(id: id)
                 resolve(nil)
             } catch {
-                reject("BINGLE_ERROR", "\(error)", error)
+                self.rejectBingle(error, reject)
             }
         }
     }
@@ -892,7 +892,7 @@ class BingleJsiBridge: RCTEventEmitter {
                 try api.removeContact(id: id)
                 resolve(nil)
             } catch {
-                reject("BINGLE_ERROR", "\(error)", error)
+                self.rejectBingle(error, reject)
             }
         }
     }
@@ -908,7 +908,7 @@ class BingleJsiBridge: RCTEventEmitter {
                 let result = try api.isBlocked(id: id)
                 resolve(result)
             } catch {
-                reject("BINGLE_ERROR", "\(error)", error)
+                self.rejectBingle(error, reject)
             }
         }
     }
@@ -924,7 +924,7 @@ class BingleJsiBridge: RCTEventEmitter {
                 let contacts = try api.getContacts()
                 resolve(contacts.map { ["handle": $0.handle, "id": $0.id, "fields": $0.fields] })
             } catch {
-                reject("BINGLE_ERROR", "\(error)", error)
+                self.rejectBingle(error, reject)
             }
         }
     }
@@ -940,7 +940,7 @@ class BingleJsiBridge: RCTEventEmitter {
                 let contacts = try api.getBlockedContacts()
                 resolve(contacts.map { ["handle": $0.handle, "id": $0.id, "fields": $0.fields] })
             } catch {
-                reject("BINGLE_ERROR", "\(error)", error)
+                self.rejectBingle(error, reject)
             }
         }
     }
@@ -958,7 +958,7 @@ class BingleJsiBridge: RCTEventEmitter {
                 let contacts = try api.getModeratorBlockedContacts()
                 resolve(contacts.map { ["handle": $0.handle, "id": $0.id, "fields": $0.fields] })
             } catch {
-                reject("BINGLE_ERROR", "\(error)", error)
+                self.rejectBingle(error, reject)
             }
         }
     }
@@ -980,7 +980,7 @@ class BingleJsiBridge: RCTEventEmitter {
                 )
                 resolve(nil)
             } catch {
-                reject("BINGLE_ERROR", "\(error)", error)
+                self.rejectBingle(error, reject)
             }
         }
     }
@@ -1019,7 +1019,7 @@ class BingleJsiBridge: RCTEventEmitter {
                     ] as [String: Any]
                 })
             } catch {
-                reject("BINGLE_ERROR", "\(error)", error)
+                self.rejectBingle(error, reject)
             }
         }
     }
@@ -1035,7 +1035,7 @@ class BingleJsiBridge: RCTEventEmitter {
                 try api.queueMessage(recipientHandles: recipientHandles, text: text)
                 resolve(nil)
             } catch {
-                reject("BINGLE_ERROR", "\(error)", error)
+                self.rejectBingle(error, reject)
             }
         }
     }
@@ -1051,7 +1051,7 @@ class BingleJsiBridge: RCTEventEmitter {
                 try api.updateMessageStatus(timestamp: Int64(timestamp), progress: Float(progress), failureReason: failureReason)
                 resolve(nil)
             } catch {
-                reject("BINGLE_ERROR", "\(error)", error)
+                self.rejectBingle(error, reject)
             }
         }
     }
@@ -1069,7 +1069,7 @@ class BingleJsiBridge: RCTEventEmitter {
                 try api.updateMessageStatusById(id: id, progress: Float(progress), failureReason: failureReason)
                 resolve(nil)
             } catch {
-                reject("BINGLE_ERROR", "\(error)", error)
+                self.rejectBingle(error, reject)
             }
         }
     }
@@ -1109,7 +1109,7 @@ class BingleJsiBridge: RCTEventEmitter {
                 }
                 resolve(processed)
             } catch {
-                reject("BINGLE_ERROR", "\(error)", error)
+                self.rejectBingle(error, reject)
             }
         }
     }
@@ -1127,7 +1127,7 @@ class BingleJsiBridge: RCTEventEmitter {
                 try api.setStoreAndForward(send: send, receive: receive)
                 resolve(nil)
             } catch {
-                reject("BINGLE_ERROR", "\(error)", error)
+                self.rejectBingle(error, reject)
             }
         }
     }
@@ -1145,7 +1145,7 @@ class BingleJsiBridge: RCTEventEmitter {
                 try api.setNotify(enabled: enabled, gatewayUrl: gatewayUrl)
                 resolve(nil)
             } catch {
-                reject("BINGLE_ERROR", "\(error)", error)
+                self.rejectBingle(error, reject)
             }
         }
     }
@@ -1162,7 +1162,7 @@ class BingleJsiBridge: RCTEventEmitter {
                 try api.setGlobalBlock(enabled: enabled)
                 resolve(nil)
             } catch {
-                reject("BINGLE_ERROR", "\(error)", error)
+                self.rejectBingle(error, reject)
             }
         }
     }
@@ -1186,7 +1186,7 @@ class BingleJsiBridge: RCTEventEmitter {
                     "global_block": settings.globalBlock as Any,
                 ])
             } catch {
-                reject("BINGLE_ERROR", "\(error)", error)
+                self.rejectBingle(error, reject)
             }
         }
     }
@@ -1202,7 +1202,7 @@ class BingleJsiBridge: RCTEventEmitter {
                 let status = try api.keypairStatus()
                 resolve(self.keypairStatusToDict(status))
             } catch {
-                reject("BINGLE_ERROR", "\(error)", error)
+                self.rejectBingle(error, reject)
             }
         }
     }
@@ -1218,7 +1218,7 @@ class BingleJsiBridge: RCTEventEmitter {
                 try api.save(path: path)
                 resolve(nil)
             } catch {
-                reject("BINGLE_ERROR", "\(error)", error)
+                self.rejectBingle(error, reject)
             }
         }
     }
@@ -1234,7 +1234,7 @@ class BingleJsiBridge: RCTEventEmitter {
                 try api.load(path: path)
                 resolve(nil)
             } catch {
-                reject("BINGLE_ERROR", "\(error)", error)
+                self.rejectBingle(error, reject)
             }
         }
     }
@@ -1250,7 +1250,7 @@ class BingleJsiBridge: RCTEventEmitter {
                 try api.start()
                 resolve(nil)
             } catch {
-                reject("BINGLE_ERROR", "\(error)", error)
+                self.rejectBingle(error, reject)
             }
         }
     }
@@ -1299,7 +1299,7 @@ class BingleJsiBridge: RCTEventEmitter {
                 try api.stop()
                 resolve(nil)
             } catch {
-                reject("BINGLE_ERROR", "\(error)", error)
+                self.rejectBingle(error, reject)
             }
         }
     }
@@ -1432,6 +1432,49 @@ class BingleJsiBridge: RCTEventEmitter {
         }
     }
 
+    // MARK: - Errors (bingle_rust #470)
+
+    /// The structured form of an error, sent to JavaScript as `error.userInfo`: `kind` is the
+    /// `BingleJsiError` variant name, plus that variant's fields under their camelCase names. Any
+    /// other error is `kind: "Unknown"`. Matches `BingleJsiErrorInfo` in ts/index.ts and the Android
+    /// bridge's `BingleJsiErrors.info`.
+    func bingleErrorInfo(_ error: Error) -> [String: Any] {
+        guard let engineError = error as? BingleJsiError else {
+            return ["kind": "Unknown"]
+        }
+        // bingle-error-kinds:begin
+        switch engineError {
+        case let .NotFound(reason): return ["kind": "NotFound", "reason": reason]
+        case let .InvalidRequest(reason): return ["kind": "InvalidRequest", "reason": reason]
+        case let .NotImplemented(reason): return ["kind": "NotImplemented", "reason": reason]
+        case let .InternalError(reason): return ["kind": "InternalError", "reason": reason]
+        case let .NoBlockchain(reason): return ["kind": "NoBlockchain", "reason": reason]
+        case let .Retryable(reason): return ["kind": "Retryable", "reason": reason]
+        case let .HandleTaken(reason): return ["kind": "HandleTaken", "reason": reason]
+        case let .KeyStorageUnavailable(reason): return ["kind": "KeyStorageUnavailable", "reason": reason]
+        case let .StateLocked(reason): return ["kind": "StateLocked", "reason": reason]
+        case let .RecoveryPhraseRequired(reason): return ["kind": "RecoveryPhraseRequired", "reason": reason]
+        case let .SyncedKeyWouldBeReplaced(storedAddress):
+            return ["kind": "SyncedKeyWouldBeReplaced", "storedAddress": storedAddress]
+        case let .SendFailed(failureKind, reason):
+            return ["kind": "SendFailed", "failureKind": failureKindToString(failureKind), "reason": reason]
+        }
+        // bingle-error-kinds:end
+    }
+
+    /// Reject a promise for a failed call. `code` and the message are as before (the message is
+    /// Swift's description of the error); the error passed on carries `bingleErrorInfo` as its
+    /// `userInfo`, which React Native exposes as `error.userInfo` (bingle_rust #470).
+    func rejectBingle(
+        _ error: Error,
+        _ reject: RCTPromiseRejectBlock,
+        code: String = "BINGLE_ERROR",
+        messagePrefix: String = ""
+    ) {
+        let structured = NSError(domain: "BingleJsi", code: 0, userInfo: bingleErrorInfo(error))
+        reject(code, messagePrefix + "\(error)", structured)
+    }
+
     /// Map the typed send-failure cause (issue #99) to the FailureKind string the TypeScript layer
     /// expects (matches the `FailureKind` union in ts/NativeBingleJsi.ts).
     private func failureKindToString(_ kind: FailureKind) -> String {
@@ -1443,6 +1486,7 @@ class BingleJsiBridge: RCTEventEmitter {
         case .noRelayAvailable: return "NoRelayAvailable"
         case .relayAllocationFailed: return "RelayAllocationFailed"
         case .peerUnreachable: return "PeerUnreachable"
+        case .sendBackoff: return "SendBackoff"
         case .noResponse: return "NoResponse"
         case .malformedAdvert: return "MalformedAdvert"
         case .protocolError: return "ProtocolError"

@@ -85,6 +85,82 @@ export function failureKindIsRetryable(
 }
 
 /**
+ * The structured form of a failed call (bingle_rust #470), which both bridges send as
+ * `error.userInfo`: `kind` is the engine's `BingleJsiError` variant name, plus that variant's
+ * fields under their camelCase names. `Unknown` is an error that didn't come from the engine.
+ * `code` and `message` are unchanged, so callers that read them keep working.
+ */
+// bingle-error-kinds:begin
+export type BingleJsiErrorInfo =
+  | { kind: "NotFound"; reason: string }
+  | { kind: "InvalidRequest"; reason: string }
+  | { kind: "NotImplemented"; reason: string }
+  | { kind: "InternalError"; reason: string }
+  | { kind: "NoBlockchain"; reason: string }
+  | { kind: "Retryable"; reason: string }
+  | { kind: "HandleTaken"; reason: string }
+  | { kind: "KeyStorageUnavailable"; reason: string }
+  | { kind: "StateLocked"; reason: string }
+  | { kind: "RecoveryPhraseRequired"; reason: string }
+  | { kind: "SyncedKeyWouldBeReplaced"; storedAddress: string }
+  | { kind: "SendFailed"; failureKind: FailureKind; reason: string }
+  | { kind: "Unknown" };
+// bingle-error-kinds:end
+
+/** A `BingleJsiErrorInfo` variant name. */
+export type BingleJsiErrorKind = BingleJsiErrorInfo["kind"];
+
+/** Each kind's fields, all strings; a `Record` so a kind missing here fails to compile. */
+const BINGLE_JSI_ERROR_FIELDS: Record<BingleJsiErrorKind, readonly string[]> = {
+  NotFound: ["reason"],
+  InvalidRequest: ["reason"],
+  NotImplemented: ["reason"],
+  InternalError: ["reason"],
+  NoBlockchain: ["reason"],
+  Retryable: ["reason"],
+  HandleTaken: ["reason"],
+  KeyStorageUnavailable: ["reason"],
+  StateLocked: ["reason"],
+  RecoveryPhraseRequired: ["reason"],
+  SyncedKeyWouldBeReplaced: ["storedAddress"],
+  SendFailed: ["failureKind", "reason"],
+  Unknown: [],
+};
+
+/**
+ * The structured form of an error from a `BingleJsi` call, or `null` if `error` has none: it isn't
+ * a bridge rejection, it comes from a release without structured errors, or its kind isn't one
+ * this version knows. Prefer this to matching the message text.
+ *
+ * ```ts
+ * const info = bingleErrorInfo(e);
+ * if (info?.kind === "SyncedKeyWouldBeReplaced") warn(info.storedAddress);
+ * ```
+ */
+export function bingleErrorInfo(error: unknown): BingleJsiErrorInfo | null {
+  if (typeof error !== "object" || error === null) {
+    return null;
+  }
+  const userInfo = (error as { userInfo?: unknown }).userInfo;
+  if (typeof userInfo !== "object" || userInfo === null) {
+    return null;
+  }
+  const record = userInfo as Record<string, unknown>;
+  const kind = record.kind;
+  if (
+    typeof kind !== "string" ||
+    !Object.prototype.hasOwnProperty.call(BINGLE_JSI_ERROR_FIELDS, kind)
+  ) {
+    return null;
+  }
+  const fields = BINGLE_JSI_ERROR_FIELDS[kind as BingleJsiErrorKind];
+  if (!fields.every((field) => typeof record[field] === "string")) {
+    return null;
+  }
+  return record as unknown as BingleJsiErrorInfo;
+}
+
+/**
  * The raw native module registered by the platform bridge code.
  * On iOS this is registered via BingleJsiBridge.m / BingleJsiBridge.swift.
  * On Android this is registered via BingleJsiPackage / BingleJsiModule.

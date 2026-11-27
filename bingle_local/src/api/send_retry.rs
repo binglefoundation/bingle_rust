@@ -129,8 +129,9 @@ fn humanize_failure(kind: SendFailureKind, detail: &str) -> String {
         SendFailureKind::RelayAllocationFailed => {
             "Could not open a relay channel to the recipient — will keep retrying".to_string()
         }
-        // Preserves the wording used before typed causes existed.
-        SendFailureKind::PeerUnreachable => {
+        // Preserves the wording used before typed causes existed. A send backoff refusal showed as
+        // PeerUnreachable before #554, so it keeps the same text.
+        SendFailureKind::PeerUnreachable | SendFailureKind::SendBackoff => {
             "Recipient unreachable — will keep retrying".to_string()
         }
         SendFailureKind::NoResponse => {
@@ -183,6 +184,7 @@ pub fn indicates_peer_offline(kind: SendFailureKind) -> bool {
     matches!(
         kind,
         SendFailureKind::PeerUnreachable
+            | SendFailureKind::SendBackoff
             | SendFailureKind::RelayAllocationFailed
             | SendFailureKind::RecipientNotAdvertised
             | SendFailureKind::NoResponse

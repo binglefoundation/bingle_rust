@@ -1042,6 +1042,7 @@ fn send_failure_kind_to_ffi(kind: SendFailureKind) -> FailureKind {
         SendFailureKind::NoRelayAvailable => FailureKind::NoRelayAvailable,
         SendFailureKind::RelayAllocationFailed => FailureKind::RelayAllocationFailed,
         SendFailureKind::PeerUnreachable => FailureKind::PeerUnreachable,
+        SendFailureKind::SendBackoff => FailureKind::SendBackoff,
         SendFailureKind::NoResponse => FailureKind::NoResponse,
         SendFailureKind::MalformedAdvert => FailureKind::MalformedAdvert,
         SendFailureKind::ProtocolError => FailureKind::ProtocolError,
@@ -1089,6 +1090,10 @@ fn bingle_error_to_jsi(e: BingleError) -> BingleJsiError {
         }
         BingleError::HandleTaken(owner) => BingleJsiError::HandleTaken {
             reason: format!("handle already in use by {}", owner),
+        },
+        BingleError::Send { kind, detail } => BingleJsiError::SendFailed {
+            failure_kind: send_failure_kind_to_ffi(kind),
+            reason: detail,
         },
         _ => BingleJsiError::InternalError {
             reason: e.to_string(),

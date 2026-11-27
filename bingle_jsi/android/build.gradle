@@ -45,4 +45,7 @@ android {
 dependencies {
     implementation 'com.facebook.react:react-native:+'
     implementation 'net.java.dev.jna:jna:5.13.0@aar'
+    // JVM unit tests of the bridge's error mapping (bingle_rust #470): BingleJsiErrorsTest.
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'net.java.dev.jna:jna:5.13.0'
 }

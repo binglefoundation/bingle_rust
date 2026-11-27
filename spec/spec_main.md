@@ -512,6 +512,13 @@ The detecting node broadcasts a `RelayReportFailed` message to its directly conn
 This message identifies the failed relay (`failed_relay_id`), the category of failure
 (`fail_type`), and the timestamp at which the failure was observed.
 
+A client reports the relays it couldn't use while selecting one, to the relay it selected.
+`fail_type` says why: `timeout` (sent, no answer in time), `send_failed` (the send failed),
+`not_available` (answered, but not as Available) or `bad_status` (answered with an unusable
+status). A relay the client never tried, because its own send backoff refused the probe (the
+`SendBackoff` send failure), isn't reported. Older clients send `send_rejected` for every case. The receiving relay checks the
+reported relay itself whatever the `fail_type`, and logs the `fail_type` of each report.
+
 ### 2. ReportFailedRipple
 Each peer that receives a `RelayReportFailed` (or a forwarded `ReportFailedRipple`) casts
 its own vote — confirming or disputing the failure — signs across
