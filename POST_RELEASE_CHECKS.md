@@ -53,66 +53,44 @@ When a release finishes, `scripts/release.sh` lists the checks below for changes
   - step 5 shows `BINGLE_ROLL_CHECK` = `528` on both relays;
   - no stack has a change set left behind (`aws cloudformation list-change-sets --stack-name <stack> --region <region>` is empty).
 
-### #531 the app's moderator blocklist switch takes effect without a restart
-
-- **Merged in:** the PR for #531; first ships in the next release.
-- **Needs:** a TestNet build of the app (bingle_ux_rn) with bingle_ux_rn #213 (the Settings switch that calls `setGlobalBlock` and saves the choice), not yet built, and a second TestNet account the phone can receive messages from.
-- **Steps:**
-  1. Block the second account:
-
-         bingle_admin moderator_block <SENDER_ADDRESS> --block --accounts <TESTNET_ACCOUNTS_DIR> --node-file <TESTNET_NODE_FILE>
-
-  2. With the switch on, send a message from the second account to the phone.
-  3. Turn the switch off in Settings, without restarting, and send another message from the second account.
-  4. Restart the app and check the switch is still off; then turn it back on and send a third message.
-  5. Unblock the account (`--unblock`).
-- **Passes when:** the first and third messages never appear, the second does, and the switch keeps its setting across the restart.
-
-### #539 a moderator-blocked user who isn't a contact can't be found or messaged
-
-- **Merged in:** the PR for #539; first ships in the next release.
-- **Needs:** a TestNet build of the app (bingle_ux_rn) with this release of bingle_jsi and the moderator blocklist on, and a second registered TestNet account, with handle `<BLOCKED_HANDLE>`, that isn't one of the phone's contacts.
-- **Steps:**
-  1. Check the handle is found: search for `<BLOCKED_HANDLE>` in New Message.
-  2. Block the second account:
-
-         bingle_admin moderator_block <SENDER_ADDRESS> --block --accounts <TESTNET_ACCOUNTS_DIR> --node-file <TESTNET_NODE_FILE>
-
-  3. Restart the app, or wait 10 minutes (the "not blocked" refresh), and search for `<BLOCKED_HANDLE>` again.
-  4. If the app can still address the handle (for example from a link or by typing it in full), try to send it a message.
-  5. Unblock it (`--unblock`) and restart the app.
-- **Passes when:** before the block the handle is found; after it, the search doesn't return it and any send to it is refused, with nothing delivered to the second account; after the unblock and restart, it is found again.
-
 ### #516 ripples to a peer relay resume after it is reported failed, without a restart
 
-- **Merged in:** the PR for #516; first ships in the next release. The check runs on TestNet, after the release is rolled to both TestNet relays.
-- **Needs:** both TestNet relays (relay A and relay B below), signed in to the TestNet AWS account; a TestNet app build on a phone, to produce a failure report. Relay log groups are `/bingle/relay/<stack>`.
+- **Merged in:** the PR for #516; first ships in 0.3.42. The check runs on TestNet, after the release is rolled to both TestNet relays.
+- **Done so far (2026-11-27, on the issue):** recovery after a graceful stop passed. Stopping relay A through ECS makes it sign off, and relay B drops it at once, so that run never reached the suspect path. The steps below make relay A fail without signing off.
+- **Needs:**
+  - both TestNet relays (relay A and relay B below), signed in to the TestNet AWS account;
+  - a TestNet app build on a phone, to produce a failure report.
+  Each relay stack has its own VPC (virtual private cloud) and subnet, so a network ACL (access control list) rule on relay A's subnet affects only relay A. Network ACLs are stateless, so the rule cuts traffic at once, which a security group change doesn't do for an existing session. Relay log groups are `/bingle/relay/<stack>`.
 - **Steps:**
-  1. Follow relay B's log in one terminal:
+  1. Find relay A's network ACL:
+
+         aws ec2 describe-network-acls --region <relay A region> --filters Name=association.subnet-id,Values=$(aws cloudformation describe-stack-resource --stack-name <relay A stack> --logical-resource-id Subnet --region <relay A region> --query StackResourceDetail.PhysicalResourceId --output text) --query 'NetworkAcls[0].NetworkAclId' --output text
+
+  2. Follow relay B's log in one terminal:
 
          aws logs tail /bingle/relay/<relay B stack> --follow --region <relay B region> --format short
 
-  2. Stop relay A:
+  3. Cut relay A off by denying inbound UDP to its relay port, for IPv4 and IPv6:
 
-         aws ecs update-service --cluster <relay A cluster> --service <relay A service> --desired-count 0 --region <relay A region>
+         aws ec2 create-network-acl-entry --network-acl-id <acl> --ingress --rule-number 50 --protocol 17 --port-range From=12121,To=12121 --cidr-block 0.0.0.0/0 --rule-action deny --region <relay A region> && aws ec2 create-network-acl-entry --network-acl-id <acl> --ingress --rule-number 51 --protocol 17 --port-range From=12121,To=12121 --ipv6-cidr-block ::/0 --rule-action deny --region <relay A region>
 
-  3. Open the app on the phone, background and reopen it until relay B logs `relay_mark_suspect] relay <relay A id> reported failed`. The app reports relay A to relay B when relay selection tries A first, so it may take a few tries, or a phone whose preferred relay is A.
-  4. Start relay A again:
+  4. Open the app on the phone, background and reopen it until relay B logs `relay_mark_suspect] relay <relay A id> reported failed`. The app reports relay A to relay B when relay selection tries A first, so it may take a few tries, or a phone whose preferred relay is A.
+  5. Remove both rules:
 
-         aws ecs update-service --cluster <relay A cluster> --service <relay A service> --desired-count 1 --region <relay A region>
+         aws ec2 delete-network-acl-entry --network-acl-id <acl> --ingress --rule-number 50 --region <relay A region> && aws ec2 delete-network-acl-entry --network-acl-id <acl> --ingress --rule-number 51 --region <relay A region>
 
-  5. Wait for relay A to pass its start check, then watch relay B's log for up to 10 minutes.
+  6. Watch relay B's log for up to 10 minutes.
 - **Passes when:**
-  - in step 3, relay B logs `kept in the relay set as suspect`, not `removed relay`, and while A is down each ripple to it logs `ripple to relay <relay A id> (suspect) ... failed` at warn;
-  - after step 4, relay B logs `no longer suspect` for relay A (`answered Available` or `heard from suspect relay`);
-  - relay B's later ripples to relay A log no failure, with no restart of relay B;
-  - an account that advertises on relay B (the TestNet gateway, if it is on B) is found by a lookup on relay A after its next advert refresh: no `found: false` for it in relay A's log.
+  - in step 4, relay B logs `kept in the relay set as suspect`, not `removed relay`, and while A is cut off each ripple to it logs `ripple to relay <relay A id> (suspect) ... failed` at warn;
+  - after step 5, relay B logs `no longer suspect` for relay A (`answered Available` or `heard from suspect relay`);
+  - relay B's later ripples to relay A log no failure, with no restart of either relay.
+- **If the run is abandoned:** remove both rules (step 5) anyway. Relay A stays cut off until they're gone.
 
 ### #554 a relay failure report says why the relay failed
 
 - **Merged in:** the PR for #554; first ships in the next release. The reports come from the app, so the check needs a TestNet app build on the jsi release that has it, and the relays rolled to that release for the log line.
-- **Needs:** the same setup as the #516 check above. Run it during that check: its step 3 makes the report this one reads.
-- **Steps:** in the #516 check's step 3, find relay B's line `[handlers::on_report_fail] <app account> reported relay <relay A id> as "<fail_type>"`.
+- **Needs:** the same setup as the #516 check above. Run it during that check: its step 4 makes the report this one reads.
+- **Steps:** in the #516 check's step 4, find relay B's line `[handlers::on_report_fail] <app account> reported relay <relay A id> as "<fail_type>"`.
 - **Passes when:** the `fail_type` is `"timeout"` or `"send_failed"`, not `"send_rejected"`.
 - **Not checked here:** the ripple handler's `rippled a report ... as` line needs a third relay to receive the ripple, which TestNet's two relays can't show. Not reporting a relay the app's send backoff refused is covered by unit tests, because on a device the app's relay cooldown usually skips that relay before any probe.
 
